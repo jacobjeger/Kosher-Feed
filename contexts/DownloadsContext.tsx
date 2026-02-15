@@ -1,13 +1,11 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, type ReactNode } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as FileSystem from "expo-file-system";
 import { Platform } from "react-native";
 import type { Episode, Feed, DownloadedEpisode } from "@/lib/types";
-
-interface DownloadProgress {
-  episodeId: string;
-  progress: number;
-}
+import { isOnWifi } from "@/lib/network";
+import { getApiUrl } from "@/lib/query-client";
+import { getDeviceId } from "@/lib/device-id";
 
 interface DownloadsContextValue {
   downloads: DownloadedEpisode[];
@@ -17,6 +15,9 @@ interface DownloadsContextValue {
   isDownloaded: (episodeId: string) => boolean;
   isDownloading: (episodeId: string) => boolean;
   getLocalUri: (episodeId: string) => string | null;
+  autoDownloadNewEpisodes: (feeds: Feed[], maxPerFeed: number) => Promise<void>;
+  enforceStorageLimit: (feedId: string, maxPerFeed: number) => Promise<void>;
+  getDownloadsForFeed: (feedId: string) => DownloadedEpisode[];
 }
 
 const DOWNLOADS_KEY = "@kosher_podcast_downloads";
@@ -25,6 +26,11 @@ const DownloadsContext = createContext<DownloadsContextValue | null>(null);
 export function DownloadsProvider({ children }: { children: ReactNode }) {
   const [downloads, setDownloads] = useState<DownloadedEpisode[]>([]);
   const [downloadProgress, setDownloadProgress] = useState<Map<string, number>>(new Map());
+  const downloadsRef = useRef<DownloadedEpisode[]>([]);
+
+  useEffect(() => {
+    downloadsRef.current = downloads;
+  }, [downloads]);
 
   useEffect(() => {
     loadDownloads();
@@ -124,7 +130,7 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const removeDownload = useCallback(async (episodeId: string) => {
-    const ep = downloads.find(d => d.id === episodeId);
+    const ep = downloadsRef.current.find(d => d.id === episodeId);
     if (ep && Platform.OS !== "web") {
       try {
         const info = await FileSystem.getInfoAsync(ep.localUri);
@@ -141,7 +147,7 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
       saveDownloads(next);
       return next;
     });
-  }, [downloads]);
+  }, []);
 
   const isDownloaded = useCallback((episodeId: string) => {
     return downloads.some(d => d.id === episodeId);
@@ -156,6 +162,76 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     return ep?.localUri || null;
   }, [downloads]);
 
+  const getDownloadsForFeed = useCallback((feedId: string) => {
+    return downloads.filter(d => d.feedId === feedId);
+  }, [downloads]);
+
+  const enforceStorageLimit = useCallback(async (feedId: string, maxPerFeed: number) => {
+    const feedDownloads = downloadsRef.current
+      .filter(d => d.feedId === feedId)
+      .sort((a, b) => new Date(b.downloadedAt).getTime() - new Date(a.downloadedAt).getTime());
+
+    if (feedDownloads.length <= maxPerFeed) return;
+
+    const toRemove = feedDownloads.slice(maxPerFeed);
+    for (const ep of toRemove) {
+      if (Platform.OS !== "web") {
+        try {
+          const info = await FileSystem.getInfoAsync(ep.localUri);
+          if (info.exists) {
+            await FileSystem.deleteAsync(ep.localUri);
+          }
+        } catch {}
+      }
+    }
+
+    const removeIds = new Set(toRemove.map(e => e.id));
+    setDownloads(prev => {
+      const next = prev.filter(d => !removeIds.has(d.id));
+      saveDownloads(next);
+      return next;
+    });
+  }, []);
+
+  const autoDownloadNewEpisodes = useCallback(async (feeds: Feed[], maxPerFeed: number) => {
+    try {
+      const onWifi = await isOnWifi();
+      if (!onWifi && Platform.OS !== "web") return;
+
+      const deviceId = await getDeviceId();
+      const baseUrl = getApiUrl();
+
+      for (const feed of feeds) {
+        const existingForFeed = downloadsRef.current.filter(d => d.feedId === feed.id);
+        if (existingForFeed.length >= maxPerFeed) continue;
+
+        try {
+          const url = new URL(`/api/feeds/${feed.id}/episodes`, baseUrl);
+          const res = await fetch(url.toString());
+          const episodes: Episode[] = await res.json();
+
+          const downloadedIds = new Set(downloadsRef.current.map(d => d.id));
+          const toDownload = episodes
+            .filter(ep => !downloadedIds.has(ep.id))
+            .slice(0, maxPerFeed - existingForFeed.length);
+
+          for (const ep of toDownload) {
+            const alreadyDownloading = downloadProgress.has(ep.id);
+            if (!alreadyDownloading) {
+              await downloadEpisode(ep, feed);
+            }
+          }
+
+          await enforceStorageLimit(feed.id, maxPerFeed);
+        } catch (e) {
+          console.error(`Auto-download failed for feed ${feed.title}:`, e);
+        }
+      }
+    } catch (e) {
+      console.error("Auto-download check failed:", e);
+    }
+  }, [downloadEpisode, downloadProgress, enforceStorageLimit]);
+
   const value = useMemo(() => ({
     downloads,
     downloadProgress,
@@ -164,7 +240,10 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     isDownloaded,
     isDownloading,
     getLocalUri,
-  }), [downloads, downloadProgress, downloadEpisode, removeDownload, isDownloaded, isDownloading, getLocalUri]);
+    autoDownloadNewEpisodes,
+    enforceStorageLimit,
+    getDownloadsForFeed,
+  }), [downloads, downloadProgress, downloadEpisode, removeDownload, isDownloaded, isDownloading, getLocalUri, autoDownloadNewEpisodes, enforceStorageLimit, getDownloadsForFeed]);
 
   return (
     <DownloadsContext.Provider value={value}>

@@ -1,19 +1,25 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, Pressable, StyleSheet, useColorScheme, ScrollView, Platform } from "react-native";
+import { View, Text, Pressable, StyleSheet, useColorScheme, ScrollView, Platform, Switch, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
 import { getDeviceId } from "@/lib/device-id";
 import { useDownloads } from "@/contexts/DownloadsContext";
+import { useSettings } from "@/contexts/SettingsContext";
+import { requestNotificationPermissions } from "@/lib/notifications";
+import { lightHaptic } from "@/lib/haptics";
+
+const EPISODE_LIMIT_OPTIONS = [3, 5, 10, 15, 25, 50];
 
 interface SettingRowProps {
   icon: React.ReactNode;
   label: string;
   value?: string;
   onPress?: () => void;
+  rightElement?: React.ReactNode;
 }
 
-function SettingRow({ icon, label, value, onPress }: SettingRowProps) {
+function SettingRow({ icon, label, value, onPress, rightElement }: SettingRowProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
@@ -25,13 +31,13 @@ function SettingRow({ icon, label, value, onPress }: SettingRowProps) {
         { backgroundColor: pressed && onPress ? colors.surfaceAlt : colors.surface },
       ]}
       onPress={onPress}
-      disabled={!onPress}
+      disabled={!onPress && !rightElement}
     >
       <View style={styles.settingLeft}>
         {icon}
         <Text style={[styles.settingLabel, { color: colors.text }]}>{label}</Text>
       </View>
-      {value ? (
+      {rightElement ? rightElement : value ? (
         <Text style={[styles.settingValue, { color: colors.textSecondary }]}>{value}</Text>
       ) : onPress ? (
         <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
@@ -46,11 +52,51 @@ export default function SettingsScreen() {
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const { downloads } = useDownloads();
+  const { settings, updateSettings } = useSettings();
   const [deviceId, setDeviceId] = useState("");
 
   useEffect(() => {
     getDeviceId().then(setDeviceId);
   }, []);
+
+  const handleToggleNotifications = async (value: boolean) => {
+    lightHaptic();
+    if (value) {
+      const granted = await requestNotificationPermissions();
+      if (!granted && Platform.OS !== "web") {
+        Alert.alert(
+          "Notifications",
+          "Please enable notifications in your device settings to receive alerts for new episodes."
+        );
+        return;
+      }
+    }
+    updateSettings({ notificationsEnabled: value });
+  };
+
+  const handleToggleAutoDownload = (value: boolean) => {
+    lightHaptic();
+    updateSettings({ autoDownloadOnWifi: value });
+  };
+
+  const handleChangeEpisodeLimit = () => {
+    lightHaptic();
+    if (Platform.OS === "web") {
+      const currentIndex = EPISODE_LIMIT_OPTIONS.indexOf(settings.maxEpisodesPerFeed);
+      const nextIndex = (currentIndex + 1) % EPISODE_LIMIT_OPTIONS.length;
+      updateSettings({ maxEpisodesPerFeed: EPISODE_LIMIT_OPTIONS[nextIndex] });
+      return;
+    }
+
+    Alert.alert(
+      "Episodes Per Shiur",
+      "Choose how many episodes to keep downloaded per shiur.",
+      EPISODE_LIMIT_OPTIONS.map(n => ({
+        text: `${n} episodes`,
+        onPress: () => updateSettings({ maxEpisodesPerFeed: n }),
+      })),
+    );
+  };
 
   return (
     <ScrollView
@@ -59,6 +105,72 @@ export default function SettingsScreen() {
     >
       <View style={{ paddingTop: Platform.OS === "web" ? 67 : insets.top + 8 }}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Settings</Text>
+      </View>
+
+      <View style={[styles.section, { borderColor: colors.cardBorder }]}>
+        <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>NOTIFICATIONS</Text>
+        <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+          <SettingRow
+            icon={<Ionicons name="notifications" size={20} color={colors.accent} />}
+            label="New Episode Alerts"
+            rightElement={
+              <Switch
+                value={settings.notificationsEnabled}
+                onValueChange={handleToggleNotifications}
+                trackColor={{ false: colors.border, true: colors.accent }}
+                thumbColor="#fff"
+              />
+            }
+          />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <View style={styles.settingDescription}>
+            <Text style={[styles.descriptionText, { color: colors.textSecondary }]}>
+              Get notified when new episodes are available from shiurim you follow.
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      <View style={[styles.section, { borderColor: colors.cardBorder }]}>
+        <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>DOWNLOADS</Text>
+        <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+          <SettingRow
+            icon={<Ionicons name="wifi" size={20} color={colors.accent} />}
+            label="Auto-Download on WiFi"
+            rightElement={
+              <Switch
+                value={settings.autoDownloadOnWifi}
+                onValueChange={handleToggleAutoDownload}
+                trackColor={{ false: colors.border, true: colors.accent }}
+                thumbColor="#fff"
+              />
+            }
+          />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingRow
+            icon={<Ionicons name="layers" size={20} color={colors.accent} />}
+            label="Episodes Per Shiur"
+            value={`${settings.maxEpisodesPerFeed}`}
+            onPress={handleChangeEpisodeLimit}
+          />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <View style={styles.settingDescription}>
+            <Text style={[styles.descriptionText, { color: colors.textSecondary }]}>
+              Automatically download new episodes from followed shiurim when connected to WiFi. Older episodes beyond the limit are removed automatically.
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      <View style={[styles.section, { borderColor: colors.cardBorder }]}>
+        <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>STORAGE</Text>
+        <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+          <SettingRow
+            icon={<Ionicons name="cloud-download" size={20} color={colors.accent} />}
+            label="Downloaded Episodes"
+            value={`${downloads.length}`}
+          />
+        </View>
       </View>
 
       <View style={[styles.section, { borderColor: colors.cardBorder }]}>
@@ -74,17 +186,6 @@ export default function SettingsScreen() {
             icon={<Feather name="smartphone" size={20} color={colors.accent} />}
             label="Device ID"
             value={deviceId.slice(0, 8) + "..."}
-          />
-        </View>
-      </View>
-
-      <View style={[styles.section, { borderColor: colors.cardBorder }]}>
-        <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>STORAGE</Text>
-        <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
-          <SettingRow
-            icon={<Ionicons name="cloud-download" size={20} color={colors.accent} />}
-            label="Downloaded Episodes"
-            value={`${downloads.length}`}
           />
         </View>
       </View>
@@ -157,6 +258,14 @@ const styles = StyleSheet.create({
   },
   settingValue: {
     fontSize: 14,
+  },
+  settingDescription: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  descriptionText: {
+    fontSize: 12,
+    lineHeight: 17,
   },
   divider: {
     height: 1,

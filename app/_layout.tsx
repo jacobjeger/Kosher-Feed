@@ -8,6 +8,8 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { queryClient } from "@/lib/query-client";
 import { AudioPlayerProvider } from "@/contexts/AudioPlayerContext";
 import { DownloadsProvider } from "@/contexts/DownloadsContext";
+import { SettingsProvider } from "@/contexts/SettingsContext";
+import { BackgroundSync } from "@/components/BackgroundSync";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -41,15 +43,18 @@ export default function RootLayout() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <AudioPlayerProvider>
-          <DownloadsProvider>
-            <GestureHandlerRootView>
-              <KeyboardProvider>
-                <RootLayoutNav />
-              </KeyboardProvider>
-            </GestureHandlerRootView>
-          </DownloadsProvider>
-        </AudioPlayerProvider>
+        <SettingsProvider>
+          <AudioPlayerProvider>
+            <DownloadsProvider>
+              <GestureHandlerRootView>
+                <KeyboardProvider>
+                  <BackgroundSync />
+                  <RootLayoutNav />
+                </KeyboardProvider>
+              </GestureHandlerRootView>
+            </DownloadsProvider>
+          </AudioPlayerProvider>
+        </SettingsProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   );
