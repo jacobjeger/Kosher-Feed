@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from "react";
-import { Audio, InterruptionModeIOS, InterruptionModeAndroid } from "expo-av";
+import { Platform } from "react-native";
 import type { Episode, Feed } from "@/lib/types";
 
 interface PlaybackState {
@@ -36,36 +36,41 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     playbackRate: 1.0,
   });
 
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const soundRef = useRef<any>(null);
+  const intervalRef = useRef<any>(null);
   const isLoadingRef = useRef(false);
 
   useEffect(() => {
-    Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      staysActiveInBackground: true,
-      interruptionModeIOS: InterruptionModeIOS.DoNotMix,
-      interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
-      shouldDuckAndroid: true,
-      playThroughEarpieceAndroid: false,
-    });
-
     return () => {
-      if (soundRef.current) {
-        soundRef.current.unloadAsync();
-      }
+      if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, []);
 
-  const onPlaybackStatusUpdate = useCallback((status: any) => {
-    if (!status.isLoaded) return;
-    setPlayback(prev => ({
-      ...prev,
-      isPlaying: status.isPlaying,
-      isLoading: status.isBuffering,
-      positionMs: status.positionMillis || 0,
-      durationMs: status.durationMillis || 0,
-      playbackRate: status.rate || prev.playbackRate,
-    }));
+  const startPositionTracking = useCallback(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      if (Platform.OS === "web" && audioRef.current) {
+        setPlayback(prev => ({
+          ...prev,
+          positionMs: (audioRef.current?.currentTime || 0) * 1000,
+          durationMs: (audioRef.current?.duration || 0) * 1000,
+          isPlaying: !audioRef.current?.paused,
+        }));
+      } else if (soundRef.current) {
+        soundRef.current.getStatusAsync?.().then((status: any) => {
+          if (status?.isLoaded) {
+            setPlayback(prev => ({
+              ...prev,
+              positionMs: status.positionMillis || 0,
+              durationMs: status.durationMillis || 0,
+              isPlaying: status.isPlaying || false,
+              isLoading: status.isBuffering || false,
+            }));
+          }
+        }).catch(() => {});
+      }
+    }, 500);
   }, []);
 
   const playEpisode = useCallback(async (episode: Episode, feed: Feed) => {
@@ -73,71 +78,119 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     isLoadingRef.current = true;
 
     try {
-      if (soundRef.current) {
-        await soundRef.current.unloadAsync();
-        soundRef.current = null;
+      if (intervalRef.current) clearInterval(intervalRef.current);
+
+      if (Platform.OS === "web") {
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current.src = "";
+        }
+        const audio = new Audio(episode.audioUrl);
+        audio.playbackRate = playback.playbackRate;
+        audioRef.current = audio;
+
+        setCurrentEpisode(episode);
+        setCurrentFeed(feed);
+        setPlayback(prev => ({ ...prev, isLoading: true, isPlaying: false, positionMs: 0, durationMs: 0 }));
+
+        audio.oncanplay = () => {
+          audio.play().catch(console.error);
+          setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true, durationMs: (audio.duration || 0) * 1000 }));
+          startPositionTracking();
+        };
+        audio.onended = () => {
+          setPlayback(prev => ({ ...prev, isPlaying: false }));
+        };
+        audio.onerror = () => {
+          setPlayback(prev => ({ ...prev, isLoading: false }));
+        };
+      } else {
+        if (soundRef.current) {
+          await soundRef.current.unloadAsync?.();
+          soundRef.current = null;
+        }
+
+        setCurrentEpisode(episode);
+        setCurrentFeed(feed);
+        setPlayback(prev => ({ ...prev, isLoading: true, isPlaying: false, positionMs: 0, durationMs: 0 }));
+
+        const { Audio } = require("expo-av");
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          staysActiveInBackground: true,
+          playsInSilentModeIOS: true,
+          shouldDuckAndroid: true,
+        });
+
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: episode.audioUrl },
+          { shouldPlay: true, rate: playback.playbackRate, shouldCorrectPitch: true }
+        );
+
+        soundRef.current = sound;
+        setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true }));
+        startPositionTracking();
       }
-
-      setCurrentEpisode(episode);
-      setCurrentFeed(feed);
-      setPlayback(prev => ({ ...prev, isLoading: true, isPlaying: false, positionMs: 0, durationMs: 0 }));
-
-      const audioUri = episode.audioUrl;
-
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: audioUri },
-        { shouldPlay: true, rate: playback.playbackRate, shouldCorrectPitch: true },
-        onPlaybackStatusUpdate
-      );
-
-      soundRef.current = sound;
     } catch (e) {
       console.error("Failed to play episode:", e);
       setPlayback(prev => ({ ...prev, isLoading: false }));
     } finally {
       isLoadingRef.current = false;
     }
-  }, [playback.playbackRate, onPlaybackStatusUpdate]);
+  }, [playback.playbackRate, startPositionTracking]);
 
   const pause = useCallback(async () => {
-    if (soundRef.current) {
-      await soundRef.current.pauseAsync();
+    if (Platform.OS === "web") {
+      audioRef.current?.pause();
+    } else if (soundRef.current) {
+      await soundRef.current.pauseAsync?.();
     }
+    setPlayback(prev => ({ ...prev, isPlaying: false }));
   }, []);
 
   const resume = useCallback(async () => {
-    if (soundRef.current) {
-      await soundRef.current.playAsync();
+    if (Platform.OS === "web") {
+      audioRef.current?.play();
+    } else if (soundRef.current) {
+      await soundRef.current.playAsync?.();
     }
+    setPlayback(prev => ({ ...prev, isPlaying: true }));
   }, []);
 
   const seekTo = useCallback(async (positionMs: number) => {
-    if (soundRef.current) {
-      await soundRef.current.setPositionAsync(positionMs);
+    if (Platform.OS === "web" && audioRef.current) {
+      audioRef.current.currentTime = positionMs / 1000;
+    } else if (soundRef.current) {
+      await soundRef.current.setPositionAsync?.(positionMs);
     }
+    setPlayback(prev => ({ ...prev, positionMs }));
   }, []);
 
   const skip = useCallback(async (seconds: number) => {
-    if (soundRef.current) {
-      const status = await soundRef.current.getStatusAsync();
-      if (status.isLoaded) {
-        const newPos = Math.max(0, Math.min(status.positionMillis + seconds * 1000, status.durationMillis || 0));
-        await soundRef.current.setPositionAsync(newPos);
-      }
-    }
-  }, []);
+    const newPos = Math.max(0, Math.min(playback.positionMs + seconds * 1000, playback.durationMs));
+    await seekTo(newPos);
+  }, [playback.positionMs, playback.durationMs, seekTo]);
 
   const setRate = useCallback(async (rate: number) => {
     setPlayback(prev => ({ ...prev, playbackRate: rate }));
-    if (soundRef.current) {
-      await soundRef.current.setRateAsync(rate, true);
+    if (Platform.OS === "web" && audioRef.current) {
+      audioRef.current.playbackRate = rate;
+    } else if (soundRef.current) {
+      await soundRef.current.setRateAsync?.(rate, true);
     }
   }, []);
 
   const stop = useCallback(async () => {
-    if (soundRef.current) {
-      await soundRef.current.stopAsync();
-      await soundRef.current.unloadAsync();
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    if (Platform.OS === "web") {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = "";
+        audioRef.current = null;
+      }
+    } else if (soundRef.current) {
+      await soundRef.current.stopAsync?.();
+      await soundRef.current.unloadAsync?.();
       soundRef.current = null;
     }
     setCurrentEpisode(null);

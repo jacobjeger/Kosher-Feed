@@ -10,7 +10,7 @@ import { getDeviceId } from "@/lib/device-id";
 import EpisodeItem from "@/components/EpisodeItem";
 import Colors from "@/constants/colors";
 import type { Feed, Episode, Subscription } from "@/lib/types";
-import * as Haptics from "expo-haptics";
+import { mediumHaptic } from "@/lib/haptics";
 
 export default function PodcastDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -55,7 +55,7 @@ export default function PodcastDetailScreen() {
   });
 
   const handleFollow = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    mediumHaptic();
     followMutation.mutate();
   };
 

@@ -5,7 +5,7 @@ import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { useDownloads } from "@/contexts/DownloadsContext";
 import Colors from "@/constants/colors";
 import type { Episode, Feed } from "@/lib/types";
-import * as Haptics from "expo-haptics";
+import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 
 interface Props {
   episode: Episode;
@@ -50,7 +50,7 @@ export default function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
   const progress = downloading ? downloadProgress.get(episode.id) || 0 : 0;
 
   const handlePlay = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    lightHaptic();
     if (isCurrentlyPlaying) {
       playback.isPlaying ? await pause() : await resume();
     } else {
@@ -60,7 +60,7 @@ export default function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
 
   const handleDownload = async () => {
     if (downloaded || downloading) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    mediumHaptic();
     await downloadEpisode(episode, feed);
   };
 
@@ -154,17 +154,17 @@ const styles = StyleSheet.create({
   },
   feedTitle: {
     fontSize: 11,
-    fontWeight: "600",
-    textTransform: "uppercase",
+    fontWeight: "600" as const,
+    textTransform: "uppercase" as const,
     letterSpacing: 0.5,
   },
   title: {
     fontSize: 14,
-    fontWeight: "600",
+    fontWeight: "600" as const,
     lineHeight: 19,
   },
   meta: {
-    flexDirection: "row",
+    flexDirection: "row" as const,
     gap: 10,
     marginTop: 2,
   },
@@ -174,16 +174,16 @@ const styles = StyleSheet.create({
   downloadBtn: {
     width: 36,
     height: 36,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
     flexShrink: 0,
   },
   downloadingIndicator: {
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
   },
   progressText: {
     fontSize: 10,
-    fontWeight: "700",
+    fontWeight: "700" as const,
   },
 });

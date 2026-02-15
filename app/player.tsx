@@ -7,7 +7,7 @@ import { router } from "expo-router";
 import Slider from "@react-native-community/slider";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import Colors from "@/constants/colors";
-import * as Haptics from "expo-haptics";
+import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 
 function formatTime(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
@@ -49,7 +49,7 @@ export default function PlayerScreen() {
   const currentRateIndex = RATES.indexOf(playback.playbackRate);
 
   const cycleRate = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    lightHaptic();
     const nextIndex = (currentRateIndex + 1) % RATES.length;
     await setRate(RATES[nextIndex]);
   };
@@ -124,7 +124,7 @@ export default function PlayerScreen() {
         </Pressable>
 
         <Pressable
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); skip(-30); }}
+          onPress={() => { lightHaptic(); skip(-30); }}
           hitSlop={8}
           style={styles.skipBtn}
         >
@@ -133,7 +133,7 @@ export default function PlayerScreen() {
 
         <Pressable
           onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            mediumHaptic();
             playback.isPlaying ? pause() : resume();
           }}
           style={[styles.playBtn, { backgroundColor: colors.accent }]}
@@ -147,7 +147,7 @@ export default function PlayerScreen() {
         </Pressable>
 
         <Pressable
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); skip(30); }}
+          onPress={() => { lightHaptic(); skip(30); }}
           hitSlop={8}
           style={styles.skipBtn}
         >
@@ -155,7 +155,7 @@ export default function PlayerScreen() {
         </Pressable>
 
         <Pressable
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); stop(); router.back(); }}
+          onPress={() => { lightHaptic(); stop(); router.back(); }}
           hitSlop={8}
           style={[styles.rateBtn, { backgroundColor: colors.surfaceAlt }]}
         >

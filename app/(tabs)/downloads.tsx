@@ -7,7 +7,7 @@ import { useDownloads } from "@/contexts/DownloadsContext";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import Colors from "@/constants/colors";
 import type { DownloadedEpisode, Feed } from "@/lib/types";
-import * as Haptics from "expo-haptics";
+import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 
 function DownloadItem({ item }: { item: DownloadedEpisode }) {
   const { playEpisode, currentEpisode, playback, pause, resume } = useAudioPlayer();
@@ -37,7 +37,7 @@ function DownloadItem({ item }: { item: DownloadedEpisode }) {
   };
 
   const handlePlay = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    lightHaptic();
     if (isCurrentlyPlaying) {
       playback.isPlaying ? await pause() : await resume();
     } else {
@@ -46,7 +46,7 @@ function DownloadItem({ item }: { item: DownloadedEpisode }) {
   };
 
   const handleRemove = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    mediumHaptic();
     if (Platform.OS === "web") {
       removeDownload(item.id);
       return;
