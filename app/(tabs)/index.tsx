@@ -1,5 +1,5 @@
-import React, { useMemo } from "react";
-import { View, Text, FlatList, ScrollView, Pressable, StyleSheet, useColorScheme, ActivityIndicator, RefreshControl, Platform, Dimensions } from "react-native";
+import React, { useMemo, useState, useCallback } from "react";
+import { View, Text, FlatList, ScrollView, Pressable, StyleSheet, useColorScheme, ActivityIndicator, RefreshControl, Platform, Dimensions, TextInput } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import { Image } from "expo-image";
@@ -116,12 +116,45 @@ function CategorySection({ category, feeds, colors }: { category: Category; feed
   );
 }
 
+function SearchResultItem({ feed, colors }: { feed: Feed; colors: any }) {
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.searchResult,
+        { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.9 : 1 },
+      ]}
+      onPress={() => router.push(`/podcast/${feed.id}`)}
+    >
+      {feed.imageUrl ? (
+        <Image source={{ uri: feed.imageUrl }} style={styles.searchResultImage} contentFit="cover" />
+      ) : (
+        <View style={[styles.searchResultImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
+          <Ionicons name="mic" size={20} color={colors.textSecondary} />
+        </View>
+      )}
+      <View style={styles.searchResultInfo}>
+        <Text style={[styles.searchResultTitle, { color: colors.text }]} numberOfLines={1}>
+          {feed.title}
+        </Text>
+        {feed.author ? (
+          <Text style={[styles.searchResultAuthor, { color: colors.textSecondary }]} numberOfLines={1}>
+            {feed.author}
+          </Text>
+        ) : null}
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+    </Pressable>
+  );
+}
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const { playEpisode, currentEpisode, playback, pause, resume } = useAudioPlayer();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
 
   const categoriesQuery = useQuery<Category[]>({ queryKey: ["/api/categories"] });
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
@@ -172,6 +205,19 @@ export default function HomeScreen() {
       .filter(x => x.feed) as { episode: Episode; feed: Feed }[];
   }, [latestEpisodes, trendingEpisodes, allFeeds]);
 
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const q = searchQuery.toLowerCase().trim();
+    return allFeeds.filter(
+      (f) =>
+        f.title.toLowerCase().includes(q) ||
+        (f.author && f.author.toLowerCase().includes(q)) ||
+        (f.description && f.description.toLowerCase().includes(q))
+    );
+  }, [searchQuery, allFeeds]);
+
+  const isSearching = searchQuery.trim().length > 0;
+
   const onRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/categories"] });
     queryClient.invalidateQueries({ queryKey: ["/api/feeds"] });
@@ -207,9 +253,53 @@ export default function HomeScreen() {
             <Ionicons name="headset" size={24} color={colors.accent} />
           </View>
         </View>
+
+        <View style={[styles.searchContainer, { backgroundColor: colors.surfaceAlt, borderColor: isSearchFocused ? colors.accent : "transparent" }]}>
+          <Ionicons name="search" size={18} color={colors.textSecondary} style={{ marginLeft: 14 }} />
+          <TextInput
+            style={[styles.searchInput, { color: colors.text }]}
+            placeholder="Search shiurim..."
+            placeholderTextColor={colors.textSecondary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onFocus={() => setIsSearchFocused(true)}
+            onBlur={() => setIsSearchFocused(false)}
+            returnKeyType="search"
+            testID="search-input"
+          />
+          {searchQuery.length > 0 && (
+            <Pressable onPress={() => setSearchQuery("")} style={styles.searchClear} testID="search-clear">
+              <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
+            </Pressable>
+          )}
+        </View>
       </View>
 
-      {!hasContent && (
+      {isSearching && (
+        <View style={styles.searchResultsSection}>
+          {searchResults.length > 0 ? (
+            <>
+              <Text style={[styles.searchResultsCount, { color: colors.textSecondary }]}>
+                {searchResults.length} {searchResults.length === 1 ? "result" : "results"}
+              </Text>
+              <View style={{ paddingHorizontal: 20 }}>
+                {searchResults.map((feed) => (
+                  <SearchResultItem key={feed.id} feed={feed} colors={colors} />
+                ))}
+              </View>
+            </>
+          ) : (
+            <View style={styles.noResults}>
+              <Ionicons name="search-outline" size={40} color={colors.textSecondary} />
+              <Text style={[styles.noResultsText, { color: colors.textSecondary }]}>
+                No shiurim found for "{searchQuery}"
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      {!isSearching && !hasContent && (
         <View style={styles.emptyState}>
           <Ionicons name="radio-outline" size={64} color={colors.textSecondary} />
           <Text style={[styles.emptyTitle, { color: colors.text }]}>Welcome!</Text>
@@ -219,7 +309,7 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {heroEpisode && heroFeed && (
+      {!isSearching && heroEpisode && heroFeed && (
         <View style={styles.heroSection}>
           <TrendingHero
             episode={heroEpisode}
@@ -230,7 +320,7 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {quickPlayItems.length > 0 && (
+      {!isSearching && quickPlayItems.length > 0 && (
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
             <Ionicons name="flame" size={18} color="#f59e0b" />
@@ -251,7 +341,7 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {allFeeds.length > 0 && (
+      {!isSearching && allFeeds.length > 0 && (
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>All Shiurim</Text>
           <FlatList
@@ -265,12 +355,12 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {categories.map(cat => {
+      {!isSearching && categories.map(cat => {
         const catFeeds = allFeeds.filter(f => f.categoryId === cat.id);
         return <CategorySection key={cat.id} category={cat} feeds={catFeeds} colors={colors} />;
       })}
 
-      {recentEpisodes.length > 0 && (
+      {!isSearching && recentEpisodes.length > 0 && (
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Recent Episodes</Text>
           <View style={{ paddingHorizontal: 20 }}>
@@ -458,6 +548,75 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: 20,
+    borderRadius: 14,
+    borderWidth: 2,
+    height: 46,
+    marginBottom: 20,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    paddingHorizontal: 10,
+    paddingVertical: 0,
+    height: 46,
+  },
+  searchClear: {
+    padding: 10,
+  },
+  searchResultsSection: {
+    paddingTop: 4,
+    paddingBottom: 20,
+  },
+  searchResultsCount: {
+    fontSize: 12,
+    fontWeight: "600" as const,
+    textTransform: "uppercase" as const,
+    letterSpacing: 0.5,
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  searchResult: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: "hidden",
+    marginBottom: 10,
+    paddingRight: 14,
+  },
+  searchResultImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    marginLeft: 12,
+    marginVertical: 10,
+  },
+  searchResultInfo: {
+    flex: 1,
+    paddingHorizontal: 14,
+    gap: 2,
+  },
+  searchResultTitle: {
+    fontSize: 15,
+    fontWeight: "600" as const,
+  },
+  searchResultAuthor: {
+    fontSize: 12,
+  },
+  noResults: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 40,
+    gap: 12,
+  },
+  noResultsText: {
+    fontSize: 14,
+    textAlign: "center",
+  },
   emptyState: {
     alignItems: "center",
     justifyContent: "center",
