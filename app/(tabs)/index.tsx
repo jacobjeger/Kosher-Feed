@@ -201,7 +201,7 @@ export default function HomeScreen() {
         <View style={styles.headerRow}>
           <View>
             <Text style={[styles.greeting, { color: colors.textSecondary }]}>Discover</Text>
-            <Text style={[styles.headerTitle, { color: colors.text }]}>Kosher Podcasts</Text>
+            <Text style={[styles.headerTitle, { color: colors.text }]}>Kosher Shiurim</Text>
           </View>
           <View style={[styles.headerIcon, { backgroundColor: colors.surfaceAlt }]}>
             <Ionicons name="headset" size={24} color={colors.accent} />
@@ -214,7 +214,7 @@ export default function HomeScreen() {
           <Ionicons name="radio-outline" size={64} color={colors.textSecondary} />
           <Text style={[styles.emptyTitle, { color: colors.text }]}>Welcome!</Text>
           <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-            Podcasts will appear here once the admin adds approved RSS feeds.
+            Shiurim will appear here once approved RSS feeds are added.
           </Text>
         </View>
       )}
@@ -253,7 +253,7 @@ export default function HomeScreen() {
 
       {allFeeds.length > 0 && (
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>All Shows</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>All Shiurim</Text>
           <FlatList
             horizontal
             data={allFeeds}

@@ -91,7 +91,7 @@ export default function FollowingScreen() {
           )}
 
           {episodes.length > 0 && (
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Latest from your shows</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Latest from your shiurim</Text>
           )}
         </View>
       )}
@@ -105,7 +105,7 @@ export default function FollowingScreen() {
           <Ionicons name="heart-outline" size={64} color={colors.textSecondary} />
           <Text style={[styles.emptyTitle, { color: colors.text }]}>No Subscriptions Yet</Text>
           <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-            Follow podcasts from the Home tab to see their latest episodes here.
+            Follow shiurim from the Home tab to see their latest episodes here.
           </Text>
         </View>
       )}
