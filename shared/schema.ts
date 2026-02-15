@@ -47,6 +47,13 @@ export const subscriptions = pgTable("subscriptions", {
   uniqueIndex("subscriptions_device_feed_idx").on(table.deviceId, table.feedId),
 ]);
 
+export const episodeListens = pgTable("episode_listens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  episodeId: varchar("episode_id").references(() => episodes.id, { onDelete: "cascade" }).notNull(),
+  deviceId: text("device_id").notNull(),
+  listenedAt: timestamp("listened_at").defaultNow().notNull(),
+});
+
 export const adminUsers = pgTable("admin_users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
