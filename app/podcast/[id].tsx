@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, FlatList, Pressable, StyleSheet, useColorScheme, ActivityIndicator, Platform } from "react-native";
+import { View, Text, FlatList, Pressable, StyleSheet, useColorScheme, ActivityIndicator, Platform, Switch, Alert } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -10,7 +10,10 @@ import { getDeviceId } from "@/lib/device-id";
 import EpisodeItem from "@/components/EpisodeItem";
 import Colors from "@/constants/colors";
 import type { Feed, Episode, Subscription } from "@/lib/types";
-import { mediumHaptic } from "@/lib/haptics";
+import { mediumHaptic, lightHaptic } from "@/lib/haptics";
+import { useSettings } from "@/contexts/SettingsContext";
+
+const EPISODE_LIMIT_OPTIONS = [3, 5, 10, 15, 25, 50];
 
 export default function PodcastDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -18,6 +21,7 @@ export default function PodcastDetailScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
+  const { getFeedSettings, updateFeedSettings } = useSettings();
 
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
   const feed = feedsQuery.data?.find(f => f.id === id);
@@ -39,6 +43,7 @@ export default function PodcastDetailScreen() {
   });
 
   const isFollowing = subsQuery.data?.some(s => s.feedId === id) || false;
+  const feedSettings = id ? getFeedSettings(id) : { notificationsEnabled: false, maxEpisodes: 5 };
 
   const followMutation = useMutation({
     mutationFn: async () => {
@@ -51,12 +56,37 @@ export default function PodcastDetailScreen() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/subscriptions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/subscriptions/feeds"] });
     },
   });
 
   const handleFollow = () => {
     mediumHaptic();
     followMutation.mutate();
+  };
+
+  const handleToggleNotifications = (value: boolean) => {
+    lightHaptic();
+    if (id) updateFeedSettings(id, { notificationsEnabled: value });
+  };
+
+  const handleChangeEpisodeLimit = () => {
+    lightHaptic();
+    if (!id) return;
+    if (Platform.OS === "web") {
+      const currentIndex = EPISODE_LIMIT_OPTIONS.indexOf(feedSettings.maxEpisodes);
+      const nextIndex = (currentIndex + 1) % EPISODE_LIMIT_OPTIONS.length;
+      updateFeedSettings(id, { maxEpisodes: EPISODE_LIMIT_OPTIONS[nextIndex] });
+      return;
+    }
+    Alert.alert(
+      "Episodes to Keep",
+      "Choose how many episodes to keep downloaded for this shiur.",
+      EPISODE_LIMIT_OPTIONS.map(n => ({
+        text: `${n} episodes`,
+        onPress: () => updateFeedSettings(id, { maxEpisodes: n }),
+      })),
+    );
   };
 
   if (!feed) {
@@ -123,6 +153,34 @@ export default function PodcastDetailScreen() {
               <Text style={[styles.description, { color: colors.textSecondary }]} numberOfLines={3}>
                 {feed.description}
               </Text>
+            )}
+
+            {isFollowing && (
+              <View style={[styles.feedSettingsCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+                <View style={styles.feedSettingRow}>
+                  <View style={styles.feedSettingLeft}>
+                    <Ionicons name="notifications-outline" size={18} color={colors.accent} />
+                    <Text style={[styles.feedSettingLabel, { color: colors.text }]}>Notifications</Text>
+                  </View>
+                  <Switch
+                    value={feedSettings.notificationsEnabled}
+                    onValueChange={handleToggleNotifications}
+                    trackColor={{ false: colors.border, true: colors.accent }}
+                    thumbColor="#fff"
+                  />
+                </View>
+                <View style={[styles.feedSettingDivider, { backgroundColor: colors.border }]} />
+                <Pressable style={styles.feedSettingRow} onPress={handleChangeEpisodeLimit}>
+                  <View style={styles.feedSettingLeft}>
+                    <Ionicons name="layers-outline" size={18} color={colors.accent} />
+                    <Text style={[styles.feedSettingLabel, { color: colors.text }]}>Episodes to keep</Text>
+                  </View>
+                  <View style={styles.feedSettingRight}>
+                    <Text style={[styles.feedSettingValue, { color: colors.textSecondary }]}>{feedSettings.maxEpisodes}</Text>
+                    <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                  </View>
+                </Pressable>
+              </View>
             )}
 
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
@@ -194,7 +252,42 @@ const styles = StyleSheet.create({
   description: {
     fontSize: 13,
     lineHeight: 19,
+    marginBottom: 16,
+  },
+  feedSettingsCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: "hidden",
     marginBottom: 20,
+  },
+  feedSettingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  feedSettingLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+  },
+  feedSettingRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  feedSettingLabel: {
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  feedSettingValue: {
+    fontSize: 14,
+  },
+  feedSettingDivider: {
+    height: 1,
+    marginLeft: 42,
   },
   sectionTitle: {
     fontSize: 18,
