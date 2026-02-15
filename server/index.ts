@@ -169,6 +169,14 @@ function configureExpoAndLanding(app: express.Application) {
   );
   const landingPageTemplate = fs.readFileSync(templatePath, "utf-8");
   const appName = getAppName();
+  const webDistPath = path.resolve(process.cwd(), "dist");
+  const hasWebBuild = fs.existsSync(webDistPath);
+
+  if (hasWebBuild) {
+    log("Web build found at dist/ — serving web app to browsers");
+  } else {
+    log("No web build found — serving landing page to browsers");
+  }
 
   log("Serving static Expo files with dynamic manifest routing");
 
@@ -177,13 +185,19 @@ function configureExpoAndLanding(app: express.Application) {
       return next();
     }
 
-    if (req.path !== "/" && req.path !== "/manifest") {
+    if (req.path === "/admin") {
       return next();
     }
 
     const platform = req.header("expo-platform");
     if (platform && (platform === "ios" || platform === "android")) {
-      return serveExpoManifest(platform, res);
+      if (req.path === "/" || req.path === "/manifest") {
+        return serveExpoManifest(platform, res);
+      }
+    }
+
+    if (hasWebBuild) {
+      return next();
     }
 
     if (req.path === "/") {
@@ -205,6 +219,25 @@ function configureExpoAndLanding(app: express.Application) {
 
   app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
+
+  if (hasWebBuild) {
+    app.use(express.static(webDistPath));
+
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      if (req.path.startsWith("/api") || req.path === "/admin") {
+        return next();
+      }
+      const platform = req.header("expo-platform");
+      if (platform) {
+        return next();
+      }
+      const indexPath = path.join(webDistPath, "index.html");
+      if (fs.existsSync(indexPath)) {
+        return res.sendFile(indexPath);
+      }
+      next();
+    });
+  }
 
   log("Expo routing: Checking expo-platform header on / and /manifest");
 }
