@@ -1,7 +1,7 @@
 import { db } from "./db";
-import { feeds, categories, episodes, subscriptions, adminUsers } from "@shared/schema";
+import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens } from "@shared/schema";
 import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription } from "@shared/schema";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, sql, count } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
 export async function getAllCategories(): Promise<Category[]> {
@@ -119,4 +119,32 @@ export async function createAdmin(username: string, password: string): Promise<v
 export async function adminExists(): Promise<boolean> {
   const admins = await db.select().from(adminUsers).limit(1);
   return admins.length > 0;
+}
+
+export async function recordListen(episodeId: string, deviceId: string): Promise<void> {
+  await db.insert(episodeListens).values({ episodeId, deviceId });
+}
+
+export async function getTrendingEpisodes(limit: number = 20): Promise<(Episode & { listenCount: number })[]> {
+  const result = await db
+    .select({
+      id: episodes.id,
+      feedId: episodes.feedId,
+      title: episodes.title,
+      description: episodes.description,
+      audioUrl: episodes.audioUrl,
+      duration: episodes.duration,
+      publishedAt: episodes.publishedAt,
+      guid: episodes.guid,
+      imageUrl: episodes.imageUrl,
+      createdAt: episodes.createdAt,
+      listenCount: count(episodeListens.id),
+    })
+    .from(episodes)
+    .leftJoin(episodeListens, eq(episodes.id, episodeListens.episodeId))
+    .groupBy(episodes.id)
+    .orderBy(desc(count(episodeListens.id)), desc(episodes.publishedAt))
+    .limit(limit);
+
+  return result.map(r => ({ ...r, listenCount: Number(r.listenCount) }));
 }
