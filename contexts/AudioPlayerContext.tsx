@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from "react";
 import { Platform } from "react-native";
 import type { Episode, Feed } from "@/lib/types";
+import { apiRequest } from "@/lib/query-client";
+import { getDeviceId } from "@/lib/device-id";
 
 interface PlaybackState {
   isPlaying: boolean;
@@ -131,6 +133,9 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true }));
         startPositionTracking();
       }
+      getDeviceId().then(deviceId => {
+        apiRequest("POST", "/api/listens", { episodeId: episode.id, deviceId }).catch(() => {});
+      });
     } catch (e) {
       console.error("Failed to play episode:", e);
       setPlayback(prev => ({ ...prev, isLoading: false }));

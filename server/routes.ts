@@ -209,6 +209,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Listens
+  app.post("/api/listens", async (req: Request, res: Response) => {
+    try {
+      const { episodeId, deviceId } = req.body;
+      if (!episodeId || !deviceId) return res.status(400).json({ error: "episodeId and deviceId required" });
+      await storage.recordListen(episodeId, deviceId);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/episodes/trending", async (req: Request, res: Response) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 20;
+      const eps = await storage.getTrendingEpisodes(limit);
+      res.json(eps);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Subscriptions
   app.get("/api/subscriptions/:deviceId", async (req: Request, res: Response) => {
     try {
