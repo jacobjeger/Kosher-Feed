@@ -6,6 +6,8 @@ const apiFetch: typeof globalThis.fetch =
     ? globalThis.fetch.bind(globalThis)
     : require("expo/fetch").fetch;
 
+const PRODUCTION_API_URL = "https://kosher-feed.replit.app";
+
 /**
  * Gets the base URL for the Express API server (e.g., "http://localhost:3000")
  * @returns {string} The API base URL
@@ -21,12 +23,11 @@ export function getApiUrl(): string {
     return window.location.origin;
   }
 
-  if (!host) {
-    throw new Error("EXPO_PUBLIC_DOMAIN is not set");
+  if (host) {
+    return `https://${host}`;
   }
 
-  let url = new URL(`https://${host}`);
-  return url.href;
+  return PRODUCTION_API_URL;
 }
 
 async function throwIfResNotOk(res: Response) {
