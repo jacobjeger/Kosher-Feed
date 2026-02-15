@@ -1,8 +1,19 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from "react";
 import { Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Episode, Feed } from "@/lib/types";
 import { apiRequest } from "@/lib/query-client";
 import { getDeviceId } from "@/lib/device-id";
+
+const POSITIONS_KEY = "@kosher_shiurim_positions";
+
+interface SavedPosition {
+  episodeId: string;
+  feedId: string;
+  positionMs: number;
+  durationMs: number;
+  updatedAt: string;
+}
 
 interface PlaybackState {
   isPlaying: boolean;
@@ -23,9 +34,49 @@ interface AudioPlayerContextValue {
   skip: (seconds: number) => Promise<void>;
   setRate: (rate: number) => Promise<void>;
   stop: () => Promise<void>;
+  getSavedPosition: (episodeId: string) => Promise<number>;
 }
 
 const AudioPlayerContext = createContext<AudioPlayerContextValue | null>(null);
+
+async function loadPositions(): Promise<Record<string, SavedPosition>> {
+  try {
+    const data = await AsyncStorage.getItem(POSITIONS_KEY);
+    return data ? JSON.parse(data) : {};
+  } catch {
+    return {};
+  }
+}
+
+async function savePosition(episodeId: string, feedId: string, positionMs: number, durationMs: number) {
+  try {
+    const positions = await loadPositions();
+    const completionRatio = durationMs > 0 ? positionMs / durationMs : 0;
+    if (completionRatio > 0.97) {
+      delete positions[episodeId];
+    } else if (positionMs > 3000) {
+      positions[episodeId] = {
+        episodeId,
+        feedId,
+        positionMs,
+        durationMs,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+    const keys = Object.keys(positions);
+    if (keys.length > 200) {
+      const sorted = keys.sort((a, b) =>
+        new Date(positions[a].updatedAt).getTime() - new Date(positions[b].updatedAt).getTime()
+      );
+      for (let i = 0; i < keys.length - 200; i++) {
+        delete positions[sorted[i]];
+      }
+    }
+    await AsyncStorage.setItem(POSITIONS_KEY, JSON.stringify(positions));
+  } catch (e) {
+    console.error("Failed to save position:", e);
+  }
+}
 
 export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   const [currentEpisode, setCurrentEpisode] = useState<Episode | null>(null);
@@ -42,11 +93,49 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   const soundRef = useRef<any>(null);
   const intervalRef = useRef<any>(null);
   const isLoadingRef = useRef(false);
+  const currentEpisodeRef = useRef<Episode | null>(null);
+  const currentFeedRef = useRef<Feed | null>(null);
+  const playbackRef = useRef<PlaybackState>(playback);
+
+  useEffect(() => {
+    playbackRef.current = playback;
+  }, [playback]);
+
+  useEffect(() => {
+    currentEpisodeRef.current = currentEpisode;
+  }, [currentEpisode]);
+
+  useEffect(() => {
+    currentFeedRef.current = currentFeed;
+  }, [currentFeed]);
 
   useEffect(() => {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
+  }, []);
+
+  const saveCurrentPosition = useCallback(() => {
+    const ep = currentEpisodeRef.current;
+    const feed = currentFeedRef.current;
+    const pb = playbackRef.current;
+    if (ep && feed && pb.positionMs > 0) {
+      savePosition(ep.id, feed.id, pb.positionMs, pb.durationMs);
+    }
+  }, []);
+
+  useEffect(() => {
+    const positionSaveInterval = setInterval(saveCurrentPosition, 10000);
+    return () => clearInterval(positionSaveInterval);
+  }, [saveCurrentPosition]);
+
+  const getSavedPosition = useCallback(async (episodeId: string): Promise<number> => {
+    try {
+      const positions = await loadPositions();
+      return positions[episodeId]?.positionMs || 0;
+    } catch {
+      return 0;
+    }
   }, []);
 
   const startPositionTracking = useCallback(() => {
@@ -79,8 +168,12 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     if (isLoadingRef.current) return;
     isLoadingRef.current = true;
 
+    saveCurrentPosition();
+
     try {
       if (intervalRef.current) clearInterval(intervalRef.current);
+
+      const savedPos = await getSavedPosition(episode.id);
 
       if (Platform.OS === "web") {
         if (audioRef.current) {
@@ -89,19 +182,24 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         }
         const audio = new Audio(episode.audioUrl);
         audio.playbackRate = playback.playbackRate;
+        audio.preload = "auto";
         audioRef.current = audio;
 
         setCurrentEpisode(episode);
         setCurrentFeed(feed);
-        setPlayback(prev => ({ ...prev, isLoading: true, isPlaying: false, positionMs: 0, durationMs: 0 }));
+        setPlayback(prev => ({ ...prev, isLoading: true, isPlaying: false, positionMs: savedPos, durationMs: 0 }));
 
         audio.oncanplay = () => {
+          if (savedPos > 0) {
+            audio.currentTime = savedPos / 1000;
+          }
           audio.play().catch(console.error);
           setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true, durationMs: (audio.duration || 0) * 1000 }));
           startPositionTracking();
         };
         audio.onended = () => {
           setPlayback(prev => ({ ...prev, isPlaying: false }));
+          savePosition(episode.id, feed.id, 0, 0);
         };
         audio.onerror = () => {
           setPlayback(prev => ({ ...prev, isLoading: false }));
@@ -114,7 +212,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
         setCurrentEpisode(episode);
         setCurrentFeed(feed);
-        setPlayback(prev => ({ ...prev, isLoading: true, isPlaying: false, positionMs: 0, durationMs: 0 }));
+        setPlayback(prev => ({ ...prev, isLoading: true, isPlaying: false, positionMs: savedPos, durationMs: 0 }));
 
         const { Audio } = require("expo-av");
         await Audio.setAudioModeAsync({
@@ -124,9 +222,20 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           shouldDuckAndroid: true,
         });
 
+        const initialStatus: any = {
+          shouldPlay: true,
+          rate: playback.playbackRate,
+          shouldCorrectPitch: true,
+          progressUpdateIntervalMillis: 500,
+          androidImplementation: "MediaPlayer",
+        };
+        if (savedPos > 0) {
+          initialStatus.positionMillis = savedPos;
+        }
+
         const { sound } = await Audio.Sound.createAsync(
           { uri: episode.audioUrl },
-          { shouldPlay: true, rate: playback.playbackRate, shouldCorrectPitch: true }
+          initialStatus
         );
 
         soundRef.current = sound;
@@ -142,7 +251,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     } finally {
       isLoadingRef.current = false;
     }
-  }, [playback.playbackRate, startPositionTracking]);
+  }, [playback.playbackRate, startPositionTracking, getSavedPosition, saveCurrentPosition]);
 
   const pause = useCallback(async () => {
     if (Platform.OS === "web") {
@@ -151,7 +260,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       await soundRef.current.pauseAsync?.();
     }
     setPlayback(prev => ({ ...prev, isPlaying: false }));
-  }, []);
+    saveCurrentPosition();
+  }, [saveCurrentPosition]);
 
   const resume = useCallback(async () => {
     if (Platform.OS === "web") {
@@ -186,6 +296,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const stop = useCallback(async () => {
+    saveCurrentPosition();
     if (intervalRef.current) clearInterval(intervalRef.current);
     if (Platform.OS === "web") {
       if (audioRef.current) {
@@ -201,7 +312,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     setCurrentEpisode(null);
     setCurrentFeed(null);
     setPlayback({ isPlaying: false, isLoading: false, positionMs: 0, durationMs: 0, playbackRate: 1.0 });
-  }, []);
+  }, [saveCurrentPosition]);
 
   const value = useMemo(() => ({
     currentEpisode,
@@ -214,7 +325,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     skip,
     setRate,
     stop,
-  }), [currentEpisode, currentFeed, playback, playEpisode, pause, resume, seekTo, skip, setRate, stop]);
+    getSavedPosition,
+  }), [currentEpisode, currentFeed, playback, playEpisode, pause, resume, seekTo, skip, setRate, stop, getSavedPosition]);
 
   return (
     <AudioPlayerContext.Provider value={value}>
