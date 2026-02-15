@@ -23,7 +23,7 @@ export function getApiUrl(): string {
     return window.location.origin;
   }
 
-  if (host) {
+  if (__DEV__ && host) {
     return `https://${host}`;
   }
 
