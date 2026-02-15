@@ -1,8 +1,10 @@
-# Kosher Podcasts
+# Kosher Shiurim
 
 ## Overview
 
-Kosher Podcasts is a mobile-first podcast listening application built with Expo (React Native) on the frontend and Express.js on the backend. It allows users to browse, follow, and listen to curated podcast feeds. The app includes features like audio playback, episode downloads for offline listening, device-based subscriptions (no user accounts), and an admin panel for managing podcast feeds and categories. The backend serves as both an API server and a static file server for the web build.
+Kosher Shiurim is a mobile-first shiur (Torah lecture) listening application built with Expo (React Native) on the frontend and Express.js on the backend. It allows users to browse, follow, and listen to curated podcast/shiur feeds. The app includes audio playback with position saving, episode downloads for offline listening, auto-download on WiFi, new episode notifications, device-based subscriptions (no user accounts), and an admin panel for managing feeds and categories. The backend serves as both an API server and a static file server for the web build.
+
+**Terminology**: Content is referred to as "shiurim" (plural) / "shiur" (singular) throughout the app — NOT podcasts or shows.
 
 ## User Preferences
 
@@ -13,9 +15,11 @@ Preferred communication style: Simple, everyday language.
 ### Frontend (Expo / React Native)
 - **Framework**: Expo SDK 54 with React Native 0.81, using expo-router for file-based routing
 - **Routing structure**: Tab-based navigation with 4 tabs (Home, Following, Downloads, Settings), a modal player screen, and a podcast detail screen at `podcast/[id]`
-- **State management**: React Context for audio playback (`AudioPlayerContext`) and downloads (`DownloadsContext`); TanStack React Query for server state
-- **Audio playback**: Uses `expo-av` for native and HTML5 Audio for web, with a unified context API providing play/pause/seek/skip/rate controls
-- **Offline support**: Episode downloads managed via `expo-file-system` with progress tracking, persisted to AsyncStorage
+- **State management**: React Context for audio playback (`AudioPlayerContext`), downloads (`DownloadsContext`), and user settings (`SettingsContext`); TanStack React Query for server state
+- **Audio playback**: Uses `expo-av` for native and HTML5 Audio for web, with a unified context API providing play/pause/seek/skip/rate controls. Saves playback position to AsyncStorage every 10 seconds and on pause/stop, resuming from saved position on replay. Pre-buffers audio with `preload="auto"` on web and native buffer settings.
+- **Offline support**: Episode downloads managed via `expo-file-system` with progress tracking, persisted to AsyncStorage. Auto-download on WiFi for followed shiurim with configurable per-shiur episode storage limits.
+- **Notifications**: Local browser notifications (web) for new episodes from followed shiurim. Tracks seen episodes in AsyncStorage to avoid duplicate alerts.
+- **Background sync**: `BackgroundSync` component polls for new episodes every 5 minutes and triggers notifications/auto-downloads based on user settings.
 - **Device identification**: Anonymous device IDs generated with `expo-crypto` and stored in AsyncStorage — no user accounts required for subscriptions
 - **Styling**: Plain React Native StyleSheet with a custom color system supporting light/dark themes (defined in `constants/colors.ts`)
 - **Haptics**: Optional haptic feedback on iOS/Android via `expo-haptics`, gracefully skipped on web
