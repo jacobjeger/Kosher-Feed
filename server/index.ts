@@ -198,6 +198,11 @@ function configureExpoAndLanding(app: express.Application) {
     next();
   });
 
+  app.get("/admin", (_req: Request, res: Response) => {
+    const adminPath = path.resolve(process.cwd(), "server", "templates", "admin.html");
+    res.sendFile(adminPath);
+  });
+
   app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
 

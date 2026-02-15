@@ -1,12 +1,44 @@
-// template
-const tintColorLight = "#2f95dc";
-
-export default {
+const Colors = {
   light: {
-    text: "#000",
-    background: "#fff",
-    tint: tintColorLight,
-    tabIconDefault: "#ccc",
-    tabIconSelected: tintColorLight,
+    text: "#1a1a2e",
+    textSecondary: "#64748b",
+    background: "#f8f9fc",
+    surface: "#ffffff",
+    surfaceAlt: "#f1f3f8",
+    tint: "#1e3a5f",
+    accent: "#2563eb",
+    accentLight: "#dbeafe",
+    border: "#e2e8f0",
+    tabIconDefault: "#94a3b8",
+    tabIconSelected: "#1e3a5f",
+    card: "#ffffff",
+    cardBorder: "#e8ecf2",
+    playerBg: "#1e3a5f",
+    playerText: "#ffffff",
+    playerAccent: "#60a5fa",
+    danger: "#ef4444",
+    success: "#10b981",
+  },
+  dark: {
+    text: "#f1f5f9",
+    textSecondary: "#94a3b8",
+    background: "#0a0f1a",
+    surface: "#151c2c",
+    surfaceAlt: "#1e293b",
+    tint: "#60a5fa",
+    accent: "#3b82f6",
+    accentLight: "#1e3a5f",
+    border: "#1e293b",
+    tabIconDefault: "#64748b",
+    tabIconSelected: "#60a5fa",
+    card: "#151c2c",
+    cardBorder: "#1e293b",
+    playerBg: "#0f172a",
+    playerText: "#f1f5f9",
+    playerAccent: "#60a5fa",
+    danger: "#ef4444",
+    success: "#10b981",
   },
 };
+
+export default Colors;
