@@ -275,8 +275,6 @@ function setupErrorHandler(app: express.Application) {
 
   setupErrorHandler(app);
 
-  await seedIfEmpty();
-
   const port = parseInt(process.env.PORT || "5000", 10);
   server.listen(
     {
@@ -286,6 +284,7 @@ function setupErrorHandler(app: express.Application) {
     },
     () => {
       log(`express server serving on port ${port}`);
+      seedIfEmpty().catch((e) => console.error("Seed error:", e));
     },
   );
 })();
