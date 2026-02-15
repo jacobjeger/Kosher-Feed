@@ -11,19 +11,25 @@ import Colors from "@/constants/colors";
 import type { Feed, Episode, Category } from "@/lib/types";
 import { queryClient } from "@/lib/query-client";
 import { router } from "expo-router";
+import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
+import { lightHaptic } from "@/lib/haptics";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
-function FeaturedHero({ feed, colors, isDark }: { feed: Feed; colors: any; isDark: boolean }) {
+interface TrendingEpisode extends Episode {
+  listenCount: number;
+}
+
+function TrendingHero({ episode, feed, colors, onPlay }: { episode: TrendingEpisode; feed: Feed; colors: any; onPlay: () => void }) {
   return (
     <Pressable
       style={({ pressed }) => [styles.heroCard, { opacity: pressed ? 0.95 : 1 }]}
-      onPress={() => router.push({ pathname: "/podcast/[id]", params: { id: feed.id } })}
+      onPress={onPlay}
     >
       {feed.imageUrl ? (
         <Image source={{ uri: feed.imageUrl }} style={styles.heroImage} contentFit="cover" />
       ) : (
-        <View style={[styles.heroImage, { backgroundColor: colors.surfaceAlt }]}>
+        <View style={[styles.heroImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="mic" size={56} color={colors.textSecondary} />
         </View>
       )}
@@ -33,41 +39,61 @@ function FeaturedHero({ feed, colors, isDark }: { feed: Feed; colors: any; isDar
       />
       <View style={styles.heroContent}>
         <View style={styles.heroBadge}>
-          <Ionicons name="star" size={10} color="#fbbf24" />
-          <Text style={styles.heroBadgeText}>Featured</Text>
+          <Ionicons name="flame" size={11} color="#f59e0b" />
+          <Text style={styles.heroBadgeText}>Trending</Text>
         </View>
-        <Text style={styles.heroTitle} numberOfLines={2}>{feed.title}</Text>
-        {feed.author && (
-          <Text style={styles.heroAuthor} numberOfLines={1}>{feed.author}</Text>
+        <Text style={styles.heroTitle} numberOfLines={2}>{episode.title}</Text>
+        <Text style={styles.heroAuthor} numberOfLines={1}>{feed.title}</Text>
+        {episode.listenCount > 0 && (
+          <View style={styles.heroListens}>
+            <Ionicons name="headset-outline" size={12} color="rgba(255,255,255,0.6)" />
+            <Text style={styles.heroListensText}>
+              {episode.listenCount} {episode.listenCount === 1 ? "listen" : "listens"}
+            </Text>
+          </View>
         )}
       </View>
     </Pressable>
   );
 }
 
-function QuickPlayEpisode({ episode, feed, colors }: { episode: Episode; feed: Feed; colors: any }) {
+function TrendingEpisodeCard({ episode, feed, rank, colors, onPlay }: { episode: TrendingEpisode; feed: Feed; rank: number; colors: any; onPlay: () => void }) {
   return (
     <Pressable
       style={({ pressed }) => [
-        styles.quickPlayCard,
+        styles.trendingCard,
         { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.95 : 1 },
       ]}
-      onPress={() => router.push({ pathname: "/podcast/[id]", params: { id: feed.id } })}
+      onPress={onPlay}
     >
+      <View style={[styles.rankBadge, { backgroundColor: rank <= 3 ? colors.accent : colors.surfaceAlt }]}>
+        <Text style={[styles.rankText, { color: rank <= 3 ? "#fff" : colors.textSecondary }]}>{rank}</Text>
+      </View>
       {feed.imageUrl ? (
-        <Image source={{ uri: feed.imageUrl }} style={styles.quickPlayImage} contentFit="cover" />
+        <Image source={{ uri: feed.imageUrl }} style={styles.trendingImage} contentFit="cover" />
       ) : (
-        <View style={[styles.quickPlayImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
+        <View style={[styles.trendingImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="mic" size={16} color={colors.textSecondary} />
         </View>
       )}
-      <View style={styles.quickPlayInfo}>
-        <Text style={[styles.quickPlayFeed, { color: colors.textSecondary }]} numberOfLines={1}>
+      <View style={styles.trendingInfo}>
+        <Text style={[styles.trendingFeed, { color: colors.accent }]} numberOfLines={1}>
           {feed.title}
         </Text>
-        <Text style={[styles.quickPlayTitle, { color: colors.text }]} numberOfLines={1}>
+        <Text style={[styles.trendingTitle, { color: colors.text }]} numberOfLines={2}>
           {episode.title}
         </Text>
+        {episode.listenCount > 0 && (
+          <View style={styles.trendingMeta}>
+            <Ionicons name="headset-outline" size={11} color={colors.textSecondary} />
+            <Text style={[styles.trendingMetaText, { color: colors.textSecondary }]}>
+              {episode.listenCount}
+            </Text>
+          </View>
+        )}
+      </View>
+      <View style={[styles.trendingPlayBtn, { backgroundColor: colors.accentLight }]}>
+        <Ionicons name="play" size={14} color={colors.accent} />
       </View>
     </Pressable>
   );
@@ -75,7 +101,6 @@ function QuickPlayEpisode({ episode, feed, colors }: { episode: Episode; feed: F
 
 function CategorySection({ category, feeds, colors }: { category: Category; feeds: Feed[]; colors: any }) {
   if (feeds.length === 0) return null;
-
   return (
     <View style={styles.section}>
       <Text style={[styles.sectionTitle, { color: colors.text }]}>{category.name}</Text>
@@ -96,47 +121,62 @@ export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
+  const { playEpisode, currentEpisode, playback, pause, resume } = useAudioPlayer();
 
   const categoriesQuery = useQuery<Category[]>({ queryKey: ["/api/categories"] });
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
   const latestQuery = useQuery<Episode[]>({ queryKey: ["/api/episodes/latest"] });
+  const trendingQuery = useQuery<TrendingEpisode[]>({ queryKey: ["/api/episodes/trending"] });
 
   const isLoading = categoriesQuery.isLoading || feedsQuery.isLoading;
   const categories = categoriesQuery.data || [];
   const allFeeds = feedsQuery.data || [];
   const latestEpisodes = (latestQuery.data || []).slice(0, 20);
+  const trendingEpisodes = trendingQuery.data || [];
 
-  const uncategorizedFeeds = allFeeds.filter(f => !f.categoryId);
-
-  const { featuredFeed, remainingFeeds } = useMemo(() => {
-    if (allFeeds.length === 0) return { featuredFeed: null, remainingFeeds: [] };
-    const featured = allFeeds[0];
-    const rest = allFeeds.slice(1);
-    return { featuredFeed: featured, remainingFeeds: rest };
-  }, [allFeeds]);
-
-  const quickPlayItems = useMemo(() => {
-    const items: { episode: Episode; feed: Feed }[] = [];
-    for (const ep of latestEpisodes) {
-      const feed = allFeeds.find(f => f.id === ep.feedId);
-      if (feed && items.length < 6) {
-        items.push({ episode: ep, feed });
-      }
+  const handlePlayEpisode = (episode: Episode, feed: Feed) => {
+    lightHaptic();
+    if (currentEpisode?.id === episode.id) {
+      playback.isPlaying ? pause() : resume();
+    } else {
+      playEpisode(episode, feed);
     }
-    return items;
-  }, [latestEpisodes, allFeeds]);
+  };
+
+  const { heroEpisode, heroFeed, quickPlayItems } = useMemo(() => {
+    const trending = trendingEpisodes.length > 0 ? trendingEpisodes : latestEpisodes.map(e => ({ ...e, listenCount: 0 }));
+    if (trending.length === 0) return { heroEpisode: null, heroFeed: null, quickPlayItems: [] };
+    
+    const hero = trending[0] as TrendingEpisode;
+    const hFeed = allFeeds.find(f => f.id === hero.feedId);
+    
+    const qpItems: { episode: TrendingEpisode; feed: Feed }[] = [];
+    for (let i = 1; i < trending.length && qpItems.length < 5; i++) {
+      const ep = trending[i] as TrendingEpisode;
+      const feed = allFeeds.find(f => f.id === ep.feedId);
+      if (feed) qpItems.push({ episode: ep, feed });
+    }
+    
+    return { heroEpisode: hero, heroFeed: hFeed || null, quickPlayItems: qpItems };
+  }, [trendingEpisodes, latestEpisodes, allFeeds]);
 
   const recentEpisodes = useMemo(() => {
-    return latestEpisodes.slice(0, 10).map(ep => ({
-      episode: ep,
-      feed: allFeeds.find(f => f.id === ep.feedId),
-    })).filter(x => x.feed) as { episode: Episode; feed: Feed }[];
-  }, [latestEpisodes, allFeeds]);
+    const trendingIds = new Set(trendingEpisodes.slice(0, 6).map(e => e.id));
+    return latestEpisodes
+      .filter(ep => !trendingIds.has(ep.id))
+      .slice(0, 8)
+      .map(ep => ({
+        episode: ep,
+        feed: allFeeds.find(f => f.id === ep.feedId),
+      }))
+      .filter(x => x.feed) as { episode: Episode; feed: Feed }[];
+  }, [latestEpisodes, trendingEpisodes, allFeeds]);
 
   const onRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/categories"] });
     queryClient.invalidateQueries({ queryKey: ["/api/feeds"] });
     queryClient.invalidateQueries({ queryKey: ["/api/episodes/latest"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/episodes/trending"] });
   };
 
   if (isLoading) {
@@ -179,29 +219,44 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {featuredFeed && (
+      {heroEpisode && heroFeed && (
         <View style={styles.heroSection}>
-          <FeaturedHero feed={featuredFeed} colors={colors} isDark={isDark} />
+          <TrendingHero
+            episode={heroEpisode}
+            feed={heroFeed}
+            colors={colors}
+            onPlay={() => handlePlayEpisode(heroEpisode, heroFeed)}
+          />
         </View>
       )}
 
       {quickPlayItems.length > 0 && (
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Quick Play</Text>
-          <View style={styles.quickPlayGrid}>
-            {quickPlayItems.map(({ episode, feed }) => (
-              <QuickPlayEpisode key={episode.id} episode={episode} feed={feed} colors={colors} />
+          <View style={styles.sectionHeaderRow}>
+            <Ionicons name="flame" size={18} color="#f59e0b" />
+            <Text style={[styles.sectionTitle, { color: colors.text, paddingHorizontal: 0 }]}>Trending</Text>
+          </View>
+          <View style={{ paddingHorizontal: 20 }}>
+            {quickPlayItems.map(({ episode, feed }, index) => (
+              <TrendingEpisodeCard
+                key={episode.id}
+                episode={episode}
+                feed={feed}
+                rank={index + 2}
+                colors={colors}
+                onPlay={() => handlePlayEpisode(episode, feed)}
+              />
             ))}
           </View>
         </View>
       )}
 
-      {remainingFeeds.length > 0 && (
+      {allFeeds.length > 0 && (
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>All Shows</Text>
           <FlatList
             horizontal
-            data={remainingFeeds}
+            data={allFeeds}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => <PodcastCard feed={item} size="small" />}
             showsHorizontalScrollIndicator={false}
@@ -306,17 +361,34 @@ const styles = StyleSheet.create({
   },
   heroTitle: {
     color: "#fff",
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "800" as const,
-    lineHeight: 26,
+    lineHeight: 24,
   },
   heroAuthor: {
     color: "rgba(255,255,255,0.7)",
     fontSize: 13,
   },
+  heroListens: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 2,
+  },
+  heroListensText: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 11,
+  },
 
   section: {
     marginBottom: 28,
+  },
+  sectionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 20,
+    marginBottom: 14,
   },
   sectionTitle: {
     fontSize: 20,
@@ -325,38 +397,65 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
 
-  quickPlayGrid: {
-    paddingHorizontal: 20,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  quickPlayCard: {
+  trendingCard: {
     flexDirection: "row",
     alignItems: "center",
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
     overflow: "hidden",
-    width: (SCREEN_WIDTH - 50) / 2,
-    height: 56,
+    marginBottom: 10,
+    paddingRight: 12,
   },
-  quickPlayImage: {
-    width: 56,
-    height: 56,
+  rankBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 12,
   },
-  quickPlayInfo: {
+  rankText: {
+    fontSize: 13,
+    fontWeight: "800" as const,
+  },
+  trendingImage: {
+    width: 52,
+    height: 52,
+    borderRadius: 10,
+    marginLeft: 10,
+    marginVertical: 10,
+  },
+  trendingInfo: {
     flex: 1,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     gap: 2,
   },
-  quickPlayFeed: {
+  trendingFeed: {
     fontSize: 10,
     fontWeight: "600" as const,
+    textTransform: "uppercase" as const,
+    letterSpacing: 0.3,
   },
-  quickPlayTitle: {
-    fontSize: 12,
+  trendingTitle: {
+    fontSize: 13,
     fontWeight: "600" as const,
-    lineHeight: 15,
+    lineHeight: 17,
+  },
+  trendingMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    marginTop: 1,
+  },
+  trendingMetaText: {
+    fontSize: 11,
+  },
+  trendingPlayBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   emptyState: {
