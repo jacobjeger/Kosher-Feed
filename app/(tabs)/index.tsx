@@ -201,7 +201,7 @@ export default function HomeScreen() {
         <View style={styles.headerRow}>
           <View>
             <Text style={[styles.greeting, { color: colors.textSecondary }]}>Discover</Text>
-            <Text style={[styles.headerTitle, { color: colors.text }]}>Kosher Shiurim</Text>
+            <Text style={[styles.headerTitle, { color: colors.text }]}>ShiurPod</Text>
           </View>
           <View style={[styles.headerIcon, { backgroundColor: colors.surfaceAlt }]}>
             <Ionicons name="headset" size={24} color={colors.accent} />

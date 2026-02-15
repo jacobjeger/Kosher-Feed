@@ -207,7 +207,7 @@ export default function SettingsScreen() {
       </View>
 
       <Text style={[styles.footer, { color: colors.textSecondary }]}>
-        Kosher Shiurim{"\n"}A curated listening experience
+        ShiurPod{"\n"}A curated listening experience
       </Text>
     </ScrollView>
   );

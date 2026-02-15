@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Kosher Podcasts",
-    "slug": "kosher-podcasts",
+    "name": "ShiurPod",
+    "slug": "shiurpod",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",

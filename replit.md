@@ -1,8 +1,8 @@
-# Kosher Shiurim
+# ShiurPod
 
 ## Overview
 
-Kosher Shiurim is a mobile-first shiur (Torah lecture) listening application built with Expo (React Native) on the frontend and Express.js on the backend. It allows users to browse, follow, and listen to curated podcast/shiur feeds. The app includes audio playback with position saving, episode downloads for offline listening, auto-download on WiFi, new episode notifications, device-based subscriptions (no user accounts), and an admin panel for managing feeds and categories. The backend serves as both an API server and a static file server for the web build.
+ShiurPod is a mobile-first shiur (Torah lecture) listening application built with Expo (React Native) on the frontend and Express.js on the backend. It allows users to browse, follow, and listen to curated podcast/shiur feeds. The app includes audio playback with position saving, episode downloads for offline listening, auto-download on WiFi, new episode notifications, device-based subscriptions (no user accounts), and an admin panel for managing feeds and categories. The backend serves as both an API server and a static file server for the web build.
 
 **Terminology**: Content is referred to as "shiurim" (plural) / "shiur" (singular) throughout the app — NOT podcasts or shows.
 
