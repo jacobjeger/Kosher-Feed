@@ -13,6 +13,7 @@ import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { safeGoBack } from "@/lib/safe-back";
 import Colors from "@/constants/colors";
 import {
   subscribeLogs,
@@ -151,7 +152,7 @@ export default function DebugLogsScreen() {
           { paddingTop: Platform.OS === "web" ? 67 : insets.top + 8 },
         ]}
       >
-        <Pressable onPress={() => router.back()} hitSlop={12}>
+        <Pressable onPress={() => safeGoBack()} hitSlop={12}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </Pressable>
         <Text style={[styles.headerTitle, { color: colors.text }]}>

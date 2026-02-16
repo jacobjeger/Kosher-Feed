@@ -6,7 +6,7 @@ const LOG_KEY = "APP_ERROR_LOGS";
 const PENDING_REPORTS_KEY = "APP_PENDING_ERROR_REPORTS";
 const MAX_LOGS = 200;
 const REPORT_BATCH_INTERVAL = 30000;
-const REPORT_LEVELS: Set<string> = new Set(["error"]);
+const REPORT_LEVELS: Set<string> = new Set(["error", "warn"]);
 
 export interface LogEntry {
   id: string;
@@ -63,9 +63,14 @@ export function addLog(
   }
 }
 
+export function logEvent(event: string, details?: Record<string, any>) {
+  const detailStr = details ? " " + JSON.stringify(details) : "";
+  addLog("info", `[EVENT] ${event}${detailStr}`, undefined, "app-event");
+}
+
 function queueForServerReport(entry: LogEntry) {
   pendingReports.push(entry);
-  if (pendingReports.length >= 10) {
+  if (pendingReports.length >= 5) {
     flushReportsToServer();
   } else if (!reportTimer) {
     reportTimer = setTimeout(() => {

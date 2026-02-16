@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useRef, useEff
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Episode, Feed } from "@/lib/types";
+import { addLog } from "@/lib/error-logger";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { getDeviceId } from "@/lib/device-id";
 import { getQueue, addToQueue as addToQueueStorage, removeFromQueue as removeFromQueueStorage, clearQueue as clearQueueStorage, type QueueItem } from "@/lib/queue";
@@ -443,6 +444,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           }
           audio.play().catch(console.error);
           setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true, durationMs: (audio.duration || 0) * 1000 }));
+          addLog("info", `Playing: ${episode.title} (feed: ${feed.title})`, undefined, "audio");
           startPositionTracking();
         };
         audio.onended = () => {
@@ -539,6 +541,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         });
 
         setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true }));
+        addLog("info", `Playing: ${episode.title} (feed: ${feed.title})`, undefined, "audio");
         startPositionTracking();
       }
 
@@ -559,7 +562,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         apiRequest("POST", "/api/listens", { episodeId: episode.id, deviceId }).catch(() => {});
       });
     } catch (e) {
-      console.error("Failed to play episode:", e);
+      addLog("error", `Playback failed: ${episode.title} - ${(e as any)?.message || e}`, (e as any)?.stack, "audio");
       setPlayback(prev => ({ ...prev, isLoading: false }));
     } finally {
       isLoadingRef.current = false;
@@ -614,7 +617,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       }
       setPlayback(prev => ({ ...prev, isPlaying: true }));
     } catch (e) {
-      console.error("Resume failed:", e);
+      addLog("error", `Resume failed: ${(e as any)?.message || e}`, (e as any)?.stack, "audio");
     }
   }, [playEpisodeInternal]);
 

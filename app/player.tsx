@@ -5,6 +5,7 @@ import { Image } from "expo-image";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
+import { safeGoBack } from "@/lib/safe-back";
 import Slider from "@react-native-community/slider";
 import { useAudioPlayer, usePlaybackPosition } from "@/contexts/AudioPlayerContext";
 import Colors from "@/constants/colors";
@@ -204,7 +205,7 @@ export default function PlayerScreen() {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} hitSlop={12}>
+          <Pressable onPress={() => safeGoBack()} hitSlop={12}>
             <Ionicons name="chevron-down" size={28} color={colors.text} />
           </Pressable>
         </View>
@@ -234,7 +235,7 @@ export default function PlayerScreen() {
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.background }]} contentContainerStyle={{ flexGrow: 1 }}>
       <View style={[styles.header, { paddingTop: insets.top + (Platform.OS === "web" ? 67 : 8) }]}>
-        <Pressable onPress={() => router.back()} hitSlop={12}>
+        <Pressable onPress={() => safeGoBack()} hitSlop={12}>
           <Ionicons name="chevron-down" size={28} color={colors.text} />
         </Pressable>
         <Text style={[styles.headerTitle, { color: colors.textSecondary }]}>Now Playing</Text>
@@ -337,7 +338,7 @@ export default function PlayerScreen() {
         </Pressable>
 
         <Pressable
-          onPress={() => { lightHaptic(); stop(); router.back(); }}
+          onPress={() => { lightHaptic(); stop(); safeGoBack(); }}
           hitSlop={8}
           style={[styles.rateBtn, { backgroundColor: colors.surfaceAlt }]}
         >

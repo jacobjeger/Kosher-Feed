@@ -5,6 +5,7 @@ import { Image } from "expo-image";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, router } from "expo-router";
+import { safeGoBack } from "@/lib/safe-back";
 import { useQuery, useMutation, useInfiniteQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient, getApiUrl } from "@/lib/query-client";
 import { getDeviceId } from "@/lib/device-id";
@@ -162,7 +163,7 @@ function PodcastDetailScreenInner() {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={{ alignItems: "center", justifyContent: "center", paddingVertical: 80, paddingHorizontal: 40, gap: 12 }}>
-          <Pressable onPress={() => router.back()} style={{ alignSelf: "flex-start", paddingTop: insets.top + 8 }}>
+          <Pressable onPress={() => safeGoBack()} style={{ alignSelf: "flex-start", paddingTop: insets.top + 8 }}>
             <Ionicons name="arrow-back" size={24} color={colors.text} />
           </Pressable>
           <Ionicons name="cloud-offline-outline" size={56} color={colors.textSecondary} />
@@ -210,7 +211,7 @@ function PodcastDetailScreenInner() {
         ListHeaderComponent={() => (
           <View>
             <View style={[styles.header, { paddingTop: insets.top + (Platform.OS === "web" ? 67 : 8) }]}>
-              <Pressable onPress={() => router.back()} hitSlop={12}>
+              <Pressable onPress={() => safeGoBack()} hitSlop={12}>
                 <Ionicons name="arrow-back" size={24} color={colors.text} />
               </Pressable>
             </View>

@@ -4,6 +4,7 @@ import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
+import { safeGoBack } from "@/lib/safe-back";
 import { useQuery } from "@tanstack/react-query";
 import Colors from "@/constants/colors";
 import { getDeviceId } from "@/lib/device-id";
@@ -63,7 +64,7 @@ export default function StatsScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + (Platform.OS === "web" ? 67 : 8) }]}>
-        <Pressable onPress={() => router.back()} hitSlop={12}>
+        <Pressable onPress={() => safeGoBack()} hitSlop={12}>
           <Ionicons name="chevron-back" size={28} color={colors.text} />
         </Pressable>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Your Stats</Text>

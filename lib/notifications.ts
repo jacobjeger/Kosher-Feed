@@ -114,8 +114,7 @@ export async function sendLocalNotification(episode: Episode, feed: Feed) {
         body: episode.title,
         data: { episodeId: episode.id, feedId: episode.feedId },
         sound: "default",
-        channelId: "new-episodes",
-      },
+      } as any,
       trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 1 } as any,
     });
   } catch (e) {
@@ -162,8 +161,7 @@ export async function notifyNewEpisodes(newEpisodes: Episode[], feeds: Feed[]) {
               body: `${episodes.length} new episodes available`,
               data: { feedId: feed.id },
               sound: "default",
-              channelId: "new-episodes",
-            },
+            } as any,
             trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 1 } as any,
           });
         } catch (e) {
