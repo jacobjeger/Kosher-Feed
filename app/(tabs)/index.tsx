@@ -583,7 +583,16 @@ function HomeScreenInner() {
 
       {!isSearching && allFeeds.length > 0 && (
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>All Shiurim</Text>
+          <View style={styles.sectionHeaderRowSpaced}>
+            <Text style={[styles.sectionTitle, { color: colors.text, paddingHorizontal: 0, marginBottom: 0 }]}>All Shiurim</Text>
+            <Pressable
+              onPress={() => { lightHaptic(); router.push("/all-shiurim"); }}
+              style={({ pressed }) => [styles.seeAllBtn, { backgroundColor: colors.accentLight, opacity: pressed ? 0.8 : 1 }]}
+            >
+              <Text style={[styles.seeAllText, { color: colors.accent }]}>See All</Text>
+              <Ionicons name="chevron-forward" size={14} color={colors.accent} />
+            </Pressable>
+          </View>
           <FlatList
             horizontal
             data={allFeeds}
@@ -735,6 +744,25 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 20,
     marginBottom: 14,
+  },
+  sectionHeaderRowSpaced: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    marginBottom: 14,
+  },
+  seeAllBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  seeAllText: {
+    fontSize: 13,
+    fontWeight: "600" as const,
   },
   sectionTitle: {
     fontSize: 20,

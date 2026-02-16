@@ -40,6 +40,7 @@ function RootLayoutNav() {
           animation: "slide_from_bottom",
         }}
       />
+      <Stack.Screen name="all-shiurim" options={{ headerShown: false }} />
       <Stack.Screen name="stats" options={{ headerShown: false }} />
       <Stack.Screen name="debug-logs" options={{ headerShown: false }} />
       <Stack.Screen
