@@ -94,11 +94,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/ping", (_req: Request, res: Response) => {
+    res.json({ ok: true, ts: Date.now() });
+  });
+
   app.get("/api/feeds/:id/episodes", async (req: Request, res: Response) => {
     try {
-      const eps = await storage.getEpisodesByFeed(req.params.id);
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const slim = req.query.slim === "1";
+      const eps = await storage.getEpisodesByFeedPaginated(req.params.id, page, limit);
       res.setHeader("Cache-Control", "public, max-age=30");
-      res.json(eps);
+      if (slim) {
+        res.json(eps.map(ep => ({
+          id: ep.id,
+          feedId: ep.feedId,
+          title: ep.title,
+          audioUrl: ep.audioUrl,
+          duration: ep.duration,
+          publishedAt: ep.publishedAt,
+          imageUrl: ep.imageUrl,
+        })));
+      } else {
+        res.json(eps);
+      }
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -205,9 +224,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/episodes/latest", async (req: Request, res: Response) => {
     try {
       const limit = parseInt(req.query.limit as string) || 50;
+      const slim = req.query.slim === "1";
       const eps = await storage.getLatestEpisodes(limit);
       res.setHeader("Cache-Control", "public, max-age=30");
-      res.json(eps);
+      if (slim) {
+        res.json(eps.map(ep => ({
+          id: ep.id,
+          feedId: ep.feedId,
+          title: ep.title,
+          audioUrl: ep.audioUrl,
+          duration: ep.duration,
+          publishedAt: ep.publishedAt,
+          imageUrl: ep.imageUrl,
+        })));
+      } else {
+        res.json(eps);
+      }
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

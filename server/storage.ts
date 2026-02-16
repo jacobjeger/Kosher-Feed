@@ -47,6 +47,11 @@ export async function getEpisodesByFeed(feedId: string): Promise<Episode[]> {
   return db.select().from(episodes).where(eq(episodes.feedId, feedId)).orderBy(desc(episodes.publishedAt));
 }
 
+export async function getEpisodesByFeedPaginated(feedId: string, page: number = 1, pageLimit: number = 50): Promise<Episode[]> {
+  const offset = (page - 1) * pageLimit;
+  return db.select().from(episodes).where(eq(episodes.feedId, feedId)).orderBy(desc(episodes.publishedAt)).limit(pageLimit).offset(offset);
+}
+
 export async function getLatestEpisodes(limit: number = 50): Promise<Episode[]> {
   return db.select().from(episodes).orderBy(desc(episodes.publishedAt)).limit(limit);
 }

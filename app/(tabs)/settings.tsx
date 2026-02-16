@@ -65,21 +65,30 @@ export default function SettingsScreen() {
   const testConnection = async () => {
     setConnectionStatus("testing");
     setConnectionError("");
+    const startTime = Date.now();
     try {
       const baseUrl = getApiUrl();
-      const url = new URL("/api/feeds", baseUrl);
-      const res = await fetch(url.toString(), { method: "GET" });
+      const url = new URL("/api/ping", baseUrl);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const res = await fetch(url.toString(), { method: "GET", signal: controller.signal });
+      clearTimeout(timeoutId);
+      const elapsed = Date.now() - startTime;
       if (res.ok) {
-        const data = await res.json();
         setConnectionStatus("ok");
-        setConnectionError(`${data.length} feeds loaded`);
+        setConnectionError(`Connected (${elapsed}ms)`);
       } else {
         setConnectionStatus("error");
         setConnectionError(`Server returned ${res.status}`);
       }
     } catch (e: any) {
+      const elapsed = Date.now() - startTime;
       setConnectionStatus("error");
-      setConnectionError(e.message || "Network request failed");
+      if (e.name === "AbortError") {
+        setConnectionError(`Timed out after ${elapsed}ms`);
+      } else {
+        setConnectionError(e.message || "Network request failed");
+      }
     }
   };
 
