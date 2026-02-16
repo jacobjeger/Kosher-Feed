@@ -128,6 +128,10 @@
   .toggle-btn.on::after { left: 21px; }
   .toggle-btn.off::after { left: 3px; }
 
+  .featured-star { background: none; border: none; cursor: pointer; font-size: 20px; color: #94a3b8; transition: color 0.2s; padding: 4px 8px; }
+  .featured-star.featured { color: #fbbf24; }
+  .featured-star:hover { color: #fbbf24; }
+
   @media (max-width: 768px) {
     .feed-item { flex-wrap: wrap; }
     .feed-actions { width: 100%; justify-content: flex-end; margin-top: 8px; }
@@ -521,6 +525,7 @@ async function loadFeeds() {
           <div class="feed-meta" style="font-size:11px;margin-top:2px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.rssUrl)}</div>
         </div>
         <button class="toggle-btn ${f.isActive ? 'on' : 'off'}" onclick="toggleFeedActive('${f.id}', ${!f.isActive})" title="${f.isActive ? 'Active' : 'Inactive'}"></button>
+        <button class="featured-star ${f.featured ? 'featured' : ''}" onclick="toggleFeedFeatured('${f.id}', ${!f.featured})" title="${f.featured ? 'Featured' : 'Not Featured'}">★</button>
         <div class="feed-actions">
           <button class="btn btn-secondary btn-sm" onclick="editFeed('${f.id}')">Edit</button>
           <button class="btn btn-secondary btn-sm" onclick="refreshFeed('${f.id}')">Refresh</button>
@@ -950,6 +955,16 @@ async function toggleFeedActive(id, isActive) {
     await api(`/api/admin/feeds/${id}`, { method: 'PUT', body: JSON.stringify({ isActive }) });
     showAlert(`Feed ${isActive ? 'activated' : 'deactivated'}.`);
     await Promise.all([loadFeeds(), loadAnalytics()]);
+  } catch(e) {
+    showAlert(e.message, 'error');
+  }
+}
+
+async function toggleFeedFeatured(id, featured) {
+  try {
+    await api(`/api/admin/feeds/${id}/featured`, { method: 'PUT', body: JSON.stringify({ featured }) });
+    showAlert(`Feed ${featured ? 'marked as featured' : 'removed from featured'}.`);
+    await loadFeeds();
   } catch(e) {
     showAlert(e.message, 'error');
   }
