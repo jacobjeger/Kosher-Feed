@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef } from "react";
+import React, { useState, useMemo, useCallback, useRef, memo } from "react";
 import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Platform, Switch, Alert, TextInput } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
@@ -17,6 +17,17 @@ import { useSettings } from "@/contexts/SettingsContext";
 import { useDownloads } from "@/contexts/DownloadsContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
+const StableArtwork = memo(function StableArtwork({ imageUrl, fallbackColor, iconColor }: { imageUrl?: string | null; fallbackColor: string; iconColor: string }) {
+  if (imageUrl) {
+    return <Image source={{ uri: imageUrl }} style={styles.artwork} contentFit="cover" cachePolicy="memory-disk" recyclingKey={imageUrl} transition={0} />;
+  }
+  return (
+    <View style={[styles.artwork, { backgroundColor: fallbackColor, alignItems: "center", justifyContent: "center" }]}>
+      <Ionicons name="mic" size={48} color={iconColor} />
+    </View>
+  );
+});
+
 const EPISODE_LIMIT_OPTIONS = [3, 5, 10, 15, 25, 50];
 const PAGE_SIZE = 30;
 
@@ -33,9 +44,11 @@ function PodcastDetailScreenInner() {
   const insets = useSafeAreaInsets();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
-  const colors = isDark ? Colors.dark : Colors.light;
+  const colors = useMemo(() => isDark ? Colors.dark : Colors.light, [isDark]);
   const { getFeedSettings, updateFeedSettings } = useSettings();
-  const { batchDownload, isDownloading, downloads } = useDownloads();
+  const { batchDownload } = useDownloads();
+  const batchDownloadRef = useRef(batchDownload);
+  batchDownloadRef.current = batchDownload;
   const [showFullDescription, setShowFullDescription] = useState<boolean>(false);
   const [episodeSearch, setEpisodeSearch] = useState("");
   const [isEpisodeSearchFocused, setIsEpisodeSearchFocused] = useState(false);
@@ -43,7 +56,7 @@ function PodcastDetailScreenInner() {
   const [showPreferences, setShowPreferences] = useState(false);
 
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
-  const feed = feedsQuery.data?.find(f => f.id === id);
+  const feed = useMemo(() => feedsQuery.data?.find(f => f.id === id), [feedsQuery.data, id]);
 
   const episodesInfiniteQuery = useInfiniteQuery<PaginatedResponse>({
     queryKey: [`/api/feeds/${id}/episodes`, "paginated", sortOrder],
@@ -108,12 +121,12 @@ function PodcastDetailScreenInner() {
     },
   });
 
-  const handleFollow = () => {
+  const handleFollow = useCallback(() => {
     mediumHaptic();
     followMutation.mutate();
-  };
+  }, [followMutation]);
 
-  const handleToggleNotifications = async (value: boolean) => {
+  const handleToggleNotifications = useCallback(async (value: boolean) => {
     lightHaptic();
     if (value) {
       const { requestNotificationPermissions, setupNotificationChannel } = await import("@/lib/notifications");
@@ -130,9 +143,9 @@ function PodcastDetailScreenInner() {
       }
     }
     if (id) updateFeedSettings(id, { notificationsEnabled: value });
-  };
+  }, [id, updateFeedSettings]);
 
-  const handleChangeEpisodeLimit = () => {
+  const handleChangeEpisodeLimit = useCallback(() => {
     lightHaptic();
     if (!id) return;
     if (Platform.OS === "web") {
@@ -149,7 +162,7 @@ function PodcastDetailScreenInner() {
         onPress: () => updateFeedSettings(id, { maxEpisodes: n }),
       })),
     );
-  };
+  }, [id, feedSettings.maxEpisodes, updateFeedSettings]);
 
   const handleLoadMore = useCallback(() => {
     if (episodesInfiniteQuery.hasNextPage && !episodesInfiniteQuery.isFetchingNextPage && !episodeSearch.trim()) {
@@ -211,13 +224,7 @@ function PodcastDetailScreenInner() {
       </View>
 
       <View style={styles.podcastInfo}>
-        {feed.imageUrl ? (
-          <Image source={{ uri: feed.imageUrl }} style={styles.artwork} contentFit="cover" cachePolicy="memory-disk" />
-        ) : (
-          <View style={[styles.artwork, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
-            <Ionicons name="mic" size={48} color={colors.textSecondary} />
-          </View>
-        )}
+        <StableArtwork imageUrl={feed.imageUrl} fallbackColor={colors.surfaceAlt} iconColor={colors.textSecondary} />
 
         <View style={styles.podcastMeta}>
           <Text style={[styles.podcastTitle, { color: colors.text }]}>{feed.title}</Text>
@@ -309,7 +316,7 @@ function PodcastDetailScreenInner() {
                     style={styles.feedSettingRow}
                     onPress={() => {
                       lightHaptic();
-                      if (feed) batchDownload(allEpisodes.slice(0, 20), feed);
+                      if (feed) batchDownloadRef.current(allEpisodes.slice(0, 20), feed);
                     }}
                   >
                     <View style={styles.feedSettingLeft}>
@@ -360,7 +367,7 @@ function PodcastDetailScreenInner() {
         )}
       </View>
     </View>
-  ), [feed, colors, insets.top, isFollowing, showFullDescription, showPreferences, feedSettings, allEpisodes.length, totalCount, sortOrder, episodeSearch, isEpisodeSearchFocused, handleFollow, handleToggleNotifications, handleChangeEpisodeLimit, batchDownload]);
+  ), [feed, colors, insets.top, isFollowing, showFullDescription, showPreferences, feedSettings, allEpisodes.length, totalCount, sortOrder, episodeSearch, isEpisodeSearchFocused, handleFollow, handleToggleNotifications, handleChangeEpisodeLimit]);
 
   const footerElement = useMemo(() => {
     if (episodesInfiniteQuery.isFetchingNextPage) {

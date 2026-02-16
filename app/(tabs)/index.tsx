@@ -35,7 +35,7 @@ const TrendingHero = React.memo(function TrendingHero({ episode, feed, colors, o
       onPress={onPlay}
     >
       {feed.imageUrl ? (
-        <Image source={{ uri: feed.imageUrl }} style={styles.heroImage} contentFit="cover" cachePolicy="memory-disk" />
+        <Image source={{ uri: feed.imageUrl }} style={styles.heroImage} contentFit="cover" cachePolicy="memory-disk" transition={0} />
       ) : (
         <View style={[styles.heroImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="mic" size={56} color={colors.textSecondary} />
@@ -78,7 +78,7 @@ const TrendingEpisodeCard = React.memo(function TrendingEpisodeCard({ episode, f
         <Text style={[styles.rankText, { color: rank <= 3 ? "#fff" : colors.textSecondary }]}>{rank}</Text>
       </View>
       {feed.imageUrl ? (
-        <Image source={{ uri: feed.imageUrl }} style={styles.trendingImage} contentFit="cover" cachePolicy="memory-disk" />
+        <Image source={{ uri: feed.imageUrl }} style={styles.trendingImage} contentFit="cover" cachePolicy="memory-disk" transition={0} />
       ) : (
         <View style={[styles.trendingImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="mic" size={16} color={colors.textSecondary} />
@@ -138,7 +138,7 @@ const SearchResultItem = React.memo(function SearchResultItem({ feed, colors }: 
       onPress={() => router.push(`/podcast/${feed.id}`)}
     >
       {feed.imageUrl ? (
-        <Image source={{ uri: feed.imageUrl }} style={styles.searchResultImage} contentFit="cover" cachePolicy="memory-disk" />
+        <Image source={{ uri: feed.imageUrl }} style={styles.searchResultImage} contentFit="cover" cachePolicy="memory-disk" transition={0} />
       ) : (
         <View style={[styles.searchResultImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="mic" size={20} color={colors.textSecondary} />
@@ -180,7 +180,7 @@ const ContinueListeningCard = React.memo(function ContinueListeningCard({ episod
         <Ionicons name="close" size={12} color={colors.textSecondary} />
       </Pressable>
       {feed.imageUrl ? (
-        <Image source={{ uri: feed.imageUrl }} style={styles.continueImage} contentFit="cover" cachePolicy="memory-disk" />
+        <Image source={{ uri: feed.imageUrl }} style={styles.continueImage} contentFit="cover" cachePolicy="memory-disk" transition={0} />
       ) : (
         <View style={[styles.continueImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="mic" size={20} color={colors.textSecondary} />

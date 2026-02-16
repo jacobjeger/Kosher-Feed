@@ -254,6 +254,8 @@ export default function PlayerScreen() {
               style={[styles.artwork, { maxWidth: artworkMaxSize }]}
               contentFit="cover"
               cachePolicy="memory-disk"
+              recyclingKey={currentFeed.imageUrl}
+              transition={0}
             />
           ) : (
             <View style={[styles.artwork, { maxWidth: artworkMaxSize, backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
