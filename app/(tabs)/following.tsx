@@ -177,7 +177,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: "800",
     paddingHorizontal: 4,
     marginBottom: 16,

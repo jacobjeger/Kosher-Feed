@@ -591,7 +591,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingBottom: 14,
   },
   greeting: {
     fontSize: 13,
@@ -600,7 +600,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: "800" as const,
     marginTop: 2,
   },
@@ -614,7 +614,7 @@ const styles = StyleSheet.create({
 
   heroSection: {
     paddingHorizontal: 20,
-    marginBottom: 28,
+    marginBottom: 20,
   },
   heroCard: {
     borderRadius: 20,
@@ -623,7 +623,7 @@ const styles = StyleSheet.create({
   },
   heroImage: {
     width: "100%" as any,
-    height: 200,
+    height: 180,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -679,7 +679,7 @@ const styles = StyleSheet.create({
   },
 
   section: {
-    marginBottom: 28,
+    marginBottom: 22,
   },
   sectionHeaderRow: {
     flexDirection: "row",
@@ -692,7 +692,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "700" as const,
     paddingHorizontal: 20,
-    marginBottom: 14,
+    marginBottom: 10,
   },
 
   trendingCard: {
@@ -881,7 +881,7 @@ const styles = StyleSheet.create({
     fontWeight: "600" as const,
   },
   continueCard: {
-    width: 160,
+    width: 145,
     borderRadius: 14,
     borderWidth: 1,
     overflow: "hidden",
@@ -901,7 +901,7 @@ const styles = StyleSheet.create({
   },
   continueImage: {
     width: "100%" as any,
-    height: 100,
+    height: 85,
     alignItems: "center",
     justifyContent: "center",
   },

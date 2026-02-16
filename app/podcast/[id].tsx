@@ -412,8 +412,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   artwork: {
-    width: 120,
-    height: 120,
+    width: 100,
+    height: 100,
     borderRadius: 14,
   },
   podcastMeta: {
@@ -422,7 +422,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   podcastTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "700" as const,
     lineHeight: 24,
   },

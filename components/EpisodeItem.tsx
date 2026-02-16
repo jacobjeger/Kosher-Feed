@@ -217,8 +217,8 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "flex-start",
-    padding: 14,
-    gap: 12,
+    padding: 12,
+    gap: 10,
   },
   playIcon: {
     width: 36,
@@ -278,7 +278,7 @@ const styles = StyleSheet.create({
     fontWeight: "600" as const,
   },
   actionBtn: {
-    width: 32,
+    width: 28,
     height: 36,
     alignItems: "center" as const,
     justifyContent: "center" as const,

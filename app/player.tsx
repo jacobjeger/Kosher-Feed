@@ -309,7 +309,7 @@ export default function PlayerScreen() {
           hitSlop={8}
           style={styles.skipBtn}
         >
-          <MaterialIcons name={getSkipBackwardIcon()} size={36} color={colors.text} />
+          <MaterialIcons name={getSkipBackwardIcon()} size={32} color={colors.text} />
         </Pressable>
 
         <Pressable
@@ -332,7 +332,7 @@ export default function PlayerScreen() {
           hitSlop={8}
           style={styles.skipBtn}
         >
-          <MaterialIcons name={getSkipForwardIcon()} size={36} color={colors.text} />
+          <MaterialIcons name={getSkipForwardIcon()} size={32} color={colors.text} />
         </Pressable>
 
         <Pressable
@@ -457,8 +457,8 @@ const styles = StyleSheet.create({
   },
   artworkContainer: {
     alignItems: "center",
-    paddingHorizontal: 40,
-    paddingVertical: 24,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
     flex: 1,
     justifyContent: "center",
     minHeight: 200,
@@ -470,7 +470,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   infoSection: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     gap: 6,
     marginBottom: 16,
   },
@@ -484,7 +484,7 @@ const styles = StyleSheet.create({
     fontWeight: "600" as const,
   },
   sliderSection: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     marginBottom: 20,
   },
   slider: {
@@ -504,7 +504,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 20,
+    gap: 16,
     paddingHorizontal: 24,
     paddingBottom: 12,
   },
@@ -520,15 +520,15 @@ const styles = StyleSheet.create({
     fontWeight: "700" as const,
   },
   skipBtn: {
-    width: 48,
-    height: 48,
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
   },
   playBtn: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -536,7 +536,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 16,
+    gap: 10,
     paddingHorizontal: 24,
     paddingBottom: 16,
   },
@@ -544,7 +544,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingHorizontal: 14,
+    paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 20,
   },

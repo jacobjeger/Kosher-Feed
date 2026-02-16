@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, Pressable, StyleSheet, Dimensions } from "react-native";
+import { View, Text, Pressable, StyleSheet, useWindowDimensions } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
@@ -12,9 +12,8 @@ interface Props {
   size?: "small" | "medium" | "featured";
 }
 
-const SCREEN_WIDTH = Dimensions.get("window").width;
-
 function PodcastCard({ feed, size = "small" }: Props) {
+  const { width } = useWindowDimensions();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
@@ -24,7 +23,7 @@ function PodcastCard({ feed, size = "small" }: Props) {
       <Pressable
         style={({ pressed }) => [
           styles.featuredContainer,
-          { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.95 : 1 },
+          { width: width - 40, backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.95 : 1 },
         ]}
         onPress={() => router.push({ pathname: "/podcast/[id]", params: { id: feed.id } })}
       >
@@ -121,7 +120,6 @@ function PodcastCard({ feed, size = "small" }: Props) {
 
 const styles = StyleSheet.create({
   featuredContainer: {
-    width: SCREEN_WIDTH - 40,
     marginRight: 16,
     borderRadius: 16,
     borderWidth: 1,
@@ -129,7 +127,7 @@ const styles = StyleSheet.create({
   },
   featuredImage: {
     width: "100%" as any,
-    height: 180,
+    height: 160,
   },
   featuredOverlay: {
     position: "absolute",
@@ -196,7 +194,7 @@ const styles = StyleSheet.create({
   },
 
   smallContainer: {
-    width: 140,
+    width: 130,
     marginRight: 12,
     borderRadius: 14,
     borderWidth: 1,
@@ -204,7 +202,7 @@ const styles = StyleSheet.create({
   },
   smallImage: {
     width: "100%" as any,
-    height: 140,
+    height: 120,
   },
   smallInfo: {
     padding: 10,
