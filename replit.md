@@ -16,7 +16,7 @@ Preferred communication style: Simple, everyday language.
 - **Framework**: Expo SDK 54 with React Native 0.81, using expo-router for file-based routing
 - **Routing structure**: Tab-based navigation with 4 tabs (Home, Following, Downloads, Settings), a modal player screen, and a podcast detail screen at `podcast/[id]`
 - **State management**: React Context for audio playback (`AudioPlayerContext`), downloads (`DownloadsContext`), user settings (`SettingsContext`), and favorites (`FavoritesContext`); TanStack React Query for server state
-- **Audio playback**: Uses `expo-av` for native and HTML5 Audio for web, with a unified context API providing play/pause/seek/skip/rate controls. Saves playback position to AsyncStorage every 10 seconds and on pause/stop, resuming from saved position on replay. Pre-buffers audio with `preload="auto"` on web and native buffer settings. Server-side position sync for cross-device resume.
+- **Audio playback**: Uses `expo-av` for native and HTML5 Audio for web, with a unified context API providing play/pause/seek/skip/rate controls. Saves playback position to AsyncStorage every 30 seconds and on pause/stop, resuming from saved position on replay. Pre-buffers audio with `preload="auto"` on web and native buffer settings. Server-side position sync for cross-device resume. Audio position tracking runs every 2 seconds (optimized for low-end devices).
 - **Offline support**: Episode downloads managed via `expo-file-system` with progress tracking, persisted to AsyncStorage. Auto-download on WiFi for followed shiurim with configurable per-shiur episode storage limits. Batch download support for downloading multiple episodes at once.
 - **Notifications**: Local browser notifications (web) for new episodes from followed shiurim. Tracks seen episodes in AsyncStorage to avoid duplicate alerts.
 - **Background sync**: `BackgroundSync` component polls for new episodes every 5 minutes and triggers notifications/auto-downloads based on user settings.
@@ -101,3 +101,6 @@ Preferred communication style: Simple, everyday language.
 - **Offline banner**: `components/OfflineBanner.tsx` displays a dismissible red banner when the device loses internet connectivity (uses browser events on web, expo-network polling on native)
 - **Debug logs**: In-app debug log viewer accessible from Settings, captures errors, warnings, network failures, and unhandled promise rejections (filters out known dev warnings)
 - **Error logger**: `lib/error-logger.ts` captures global errors and stores them in AsyncStorage for the debug log screen
+- **Safe navigation**: `lib/safe-back.ts` provides `safeGoBack()` that checks `router.canGoBack()` and falls back to `router.replace("/(tabs)")` — prevents back button failures on Android
+- **Remote error reports**: Errors and warnings are batched and sent to `/api/admin/error-reports` for remote diagnostics (flushes at 5 pending or every 30s)
+- **Audio playback logging**: All play/resume/failure events are logged to the error logger with source "audio" for remote visibility
