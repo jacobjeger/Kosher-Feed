@@ -71,6 +71,8 @@ interface AudioPlayerContextValue {
   playNext: () => Promise<void>;
   subscribePosition: (cb: () => void) => () => void;
   getPositionSnapshot: () => PositionState;
+  episodeCompleted: string | null;
+  clearEpisodeCompleted: () => void;
 }
 
 const AudioPlayerContext = createContext<AudioPlayerContextValue | null>(null);
@@ -183,6 +185,9 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     mode: "time",
   });
   const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [episodeCompleted, setEpisodeCompleted] = useState<string | null>(null);
+
+  const clearEpisodeCompleted = useCallback(() => setEpisodeCompleted(null), []);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const soundRef = useRef<any>(null);
@@ -330,23 +335,21 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           return prev;
         });
       } else if (soundRef.current) {
-        soundRef.current.getStatusAsync?.().then((status: any) => {
-          if (status?.isLoaded) {
-            const newPos = status.positionMillis || 0;
-            const newDur = status.durationMillis || 0;
-            const newIsPlaying = status.isPlaying || false;
-            const newIsLoading = status.isBuffering || false;
-            positionRef.current = { positionMs: newPos, durationMs: newDur };
-            playbackRef.current = { ...playbackRef.current, positionMs: newPos, durationMs: newDur, isPlaying: newIsPlaying, isLoading: newIsLoading };
-            notifyPositionListeners();
-            setPlayback(prev => {
-              if (prev.isPlaying !== newIsPlaying || prev.isLoading !== newIsLoading) {
-                return { ...prev, positionMs: newPos, durationMs: newDur, isPlaying: newIsPlaying, isLoading: newIsLoading };
-              }
-              return prev;
-            });
-          }
-        }).catch(() => {});
+        try {
+          const player = soundRef.current;
+          const newPos = (player.currentTime || 0) * 1000;
+          const newDur = (player.duration || 0) * 1000;
+          const newIsPlaying = player.playing || false;
+          positionRef.current = { positionMs: newPos, durationMs: newDur };
+          playbackRef.current = { ...playbackRef.current, positionMs: newPos, durationMs: newDur, isPlaying: newIsPlaying };
+          notifyPositionListeners();
+          setPlayback(prev => {
+            if (prev.isPlaying !== newIsPlaying) {
+              return { ...prev, positionMs: newPos, durationMs: newDur, isPlaying: newIsPlaying };
+            }
+            return prev;
+          });
+        } catch {}
       }
     }, trackingInterval);
   }, [notifyPositionListeners]);
@@ -355,7 +358,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     if (Platform.OS === "web") {
       audioRef.current?.pause();
     } else if (soundRef.current) {
-      await soundRef.current.pauseAsync?.();
+      soundRef.current.pause();
     }
     setPlayback(prev => ({ ...prev, isPlaying: false }));
     saveCurrentPosition();
@@ -450,10 +453,15 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         audio.onended = () => {
           setPlayback(prev => ({ ...prev, isPlaying: false }));
           savePosition(episode.id, feed.id, 0, 0);
+          removeSavedPosition(episode.id).catch(() => {});
+          updateHistoryPosition(episode.id, 0, 0).catch(() => {});
           if (sleepTimerRef.current.active && sleepTimerRef.current.mode === "endOfEpisode") {
             cancelSleepTimer();
-          } else {
+          } else if (queueRef.current.length > 0) {
             playNextRef.current();
+          } else {
+            setEpisodeCompleted(episode.id);
+            stopRef.current();
           }
         };
         audio.onerror = () => {
@@ -471,7 +479,10 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         };
       } else {
         if (soundRef.current) {
-          await soundRef.current.unloadAsync?.();
+          try {
+            soundRef.current.remove?.();
+            soundRef.current.release?.();
+          } catch {}
           soundRef.current = null;
         }
 
@@ -479,40 +490,24 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         setCurrentFeed(feed);
         setPlayback(prev => ({ ...prev, isLoading: true, isPlaying: false, positionMs: savedPos, durationMs: 0, playbackRate: feedSpeed }));
 
-        const { Audio } = require("expo-av");
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
-          staysActiveInBackground: true,
-          playsInSilentModeIOS: true,
-          shouldDuckAndroid: true,
+        const { createAudioPlayer, setAudioModeAsync } = require("expo-audio");
+        await setAudioModeAsync({
+          playsInSilentMode: true,
+          shouldRouteThroughEarpiece: false,
         });
-
-        const initialStatus: any = {
-          shouldPlay: true,
-          rate: feedSpeed,
-          shouldCorrectPitch: true,
-          progressUpdateIntervalMillis: 1000,
-          androidImplementation: "SimpleExoPlayer",
-        };
-        if (savedPos > 0) {
-          initialStatus.positionMillis = savedPos;
-        }
 
         let retryCount = 0;
         const maxRetries = 2;
-        let sound: any = null;
+        let player: any = null;
 
         while (retryCount <= maxRetries) {
           try {
-            const result = await Audio.Sound.createAsync(
-              { uri: episode.audioUrl },
-              initialStatus
-            );
-            sound = result.sound;
+            player = createAudioPlayer({ uri: episode.audioUrl });
+            player.playbackRate = feedSpeed;
             break;
           } catch (loadError: any) {
             retryCount++;
-            console.error(`Audio load failed (attempt ${retryCount}/${maxRetries + 1}):`, loadError?.message || loadError);
+            addLog("warn", `Audio load failed (attempt ${retryCount}/${maxRetries + 1}): ${loadError?.message || loadError}`, undefined, "audio");
             if (retryCount > maxRetries) {
               throw loadError;
             }
@@ -520,25 +515,36 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        if (!sound) {
+        if (!player) {
           throw new Error("Audio failed to load after retries");
         }
 
-        soundRef.current = sound;
+        soundRef.current = player;
 
-        sound.setOnPlaybackStatusUpdate((status: any) => {
-          if (status?.didJustFinish) {
+        const statusSub = player.addListener("playbackStatusUpdate", (status: any) => {
+          if (status?.didJustFinish || (status?.playing === false && player.currentTime > 0 && player.duration > 0 && player.currentTime >= player.duration - 0.5)) {
             savePosition(episode.id, feed.id, 0, 0);
+            removeSavedPosition(episode.id).catch(() => {});
+            updateHistoryPosition(episode.id, 0, 0).catch(() => {});
             if (sleepTimerRef.current.active && sleepTimerRef.current.mode === "endOfEpisode") {
               cancelSleepTimer();
-            } else {
+            } else if (queueRef.current.length > 0) {
               playNextRef.current();
+            } else {
+              setEpisodeCompleted(episode.id);
+              stopRef.current();
             }
           }
           if (status?.error) {
-            console.error("Audio playback error:", status.error);
+            addLog("error", `Audio playback error: ${status.error}`, undefined, "audio");
           }
         });
+        (player as any).__statusSub = statusSub;
+
+        if (savedPos > 0) {
+          player.seekTo(savedPos / 1000);
+        }
+        player.play();
 
         setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true }));
         addLog("info", `Playing: ${episode.title} (feed: ${feed.title})`, undefined, "audio");
@@ -601,19 +607,16 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       if (Platform.OS === "web") {
         await audioRef.current?.play();
       } else if (soundRef.current) {
-        const status = await soundRef.current.getStatusAsync?.();
-        if (status?.isLoaded) {
-          await soundRef.current.playAsync?.();
-        } else {
-          const ep = currentEpisodeRef.current;
-          const feed = currentFeedRef.current;
-          if (ep && feed) {
-            addLog("warn", "Audio unloaded, reloading episode...", undefined, "audio");
-            await playEpisodeInternal(ep, feed, true);
-            return;
-          }
+        soundRef.current.play();
+      } else {
+        const ep = currentEpisodeRef.current;
+        const feed = currentFeedRef.current;
+        if (ep && feed) {
+          addLog("warn", "Audio player released, reloading episode...", undefined, "audio");
+          await playEpisodeInternal(ep, feed, true);
           return;
         }
+        return;
       }
       setPlayback(prev => ({ ...prev, isPlaying: true }));
     } catch (e) {
@@ -626,10 +629,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       if (Platform.OS === "web" && audioRef.current) {
         audioRef.current.currentTime = positionMs / 1000;
       } else if (soundRef.current) {
-        const status = await soundRef.current.getStatusAsync?.();
-        if (status?.isLoaded) {
-          await soundRef.current.setPositionAsync?.(positionMs);
-        }
+        soundRef.current.seekTo(positionMs / 1000);
       }
       setPlayback(prev => ({ ...prev, positionMs }));
     } catch (e) {
@@ -648,10 +648,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       if (Platform.OS === "web" && audioRef.current) {
         audioRef.current.playbackRate = rate;
       } else if (soundRef.current) {
-        const status = await soundRef.current.getStatusAsync?.();
-        if (status?.isLoaded) {
-          await soundRef.current.setRateAsync?.(rate, true);
-        }
+        soundRef.current.playbackRate = rate;
       }
     } catch (e) {
       addLog("warn", `Set rate failed: ${(e as any)?.message || e}`, undefined, "audio");
@@ -679,14 +676,22 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         audioRef.current = null;
       }
     } else if (soundRef.current) {
-      await soundRef.current.stopAsync?.();
-      await soundRef.current.unloadAsync?.();
+      try {
+        soundRef.current.pause();
+        soundRef.current.remove?.();
+        soundRef.current.release?.();
+      } catch {}
       soundRef.current = null;
     }
     setCurrentEpisode(null);
     setCurrentFeed(null);
     setPlayback({ isPlaying: false, isLoading: false, positionMs: 0, durationMs: 0, playbackRate: 1.0 });
   }, [saveCurrentPosition, cancelSleepTimer]);
+
+  const stopRef = useRef(stop);
+  useEffect(() => {
+    stopRef.current = stop;
+  }, [stop]);
 
   useEffect(() => {
     if (sleepTimerRef.current.active && sleepTimerRef.current.mode === "endOfEpisode" && !playback.isPlaying && playback.positionMs > 0 && playback.durationMs > 0) {
@@ -740,7 +745,9 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     playNext,
     subscribePosition,
     getPositionSnapshot,
-  }), [currentEpisode, currentFeed, playback, playEpisode, pause, resume, seekTo, skip, setRate, stop, getSavedPosition, removeSavedPosition, recentlyPlayed, getFeedSpeed, sleepTimer, setSleepTimerFn, cancelSleepTimer, getInProgressEpisodes, queue, handleAddToQueue, handleRemoveFromQueue, handleClearQueue, playNext, subscribePosition, getPositionSnapshot]);
+    episodeCompleted,
+    clearEpisodeCompleted,
+  }), [currentEpisode, currentFeed, playback, playEpisode, pause, resume, seekTo, skip, setRate, stop, getSavedPosition, removeSavedPosition, recentlyPlayed, getFeedSpeed, sleepTimer, setSleepTimerFn, cancelSleepTimer, getInProgressEpisodes, queue, handleAddToQueue, handleRemoveFromQueue, handleClearQueue, playNext, subscribePosition, getPositionSnapshot, episodeCompleted, clearEpisodeCompleted]);
 
   return (
     <AudioPlayerContext.Provider value={value}>

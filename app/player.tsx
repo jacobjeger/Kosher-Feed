@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { View, Text, Pressable, StyleSheet, Platform, Alert, ScrollView, Share, PanResponder, Animated as RNAnimated } from "react-native";
+import { View, Text, Pressable, StyleSheet, Platform, Alert, ScrollView, Share, PanResponder, Animated as RNAnimated, Dimensions } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
@@ -33,14 +33,10 @@ function formatTimerRemaining(ms: number): string {
 const RATES = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 
 const SLEEP_OPTIONS = [15, 30, 45, 60, "endOfEpisode" as const, "cancel" as const];
-const SLEEP_LABELS: Record<string, string> = {
-  "15": "15 min",
-  "30": "30 min",
-  "45": "45 min",
-  "60": "60 min",
-  "endOfEpisode": "End of Episode",
-  "cancel": "Cancel",
-};
+
+const { height: SCREEN_HEIGHT } = Dimensions.get("window");
+const isSmallScreen = SCREEN_HEIGHT < 700;
+const artworkMaxSize = isSmallScreen ? 180 : 280;
 
 export default function PlayerScreen() {
   const insets = useSafeAreaInsets();
@@ -48,6 +44,7 @@ export default function PlayerScreen() {
     currentEpisode, currentFeed, playback,
     pause, resume, seekTo, skip, setRate, stop,
     sleepTimer, setSleepTimer, cancelSleepTimer,
+    episodeCompleted, clearEpisodeCompleted,
   } = useAudioPlayer();
   const position = usePlaybackPosition();
   const { settings } = useSettings();
@@ -63,6 +60,13 @@ export default function PlayerScreen() {
 
   const swipeAnim = useRef(new RNAnimated.Value(0)).current;
 
+  useEffect(() => {
+    if (episodeCompleted) {
+      clearEpisodeCompleted();
+      safeGoBack();
+    }
+  }, [episodeCompleted, clearEpisodeCompleted]);
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
@@ -74,11 +78,9 @@ export default function PlayerScreen() {
       },
       onPanResponderRelease: (_, gestureState) => {
         if (gestureState.dx < -50) {
-          // Swipe left = skip forward
           lightHaptic();
           skip(settings.skipForwardSeconds);
         } else if (gestureState.dx > 50) {
-          // Swipe right = skip backward
           lightHaptic();
           skip(-settings.skipBackwardSeconds);
         }
@@ -191,7 +193,6 @@ export default function PlayerScreen() {
         url: currentEpisode.audioUrl,
       });
     } catch (e) {
-      // Silently catch share errors
     }
   }, [currentEpisode, currentFeed]);
 
@@ -242,7 +243,7 @@ export default function PlayerScreen() {
         <View style={{ width: 28 }} />
       </View>
 
-      <View style={styles.artworkContainer}>
+      <View style={[styles.artworkContainer, isSmallScreen && styles.artworkContainerSmall]}>
         <RNAnimated.View 
           {...panResponder.panHandlers}
           style={{ transform: [{ translateX: swipeAnim }] }}
@@ -250,19 +251,20 @@ export default function PlayerScreen() {
           {currentFeed.imageUrl ? (
             <Image
               source={{ uri: currentFeed.imageUrl }}
-              style={styles.artwork}
+              style={[styles.artwork, { maxWidth: artworkMaxSize }]}
               contentFit="cover"
+              cachePolicy="memory-disk"
             />
           ) : (
-            <View style={[styles.artwork, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
-              <Ionicons name="mic" size={80} color={colors.textSecondary} />
+            <View style={[styles.artwork, { maxWidth: artworkMaxSize, backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
+              <Ionicons name="mic" size={isSmallScreen ? 48 : 80} color={colors.textSecondary} />
             </View>
           )}
         </RNAnimated.View>
       </View>
 
-      <View style={styles.infoSection}>
-        <Text style={[styles.episodeTitle, { color: colors.text }]} numberOfLines={2}>
+      <View style={[styles.infoSection, isSmallScreen && styles.infoSectionSmall]}>
+        <Text style={[styles.episodeTitle, { color: colors.text }, isSmallScreen && styles.episodeTitleSmall]} numberOfLines={2}>
           {currentEpisode.title}
         </Text>
         <Text style={[styles.feedName, { color: colors.accent }]} numberOfLines={1}>
@@ -270,7 +272,7 @@ export default function PlayerScreen() {
         </Text>
       </View>
 
-      <View style={styles.sliderSection}>
+      <View style={[styles.sliderSection, isSmallScreen && styles.sliderSectionSmall]}>
         <Slider
           style={styles.slider}
           minimumValue={0}
@@ -296,7 +298,7 @@ export default function PlayerScreen() {
         </View>
       </View>
 
-      <View style={styles.controls}>
+      <View style={[styles.controls, isSmallScreen && styles.controlsSmall]}>
         <Pressable
           onPress={cycleRate}
           style={[styles.rateBtn, { backgroundColor: colors.surfaceAlt }]}
@@ -311,7 +313,7 @@ export default function PlayerScreen() {
           hitSlop={8}
           style={styles.skipBtn}
         >
-          <MaterialIcons name={getSkipBackwardIcon()} size={32} color={colors.text} />
+          <MaterialIcons name={getSkipBackwardIcon()} size={isSmallScreen ? 28 : 32} color={colors.text} />
         </Pressable>
 
         <Pressable
@@ -319,11 +321,11 @@ export default function PlayerScreen() {
             mediumHaptic();
             playback.isPlaying ? pause() : resume();
           }}
-          style={[styles.playBtn, { backgroundColor: colors.accent }]}
+          style={[styles.playBtn, isSmallScreen && styles.playBtnSmall, { backgroundColor: colors.accent }]}
         >
           <Ionicons
             name={playback.isPlaying ? "pause" : "play"}
-            size={32}
+            size={isSmallScreen ? 28 : 32}
             color="#fff"
             style={playback.isPlaying ? undefined : { marginLeft: 3 }}
           />
@@ -334,7 +336,7 @@ export default function PlayerScreen() {
           hitSlop={8}
           style={styles.skipBtn}
         >
-          <MaterialIcons name={getSkipForwardIcon()} size={32} color={colors.text} />
+          <MaterialIcons name={getSkipForwardIcon()} size={isSmallScreen ? 28 : 32} color={colors.text} />
         </Pressable>
 
         <Pressable
@@ -449,7 +451,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingBottom: 12,
+    paddingBottom: 8,
   },
   headerTitle: {
     fontSize: 13,
@@ -460,26 +462,36 @@ const styles = StyleSheet.create({
   artworkContainer: {
     alignItems: "center",
     paddingHorizontal: 24,
-    paddingVertical: 16,
-    flex: 1,
+    paddingVertical: 12,
     justifyContent: "center",
-    minHeight: 200,
+    minHeight: 160,
+  },
+  artworkContainerSmall: {
+    paddingVertical: 6,
+    minHeight: 100,
   },
   artwork: {
     width: "100%" as any,
-    maxWidth: 300,
+    maxWidth: 280,
     aspectRatio: 1,
     borderRadius: 16,
   },
   infoSection: {
     paddingHorizontal: 20,
-    gap: 6,
-    marginBottom: 16,
+    gap: 4,
+    marginBottom: 12,
+  },
+  infoSectionSmall: {
+    marginBottom: 6,
   },
   episodeTitle: {
     fontSize: 20,
     fontWeight: "700" as const,
     lineHeight: 26,
+  },
+  episodeTitleSmall: {
+    fontSize: 17,
+    lineHeight: 22,
   },
   feedName: {
     fontSize: 15,
@@ -487,11 +499,14 @@ const styles = StyleSheet.create({
   },
   sliderSection: {
     paddingHorizontal: 20,
-    marginBottom: 20,
+    marginBottom: 16,
+  },
+  sliderSectionSmall: {
+    marginBottom: 8,
   },
   slider: {
     width: "100%" as any,
-    height: 40,
+    height: 36,
   },
   timeRow: {
     flexDirection: "row",
@@ -508,7 +523,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 16,
     paddingHorizontal: 24,
-    paddingBottom: 12,
+    paddingBottom: 10,
+  },
+  controlsSmall: {
+    gap: 12,
+    paddingBottom: 6,
   },
   rateBtn: {
     width: 44,
@@ -534,13 +553,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  playBtnSmall: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+  },
   secondaryControls: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
     paddingHorizontal: 24,
-    paddingBottom: 16,
+    paddingBottom: 12,
   },
   secondaryBtn: {
     flexDirection: "row",
