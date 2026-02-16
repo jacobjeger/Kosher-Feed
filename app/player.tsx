@@ -35,8 +35,8 @@ const RATES = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 const SLEEP_OPTIONS = [15, 30, 45, 60, "endOfEpisode" as const, "cancel" as const];
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
-const isSmallScreen = SCREEN_HEIGHT < 700;
-const artworkMaxSize = isSmallScreen ? 180 : 280;
+const isSmallScreen = SCREEN_HEIGHT < 750;
+const artworkMaxSize = isSmallScreen ? 140 : 220;
 
 export default function PlayerScreen() {
   const insets = useSafeAreaInsets();
@@ -471,37 +471,36 @@ const styles = StyleSheet.create({
   },
   artworkContainer: {
     alignItems: "center",
-    paddingHorizontal: 24,
-    paddingVertical: 12,
+    paddingHorizontal: 40,
+    paddingVertical: 8,
     justifyContent: "center",
-    minHeight: 160,
   },
   artworkContainerSmall: {
-    paddingVertical: 6,
-    minHeight: 100,
+    paddingVertical: 4,
+    paddingHorizontal: 60,
   },
   artwork: {
     width: "100%" as any,
-    maxWidth: 280,
+    maxWidth: 220,
     aspectRatio: 1,
     borderRadius: 16,
   },
   infoSection: {
     paddingHorizontal: 20,
-    gap: 4,
-    marginBottom: 12,
+    gap: 2,
+    marginBottom: 8,
   },
   infoSectionSmall: {
-    marginBottom: 6,
+    marginBottom: 4,
   },
   episodeTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "700" as const,
-    lineHeight: 26,
+    lineHeight: 23,
   },
   episodeTitleSmall: {
-    fontSize: 17,
-    lineHeight: 22,
+    fontSize: 16,
+    lineHeight: 20,
   },
   feedName: {
     fontSize: 15,
