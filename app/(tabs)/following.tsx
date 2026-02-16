@@ -10,8 +10,9 @@ import Colors from "@/constants/colors";
 import { getDeviceId } from "@/lib/device-id";
 import { getApiUrl, queryClient } from "@/lib/query-client";
 import type { Feed, Episode } from "@/lib/types";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
-export default function FollowingScreen() {
+function FollowingScreenInner() {
   const insets = useSafeAreaInsets();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
@@ -169,6 +170,14 @@ export default function FollowingScreen() {
         </View>
       )}
     />
+  );
+}
+
+export default function FollowingScreen() {
+  return (
+    <ErrorBoundary>
+      <FollowingScreenInner />
+    </ErrorBoundary>
   );
 }
 

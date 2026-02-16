@@ -8,8 +8,9 @@ import EpisodeItem from "@/components/EpisodeItem";
 import Colors from "@/constants/colors";
 import { Ionicons } from "@expo/vector-icons";
 import type { Feed, Episode } from "@/lib/types";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
-export default function FavoritesScreen() {
+function FavoritesScreenInner() {
   const insets = useSafeAreaInsets();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
@@ -70,6 +71,14 @@ export default function FavoritesScreen() {
         />
       )}
     </View>
+  );
+}
+
+export default function FavoritesScreen() {
+  return (
+    <ErrorBoundary>
+      <FavoritesScreenInner />
+    </ErrorBoundary>
   );
 }
 

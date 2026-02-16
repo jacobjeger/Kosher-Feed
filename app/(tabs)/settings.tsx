@@ -11,6 +11,7 @@ import { useDownloads } from "@/contexts/DownloadsContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { requestNotificationPermissions } from "@/lib/notifications";
 import { lightHaptic } from "@/lib/haptics";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const EPISODE_LIMIT_OPTIONS = [3, 5, 10, 15, 25, 50];
 const SKIP_OPTIONS = [10, 15, 30, 45, 60];
@@ -53,7 +54,7 @@ function SettingRow({ icon, label, value, onPress, rightElement }: SettingRowPro
   );
 }
 
-export default function SettingsScreen() {
+function SettingsScreenInner() {
   const insets = useSafeAreaInsets();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
@@ -456,6 +457,14 @@ export default function SettingsScreen() {
         ShiurPod{"\n"}A curated listening experience
       </Text>
     </ScrollView>
+  );
+}
+
+export default function SettingsScreen() {
+  return (
+    <ErrorBoundary>
+      <SettingsScreenInner />
+    </ErrorBoundary>
   );
 }
 

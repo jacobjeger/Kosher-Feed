@@ -14,6 +14,7 @@ import { queryClient, getApiUrl } from "@/lib/query-client";
 import { router } from "expo-router";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { lightHaptic } from "@/lib/haptics";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 interface SavedPositionEntry {
   episodeId: string;
@@ -200,7 +201,7 @@ const ContinueListeningCard = React.memo(function ContinueListeningCard({ episod
   );
 });
 
-export default function HomeScreen() {
+function HomeScreenInner() {
   const insets = useSafeAreaInsets();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
@@ -577,6 +578,14 @@ export default function HomeScreen() {
         </View>
       )}
     </ScrollView>
+  );
+}
+
+export default function HomeScreen() {
+  return (
+    <ErrorBoundary>
+      <HomeScreenInner />
+    </ErrorBoundary>
   );
 }
 

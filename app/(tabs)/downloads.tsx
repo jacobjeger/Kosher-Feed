@@ -9,6 +9,7 @@ import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import Colors from "@/constants/colors";
 import type { DownloadedEpisode, Feed } from "@/lib/types";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 function DownloadItem({ item }: { item: DownloadedEpisode }) {
   const { playEpisode, currentEpisode, playback, pause, resume } = useAudioPlayer();
@@ -97,7 +98,7 @@ function DownloadItem({ item }: { item: DownloadedEpisode }) {
   );
 }
 
-export default function DownloadsScreen() {
+function DownloadsScreenInner() {
   const insets = useSafeAreaInsets();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
@@ -131,6 +132,14 @@ export default function DownloadsScreen() {
         </View>
       )}
     />
+  );
+}
+
+export default function DownloadsScreen() {
+  return (
+    <ErrorBoundary>
+      <DownloadsScreenInner />
+    </ErrorBoundary>
   );
 }
 
