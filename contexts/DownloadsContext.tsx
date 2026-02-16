@@ -9,6 +9,8 @@ import { getApiUrl } from "@/lib/query-client";
 import { getDeviceId } from "@/lib/device-id";
 import { addLog } from "@/lib/error-logger";
 
+const PROGRESS_THROTTLE_MS = 500;
+
 interface DownloadsContextValue {
   downloads: DownloadedEpisode[];
   downloadProgress: Map<string, number>;
@@ -50,6 +52,20 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
   const [downloads, setDownloads] = useState<DownloadedEpisode[]>([]);
   const [downloadProgress, setDownloadProgress] = useState<Map<string, number>>(new Map());
   const downloadsRef = useRef<DownloadedEpisode[]>([]);
+  const progressRef = useRef<Map<string, number>>(new Map());
+  const progressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    progressTimerRef.current = setInterval(() => {
+      const current = progressRef.current;
+      if (current.size > 0) {
+        setDownloadProgress(new Map(current));
+      }
+    }, PROGRESS_THROTTLE_MS);
+    return () => {
+      if (progressTimerRef.current) clearInterval(progressTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     downloadsRef.current = downloads;
@@ -140,11 +156,8 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     const safeFilename = episode.id.replace(/[^a-zA-Z0-9]/g, "_") + ".mp3";
     const fileUri = podcastsDir.uri + '/' + safeFilename;
 
-    setDownloadProgress(prev => {
-      const next = new Map(prev);
-      next.set(episode.id, 0);
-      return next;
-    });
+    progressRef.current.set(episode.id, 0);
+    setDownloadProgress(new Map(progressRef.current));
 
     try {
       const downloadResumable = LegacyFS.createDownloadResumable(
@@ -153,11 +166,7 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
         {},
         (progress) => {
           const pct = progress.totalBytesWritten / progress.totalBytesExpectedToWrite;
-          setDownloadProgress(prev => {
-            const next = new Map(prev);
-            next.set(episode.id, pct);
-            return next;
-          });
+          progressRef.current.set(episode.id, pct);
         }
       );
 
@@ -180,11 +189,8 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       addLog("error", `Download failed: ${episode.title} - ${(e as any)?.message || e}`, (e as any)?.stack, "downloads");
     } finally {
-      setDownloadProgress(prev => {
-        const next = new Map(prev);
-        next.delete(episode.id);
-        return next;
-      });
+      progressRef.current.delete(episode.id);
+      setDownloadProgress(new Map(progressRef.current));
     }
   }, []);
 

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useRef } from "react";
 import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Platform, Switch, Alert, TextInput } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
@@ -116,7 +116,8 @@ function PodcastDetailScreenInner() {
   const handleToggleNotifications = async (value: boolean) => {
     lightHaptic();
     if (value) {
-      const { requestNotificationPermissions } = await import("@/lib/notifications");
+      const { requestNotificationPermissions, setupNotificationChannel } = await import("@/lib/notifications");
+      await setupNotificationChannel();
       const granted = await requestNotificationPermissions();
       if (!granted) {
         if (Platform.OS !== "web") {
@@ -155,6 +156,11 @@ function PodcastDetailScreenInner() {
       episodesInfiniteQuery.fetchNextPage();
     }
   }, [episodesInfiniteQuery, episodeSearch]);
+
+  const renderEpisodeItem = useCallback(({ item }: { item: Episode }) => {
+    if (!feed) return null;
+    return <EpisodeItem episode={item} feed={feed} />;
+  }, [feed]);
 
   const feedError = feedsQuery.isError || episodesInfiniteQuery.isError;
   const feedErrorMsg = feedsQuery.error?.message || episodesInfiniteQuery.error?.message || "";
@@ -196,6 +202,199 @@ function PodcastDetailScreenInner() {
     );
   }
 
+  const headerElement = useMemo(() => (
+    <View>
+      <View style={[styles.header, { paddingTop: insets.top + (Platform.OS === "web" ? 67 : 8) }]}>
+        <Pressable onPress={() => safeGoBack()} hitSlop={12}>
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
+        </Pressable>
+      </View>
+
+      <View style={styles.podcastInfo}>
+        {feed.imageUrl ? (
+          <Image source={{ uri: feed.imageUrl }} style={styles.artwork} contentFit="cover" cachePolicy="memory-disk" />
+        ) : (
+          <View style={[styles.artwork, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
+            <Ionicons name="mic" size={48} color={colors.textSecondary} />
+          </View>
+        )}
+
+        <View style={styles.podcastMeta}>
+          <Text style={[styles.podcastTitle, { color: colors.text }]}>{feed.title}</Text>
+          {feed.author && (
+            <Text style={[styles.podcastAuthor, { color: colors.textSecondary }]}>{feed.author}</Text>
+          )}
+
+          <Pressable
+            onPress={handleFollow}
+            style={[
+              styles.followBtn,
+              {
+                backgroundColor: isFollowing ? colors.surfaceAlt : colors.accent,
+                borderColor: isFollowing ? colors.border : colors.accent,
+                borderWidth: isFollowing ? 1 : 0,
+              },
+            ]}
+          >
+            <Feather
+              name={isFollowing ? "check" : "plus"}
+              size={16}
+              color={isFollowing ? colors.text : "#fff"}
+            />
+            <Text style={[styles.followText, { color: isFollowing ? colors.text : "#fff" }]}>
+              {isFollowing ? "Following" : "Follow"}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+
+      {feed.description && (
+        <View style={styles.descriptionBlock}>
+          <Text
+            style={[styles.description, { color: colors.textSecondary }]}
+            numberOfLines={showFullDescription ? undefined : 3}
+          >
+            {feed.description}
+          </Text>
+          <Pressable onPress={() => setShowFullDescription(prev => !prev)}>
+            <Text style={[styles.seeMoreText, { color: colors.accent }]}>
+              {showFullDescription ? "See less" : "See more"}
+            </Text>
+          </Pressable>
+        </View>
+      )}
+
+      {isFollowing && (
+        <View style={{ marginBottom: 16 }}>
+          <Pressable
+            onPress={() => { lightHaptic(); setShowPreferences(prev => !prev); }}
+            style={[styles.preferencesBtn, { backgroundColor: colors.surfaceAlt }]}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Ionicons name="options-outline" size={18} color={colors.accent} />
+              <Text style={[styles.preferencesBtnText, { color: colors.text }]}>Preferences</Text>
+            </View>
+            <Ionicons name={showPreferences ? "chevron-up" : "chevron-down"} size={18} color={colors.textSecondary} />
+          </Pressable>
+
+          {showPreferences && (
+            <View style={[styles.feedSettingsCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+              <View style={styles.feedSettingRow}>
+                <View style={styles.feedSettingLeft}>
+                  <Ionicons name="notifications-outline" size={18} color={colors.accent} />
+                  <Text style={[styles.feedSettingLabel, { color: colors.text }]}>Notifications</Text>
+                </View>
+                <Switch
+                  value={feedSettings.notificationsEnabled}
+                  onValueChange={handleToggleNotifications}
+                  trackColor={{ false: colors.border, true: colors.accent }}
+                  thumbColor="#fff"
+                />
+              </View>
+              <View style={[styles.feedSettingDivider, { backgroundColor: colors.border }]} />
+              <Pressable style={styles.feedSettingRow} onPress={handleChangeEpisodeLimit}>
+                <View style={styles.feedSettingLeft}>
+                  <Ionicons name="layers-outline" size={18} color={colors.accent} />
+                  <Text style={[styles.feedSettingLabel, { color: colors.text }]}>Episodes to keep</Text>
+                </View>
+                <View style={styles.feedSettingRight}>
+                  <Text style={[styles.feedSettingValue, { color: colors.textSecondary }]}>{feedSettings.maxEpisodes}</Text>
+                  <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                </View>
+              </Pressable>
+              {allEpisodes.length > 0 && (
+                <>
+                  <View style={[styles.feedSettingDivider, { backgroundColor: colors.border }]} />
+                  <Pressable
+                    style={styles.feedSettingRow}
+                    onPress={() => {
+                      lightHaptic();
+                      if (feed) batchDownload(allEpisodes.slice(0, 20), feed);
+                    }}
+                  >
+                    <View style={styles.feedSettingLeft}>
+                      <Ionicons name="cloud-download-outline" size={18} color={colors.accent} />
+                      <Text style={[styles.feedSettingLabel, { color: colors.text }]}>Download Latest Episodes</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                  </Pressable>
+                </>
+              )}
+            </View>
+          )}
+        </View>
+      )}
+
+      <Text style={[styles.sectionTitle, { color: colors.text }]}>
+        Episodes{totalCount > 0 ? ` (${totalCount})` : ""}
+      </Text>
+
+      <View style={styles.sortRow}>
+        <Pressable
+          onPress={() => { lightHaptic(); setSortOrder(prev => prev === 'newest' ? 'oldest' : 'newest'); }}
+          style={[styles.sortBtn, { backgroundColor: colors.surfaceAlt }]}
+        >
+          <Ionicons name={sortOrder === 'newest' ? 'arrow-down' : 'arrow-up'} size={14} color={colors.accent} />
+          <Text style={[styles.sortBtnText, { color: colors.text }]}>
+            {sortOrder === 'newest' ? 'Newest First' : 'Oldest First'}
+          </Text>
+        </Pressable>
+      </View>
+
+      <View style={[styles.episodeSearchContainer, { backgroundColor: colors.surfaceAlt, borderColor: isEpisodeSearchFocused ? colors.accent : "transparent" }]}>
+        <Ionicons name="search" size={16} color={colors.textSecondary} style={{ marginLeft: 12 }} />
+        <TextInput
+          style={[styles.episodeSearchInput, { color: colors.text }]}
+          placeholder="Search episodes..."
+          placeholderTextColor={colors.textSecondary}
+          value={episodeSearch}
+          onChangeText={setEpisodeSearch}
+          onFocus={() => setIsEpisodeSearchFocused(true)}
+          onBlur={() => setIsEpisodeSearchFocused(false)}
+          returnKeyType="search"
+        />
+        {episodeSearch.length > 0 && (
+          <Pressable onPress={() => setEpisodeSearch("")} style={styles.episodeSearchClear}>
+            <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
+          </Pressable>
+        )}
+      </View>
+    </View>
+  ), [feed, colors, insets.top, isFollowing, showFullDescription, showPreferences, feedSettings, allEpisodes.length, totalCount, sortOrder, episodeSearch, isEpisodeSearchFocused, handleFollow, handleToggleNotifications, handleChangeEpisodeLimit, batchDownload]);
+
+  const footerElement = useMemo(() => {
+    if (episodesInfiniteQuery.isFetchingNextPage) {
+      return (
+        <View style={styles.loadingMore}>
+          <ActivityIndicator size="small" color={colors.accent} />
+          <Text style={[styles.loadingMoreText, { color: colors.textSecondary }]}>Loading more episodes...</Text>
+        </View>
+      );
+    }
+    if (allEpisodes.length > 0 && !episodesInfiniteQuery.hasNextPage && !episodeSearch.trim()) {
+      return (
+        <View style={styles.endOfList}>
+          <Text style={[styles.endOfListText, { color: colors.textSecondary }]}>
+            All {totalCount} episodes loaded
+          </Text>
+        </View>
+      );
+    }
+    return null;
+  }, [episodesInfiniteQuery.isFetchingNextPage, episodesInfiniteQuery.hasNextPage, allEpisodes.length, totalCount, episodeSearch, colors]);
+
+  const emptyElement = useMemo(() => {
+    if (episodesInfiniteQuery.isLoading) {
+      return <ActivityIndicator size="small" color={colors.accent} style={{ marginTop: 20 }} />;
+    }
+    return (
+      <View style={styles.emptyState}>
+        <Ionicons name="albums-outline" size={40} color={colors.textSecondary} />
+        <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No episodes found</Text>
+      </View>
+    );
+  }, [episodesInfiniteQuery.isLoading, colors]);
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <FlatList
@@ -208,196 +407,10 @@ function PodcastDetailScreenInner() {
         maxToRenderPerBatch={10}
         windowSize={5}
         removeClippedSubviews={Platform.OS !== "web"}
-        ListHeaderComponent={() => (
-          <View>
-            <View style={[styles.header, { paddingTop: insets.top + (Platform.OS === "web" ? 67 : 8) }]}>
-              <Pressable onPress={() => safeGoBack()} hitSlop={12}>
-                <Ionicons name="arrow-back" size={24} color={colors.text} />
-              </Pressable>
-            </View>
-
-            <View style={styles.podcastInfo}>
-              {feed.imageUrl ? (
-                <Image source={{ uri: feed.imageUrl }} style={styles.artwork} contentFit="cover" />
-              ) : (
-                <View style={[styles.artwork, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
-                  <Ionicons name="mic" size={48} color={colors.textSecondary} />
-                </View>
-              )}
-
-              <View style={styles.podcastMeta}>
-                <Text style={[styles.podcastTitle, { color: colors.text }]}>{feed.title}</Text>
-                {feed.author && (
-                  <Text style={[styles.podcastAuthor, { color: colors.textSecondary }]}>{feed.author}</Text>
-                )}
-
-                <Pressable
-                  onPress={handleFollow}
-                  style={[
-                    styles.followBtn,
-                    {
-                      backgroundColor: isFollowing ? colors.surfaceAlt : colors.accent,
-                      borderColor: isFollowing ? colors.border : colors.accent,
-                      borderWidth: isFollowing ? 1 : 0,
-                    },
-                  ]}
-                >
-                  <Feather
-                    name={isFollowing ? "check" : "plus"}
-                    size={16}
-                    color={isFollowing ? colors.text : "#fff"}
-                  />
-                  <Text style={[styles.followText, { color: isFollowing ? colors.text : "#fff" }]}>
-                    {isFollowing ? "Following" : "Follow"}
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-
-            {feed.description && (
-              <View style={styles.descriptionBlock}>
-                <Text
-                  style={[styles.description, { color: colors.textSecondary }]}
-                  numberOfLines={showFullDescription ? undefined : 3}
-                >
-                  {feed.description}
-                </Text>
-                <Pressable onPress={() => setShowFullDescription(prev => !prev)}>
-                  <Text style={[styles.seeMoreText, { color: colors.accent }]}>
-                    {showFullDescription ? "See less" : "See more"}
-                  </Text>
-                </Pressable>
-              </View>
-            )}
-
-            {isFollowing && (
-              <View style={{ marginBottom: 16 }}>
-                <Pressable
-                  onPress={() => { lightHaptic(); setShowPreferences(prev => !prev); }}
-                  style={[styles.preferencesBtn, { backgroundColor: colors.surfaceAlt }]}
-                >
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    <Ionicons name="options-outline" size={18} color={colors.accent} />
-                    <Text style={[styles.preferencesBtnText, { color: colors.text }]}>Preferences</Text>
-                  </View>
-                  <Ionicons name={showPreferences ? "chevron-up" : "chevron-down"} size={18} color={colors.textSecondary} />
-                </Pressable>
-
-                {showPreferences && (
-                  <View style={[styles.feedSettingsCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
-                    <View style={styles.feedSettingRow}>
-                      <View style={styles.feedSettingLeft}>
-                        <Ionicons name="notifications-outline" size={18} color={colors.accent} />
-                        <Text style={[styles.feedSettingLabel, { color: colors.text }]}>Notifications</Text>
-                      </View>
-                      <Switch
-                        value={feedSettings.notificationsEnabled}
-                        onValueChange={handleToggleNotifications}
-                        trackColor={{ false: colors.border, true: colors.accent }}
-                        thumbColor="#fff"
-                      />
-                    </View>
-                    <View style={[styles.feedSettingDivider, { backgroundColor: colors.border }]} />
-                    <Pressable style={styles.feedSettingRow} onPress={handleChangeEpisodeLimit}>
-                      <View style={styles.feedSettingLeft}>
-                        <Ionicons name="layers-outline" size={18} color={colors.accent} />
-                        <Text style={[styles.feedSettingLabel, { color: colors.text }]}>Episodes to keep</Text>
-                      </View>
-                      <View style={styles.feedSettingRight}>
-                        <Text style={[styles.feedSettingValue, { color: colors.textSecondary }]}>{feedSettings.maxEpisodes}</Text>
-                        <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
-                      </View>
-                    </Pressable>
-                    {allEpisodes.length > 0 && (
-                      <>
-                        <View style={[styles.feedSettingDivider, { backgroundColor: colors.border }]} />
-                        <Pressable
-                          style={styles.feedSettingRow}
-                          onPress={() => {
-                            lightHaptic();
-                            if (feed) batchDownload(allEpisodes.slice(0, 20), feed);
-                          }}
-                        >
-                          <View style={styles.feedSettingLeft}>
-                            <Ionicons name="cloud-download-outline" size={18} color={colors.accent} />
-                            <Text style={[styles.feedSettingLabel, { color: colors.text }]}>Download Latest Episodes</Text>
-                          </View>
-                          <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
-                        </Pressable>
-                      </>
-                    )}
-                  </View>
-                )}
-              </View>
-            )}
-
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              Episodes{totalCount > 0 ? ` (${totalCount})` : ""}
-            </Text>
-
-            <View style={styles.sortRow}>
-              <Pressable
-                onPress={() => { lightHaptic(); setSortOrder(prev => prev === 'newest' ? 'oldest' : 'newest'); }}
-                style={[styles.sortBtn, { backgroundColor: colors.surfaceAlt }]}
-              >
-                <Ionicons name={sortOrder === 'newest' ? 'arrow-down' : 'arrow-up'} size={14} color={colors.accent} />
-                <Text style={[styles.sortBtnText, { color: colors.text }]}>
-                  {sortOrder === 'newest' ? 'Newest First' : 'Oldest First'}
-                </Text>
-              </Pressable>
-            </View>
-
-            <View style={[styles.episodeSearchContainer, { backgroundColor: colors.surfaceAlt, borderColor: isEpisodeSearchFocused ? colors.accent : "transparent" }]}>
-              <Ionicons name="search" size={16} color={colors.textSecondary} style={{ marginLeft: 12 }} />
-              <TextInput
-                style={[styles.episodeSearchInput, { color: colors.text }]}
-                placeholder="Search episodes..."
-                placeholderTextColor={colors.textSecondary}
-                value={episodeSearch}
-                onChangeText={setEpisodeSearch}
-                onFocus={() => setIsEpisodeSearchFocused(true)}
-                onBlur={() => setIsEpisodeSearchFocused(false)}
-                returnKeyType="search"
-              />
-              {episodeSearch.length > 0 && (
-                <Pressable onPress={() => setEpisodeSearch("")} style={styles.episodeSearchClear}>
-                  <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
-                </Pressable>
-              )}
-            </View>
-          </View>
-        )}
-        renderItem={({ item }) => <EpisodeItem episode={item} feed={feed} />}
-        ListFooterComponent={() => {
-          if (episodesInfiniteQuery.isFetchingNextPage) {
-            return (
-              <View style={styles.loadingMore}>
-                <ActivityIndicator size="small" color={colors.accent} />
-                <Text style={[styles.loadingMoreText, { color: colors.textSecondary }]}>Loading more episodes...</Text>
-              </View>
-            );
-          }
-          if (allEpisodes.length > 0 && !episodesInfiniteQuery.hasNextPage && !episodeSearch.trim()) {
-            return (
-              <View style={styles.endOfList}>
-                <Text style={[styles.endOfListText, { color: colors.textSecondary }]}>
-                  All {totalCount} episodes loaded
-                </Text>
-              </View>
-            );
-          }
-          return null;
-        }}
-        ListEmptyComponent={() =>
-          episodesInfiniteQuery.isLoading ? (
-            <ActivityIndicator size="small" color={colors.accent} style={{ marginTop: 20 }} />
-          ) : (
-            <View style={styles.emptyState}>
-              <Ionicons name="albums-outline" size={40} color={colors.textSecondary} />
-              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No episodes found</Text>
-            </View>
-          )
-        }
+        ListHeaderComponent={headerElement}
+        renderItem={renderEpisodeItem}
+        ListFooterComponent={footerElement}
+        ListEmptyComponent={emptyElement}
       />
     </View>
   );

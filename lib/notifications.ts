@@ -42,9 +42,13 @@ export async function requestNotificationPermissions(): Promise<boolean> {
     try {
       if ("Notification" in window) {
         const result = await Notification.requestPermission();
+        addLog("info", `Web notification permission request result: ${result}`, undefined, "notifications");
         return result === "granted";
       }
-    } catch {}
+      addLog("warn", "Web Notification API not available", undefined, "notifications");
+    } catch (e) {
+      addLog("error", `Web notification permission request failed: ${(e as any)?.message || e}`, undefined, "notifications");
+    }
     return false;
   }
 
@@ -55,8 +59,11 @@ export async function requestNotificationPermissions(): Promise<boolean> {
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
     }
+    addLog("info", `Native notification permission: existing=${existingStatus}, final=${finalStatus}`, undefined, "notifications");
     return finalStatus === "granted";
-  } catch {}
+  } catch (e) {
+    addLog("error", `Native notification permission request failed: ${(e as any)?.message || e}`, undefined, "notifications");
+  }
   return false;
 }
 
@@ -84,9 +91,10 @@ export async function checkForNewEpisodes(
   const seen = await getSeenEpisodeIds();
   const subscribedFeedIds = new Set(subscribedFeeds.map(f => f.id));
 
-  const newEpisodes = allEpisodes.filter(
-    ep => subscribedFeedIds.has(ep.feedId) && !seen.has(ep.id)
-  );
+  const subscribedEpisodes = allEpisodes.filter(ep => subscribedFeedIds.has(ep.feedId));
+  const newEpisodes = subscribedEpisodes.filter(ep => !seen.has(ep.id));
+
+  addLog("info", `checkForNewEpisodes: ${allEpisodes.length} total eps, ${subscribedEpisodes.length} from subscribed feeds, ${seen.size} seen, ${newEpisodes.length} new`, undefined, "notifications");
 
   if (newEpisodes.length > 0) {
     await markEpisodesSeen(newEpisodes.map(e => e.id));
@@ -96,6 +104,8 @@ export async function checkForNewEpisodes(
 }
 
 export async function sendLocalNotification(episode: Episode, feed: Feed) {
+  addLog("info", `Sending notification: "${episode.title}" from "${feed.title}" (platform=${Platform.OS})`, undefined, "notifications");
+
   if (Platform.OS === "web") {
     try {
       if ("Notification" in window && Notification.permission === "granted") {
@@ -103,8 +113,13 @@ export async function sendLocalNotification(episode: Episode, feed: Feed) {
           body: episode.title,
           icon: feed.imageUrl || undefined,
         });
+        addLog("info", `Web notification sent for "${episode.title}"`, undefined, "notifications");
+      } else {
+        addLog("warn", `Web notification skipped: permission=${typeof Notification !== "undefined" ? Notification.permission : "N/A"}`, undefined, "notifications");
       }
-    } catch {}
+    } catch (e) {
+      addLog("error", `Web notification failed: ${(e as any)?.message || e}`, undefined, "notifications");
+    }
     return;
   }
 
@@ -118,6 +133,7 @@ export async function sendLocalNotification(episode: Episode, feed: Feed) {
       } as any,
       trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 1 } as any,
     });
+    addLog("info", `Native notification scheduled for "${episode.title}"`, undefined, "notifications");
   } catch (e) {
     addLog("error", `Notification failed for "${episode.title}": ${(e as any)?.message || e}`, (e as any)?.stack, "notifications");
   }

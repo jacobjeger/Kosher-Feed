@@ -15,7 +15,7 @@ import type { Feed, Episode } from "@/lib/types";
 import { addLog } from "@/lib/error-logger";
 
 export function BackgroundSync() {
-  const { settings } = useSettings();
+  const { settings, feedSettingsMap } = useSettings();
   const { autoDownloadNewEpisodes } = useDownloads();
   const hasInitialized = useRef(false);
   const lastCheckRef = useRef(0);
@@ -58,12 +58,20 @@ export function BackgroundSync() {
     if (!latestEpisodesQuery.data || hasInitialized.current) return;
     initializeSeenEpisodes(latestEpisodesQuery.data);
     hasInitialized.current = true;
+    addLog("info", `BackgroundSync: initialized seen episodes (${latestEpisodesQuery.data.length} total)`, undefined, "background-sync");
   }, [latestEpisodesQuery.data]);
+
+  const anyNotificationsEnabled = settings.notificationsEnabled || Object.values(feedSettingsMap).some(fs => fs.notificationsEnabled);
 
   useEffect(() => {
     const feeds = subscribedFeedsQuery.data;
     const episodes = latestEpisodesQuery.data;
-    if (!feeds || !episodes || feeds.length === 0) return;
+    if (!feeds || !episodes || feeds.length === 0) {
+      if (ready && !feeds) {
+        addLog("info", "BackgroundSync: no subscribed feeds data yet", undefined, "background-sync");
+      }
+      return;
+    }
 
     const now = Date.now();
     if (now - lastCheckRef.current < 60000) return;
@@ -71,29 +79,38 @@ export function BackgroundSync() {
 
     const runCheck = async () => {
       try {
-        if (settings.notificationsEnabled) {
+        addLog("info", `BackgroundSync: running check (${feeds.length} feeds, ${episodes.length} episodes, globalNotif=${settings.notificationsEnabled}, anyNotif=${anyNotificationsEnabled})`, undefined, "background-sync");
+
+        if (anyNotificationsEnabled) {
           try {
             const hasPermission = await checkNotificationPermission();
+            addLog("info", `BackgroundSync: notification permission=${hasPermission}`, undefined, "background-sync");
             if (hasPermission) {
               const newEps = await checkForNewEpisodes(feeds, episodes);
+              addLog("info", `BackgroundSync: found ${newEps.length} new episodes for notification`, undefined, "background-sync");
               if (newEps.length > 0) {
                 await notifyNewEpisodes(newEps, feeds);
+                addLog("info", `BackgroundSync: sent notifications for ${newEps.length} episodes`, undefined, "background-sync");
               }
+            } else {
+              addLog("warn", "BackgroundSync: notifications enabled in settings but permission not granted on device", undefined, "background-sync");
             }
           } catch (e) {
-            addLog("error", `Background notification check failed: ${(e as any)?.message || e}`, (e as any)?.stack, "background-sync");
+            addLog("error", `BackgroundSync: notification check failed: ${(e as any)?.message || e}`, (e as any)?.stack, "background-sync");
           }
+        } else {
+          addLog("info", "BackgroundSync: notifications disabled (global and all per-feed)", undefined, "background-sync");
         }
 
         if (settings.autoDownloadOnWifi) {
           try {
             await autoDownloadNewEpisodes(feeds, settings.maxEpisodesPerFeed);
           } catch (e) {
-            addLog("error", `Background auto-download failed: ${(e as any)?.message || e}`, (e as any)?.stack, "background-sync");
+            addLog("error", `BackgroundSync: auto-download failed: ${(e as any)?.message || e}`, (e as any)?.stack, "background-sync");
           }
         }
       } catch (e) {
-        addLog("error", `Background sync failed: ${(e as any)?.message || e}`, (e as any)?.stack, "background-sync");
+        addLog("error", `BackgroundSync: sync failed: ${(e as any)?.message || e}`, (e as any)?.stack, "background-sync");
       }
     };
 
@@ -105,6 +122,7 @@ export function BackgroundSync() {
     settings.autoDownloadOnWifi,
     settings.maxEpisodesPerFeed,
     autoDownloadNewEpisodes,
+    anyNotificationsEnabled,
   ]);
 
   useEffect(() => {

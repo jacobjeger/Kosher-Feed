@@ -9,7 +9,7 @@ import { getDeviceId } from "@/lib/device-id";
 import { getApiUrl } from "@/lib/query-client";
 import { useDownloads } from "@/contexts/DownloadsContext";
 import { useSettings } from "@/contexts/SettingsContext";
-import { requestNotificationPermissions, sendLocalNotification, checkNotificationPermission } from "@/lib/notifications";
+import { requestNotificationPermissions, sendLocalNotification, checkNotificationPermission, setupNotificationChannel } from "@/lib/notifications";
 import { lightHaptic } from "@/lib/haptics";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
@@ -102,6 +102,7 @@ function SettingsScreenInner() {
   const handleToggleNotifications = async (value: boolean) => {
     lightHaptic();
     if (value) {
+      await setupNotificationChannel();
       const granted = await requestNotificationPermissions();
       if (!granted && Platform.OS !== "web") {
         Alert.alert(
