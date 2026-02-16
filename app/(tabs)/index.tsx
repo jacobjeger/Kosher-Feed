@@ -152,7 +152,7 @@ export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
-  const { playEpisode, currentEpisode, playback, pause, resume } = useAudioPlayer();
+  const { playEpisode, currentEpisode, playback, pause, resume, recentlyPlayed } = useAudioPlayer();
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
 
@@ -193,17 +193,19 @@ export default function HomeScreen() {
     return { heroEpisode: hero, heroFeed: hFeed || null, quickPlayItems: qpItems };
   }, [trendingEpisodes, latestEpisodes, allFeeds]);
 
-  const recentEpisodes = useMemo(() => {
-    const trendingIds = new Set(trendingEpisodes.slice(0, 6).map(e => e.id));
-    return latestEpisodes
-      .filter(ep => !trendingIds.has(ep.id))
-      .slice(0, 8)
-      .map(ep => ({
-        episode: ep,
-        feed: allFeeds.find(f => f.id === ep.feedId),
-      }))
-      .filter(x => x.feed) as { episode: Episode; feed: Feed }[];
-  }, [latestEpisodes, trendingEpisodes, allFeeds]);
+  const recentlyListenedItems = useMemo(() => {
+    if (recentlyPlayed.length === 0) return [];
+    const allEpisodes = latestQuery.data || [];
+    const episodeMap = new Map(allEpisodes.map(ep => [ep.id, ep]));
+    return recentlyPlayed
+      .map(entry => {
+        const episode = episodeMap.get(entry.episodeId);
+        const feed = allFeeds.find(f => f.id === entry.feedId);
+        if (episode && feed) return { episode, feed };
+        return null;
+      })
+      .filter(Boolean) as { episode: Episode; feed: Feed }[];
+  }, [recentlyPlayed, latestQuery.data, allFeeds]);
 
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
@@ -360,11 +362,11 @@ export default function HomeScreen() {
         return <CategorySection key={cat.id} category={cat} feeds={catFeeds} colors={colors} />;
       })}
 
-      {!isSearching && recentEpisodes.length > 0 && (
+      {!isSearching && recentlyListenedItems.length > 0 && (
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Recent Episodes</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Recently Listened</Text>
           <View style={{ paddingHorizontal: 20 }}>
-            {recentEpisodes.map(({ episode, feed }) => (
+            {recentlyListenedItems.map(({ episode, feed }) => (
               <EpisodeItem key={episode.id} episode={episode} feed={feed} showFeedTitle />
             ))}
           </View>

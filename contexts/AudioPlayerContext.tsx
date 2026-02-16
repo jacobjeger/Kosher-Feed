@@ -6,6 +6,7 @@ import { apiRequest } from "@/lib/query-client";
 import { getDeviceId } from "@/lib/device-id";
 
 const POSITIONS_KEY = "@kosher_shiurim_positions";
+const RECENTLY_PLAYED_KEY = "@shiurpod_recently_played";
 
 interface SavedPosition {
   episodeId: string;
@@ -13,6 +14,12 @@ interface SavedPosition {
   positionMs: number;
   durationMs: number;
   updatedAt: string;
+}
+
+interface RecentlyPlayedEntry {
+  episodeId: string;
+  feedId: string;
+  playedAt: number;
 }
 
 interface PlaybackState {
@@ -35,6 +42,7 @@ interface AudioPlayerContextValue {
   setRate: (rate: number) => Promise<void>;
   stop: () => Promise<void>;
   getSavedPosition: (episodeId: string) => Promise<number>;
+  recentlyPlayed: RecentlyPlayedEntry[];
 }
 
 const AudioPlayerContext = createContext<AudioPlayerContextValue | null>(null);
@@ -88,6 +96,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     durationMs: 0,
     playbackRate: 1.0,
   });
+  const [recentlyPlayed, setRecentlyPlayed] = useState<RecentlyPlayedEntry[]>([]);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const soundRef = useRef<any>(null);
@@ -96,6 +105,25 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   const currentEpisodeRef = useRef<Episode | null>(null);
   const currentFeedRef = useRef<Feed | null>(null);
   const playbackRef = useRef<PlaybackState>(playback);
+
+  useEffect(() => {
+    AsyncStorage.getItem(RECENTLY_PLAYED_KEY).then(data => {
+      if (data) {
+        try {
+          setRecentlyPlayed(JSON.parse(data));
+        } catch {}
+      }
+    }).catch(() => {});
+  }, []);
+
+  const addRecentlyPlayed = useCallback(async (episodeId: string, feedId: string) => {
+    setRecentlyPlayed(prev => {
+      const filtered = prev.filter(e => e.episodeId !== episodeId);
+      const updated = [{ episodeId, feedId, playedAt: Date.now() }, ...filtered].slice(0, 20);
+      AsyncStorage.setItem(RECENTLY_PLAYED_KEY, JSON.stringify(updated)).catch(() => {});
+      return updated;
+    });
+  }, []);
 
   useEffect(() => {
     playbackRef.current = playback;
@@ -242,6 +270,9 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true }));
         startPositionTracking();
       }
+
+      addRecentlyPlayed(episode.id, feed.id);
+
       getDeviceId().then(deviceId => {
         apiRequest("POST", "/api/listens", { episodeId: episode.id, deviceId }).catch(() => {});
       });
@@ -251,7 +282,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     } finally {
       isLoadingRef.current = false;
     }
-  }, [playback.playbackRate, startPositionTracking, getSavedPosition, saveCurrentPosition]);
+  }, [playback.playbackRate, startPositionTracking, getSavedPosition, saveCurrentPosition, addRecentlyPlayed]);
 
   const pause = useCallback(async () => {
     if (Platform.OS === "web") {
@@ -326,7 +357,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     setRate,
     stop,
     getSavedPosition,
-  }), [currentEpisode, currentFeed, playback, playEpisode, pause, resume, seekTo, skip, setRate, stop, getSavedPosition]);
+    recentlyPlayed,
+  }), [currentEpisode, currentFeed, playback, playEpisode, pause, resume, seekTo, skip, setRate, stop, getSavedPosition, recentlyPlayed]);
 
   return (
     <AudioPlayerContext.Provider value={value}>

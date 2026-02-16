@@ -1,5 +1,5 @@
-import React from "react";
-import { View, Text, FlatList, Pressable, StyleSheet, useColorScheme, ActivityIndicator, Platform, Switch, Alert } from "react-native";
+import React, { useState, useMemo } from "react";
+import { View, Text, FlatList, Pressable, StyleSheet, useColorScheme, ActivityIndicator, Platform, Switch, Alert, TextInput } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -22,6 +22,9 @@ export default function PodcastDetailScreen() {
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const { getFeedSettings, updateFeedSettings } = useSettings();
+  const [showFullDescription, setShowFullDescription] = useState<boolean>(false);
+  const [episodeSearch, setEpisodeSearch] = useState("");
+  const [isEpisodeSearchFocused, setIsEpisodeSearchFocused] = useState(false);
 
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
   const feed = feedsQuery.data?.find(f => f.id === id);
@@ -30,6 +33,13 @@ export default function PodcastDetailScreen() {
     queryKey: [`/api/feeds/${id}/episodes`],
     enabled: !!id,
   });
+
+  const filteredEpisodes = useMemo(() => {
+    const eps = episodesQuery.data || [];
+    if (!episodeSearch.trim()) return eps;
+    const q = episodeSearch.toLowerCase().trim();
+    return eps.filter(ep => ep.title.toLowerCase().includes(q));
+  }, [episodesQuery.data, episodeSearch]);
 
   const subsQuery = useQuery<Subscription[]>({
     queryKey: ["/api/subscriptions"],
@@ -100,7 +110,7 @@ export default function PodcastDetailScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <FlatList
-        data={episodesQuery.data || []}
+        data={filteredEpisodes}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ paddingBottom: 120, paddingHorizontal: 16 }}
         ListHeaderComponent={() => (
@@ -150,9 +160,19 @@ export default function PodcastDetailScreen() {
             </View>
 
             {feed.description && (
-              <Text style={[styles.description, { color: colors.textSecondary }]} numberOfLines={3}>
-                {feed.description}
-              </Text>
+              <View style={styles.descriptionBlock}>
+                <Text
+                  style={[styles.description, { color: colors.textSecondary }]}
+                  numberOfLines={showFullDescription ? undefined : 3}
+                >
+                  {feed.description}
+                </Text>
+                <Pressable onPress={() => setShowFullDescription(prev => !prev)}>
+                  <Text style={[styles.seeMoreText, { color: colors.accent }]}>
+                    {showFullDescription ? "See less" : "See more"}
+                  </Text>
+                </Pressable>
+              </View>
             )}
 
             {isFollowing && (
@@ -186,6 +206,25 @@ export default function PodcastDetailScreen() {
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
               Episodes ({episodesQuery.data?.length || 0})
             </Text>
+
+            <View style={[styles.episodeSearchContainer, { backgroundColor: colors.surfaceAlt, borderColor: isEpisodeSearchFocused ? colors.accent : "transparent" }]}>
+              <Ionicons name="search" size={16} color={colors.textSecondary} style={{ marginLeft: 12 }} />
+              <TextInput
+                style={[styles.episodeSearchInput, { color: colors.text }]}
+                placeholder="Search episodes..."
+                placeholderTextColor={colors.textSecondary}
+                value={episodeSearch}
+                onChangeText={setEpisodeSearch}
+                onFocus={() => setIsEpisodeSearchFocused(true)}
+                onBlur={() => setIsEpisodeSearchFocused(false)}
+                returnKeyType="search"
+              />
+              {episodeSearch.length > 0 && (
+                <Pressable onPress={() => setEpisodeSearch("")} style={styles.episodeSearchClear}>
+                  <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
+                </Pressable>
+              )}
+            </View>
           </View>
         )}
         renderItem={({ item }) => <EpisodeItem episode={item} feed={feed} />}
@@ -249,10 +288,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
   },
+  descriptionBlock: {
+    marginBottom: 16,
+  },
   description: {
     fontSize: 13,
     lineHeight: 19,
-    marginBottom: 16,
+  },
+  seeMoreText: {
+    fontSize: 13,
+    fontWeight: "600",
+    marginTop: 4,
   },
   feedSettingsCard: {
     borderRadius: 12,
@@ -293,6 +339,24 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
     marginBottom: 12,
+  },
+  episodeSearchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 12,
+    borderWidth: 2,
+    height: 40,
+    marginBottom: 12,
+  },
+  episodeSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    paddingHorizontal: 8,
+    paddingVertical: 0,
+    height: 40,
+  },
+  episodeSearchClear: {
+    padding: 8,
   },
   emptyState: {
     alignItems: "center",

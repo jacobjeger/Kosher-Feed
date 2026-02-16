@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { View, Text, Pressable, StyleSheet, useColorScheme } from "react-native";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
@@ -30,11 +30,12 @@ function formatDate(dateStr: string | null): string {
   const now = new Date();
   const diff = now.getTime() - d.getTime();
   const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-  if (days === 0) return "Today";
-  if (days === 1) return "Yesterday";
-  if (days < 7) return `${days}d ago`;
-  if (days < 30) return `${Math.floor(days / 7)}w ago`;
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const monthDay = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  if (days === 0) return `Today \u00B7 ${monthDay}`;
+  if (days === 1) return `Yesterday \u00B7 ${monthDay}`;
+  if (days < 7) return `${days}d ago \u00B7 ${monthDay}`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago \u00B7 ${monthDay}`;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 export default function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
@@ -43,6 +44,7 @@ export default function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
+  const [expanded, setExpanded] = useState<boolean>(false);
 
   const isCurrentlyPlaying = currentEpisode?.id === episode.id;
   const downloaded = isDownloaded(episode.id);
@@ -64,31 +66,43 @@ export default function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
     await downloadEpisode(episode, feed);
   };
 
+  const handleToggleExpand = () => {
+    lightHaptic();
+    setExpanded(prev => !prev);
+  };
+
   return (
-    <Pressable
-      style={({ pressed }) => [
+    <View
+      style={[
         styles.container,
-        { backgroundColor: pressed ? colors.surfaceAlt : colors.surface, borderColor: colors.cardBorder },
+        { backgroundColor: colors.surface, borderColor: colors.cardBorder },
       ]}
-      onPress={handlePlay}
     >
       <View style={styles.row}>
-        <View style={[styles.playIcon, { backgroundColor: isCurrentlyPlaying ? colors.accent : colors.accentLight }]}>
+        <Pressable onPress={handlePlay} style={[styles.playIcon, { backgroundColor: isCurrentlyPlaying ? colors.accent : colors.accentLight }]}>
           <Ionicons
             name={isCurrentlyPlaying && playback.isPlaying ? "pause" : "play"}
             size={16}
             color={isCurrentlyPlaying ? "#fff" : colors.accent}
           />
-        </View>
-        <View style={styles.info}>
+        </Pressable>
+        <Pressable onPress={handleToggleExpand} style={styles.info}>
           {showFeedTitle && (
             <Text style={[styles.feedTitle, { color: colors.accent }]} numberOfLines={1}>
               {feed.title}
             </Text>
           )}
-          <Text style={[styles.title, { color: colors.text }]} numberOfLines={2}>
-            {episode.title}
-          </Text>
+          <View style={styles.titleRow}>
+            <Text style={[styles.title, { color: colors.text, flex: 1 }]} numberOfLines={expanded ? undefined : 2}>
+              {episode.title}
+            </Text>
+            <Ionicons
+              name={expanded ? "chevron-up" : "chevron-down"}
+              size={16}
+              color={colors.textSecondary}
+              style={styles.expandIcon}
+            />
+          </View>
           <View style={styles.meta}>
             {episode.publishedAt && (
               <Text style={[styles.metaText, { color: colors.textSecondary }]}>
@@ -101,7 +115,12 @@ export default function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
               </Text>
             )}
           </View>
-        </View>
+          {expanded && episode.description && (
+            <Text style={[styles.episodeDescription, { color: colors.textSecondary }]} numberOfLines={4}>
+              {episode.description}
+            </Text>
+          )}
+        </Pressable>
         <Pressable
           onPress={(e) => {
             e.stopPropagation();
@@ -123,7 +142,7 @@ export default function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
           )}
         </Pressable>
       </View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -136,7 +155,7 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     padding: 14,
     gap: 12,
   },
@@ -147,6 +166,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
+    marginTop: 2,
   },
   info: {
     flex: 1,
@@ -158,10 +178,18 @@ const styles = StyleSheet.create({
     textTransform: "uppercase" as const,
     letterSpacing: 0.5,
   },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 4,
+  },
   title: {
     fontSize: 14,
     fontWeight: "600" as const,
     lineHeight: 19,
+  },
+  expandIcon: {
+    marginTop: 2,
   },
   meta: {
     flexDirection: "row" as const,
@@ -171,12 +199,18 @@ const styles = StyleSheet.create({
   metaText: {
     fontSize: 12,
   },
+  episodeDescription: {
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 6,
+  },
   downloadBtn: {
     width: 36,
     height: 36,
     alignItems: "center" as const,
     justifyContent: "center" as const,
     flexShrink: 0,
+    marginTop: 2,
   },
   downloadingIndicator: {
     alignItems: "center" as const,
