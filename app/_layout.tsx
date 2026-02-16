@@ -12,8 +12,10 @@ import { SettingsProvider } from "@/contexts/SettingsContext";
 import { FavoritesProvider } from "@/contexts/FavoritesContext";
 import { BackgroundSync } from "@/components/BackgroundSync";
 import { setupNotificationChannel } from "@/lib/notifications";
+import { initErrorLogger } from "@/lib/error-logger";
 
 SplashScreen.preventAutoHideAsync();
+initErrorLogger();
 
 function RootLayoutNav() {
   return (
@@ -28,6 +30,7 @@ function RootLayoutNav() {
         }}
       />
       <Stack.Screen name="stats" options={{ headerShown: false }} />
+      <Stack.Screen name="debug-logs" options={{ headerShown: false }} />
       <Stack.Screen
         name="podcast/[id]"
         options={{

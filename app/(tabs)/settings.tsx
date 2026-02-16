@@ -441,6 +441,17 @@ export default function SettingsScreen() {
         </View>
       </View>
 
+      <View style={[styles.section, { borderColor: colors.cardBorder }]}>
+        <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>DEVELOPER</Text>
+        <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+          <SettingRow
+            icon={<Ionicons name="bug" size={20} color="#ef4444" />}
+            label="Debug Logs"
+            onPress={() => router.push("/debug-logs")}
+          />
+        </View>
+      </View>
+
       <Text style={[styles.footer, { color: colors.textSecondary }]}>
         ShiurPod{"\n"}A curated listening experience
       </Text>
