@@ -544,6 +544,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         await setAudioModeAsync({
           playsInSilentMode: true,
           shouldRouteThroughEarpiece: false,
+          shouldPlayInBackground: true,
+          interruptionMode: "doNotMix",
         });
 
         let retryCount = 0;
@@ -632,6 +634,16 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           player.seekTo(savedPos / 1000);
         }
         player.play();
+
+        try {
+          player.setActiveForLockScreen?.(true);
+          player.updateNowPlayingMetadata?.({
+            title: episode.title || "Unknown",
+            artist: feed.title || "ShiurPod",
+            album: feed.title || "ShiurPod",
+            artwork: feed.imageUrl || undefined,
+          });
+        } catch {}
 
         setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true }));
         addLog("info", `Playing: ${episode.title} (feed: ${feed.title})`, undefined, "audio");
@@ -766,6 +778,9 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         audioRef.current = null;
       }
     } else if (soundRef.current) {
+      try {
+        soundRef.current.removeFromLockScreen?.();
+      } catch {}
       try {
         soundRef.current.pause();
         soundRef.current.remove?.();
