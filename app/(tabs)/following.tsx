@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, FlatList, Pressable, StyleSheet, useColorScheme, ActivityIndicator, RefreshControl, Platform } from "react-native";
+import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, RefreshControl, Platform } from "react-native";
+import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
@@ -12,7 +13,7 @@ import type { Feed, Episode } from "@/lib/types";
 
 export default function FollowingScreen() {
   const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme();
+  const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const [deviceId, setDeviceId] = useState<string | null>(null);
@@ -45,6 +46,24 @@ export default function FollowingScreen() {
     enabled: !!deviceId,
   });
 
+  const whatsNewQuery = useQuery<Episode[]>({
+    queryKey: ["/api/whatsnew", deviceId],
+    queryFn: async () => {
+      if (!deviceId) return [];
+      const baseUrl = getApiUrl();
+      const url = new URL(`/api/whatsnew/${deviceId}`, baseUrl);
+      url.searchParams.set("limit", "15");
+      const res = await fetch(url.toString());
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!deviceId,
+  });
+  const whatsNewEpisodes = whatsNewQuery.data || [];
+
+  const allFeedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
+  const allFeeds = allFeedsQuery.data || [];
+
   const subscribedFeeds = feedsQuery.data || [];
   const episodes = episodesQuery.data || [];
   const isLoading = feedsQuery.isLoading || episodesQuery.isLoading;
@@ -58,6 +77,7 @@ export default function FollowingScreen() {
   const onRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/subscriptions/feeds"] });
     queryClient.invalidateQueries({ queryKey: ["/api/subscriptions/episodes"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/whatsnew"] });
   };
 
   if (isLoading) {
@@ -115,6 +135,20 @@ export default function FollowingScreen() {
             />
           )}
 
+          {whatsNewEpisodes.length > 0 && (
+            <View style={styles.whatsNewSection}>
+              <View style={styles.whatsNewHeader}>
+                <Ionicons name="sparkles" size={18} color={colors.accent} />
+                <Text style={[styles.whatsNewTitle, { color: colors.text }]}>What's New</Text>
+              </View>
+              {whatsNewEpisodes.slice(0, 10).map(ep => {
+                const epFeed = allFeeds.find(f => f.id === ep.feedId);
+                if (!epFeed) return null;
+                return <EpisodeItem key={ep.id} episode={ep} feed={epFeed} showFeedTitle />;
+              })}
+            </View>
+          )}
+
           {episodes.length > 0 && (
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Latest from your shiurim</Text>
           )}
@@ -152,6 +186,19 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
     marginBottom: 12,
+  },
+  whatsNewSection: {
+    marginBottom: 24,
+  },
+  whatsNewHeader: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 8,
+    paddingBottom: 12,
+  },
+  whatsNewTitle: {
+    fontSize: 20,
+    fontWeight: "700" as const,
   },
   emptyState: {
     alignItems: "center",

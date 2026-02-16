@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, Pressable, StyleSheet, useColorScheme, Platform, Alert, ScrollView, Share } from "react-native";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { View, Text, Pressable, StyleSheet, Platform, Alert, ScrollView, Share, PanResponder, Animated as RNAnimated } from "react-native";
+import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -49,7 +50,7 @@ export default function PlayerScreen() {
   } = useAudioPlayer();
   const { settings } = useSettings();
   const { toggleFavorite, isFavorite } = useFavorites();
-  const colorScheme = useColorScheme();
+  const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const [isSeeking, setIsSeeking] = useState(false);
@@ -57,6 +58,43 @@ export default function PlayerScreen() {
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [bookmarkSaved, setBookmarkSaved] = useState(false);
   const [webSleepIndex, setWebSleepIndex] = useState(0);
+
+  const swipeAnim = useRef(new RNAnimated.Value(0)).current;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return Math.abs(gestureState.dx) > 20 && Math.abs(gestureState.dy) < 20;
+      },
+      onPanResponderMove: (_, gestureState) => {
+        swipeAnim.setValue(gestureState.dx);
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dx < -50) {
+          // Swipe left = skip forward
+          lightHaptic();
+          skip(settings.skipForwardSeconds);
+        } else if (gestureState.dx > 50) {
+          // Swipe right = skip backward
+          lightHaptic();
+          skip(-settings.skipBackwardSeconds);
+        }
+        RNAnimated.spring(swipeAnim, {
+          toValue: 0,
+          useNativeDriver: true,
+          tension: 100,
+          friction: 10,
+        }).start();
+      },
+      onPanResponderTerminate: () => {
+        RNAnimated.spring(swipeAnim, {
+          toValue: 0,
+          useNativeDriver: true,
+        }).start();
+      },
+    })
+  ).current;
 
   useEffect(() => {
     if (currentEpisode) {
@@ -203,17 +241,22 @@ export default function PlayerScreen() {
       </View>
 
       <View style={styles.artworkContainer}>
-        {currentFeed.imageUrl ? (
-          <Image
-            source={{ uri: currentFeed.imageUrl }}
-            style={styles.artwork}
-            contentFit="cover"
-          />
-        ) : (
-          <View style={[styles.artwork, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
-            <Ionicons name="mic" size={80} color={colors.textSecondary} />
-          </View>
-        )}
+        <RNAnimated.View 
+          {...panResponder.panHandlers}
+          style={{ transform: [{ translateX: swipeAnim }] }}
+        >
+          {currentFeed.imageUrl ? (
+            <Image
+              source={{ uri: currentFeed.imageUrl }}
+              style={styles.artwork}
+              contentFit="cover"
+            />
+          ) : (
+            <View style={[styles.artwork, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
+              <Ionicons name="mic" size={80} color={colors.textSecondary} />
+            </View>
+          )}
+        </RNAnimated.View>
       </View>
 
       <View style={styles.infoSection}>

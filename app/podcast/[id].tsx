@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback } from "react";
-import { View, Text, FlatList, Pressable, StyleSheet, useColorScheme, ActivityIndicator, Platform, Switch, Alert, TextInput } from "react-native";
+import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Platform, Switch, Alert, TextInput } from "react-native";
+import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -28,7 +29,7 @@ interface PaginatedResponse {
 export default function PodcastDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme();
+  const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const { getFeedSettings, updateFeedSettings } = useSettings();

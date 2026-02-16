@@ -202,6 +202,7 @@
           <h2>Approved RSS Feeds</h2>
           <div style="display:flex;gap:8px;">
             <button class="btn btn-secondary btn-sm" onclick="refreshAllFeeds()">Refresh All</button>
+            <button class="btn btn-success btn-sm" onclick="showBulkImportModal()">Bulk Import</button>
             <button class="btn btn-primary btn-sm" onclick="showAddFeedModal()">Add Feed</button>
           </div>
         </div>
@@ -281,10 +282,13 @@ function showAlert(msg, type = 'success') {
 async function loadAnalytics() {
   try {
     analyticsData = await api('/api/admin/analytics');
+    const enhanced = await api('/api/admin/analytics/enhanced').catch(() => null);
+    if (enhanced) analyticsData.enhanced = enhanced;
     renderStats();
     renderListenChart();
     renderTopEpisodes();
     renderFeedPerformance();
+    if (enhanced) renderEnhancedStats();
   } catch(e) {
     console.error('Analytics error:', e);
   }
@@ -293,6 +297,12 @@ async function loadAnalytics() {
 function renderStats() {
   if (!analyticsData) return;
   const d = analyticsData;
+  const enhanced = d.enhanced || {};
+  
+  const avgListenTimeMs = enhanced.totalListeningTimeMs && d.totalListens ? Math.round(enhanced.totalListeningTimeMs / d.totalListens) : 0;
+  const avgListenTimeMin = Math.round(avgListenTimeMs / 60000);
+  const totalFavorites = d.feedStats ? d.feedStats.reduce((sum, f) => sum, 0) : 0;
+  
   document.getElementById('statsArea').innerHTML = `
     <div class="stat-card">
       <div class="stat-value">${d.totalListens.toLocaleString()}</div>
@@ -316,6 +326,16 @@ function renderStats() {
     <div class="stat-card">
       <div class="stat-value">${d.totalCategories}</div>
       <div class="stat-label">Categories</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${enhanced.completedEpisodes ? enhanced.completedEpisodes.toLocaleString() : '0'}</div>
+      <div class="stat-label">Completed Episodes</div>
+      <div class="stat-sub">${enhanced.totalListeningTimeMs ? (enhanced.totalListeningTimeMs / 3600000).toFixed(0) + ' hours total' : 'No data'}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${avgListenTimeMin}</div>
+      <div class="stat-label">Avg Listen Time</div>
+      <div class="stat-sub">minutes per session</div>
     </div>
   `;
 }
@@ -385,6 +405,53 @@ function renderFeedPerformance() {
         <td>${f.subscriberCount}</td>
       </tr>
     `).join('') + '</tbody></table>';
+}
+
+function renderEnhancedStats() {
+  if (!analyticsData || !analyticsData.enhanced) return;
+  const enhanced = analyticsData.enhanced;
+  const topListeners = enhanced.topListeners || [];
+  
+  if (topListeners.length === 0) {
+    document.getElementById('enhancedStatsArea')?.remove();
+    return;
+  }
+
+  let existingArea = document.getElementById('enhancedStatsArea');
+  if (!existingArea) {
+    const chartContainer = document.querySelector('[style*="grid-template-columns"]');
+    if (!chartContainer) return;
+    
+    existingArea = document.createElement('div');
+    existingArea.id = 'enhancedStatsArea';
+    existingArea.className = 'card';
+    existingArea.style.gridColumn = '1/3';
+    chartContainer.appendChild(existingArea);
+  }
+
+  existingArea.innerHTML = `
+    <div class="card-header">
+      <h2>Top Listeners</h2>
+    </div>
+    <div style="max-height:300px;overflow-y:auto;">
+      <table class="feed-table" style="margin-bottom:0;">
+        <thead>
+          <tr>
+            <th>Device ID</th>
+            <th style="text-align:right;">Listens</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${topListeners.map((listener, i) => `
+            <tr>
+              <td style="font-family:monospace;font-size:12px;color:#94a3b8;">${esc(listener.deviceId.substring(0, 12))}...</td>
+              <td style="text-align:right;font-weight:600;color:#3b82f6;">${listener.listenCount}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 
 async function loadFeeds() {
@@ -679,6 +746,49 @@ async function refreshAllFeeds() {
     await loadFeeds();
   } catch (e) {
     showAlert(e.message, 'error');
+  }
+}
+
+function showBulkImportModal() {
+  document.getElementById('modalContent').innerHTML = `
+    <h2 style="margin-bottom:16px;color:#f8fafc;">Bulk Import RSS Feeds</h2>
+    <p style="color:#94a3b8;margin-bottom:16px;font-size:13px;">Paste one RSS URL per line. Each URL will be added as a new feed.</p>
+    <div class="form-group">
+      <label>RSS URLs (one per line)</label>
+      <textarea id="bulkUrls" rows="10" placeholder="https://example.com/feed1.xml&#10;https://example.com/feed2.xml&#10;https://example.com/feed3.xml"></textarea>
+    </div>
+    <div class="form-group">
+      <label>Category (optional)</label>
+      <select id="bulkCategory">
+        <option value="">No Category</option>
+        ${(categories || []).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}
+      </select>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-secondary" onclick="closeModal(event)">Cancel</button>
+      <button class="btn btn-primary" onclick="bulkImport()">Import All</button>
+    </div>
+  `;
+  document.getElementById('modalOverlay').classList.remove('hidden');
+}
+
+async function bulkImport() {
+  const urlsText = document.getElementById('bulkUrls').value.trim();
+  if (!urlsText) return showAlert('Please enter at least one URL', 'error');
+  
+  const urls = urlsText.split('\n').map(u => u.trim()).filter(u => u.length > 0);
+  if (urls.length === 0) return showAlert('No valid URLs found', 'error');
+  
+  const categoryId = document.getElementById('bulkCategory').value || null;
+  
+  try {
+    showAlert(`Importing ${urls.length} feeds... This may take a moment.`, 'info');
+    const result = await api('/api/admin/feeds/bulk-import', { method: 'POST', body: JSON.stringify({ feeds: urls, categoryId }) });
+    closeModal(new Event('click'));
+    showAlert(`Successfully imported ${result.results.filter(r => r.success).length} feeds! ${result.results.filter(r => !r.success).length} failed.`, 'success');
+    await Promise.all([loadFeeds(), loadAnalytics()]);
+  } catch (e) {
+    showAlert('Bulk import failed: ' + e.message, 'error');
   }
 }
 

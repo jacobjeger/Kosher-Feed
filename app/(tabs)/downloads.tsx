@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, FlatList, Pressable, StyleSheet, useColorScheme, Platform, Alert } from "react-native";
+import { View, Text, FlatList, Pressable, StyleSheet, Platform, Alert } from "react-native";
+import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
@@ -12,7 +13,7 @@ import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 function DownloadItem({ item }: { item: DownloadedEpisode }) {
   const { playEpisode, currentEpisode, playback, pause, resume } = useAudioPlayer();
   const { removeDownload } = useDownloads();
-  const colorScheme = useColorScheme();
+  const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
 
@@ -98,7 +99,7 @@ function DownloadItem({ item }: { item: DownloadedEpisode }) {
 
 export default function DownloadsScreen() {
   const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme();
+  const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const { downloads } = useDownloads();

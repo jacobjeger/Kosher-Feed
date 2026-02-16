@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { View, Text, Pressable, StyleSheet, useColorScheme, Linking } from "react-native";
+import { View, Text, Pressable, StyleSheet, Linking } from "react-native";
+import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { useDownloads } from "@/contexts/DownloadsContext";
@@ -43,7 +44,7 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
   const { playEpisode, currentEpisode, playback, pause, resume, queue, addToQueue } = useAudioPlayer();
   const { downloadEpisode, isDownloaded, isDownloading, downloadProgress } = useDownloads();
   const { isFavorite, toggleFavorite } = useFavorites();
-  const colorScheme = useColorScheme();
+  const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const [expanded, setExpanded] = useState<boolean>(false);

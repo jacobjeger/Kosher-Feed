@@ -3,7 +3,8 @@ import { Tabs } from "expo-router";
 import { NativeTabs, Icon, Label } from "expo-router/unstable-native-tabs";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
-import { Platform, StyleSheet, useColorScheme, View } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
+import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React from "react";
 import Colors from "@/constants/colors";
@@ -22,6 +23,10 @@ function NativeTabLayout() {
           <Icon sf={{ default: "heart", selected: "heart.fill" }} />
           <Label>Following</Label>
         </NativeTabs.Trigger>
+        <NativeTabs.Trigger name="favorites">
+          <Icon sf={{ default: "star", selected: "star.fill" }} />
+          <Label>Favorites</Label>
+        </NativeTabs.Trigger>
         <NativeTabs.Trigger name="downloads">
           <Icon sf={{ default: "arrow.down.circle", selected: "arrow.down.circle.fill" }} />
           <Label>Downloads</Label>
@@ -36,7 +41,7 @@ function NativeTabLayout() {
 }
 
 function ClassicTabLayout() {
-  const colorScheme = useColorScheme();
+  const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const isWeb = Platform.OS === "web";
@@ -85,6 +90,15 @@ function ClassicTabLayout() {
             title: "Following",
             tabBarIcon: ({ color, focused }) => (
               <Ionicons name={focused ? "heart" : "heart-outline"} size={22} color={color} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="favorites"
+          options={{
+            title: "Favorites",
+            tabBarIcon: ({ color, focused }) => (
+              <Ionicons name={focused ? "star" : "star-outline"} size={22} color={color} />
             ),
           }}
         />

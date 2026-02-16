@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, Pressable, StyleSheet, useColorScheme, ScrollView, Platform, Switch, Alert, ActivityIndicator } from "react-native";
+import { View, Text, Pressable, StyleSheet, ScrollView, Platform, Switch, Alert, ActivityIndicator } from "react-native";
+import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -26,7 +27,7 @@ interface SettingRowProps {
 }
 
 function SettingRow({ icon, label, value, onPress, rightElement }: SettingRowProps) {
-  const colorScheme = useColorScheme();
+  const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
 
@@ -54,7 +55,7 @@ function SettingRow({ icon, label, value, onPress, rightElement }: SettingRowPro
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme();
+  const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const { downloads } = useDownloads();

@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, Pressable, StyleSheet, useColorScheme, Platform } from "react-native";
+import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
+import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
@@ -9,7 +10,7 @@ import Colors from "@/constants/colors";
 
 export default function MiniPlayer() {
   const { currentEpisode, currentFeed, playback, pause, resume } = useAudioPlayer();
-  const colorScheme = useColorScheme();
+  const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
 

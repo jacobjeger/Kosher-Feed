@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useCallback, useEffect } from "react";
-import { View, Text, FlatList, ScrollView, Pressable, StyleSheet, useColorScheme, ActivityIndicator, RefreshControl, Platform, Dimensions, TextInput } from "react-native";
+import { View, Text, FlatList, ScrollView, Pressable, StyleSheet, ActivityIndicator, RefreshControl, Platform, Dimensions, TextInput } from "react-native";
+import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import { Image } from "expo-image";
@@ -9,7 +10,7 @@ import PodcastCard from "@/components/PodcastCard";
 import EpisodeItem from "@/components/EpisodeItem";
 import Colors from "@/constants/colors";
 import type { Feed, Episode, Category } from "@/lib/types";
-import { queryClient } from "@/lib/query-client";
+import { queryClient, getApiUrl } from "@/lib/query-client";
 import { router } from "expo-router";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { lightHaptic } from "@/lib/haptics";
@@ -203,7 +204,7 @@ const ContinueListeningCard = React.memo(function ContinueListeningCard({ episod
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme();
+  const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const { playEpisode, currentEpisode, playback, pause, resume, recentlyPlayed, getInProgressEpisodes, removeSavedPosition } = useAudioPlayer();
@@ -302,6 +303,22 @@ export default function HomeScreen() {
     );
   }, [searchQuery, allFeeds]);
 
+  const episodeSearchQuery = useQuery<Episode[]>({
+    queryKey: ["/api/episodes/search", searchQuery],
+    queryFn: async () => {
+      const baseUrl = getApiUrl();
+      const url = new URL("/api/episodes/search", baseUrl);
+      url.searchParams.set("q", searchQuery.trim());
+      url.searchParams.set("limit", "20");
+      const res = await fetch(url.toString());
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: searchQuery.trim().length >= 3,
+  });
+
+  const searchedEpisodes = episodeSearchQuery.data || [];
+
   const isSearching = searchQuery.trim().length > 0;
 
   const onRefresh = useCallback(() => {
@@ -392,24 +409,48 @@ export default function HomeScreen() {
 
       {isSearching && (
         <View style={styles.searchResultsSection}>
-          {searchResults.length > 0 ? (
-            <>
-              <Text style={[styles.searchResultsCount, { color: colors.textSecondary }]}>
-                {searchResults.length} {searchResults.length === 1 ? "result" : "results"}
-              </Text>
-              <View style={{ paddingHorizontal: 20 }}>
-                {searchResults.map((feed) => (
-                  <SearchResultItem key={feed.id} feed={feed} colors={colors} />
-                ))}
-              </View>
-            </>
-          ) : (
+          {searchResults.length === 0 && searchedEpisodes.length === 0 && searchQuery.trim().length >= 3 && !episodeSearchQuery.isLoading ? (
             <View style={styles.noResults}>
               <Ionicons name="search-outline" size={40} color={colors.textSecondary} />
               <Text style={[styles.noResultsText, { color: colors.textSecondary }]}>
-                No shiurim found for "{searchQuery}"
+                No results found for "{searchQuery}"
               </Text>
             </View>
+          ) : (
+            <>
+              {searchResults.length > 0 && (
+                <>
+                  <Text style={[styles.searchSectionLabel, { color: colors.textSecondary }]}>Shiurim</Text>
+                  <View style={{ paddingHorizontal: 20 }}>
+                    {searchResults.map((feed) => (
+                      <SearchResultItem key={feed.id} feed={feed} colors={colors} />
+                    ))}
+                  </View>
+                </>
+              )}
+              {searchedEpisodes.length > 0 && (
+                <>
+                  <Text style={[styles.searchSectionLabel, { color: colors.textSecondary }]}>Episodes</Text>
+                  <View style={{ paddingHorizontal: 16 }}>
+                    {searchedEpisodes.map((ep) => {
+                      const epFeed = allFeeds.find(f => f.id === ep.feedId);
+                      if (!epFeed) return null;
+                      return <EpisodeItem key={ep.id} episode={ep} feed={epFeed} showFeedTitle />;
+                    })}
+                  </View>
+                </>
+              )}
+              {searchQuery.trim().length < 3 && searchResults.length === 0 && (
+                <View style={styles.noResults}>
+                  <Text style={[styles.noResultsText, { color: colors.textSecondary }]}>
+                    Type 3+ characters to search episodes
+                  </Text>
+                </View>
+              )}
+              {episodeSearchQuery.isLoading && (
+                <ActivityIndicator size="small" color={colors.accent} style={{ marginTop: 12 }} />
+              )}
+            </>
           )}
         </View>
       )}
@@ -737,6 +778,15 @@ const styles = StyleSheet.create({
   searchResultsSection: {
     paddingTop: 4,
     paddingBottom: 20,
+  },
+  searchSectionLabel: {
+    fontSize: 13,
+    fontWeight: "600" as const,
+    textTransform: "uppercase" as const,
+    letterSpacing: 1,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 8,
   },
   searchResultsCount: {
     fontSize: 12,

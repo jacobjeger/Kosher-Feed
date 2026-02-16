@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, Pressable, StyleSheet, useColorScheme, Platform, ScrollView, ActivityIndicator } from "react-native";
+import { View, Text, Pressable, StyleSheet, Platform, ScrollView, ActivityIndicator } from "react-native";
+import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
@@ -39,7 +40,7 @@ function formatFeedTime(seconds: number): string {
 
 export default function StatsScreen() {
   const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme();
+  const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const [deviceId, setDeviceId] = useState<string | null>(null);
