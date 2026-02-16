@@ -102,6 +102,9 @@ function PodcastDetailScreenInner() {
       queryClient.invalidateQueries({ queryKey: ["/api/subscriptions"] });
       queryClient.invalidateQueries({ queryKey: ["/api/subscriptions/feeds"] });
     },
+    onError: () => {
+      Alert.alert("Error", "Could not update follow status. Please try again.");
+    },
   });
 
   const handleFollow = () => {

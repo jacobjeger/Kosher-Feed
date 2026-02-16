@@ -18,6 +18,7 @@ export function BackgroundSync() {
   const { autoDownloadNewEpisodes } = useDownloads();
   const hasInitialized = useRef(false);
   const lastCheckRef = useRef(0);
+  const mountedRef = useRef(true);
 
   const [ready, setReady] = useState(false);
   useEffect(() => {
@@ -68,22 +69,34 @@ export function BackgroundSync() {
     lastCheckRef.current = now;
 
     const runCheck = async () => {
-      if (settings.notificationsEnabled) {
-        const hasPermission = await checkNotificationPermission();
-        if (hasPermission) {
-          const newEps = await checkForNewEpisodes(feeds, episodes);
-          if (newEps.length > 0) {
-            await notifyNewEpisodes(newEps, feeds);
+      try {
+        if (settings.notificationsEnabled) {
+          try {
+            const hasPermission = await checkNotificationPermission();
+            if (hasPermission) {
+              const newEps = await checkForNewEpisodes(feeds, episodes);
+              if (newEps.length > 0) {
+                await notifyNewEpisodes(newEps, feeds);
+              }
+            }
+          } catch (e) {
+            console.error(e);
           }
         }
-      }
 
-      if (settings.autoDownloadOnWifi) {
-        await autoDownloadNewEpisodes(feeds, settings.maxEpisodesPerFeed);
+        if (settings.autoDownloadOnWifi) {
+          try {
+            await autoDownloadNewEpisodes(feeds, settings.maxEpisodesPerFeed);
+          } catch (e) {
+            console.error(e);
+          }
+        }
+      } catch (e) {
+        console.error(e);
       }
     };
 
-    runCheck().catch(console.error);
+    runCheck();
   }, [
     subscribedFeedsQuery.data,
     latestEpisodesQuery.data,
@@ -102,6 +115,13 @@ export function BackgroundSync() {
     };
     const sub = AppState.addEventListener("change", handleAppState);
     return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   return null;

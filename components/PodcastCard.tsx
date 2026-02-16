@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { View, Text, Pressable, StyleSheet, useWindowDimensions } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
@@ -17,6 +17,7 @@ function PodcastCard({ feed, size = "small" }: Props) {
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
+  const [imgError, setImgError] = useState(false);
 
   if (size === "featured") {
     return (
@@ -27,8 +28,8 @@ function PodcastCard({ feed, size = "small" }: Props) {
         ]}
         onPress={() => router.push({ pathname: "/podcast/[id]", params: { id: feed.id } })}
       >
-        {feed.imageUrl ? (
-          <Image source={{ uri: feed.imageUrl }} style={styles.featuredImage} contentFit="cover" cachePolicy="memory-disk" />
+        {feed.imageUrl && !imgError ? (
+          <Image source={{ uri: feed.imageUrl }} style={styles.featuredImage} contentFit="cover" cachePolicy="memory-disk" onError={() => setImgError(true)} />
         ) : (
           <View style={[styles.featuredImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
             <Ionicons name="mic" size={48} color={colors.textSecondary} />
@@ -68,8 +69,8 @@ function PodcastCard({ feed, size = "small" }: Props) {
         ]}
         onPress={() => router.push({ pathname: "/podcast/[id]", params: { id: feed.id } })}
       >
-        {feed.imageUrl ? (
-          <Image source={{ uri: feed.imageUrl }} style={styles.mediumImage} contentFit="cover" cachePolicy="memory-disk" />
+        {feed.imageUrl && !imgError ? (
+          <Image source={{ uri: feed.imageUrl }} style={styles.mediumImage} contentFit="cover" cachePolicy="memory-disk" onError={() => setImgError(true)} />
         ) : (
           <View style={[styles.mediumImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
             <Ionicons name="mic" size={28} color={colors.textSecondary} />
@@ -97,8 +98,8 @@ function PodcastCard({ feed, size = "small" }: Props) {
       ]}
       onPress={() => router.push({ pathname: "/podcast/[id]", params: { id: feed.id } })}
     >
-      {feed.imageUrl ? (
-        <Image source={{ uri: feed.imageUrl }} style={styles.smallImage} contentFit="cover" cachePolicy="memory-disk" />
+      {feed.imageUrl && !imgError ? (
+        <Image source={{ uri: feed.imageUrl }} style={styles.smallImage} contentFit="cover" cachePolicy="memory-disk" onError={() => setImgError(true)} />
       ) : (
         <View style={[styles.smallImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="mic" size={24} color={colors.textSecondary} />

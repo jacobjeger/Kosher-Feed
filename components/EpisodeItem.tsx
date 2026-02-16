@@ -57,24 +57,36 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
   const favorited = isFavorite(episode.id);
 
   const handlePlay = async () => {
-    lightHaptic();
-    if (isCurrentlyPlaying) {
-      playback.isPlaying ? await pause() : await resume();
-    } else {
-      await playEpisode(episode, feed);
+    try {
+      lightHaptic();
+      if (isCurrentlyPlaying) {
+        playback.isPlaying ? await pause() : await resume();
+      } else {
+        await playEpisode(episode, feed);
+      }
+    } catch (e) {
+      console.error(e);
     }
   };
 
   const handleDownload = async () => {
-    if (downloaded || downloading) return;
-    mediumHaptic();
-    await downloadEpisode(episode, feed);
+    try {
+      if (downloaded || downloading) return;
+      mediumHaptic();
+      await downloadEpisode(episode, feed);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const handleAddToQueue = async () => {
-    if (isInQueue) return;
-    lightHaptic();
-    await addToQueue(episode.id, feed.id);
+    try {
+      if (isInQueue) return;
+      lightHaptic();
+      await addToQueue(episode.id, feed.id);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const handleToggleExpand = () => {
@@ -83,8 +95,12 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
   };
 
   const handleToggleFavorite = async () => {
-    lightHaptic();
-    await toggleFavorite(episode.id);
+    try {
+      lightHaptic();
+      await toggleFavorite(episode.id);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const handleOpenSourceSheet = async () => {
