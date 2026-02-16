@@ -148,3 +148,102 @@ export async function getTrendingEpisodes(limit: number = 20): Promise<(Episode 
 
   return result.map(r => ({ ...r, listenCount: Number(r.listenCount) }));
 }
+
+export async function getAnalytics() {
+  const [feedCount] = await db.select({ count: count() }).from(feeds);
+  const [activeFeedCount] = await db.select({ count: count() }).from(feeds).where(eq(feeds.isActive, true));
+  const [episodeCount] = await db.select({ count: count() }).from(episodes);
+  const [categoryCount] = await db.select({ count: count() }).from(categories);
+  const [listenCount] = await db.select({ count: count() }).from(episodeListens);
+
+  const uniqueSubscribers = await db
+    .selectDistinct({ deviceId: subscriptions.deviceId })
+    .from(subscriptions);
+
+  const [subscriptionCount] = await db.select({ count: count() }).from(subscriptions);
+
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const [recentListens] = await db
+    .select({ count: count() })
+    .from(episodeListens)
+    .where(sql`${episodeListens.listenedAt} > ${sevenDaysAgo}`);
+
+  const feedStats = await db
+    .select({
+      feedId: feeds.id,
+      title: feeds.title,
+      imageUrl: feeds.imageUrl,
+      author: feeds.author,
+      isActive: feeds.isActive,
+      episodeCount: count(episodes.id),
+    })
+    .from(feeds)
+    .leftJoin(episodes, eq(feeds.id, episodes.feedId))
+    .groupBy(feeds.id)
+    .orderBy(desc(count(episodes.id)));
+
+  const feedListenStats = await db
+    .select({
+      feedId: episodes.feedId,
+      listenCount: count(episodeListens.id),
+    })
+    .from(episodeListens)
+    .innerJoin(episodes, eq(episodeListens.episodeId, episodes.id))
+    .groupBy(episodes.feedId);
+
+  const listenMap = new Map(feedListenStats.map(s => [s.feedId, Number(s.listenCount)]));
+
+  const feedSubscriptionStats = await db
+    .select({
+      feedId: subscriptions.feedId,
+      subscriberCount: count(subscriptions.id),
+    })
+    .from(subscriptions)
+    .groupBy(subscriptions.feedId);
+
+  const subMap = new Map(feedSubscriptionStats.map(s => [s.feedId, Number(s.subscriberCount)]));
+
+  const enrichedFeedStats = feedStats.map(f => ({
+    ...f,
+    episodeCount: Number(f.episodeCount),
+    listenCount: listenMap.get(f.feedId) || 0,
+    subscriberCount: subMap.get(f.feedId) || 0,
+  }));
+
+  const dailyListens = await db
+    .select({
+      day: sql<string>`DATE(${episodeListens.listenedAt})`,
+      count: count(),
+    })
+    .from(episodeListens)
+    .where(sql`${episodeListens.listenedAt} > ${new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)}`)
+    .groupBy(sql`DATE(${episodeListens.listenedAt})`)
+    .orderBy(sql`DATE(${episodeListens.listenedAt})`);
+
+  const topEpisodes = await db
+    .select({
+      episodeId: episodeListens.episodeId,
+      title: episodes.title,
+      feedId: episodes.feedId,
+      listenCount: count(episodeListens.id),
+    })
+    .from(episodeListens)
+    .innerJoin(episodes, eq(episodeListens.episodeId, episodes.id))
+    .groupBy(episodeListens.episodeId, episodes.title, episodes.feedId)
+    .orderBy(desc(count(episodeListens.id)))
+    .limit(10);
+
+  return {
+    totalFeeds: Number(feedCount.count),
+    activeFeeds: Number(activeFeedCount.count),
+    totalEpisodes: Number(episodeCount.count),
+    totalCategories: Number(categoryCount.count),
+    totalListens: Number(listenCount.count),
+    recentListens: Number(recentListens.count),
+    uniqueDevices: uniqueSubscribers.length,
+    totalSubscriptions: Number(subscriptionCount.count),
+    feedStats: enrichedFeedStats,
+    dailyListens: dailyListens.map(d => ({ day: d.day, count: Number(d.count) })),
+    topEpisodes: topEpisodes.map(e => ({ ...e, listenCount: Number(e.listenCount) })),
+  };
+}

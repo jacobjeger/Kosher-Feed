@@ -236,6 +236,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Analytics
+  app.get("/api/admin/analytics", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const analytics = await storage.getAnalytics();
+      res.json(analytics);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Podcast Search (iTunes Search API - free, no key needed)
+  app.get("/api/admin/search-podcasts", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const term = req.query.term as string;
+      if (!term || term.trim().length < 2) {
+        return res.json({ results: [] });
+      }
+      const url = `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&media=podcast&limit=20`;
+      const response = await fetch(url);
+      const data = await response.json() as any;
+      const results = (data.results || []).map((r: any) => ({
+        name: r.collectionName || r.trackName,
+        artist: r.artistName,
+        artworkUrl: r.artworkUrl600 || r.artworkUrl100,
+        feedUrl: r.feedUrl,
+        genre: r.primaryGenreName,
+        episodeCount: r.trackCount,
+      })).filter((r: any) => r.feedUrl);
+      res.json({ results });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // RSS Feed Preview (parse without saving)
+  app.post("/api/admin/preview-feed", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { rssUrl } = req.body;
+      if (!rssUrl) return res.status(400).json({ error: "rssUrl is required" });
+      const parsed = await parseFeed("preview", rssUrl);
+      res.json({
+        title: parsed.title,
+        description: parsed.description,
+        author: parsed.author,
+        imageUrl: parsed.imageUrl,
+        episodeCount: parsed.episodes.length,
+        latestEpisode: parsed.episodes[0]?.title || null,
+      });
+    } catch (e: any) {
+      res.status(400).json({ error: "Could not parse RSS feed: " + e.message });
+    }
+  });
+
   // Subscriptions
   app.get("/api/subscriptions/:deviceId", async (req: Request, res: Response) => {
     try {
