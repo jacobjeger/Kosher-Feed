@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, Pressable, StyleSheet, useColorScheme, ScrollView, Platform, Switch, Alert } from "react-native";
+import { View, Text, Pressable, StyleSheet, useColorScheme, ScrollView, Platform, Switch, Alert, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
 import { getDeviceId } from "@/lib/device-id";
+import { getApiUrl } from "@/lib/query-client";
 import { useDownloads } from "@/contexts/DownloadsContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { requestNotificationPermissions } from "@/lib/notifications";
@@ -54,10 +55,33 @@ export default function SettingsScreen() {
   const { downloads } = useDownloads();
   const { settings, updateSettings } = useSettings();
   const [deviceId, setDeviceId] = useState("");
+  const [connectionStatus, setConnectionStatus] = useState<"idle" | "testing" | "ok" | "error">("idle");
+  const [connectionError, setConnectionError] = useState("");
 
   useEffect(() => {
     getDeviceId().then(setDeviceId);
   }, []);
+
+  const testConnection = async () => {
+    setConnectionStatus("testing");
+    setConnectionError("");
+    try {
+      const baseUrl = getApiUrl();
+      const url = new URL("/api/feeds", baseUrl);
+      const res = await fetch(url.toString(), { method: "GET" });
+      if (res.ok) {
+        const data = await res.json();
+        setConnectionStatus("ok");
+        setConnectionError(`${data.length} feeds loaded`);
+      } else {
+        setConnectionStatus("error");
+        setConnectionError(`Server returned ${res.status}`);
+      }
+    } catch (e: any) {
+      setConnectionStatus("error");
+      setConnectionError(e.message || "Network request failed");
+    }
+  };
 
   const handleToggleNotifications = async (value: boolean) => {
     lightHaptic();
@@ -202,6 +226,34 @@ export default function SettingsScreen() {
           <SettingRow
             icon={<Ionicons name="information-circle" size={20} color={colors.accent} />}
             label="All content is reviewed and approved"
+          />
+        </View>
+      </View>
+
+      <View style={[styles.section, { borderColor: colors.cardBorder }]}>
+        <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>CONNECTION</Text>
+        <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+          <SettingRow
+            icon={<Ionicons name="server" size={20} color={colors.accent} />}
+            label="Server"
+            value={getApiUrl().replace("https://", "")}
+          />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingRow
+            icon={
+              connectionStatus === "testing" ? (
+                <ActivityIndicator size="small" color={colors.accent} />
+              ) : connectionStatus === "ok" ? (
+                <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+              ) : connectionStatus === "error" ? (
+                <Ionicons name="alert-circle" size={20} color="#ef4444" />
+              ) : (
+                <Ionicons name="pulse" size={20} color={colors.accent} />
+              )
+            }
+            label="Test Connection"
+            value={connectionError || undefined}
+            onPress={testConnection}
           />
         </View>
       </View>

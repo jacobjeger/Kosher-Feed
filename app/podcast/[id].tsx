@@ -112,6 +112,38 @@ export default function PodcastDetailScreen() {
     );
   };
 
+  const feedError = feedsQuery.isError || episodesQuery.isError;
+  const feedErrorMsg = feedsQuery.error?.message || episodesQuery.error?.message || "";
+
+  if (feedError && !feed) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={{ alignItems: "center", justifyContent: "center", paddingVertical: 80, paddingHorizontal: 40, gap: 12 }}>
+          <Pressable onPress={() => router.back()} style={{ alignSelf: "flex-start", paddingTop: insets.top + 8 }}>
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
+          </Pressable>
+          <Ionicons name="cloud-offline-outline" size={56} color={colors.textSecondary} />
+          <Text style={{ fontSize: 22, fontWeight: "700" as const, color: colors.text }}>Connection Issue</Text>
+          <Text style={{ fontSize: 14, textAlign: "center", lineHeight: 20, color: colors.textSecondary }}>
+            {feedErrorMsg.includes("Network") || feedErrorMsg.includes("fetch")
+              ? "Unable to reach the server. Check your connection and try again."
+              : `Something went wrong: ${feedErrorMsg}`}
+          </Text>
+          <Pressable
+            style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, marginTop: 8, backgroundColor: colors.accent }}
+            onPress={() => {
+              queryClient.invalidateQueries({ queryKey: ["/api/feeds"] });
+              queryClient.invalidateQueries({ queryKey: [`/api/feeds/${id}/episodes`] });
+            }}
+          >
+            <Ionicons name="refresh" size={18} color="#fff" />
+            <Text style={{ color: "#fff", fontSize: 15, fontWeight: "600" as const }}>Try Again</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
   if (!feed) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
