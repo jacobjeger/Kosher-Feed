@@ -2,6 +2,7 @@ import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Notifications from "expo-notifications";
 import type { Episode, Feed } from "@/lib/types";
+import { addLog } from "@/lib/error-logger";
 
 const SEEN_EPISODES_KEY = "@kosher_shiurim_seen_episodes";
 
@@ -118,7 +119,7 @@ export async function sendLocalNotification(episode: Episode, feed: Feed) {
       trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 1 } as any,
     });
   } catch (e) {
-    console.error("Failed to send notification:", e);
+    addLog("error", `Notification failed for "${episode.title}": ${(e as any)?.message || e}`, (e as any)?.stack, "notifications");
   }
 }
 
@@ -165,7 +166,7 @@ export async function notifyNewEpisodes(newEpisodes: Episode[], feeds: Feed[]) {
             trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 1 } as any,
           });
         } catch (e) {
-          console.error("Failed to send grouped notification:", e);
+          addLog("error", `Grouped notification failed for "${feed.title}" (${episodes.length} eps): ${(e as any)?.message || e}`, (e as any)?.stack, "notifications");
         }
       }
     }
@@ -188,6 +189,8 @@ export async function setupNotificationChannel() {
         vibrationPattern: [0, 250, 250, 250],
         sound: "default",
       });
-    } catch {}
+    } catch (e) {
+      addLog("error", `Notification channel setup failed: ${(e as any)?.message || e}`, (e as any)?.stack, "notifications");
+    }
   }
 }
