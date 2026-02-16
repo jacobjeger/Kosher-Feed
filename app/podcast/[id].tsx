@@ -34,18 +34,20 @@ export default function PodcastDetailScreen() {
   const [showFullDescription, setShowFullDescription] = useState<boolean>(false);
   const [episodeSearch, setEpisodeSearch] = useState("");
   const [isEpisodeSearchFocused, setIsEpisodeSearchFocused] = useState(false);
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
 
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
   const feed = feedsQuery.data?.find(f => f.id === id);
 
   const episodesInfiniteQuery = useInfiniteQuery<PaginatedResponse>({
-    queryKey: [`/api/feeds/${id}/episodes`, "paginated"],
+    queryKey: [`/api/feeds/${id}/episodes`, "paginated", sortOrder],
     queryFn: async ({ pageParam }) => {
       const baseUrl = getApiUrl();
       const url = new URL(`/api/feeds/${id}/episodes`, baseUrl);
       url.searchParams.set("paginated", "1");
       url.searchParams.set("page", String(pageParam));
       url.searchParams.set("limit", String(PAGE_SIZE));
+      url.searchParams.set("sort", sortOrder);
       const res = await fetch(url.toString());
       if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
       return res.json();
@@ -291,6 +293,18 @@ export default function PodcastDetailScreen() {
               Episodes{totalCount > 0 ? ` (${totalCount})` : ""}
             </Text>
 
+            <View style={styles.sortRow}>
+              <Pressable
+                onPress={() => { lightHaptic(); setSortOrder(prev => prev === 'newest' ? 'oldest' : 'newest'); }}
+                style={[styles.sortBtn, { backgroundColor: colors.surfaceAlt }]}
+              >
+                <Ionicons name={sortOrder === 'newest' ? 'arrow-down' : 'arrow-up'} size={14} color={colors.accent} />
+                <Text style={[styles.sortBtnText, { color: colors.text }]}>
+                  {sortOrder === 'newest' ? 'Newest First' : 'Oldest First'}
+                </Text>
+              </Pressable>
+            </View>
+
             <View style={[styles.episodeSearchContainer, { backgroundColor: colors.surfaceAlt, borderColor: isEpisodeSearchFocused ? colors.accent : "transparent" }]}>
               <Ionicons name="search" size={16} color={colors.textSecondary} style={{ marginLeft: 12 }} />
               <TextInput
@@ -443,6 +457,23 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700" as const,
     marginBottom: 12,
+  },
+  sortRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginBottom: 8,
+  },
+  sortBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  sortBtnText: {
+    fontSize: 13,
+    fontWeight: "500" as const,
   },
   episodeSearchContainer: {
     flexDirection: "row",

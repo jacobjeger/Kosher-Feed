@@ -101,9 +101,22 @@ async function savePosition(episodeId: string, feedId: string, positionMs: numbe
       }
     }
     await AsyncStorage.setItem(POSITIONS_KEY, JSON.stringify(positions));
+    syncPositionToServer(episodeId, feedId, positionMs, durationMs).catch(() => {});
   } catch (e) {
     console.error("Failed to save position:", e);
   }
+}
+
+async function syncPositionToServer(episodeId: string, feedId: string, positionMs: number, durationMs: number) {
+  try {
+    const deviceId = await getDeviceId();
+    await apiRequest("POST", "/api/playback-positions", {
+      episodeId,
+      deviceId,
+      positionMs: Math.round(positionMs),
+      durationMs: Math.round(durationMs),
+    });
+  } catch {}
 }
 
 async function loadFeedSpeeds(): Promise<Record<string, number>> {

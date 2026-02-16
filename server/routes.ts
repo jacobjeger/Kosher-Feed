@@ -115,7 +115,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const limit = Math.min(parseInt(req.query.limit as string) || 30, 100);
       const paginated = req.query.paginated === "1";
       const slim = req.query.slim === "1";
-      const eps = await storage.getEpisodesByFeedPaginated(req.params.id, page, limit);
+      const sort = (req.query.sort as string) || 'newest';
+      const eps = await storage.getEpisodesByFeedPaginated(req.params.id, page, limit, sort);
       res.setHeader("Cache-Control", "public, max-age=30");
 
       const mapEpisode = (ep: any) => slim ? ({

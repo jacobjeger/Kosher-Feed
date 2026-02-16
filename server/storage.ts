@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications } from "@shared/schema";
 import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification } from "@shared/schema";
-import { eq, and, desc, inArray, sql, count, ilike } from "drizzle-orm";
+import { eq, and, desc, asc, inArray, sql, count, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
 export async function getAllCategories(): Promise<Category[]> {
@@ -47,9 +47,10 @@ export async function getEpisodesByFeed(feedId: string): Promise<Episode[]> {
   return db.select().from(episodes).where(eq(episodes.feedId, feedId)).orderBy(desc(episodes.publishedAt));
 }
 
-export async function getEpisodesByFeedPaginated(feedId: string, page: number = 1, pageLimit: number = 50): Promise<Episode[]> {
+export async function getEpisodesByFeedPaginated(feedId: string, page: number = 1, pageLimit: number = 50, sort: string = 'newest'): Promise<Episode[]> {
   const offset = (page - 1) * pageLimit;
-  return db.select().from(episodes).where(eq(episodes.feedId, feedId)).orderBy(desc(episodes.publishedAt)).limit(pageLimit).offset(offset);
+  const orderFn = sort === 'oldest' ? asc(episodes.publishedAt) : desc(episodes.publishedAt);
+  return db.select().from(episodes).where(eq(episodes.feedId, feedId)).orderBy(orderFn).limit(pageLimit).offset(offset);
 }
 
 export async function getEpisodeCountByFeed(feedId: string): Promise<number> {

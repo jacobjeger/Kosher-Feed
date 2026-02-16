@@ -219,6 +219,7 @@ export default function HomeScreen() {
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
   const latestQuery = useQuery<Episode[]>({ queryKey: ["/api/episodes/latest"] });
   const trendingQuery = useQuery<TrendingEpisode[]>({ queryKey: ["/api/episodes/trending"] });
+  const featuredQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds/featured"] });
 
   const isLoading = categoriesQuery.isLoading || feedsQuery.isLoading;
   const hasError = feedsQuery.isError || categoriesQuery.isError;
@@ -227,6 +228,7 @@ export default function HomeScreen() {
   const allFeeds = feedsQuery.data || [];
   const latestEpisodes = (latestQuery.data || []).slice(0, 20);
   const trendingEpisodes = trendingQuery.data || [];
+  const featuredFeeds = featuredQuery.data || [];
 
   const handleDismissContinue = useCallback(async (episodeId: string) => {
     lightHaptic();
@@ -307,6 +309,7 @@ export default function HomeScreen() {
     queryClient.invalidateQueries({ queryKey: ["/api/feeds"] });
     queryClient.invalidateQueries({ queryKey: ["/api/episodes/latest"] });
     queryClient.invalidateQueries({ queryKey: ["/api/episodes/trending"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/feeds/featured"] });
   }, []);
 
   if (isLoading) {
@@ -438,6 +441,27 @@ export default function HomeScreen() {
                 onDismiss={() => handleDismissContinue(item.episode.id)}
               />
             )}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 20 }}
+            initialNumToRender={5}
+            maxToRenderPerBatch={5}
+            windowSize={3}
+            removeClippedSubviews={Platform.OS !== "web"}
+          />
+        </View>
+      )}
+
+      {!isSearching && featuredFeeds.length > 0 && (
+        <View style={styles.section}>
+          <View style={styles.sectionHeaderRow}>
+            <Ionicons name="star" size={18} color={colors.accent} />
+            <Text style={[styles.sectionTitle, { color: colors.text, paddingHorizontal: 0 }]}>Featured</Text>
+          </View>
+          <FlatList
+            horizontal
+            data={featuredFeeds}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => <PodcastCard feed={item} size="small" />}
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ paddingHorizontal: 20 }}
             initialNumToRender={5}

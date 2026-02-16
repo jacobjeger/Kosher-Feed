@@ -27,6 +27,7 @@ function RootLayoutNav() {
           animation: "slide_from_bottom",
         }}
       />
+      <Stack.Screen name="stats" options={{ headerShown: false }} />
       <Stack.Screen
         name="podcast/[id]"
         options={{
