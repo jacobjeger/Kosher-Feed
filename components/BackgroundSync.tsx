@@ -10,6 +10,7 @@ import {
   notifyNewEpisodes,
   initializeSeenEpisodes,
   checkNotificationPermission,
+  setupNotificationChannel,
 } from "@/lib/notifications";
 import type { Feed, Episode } from "@/lib/types";
 import { addLog } from "@/lib/error-logger";
@@ -23,6 +24,7 @@ export function BackgroundSync() {
 
   const [ready, setReady] = useState(false);
   useEffect(() => {
+    setupNotificationChannel().catch(() => {});
     const timer = setTimeout(() => setReady(true), 30000);
     return () => clearTimeout(timer);
   }, []);

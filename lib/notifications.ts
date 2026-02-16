@@ -124,14 +124,16 @@ export async function sendLocalNotification(episode: Episode, feed: Feed) {
   }
 
   try {
+    await setupNotificationChannel();
     await Notifications.scheduleNotificationAsync({
       content: {
         title: `New from ${feed.title}`,
         body: episode.title,
         data: { episodeId: episode.id, feedId: episode.feedId },
         sound: "default",
+        ...(Platform.OS === "android" ? { channelId: "new-episodes" } : {}),
       } as any,
-      trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 1 } as any,
+      trigger: null,
     });
     addLog("info", `Native notification scheduled for "${episode.title}"`, undefined, "notifications");
   } catch (e) {
@@ -172,14 +174,16 @@ export async function notifyNewEpisodes(newEpisodes: Episode[], feeds: Feed[]) {
         } catch {}
       } else {
         try {
+          await setupNotificationChannel();
           await Notifications.scheduleNotificationAsync({
             content: {
               title: feed.title,
               body: `${episodes.length} new episodes available`,
               data: { feedId: feed.id },
               sound: "default",
+              ...(Platform.OS === "android" ? { channelId: "new-episodes" } : {}),
             } as any,
-            trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 1 } as any,
+            trigger: null,
           });
         } catch (e) {
           addLog("error", `Grouped notification failed for "${feed.title}" (${episodes.length} eps): ${(e as any)?.message || e}`, (e as any)?.stack, "notifications");

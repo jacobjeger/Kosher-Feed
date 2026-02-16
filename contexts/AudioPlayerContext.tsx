@@ -553,7 +553,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         while (retryCount <= maxRetries) {
           try {
             player = createAudioPlayer({ uri: episode.audioUrl });
-            player.playbackRate = feedSpeed;
+            try { player.rate = feedSpeed; } catch {}
             break;
           } catch (loadError: any) {
             retryCount++;
@@ -738,7 +738,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       if (Platform.OS === "web" && audioRef.current) {
         audioRef.current.playbackRate = rate;
       } else if (soundRef.current) {
-        soundRef.current.playbackRate = rate;
+        try { soundRef.current.rate = rate; } catch {}
       }
     } catch (e) {
       addLog("warn", `Set rate failed: ${(e as any)?.message || e}`, undefined, "audio");
