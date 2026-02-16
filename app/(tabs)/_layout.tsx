@@ -89,7 +89,7 @@ export default function TabLayout() {
           }}
         />
       </Tabs>
-      <View style={{ position: "absolute", bottom: isWeb ? 84 : 80 + safeAreaInsets.bottom, left: 0, right: 0 }}>
+      <View style={{ position: "absolute", bottom: isWeb ? 84 : (Platform.OS === "ios" ? 80 : 56) + safeAreaInsets.bottom, left: 0, right: 0 }}>
         <MiniPlayer />
       </View>
     </>

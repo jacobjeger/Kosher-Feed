@@ -7,6 +7,7 @@ import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { getDeviceId } from "@/lib/device-id";
 import { getQueue, addToQueue as addToQueueStorage, removeFromQueue as removeFromQueueStorage, clearQueue as clearQueueStorage, type QueueItem } from "@/lib/queue";
 import { addToHistory, updateHistoryPosition } from "@/lib/history";
+import { notifyEpisodePlayed } from "@/contexts/PlayedEpisodesContext";
 
 const POSITIONS_KEY = "@kosher_shiurim_positions";
 const RECENTLY_PLAYED_KEY = "@shiurpod_recently_played";
@@ -149,17 +150,6 @@ async function saveFeedSpeed(feedId: string, rate: number) {
   }
 }
 
-async function markEpisodeAsPlayedDirectly(episodeId: string) {
-  try {
-    const data = await AsyncStorage.getItem("@shiurpod_played_episodes");
-    const arr: string[] = data ? JSON.parse(data) : [];
-    if (!arr.includes(episodeId)) {
-      arr.push(episodeId);
-      if (arr.length > 5000) arr.splice(0, arr.length - 5000);
-      await AsyncStorage.setItem("@shiurpod_played_episodes", JSON.stringify(arr));
-    }
-  } catch {}
-}
 
 async function fetchEpisodeAndFeed(episodeId: string, feedId: string): Promise<{ episode: Episode; feed: Feed } | null> {
   try {
@@ -468,7 +458,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           savePosition(episode.id, feed.id, 0, 0);
           removeSavedPosition(episode.id).catch(() => {});
           updateHistoryPosition(episode.id, 0, 0).catch(() => {});
-          markEpisodeAsPlayedDirectly(episode.id);
+          notifyEpisodePlayed(episode.id);
           if (sleepTimerRef.current.active && sleepTimerRef.current.mode === "endOfEpisode") {
             cancelSleepTimer();
           } else if (queueRef.current.length > 0) {
@@ -578,7 +568,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
             savePosition(episode.id, feed.id, 0, 0);
             removeSavedPosition(episode.id).catch(() => {});
             updateHistoryPosition(episode.id, 0, 0).catch(() => {});
-            markEpisodeAsPlayedDirectly(episode.id);
+            notifyEpisodePlayed(episode.id);
             if (sleepTimerRef.current.active && sleepTimerRef.current.mode === "endOfEpisode") {
               cancelSleepTimer();
             } else if (queueRef.current.length > 0) {

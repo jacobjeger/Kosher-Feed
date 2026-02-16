@@ -1,7 +1,22 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, type ReactNode } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const PLAYED_KEY = "@shiurpod_played_episodes";
+
+type PlayedListener = (episodeId: string) => void;
+const playedListeners = new Set<PlayedListener>();
+
+export function notifyEpisodePlayed(episodeId: string) {
+  AsyncStorage.getItem(PLAYED_KEY).then(data => {
+    const arr: string[] = data ? JSON.parse(data) : [];
+    if (!arr.includes(episodeId)) {
+      arr.push(episodeId);
+      if (arr.length > 5000) arr.splice(0, arr.length - 5000);
+      AsyncStorage.setItem(PLAYED_KEY, JSON.stringify(arr)).catch(() => {});
+    }
+  }).catch(() => {});
+  playedListeners.forEach(fn => fn(episodeId));
+}
 
 interface PlayedEpisodesContextValue {
   playedEpisodes: Set<string>;
@@ -27,6 +42,19 @@ export function PlayedEpisodesProvider({ children }: { children: ReactNode }) {
       }
       setLoaded(true);
     }).catch(() => setLoaded(true));
+  }, []);
+
+  useEffect(() => {
+    const listener: PlayedListener = (episodeId: string) => {
+      setPlayedIds(prev => {
+        if (prev.has(episodeId)) return prev;
+        const next = new Set(prev);
+        next.add(episodeId);
+        return next;
+      });
+    };
+    playedListeners.add(listener);
+    return () => { playedListeners.delete(listener); };
   }, []);
 
   const persist = useCallback((ids: Set<string>) => {
