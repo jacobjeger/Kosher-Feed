@@ -8,7 +8,7 @@ const apiFetch: typeof globalThis.fetch =
     : require("expo/fetch").fetch;
 
 const PRODUCTION_API_URL = "https://kosher-feed.replit.app";
-const REQUEST_TIMEOUT_MS = 15000;
+const REQUEST_TIMEOUT_MS = 12000;
 const CACHE_PREFIX = "shiurpod_cache_";
 
 export function getApiUrl(): string {
@@ -122,7 +122,7 @@ export const queryClient = new QueryClient({
       refetchInterval: false,
       refetchOnWindowFocus: false,
       staleTime: 60 * 1000,
-      retry: 3,
+      retry: 2,
       retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
     },
     mutations: {

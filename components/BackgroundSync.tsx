@@ -12,6 +12,7 @@ import {
   checkNotificationPermission,
 } from "@/lib/notifications";
 import type { Feed, Episode } from "@/lib/types";
+import { addLog } from "@/lib/error-logger";
 
 export function BackgroundSync() {
   const { settings } = useSettings();
@@ -80,7 +81,7 @@ export function BackgroundSync() {
               }
             }
           } catch (e) {
-            console.error(e);
+            addLog("error", `Background notification check failed: ${(e as any)?.message || e}`, (e as any)?.stack, "background-sync");
           }
         }
 
@@ -88,11 +89,11 @@ export function BackgroundSync() {
           try {
             await autoDownloadNewEpisodes(feeds, settings.maxEpisodesPerFeed);
           } catch (e) {
-            console.error(e);
+            addLog("error", `Background auto-download failed: ${(e as any)?.message || e}`, (e as any)?.stack, "background-sync");
           }
         }
       } catch (e) {
-        console.error(e);
+        addLog("error", `Background sync failed: ${(e as any)?.message || e}`, (e as any)?.stack, "background-sync");
       }
     };
 

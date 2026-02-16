@@ -13,10 +13,11 @@ import { FavoritesProvider } from "@/contexts/FavoritesContext";
 import { BackgroundSync } from "@/components/BackgroundSync";
 import OfflineBanner from "@/components/OfflineBanner";
 import { setupNotificationChannel } from "@/lib/notifications";
-import { initErrorLogger } from "@/lib/error-logger";
+import { initErrorLogger, setupGlobalErrorHandlers } from "@/lib/error-logger";
 
 SplashScreen.preventAutoHideAsync();
 initErrorLogger();
+setupGlobalErrorHandlers();
 
 function RootLayoutNav() {
   return (

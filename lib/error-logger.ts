@@ -304,3 +304,13 @@ export function initErrorLogger() {
 
   addLog("info", "Error logger initialized", undefined, "system");
 }
+
+export function setupGlobalErrorHandlers() {
+  if (typeof globalThis !== "undefined") {
+    const origHandler = (globalThis as any).ErrorUtils?.getGlobalHandler?.();
+    (globalThis as any).ErrorUtils?.setGlobalHandler?.((error: any, isFatal?: boolean) => {
+      addLog("error", `${isFatal ? "[FATAL] " : ""}${error?.message || error}`, error?.stack, "global");
+      if (origHandler) origHandler(error, isFatal);
+    });
+  }
+}

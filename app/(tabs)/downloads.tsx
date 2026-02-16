@@ -111,6 +111,10 @@ function DownloadsScreenInner() {
       contentContainerStyle={{ paddingBottom: 140, paddingHorizontal: 16 }}
       data={downloads}
       keyExtractor={(item) => item.id}
+      initialNumToRender={10}
+      maxToRenderPerBatch={8}
+      windowSize={5}
+      removeClippedSubviews={Platform.OS !== "web"}
       ListHeaderComponent={() => (
         <View style={{ paddingTop: Platform.OS === "web" ? 67 : insets.top + 8 }}>
           <Text style={[styles.headerTitle, { color: colors.text }]}>Downloads</Text>

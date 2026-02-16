@@ -7,6 +7,7 @@ import type { Episode, Feed, DownloadedEpisode } from "@/lib/types";
 import { isOnWifi } from "@/lib/network";
 import { getApiUrl } from "@/lib/query-client";
 import { getDeviceId } from "@/lib/device-id";
+import { addLog } from "@/lib/error-logger";
 
 interface DownloadsContextValue {
   downloads: DownloadedEpisode[];
@@ -66,12 +67,12 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
         try {
           parsed = JSON.parse(data);
           if (!Array.isArray(parsed)) {
-            console.error("Downloads data corrupted, resetting");
+            addLog("warn", "Downloads data corrupted, resetting", undefined, "downloads");
             await AsyncStorage.removeItem(DOWNLOADS_KEY);
             return;
           }
         } catch {
-          console.error("Downloads JSON parse failed, resetting");
+          addLog("warn", "Downloads JSON parse failed, resetting", undefined, "downloads");
           await AsyncStorage.removeItem(DOWNLOADS_KEY);
           return;
         }
@@ -177,7 +178,7 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
         return next;
       });
     } catch (e) {
-      console.error("Download failed:", e);
+      addLog("error", `Download failed: ${episode.title} - ${(e as any)?.message || e}`, (e as any)?.stack, "downloads");
     } finally {
       setDownloadProgress(prev => {
         const next = new Map(prev);
@@ -193,7 +194,7 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
       try {
         deleteFileSafe(ep.localUri);
       } catch (e) {
-        console.error("Failed to delete file:", e);
+        addLog("warn", `File delete failed: ${episodeId} - ${(e as any)?.message || e}`, undefined, "downloads");
       }
     }
 

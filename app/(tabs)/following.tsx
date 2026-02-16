@@ -118,6 +118,10 @@ function FollowingScreenInner() {
       contentContainerStyle={{ paddingBottom: 140, paddingHorizontal: 16 }}
       data={episodes}
       keyExtractor={(item) => item.id}
+      initialNumToRender={10}
+      maxToRenderPerBatch={8}
+      windowSize={5}
+      removeClippedSubviews={Platform.OS !== "web"}
       refreshControl={
         <RefreshControl refreshing={false} onRefresh={onRefresh} tintColor={colors.accent} />
       }
