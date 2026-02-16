@@ -182,10 +182,13 @@ function PodcastDetailScreenInner() {
     Alert.alert(
       "Episodes to Keep",
       "Choose how many episodes to keep downloaded for this shiur.",
-      EPISODE_LIMIT_OPTIONS.map(n => ({
-        text: `${n} episodes`,
-        onPress: () => updateFeedSettings(id, { maxEpisodes: n }),
-      })),
+      [
+        ...EPISODE_LIMIT_OPTIONS.map(n => ({
+          text: `${n} episodes`,
+          onPress: () => updateFeedSettings(id, { maxEpisodes: n }),
+        })),
+        { text: "Cancel", style: "cancel" as const },
+      ],
     );
   }, [id, feedSettings.maxEpisodes, updateFeedSettings]);
 

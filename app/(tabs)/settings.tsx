@@ -178,10 +178,13 @@ function SettingsScreenInner() {
     Alert.alert(
       "Episodes Per Shiur",
       "Choose how many episodes to keep downloaded per shiur.",
-      EPISODE_LIMIT_OPTIONS.map(n => ({
-        text: `${n} episodes`,
-        onPress: () => updateSettings({ maxEpisodesPerFeed: n }),
-      })),
+      [
+        ...EPISODE_LIMIT_OPTIONS.map(n => ({
+          text: `${n} episodes`,
+          onPress: () => updateSettings({ maxEpisodesPerFeed: n }),
+        })),
+        { text: "Cancel", style: "cancel" as const },
+      ],
     );
   };
 
@@ -196,10 +199,13 @@ function SettingsScreenInner() {
     Alert.alert(
       "Skip Forward",
       "Choose skip forward duration.",
-      SKIP_OPTIONS.map(n => ({
-        text: `${n}s`,
-        onPress: () => updateSettings({ skipForwardSeconds: n }),
-      })),
+      [
+        ...SKIP_OPTIONS.map(n => ({
+          text: `${n}s`,
+          onPress: () => updateSettings({ skipForwardSeconds: n }),
+        })),
+        { text: "Cancel", style: "cancel" as const },
+      ],
     );
   };
 
@@ -214,10 +220,13 @@ function SettingsScreenInner() {
     Alert.alert(
       "Skip Backward",
       "Choose skip backward duration.",
-      SKIP_OPTIONS.map(n => ({
-        text: `${n}s`,
-        onPress: () => updateSettings({ skipBackwardSeconds: n }),
-      })),
+      [
+        ...SKIP_OPTIONS.map(n => ({
+          text: `${n}s`,
+          onPress: () => updateSettings({ skipBackwardSeconds: n }),
+        })),
+        { text: "Cancel", style: "cancel" as const },
+      ],
     );
   };
 
@@ -237,10 +246,13 @@ function SettingsScreenInner() {
     Alert.alert(
       "Theme",
       "Choose app theme.",
-      THEME_OPTIONS.map(t => ({
-        text: THEME_LABELS[t],
-        onPress: () => updateSettings({ darkModeOverride: t }),
-      })),
+      [
+        ...THEME_OPTIONS.map(t => ({
+          text: THEME_LABELS[t],
+          onPress: () => updateSettings({ darkModeOverride: t }),
+        })),
+        { text: "Cancel", style: "cancel" as const },
+      ],
     );
   };
 
@@ -260,10 +272,13 @@ function SettingsScreenInner() {
     Alert.alert(
       "Reminder Time",
       "Choose reminder time.",
-      REMINDER_HOUR_OPTIONS.map(h => ({
-        text: formatHour(h),
-        onPress: () => updateSettings({ dailyReminderHour: h }),
-      })),
+      [
+        ...REMINDER_HOUR_OPTIONS.map(h => ({
+          text: formatHour(h),
+          onPress: () => updateSettings({ dailyReminderHour: h }),
+        })),
+        { text: "Cancel", style: "cancel" as const },
+      ],
     );
   };
 
