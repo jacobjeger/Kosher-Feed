@@ -38,6 +38,7 @@ export default function PodcastDetailScreen() {
   const [episodeSearch, setEpisodeSearch] = useState("");
   const [isEpisodeSearchFocused, setIsEpisodeSearchFocused] = useState(false);
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+  const [showPreferences, setShowPreferences] = useState(false);
 
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
   const feed = feedsQuery.data?.find(f => f.id === id);
@@ -265,46 +266,64 @@ export default function PodcastDetailScreen() {
             )}
 
             {isFollowing && (
-              <View style={[styles.feedSettingsCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
-                <View style={styles.feedSettingRow}>
-                  <View style={styles.feedSettingLeft}>
-                    <Ionicons name="notifications-outline" size={18} color={colors.accent} />
-                    <Text style={[styles.feedSettingLabel, { color: colors.text }]}>Notifications</Text>
+              <View style={{ marginBottom: 16 }}>
+                <Pressable
+                  onPress={() => { lightHaptic(); setShowPreferences(prev => !prev); }}
+                  style={[styles.preferencesBtn, { backgroundColor: colors.surfaceAlt }]}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Ionicons name="options-outline" size={18} color={colors.accent} />
+                    <Text style={[styles.preferencesBtnText, { color: colors.text }]}>Preferences</Text>
                   </View>
-                  <Switch
-                    value={feedSettings.notificationsEnabled}
-                    onValueChange={handleToggleNotifications}
-                    trackColor={{ false: colors.border, true: colors.accent }}
-                    thumbColor="#fff"
-                  />
-                </View>
-                <View style={[styles.feedSettingDivider, { backgroundColor: colors.border }]} />
-                <Pressable style={styles.feedSettingRow} onPress={handleChangeEpisodeLimit}>
-                  <View style={styles.feedSettingLeft}>
-                    <Ionicons name="layers-outline" size={18} color={colors.accent} />
-                    <Text style={[styles.feedSettingLabel, { color: colors.text }]}>Episodes to keep</Text>
-                  </View>
-                  <View style={styles.feedSettingRight}>
-                    <Text style={[styles.feedSettingValue, { color: colors.textSecondary }]}>{feedSettings.maxEpisodes}</Text>
-                    <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
-                  </View>
+                  <Ionicons name={showPreferences ? "chevron-up" : "chevron-down"} size={18} color={colors.textSecondary} />
                 </Pressable>
-              </View>
-            )}
 
-            {isFollowing && allEpisodes.length > 0 && (
-              <Pressable
-                style={[styles.batchDownloadBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.cardBorder }]}
-                onPress={() => {
-                  lightHaptic();
-                  if (feed) batchDownload(allEpisodes.slice(0, 20), feed);
-                }}
-              >
-                <Ionicons name="cloud-download-outline" size={18} color={colors.accent} />
-                <Text style={[styles.batchDownloadText, { color: colors.text }]}>
-                  Download Latest Episodes
-                </Text>
-              </Pressable>
+                {showPreferences && (
+                  <View style={[styles.feedSettingsCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+                    <View style={styles.feedSettingRow}>
+                      <View style={styles.feedSettingLeft}>
+                        <Ionicons name="notifications-outline" size={18} color={colors.accent} />
+                        <Text style={[styles.feedSettingLabel, { color: colors.text }]}>Notifications</Text>
+                      </View>
+                      <Switch
+                        value={feedSettings.notificationsEnabled}
+                        onValueChange={handleToggleNotifications}
+                        trackColor={{ false: colors.border, true: colors.accent }}
+                        thumbColor="#fff"
+                      />
+                    </View>
+                    <View style={[styles.feedSettingDivider, { backgroundColor: colors.border }]} />
+                    <Pressable style={styles.feedSettingRow} onPress={handleChangeEpisodeLimit}>
+                      <View style={styles.feedSettingLeft}>
+                        <Ionicons name="layers-outline" size={18} color={colors.accent} />
+                        <Text style={[styles.feedSettingLabel, { color: colors.text }]}>Episodes to keep</Text>
+                      </View>
+                      <View style={styles.feedSettingRight}>
+                        <Text style={[styles.feedSettingValue, { color: colors.textSecondary }]}>{feedSettings.maxEpisodes}</Text>
+                        <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                      </View>
+                    </Pressable>
+                    {allEpisodes.length > 0 && (
+                      <>
+                        <View style={[styles.feedSettingDivider, { backgroundColor: colors.border }]} />
+                        <Pressable
+                          style={styles.feedSettingRow}
+                          onPress={() => {
+                            lightHaptic();
+                            if (feed) batchDownload(allEpisodes.slice(0, 20), feed);
+                          }}
+                        >
+                          <View style={styles.feedSettingLeft}>
+                            <Ionicons name="cloud-download-outline" size={18} color={colors.accent} />
+                            <Text style={[styles.feedSettingLabel, { color: colors.text }]}>Download Latest Episodes</Text>
+                          </View>
+                          <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                        </Pressable>
+                      </>
+                    )}
+                  </View>
+                )}
+              </View>
             )}
 
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
@@ -436,11 +455,23 @@ const styles = StyleSheet.create({
     fontWeight: "600" as const,
     marginTop: 4,
   },
+  preferencesBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  preferencesBtnText: {
+    fontSize: 14,
+    fontWeight: "600" as const,
+  },
   feedSettingsCard: {
     borderRadius: 12,
     borderWidth: 1,
     overflow: "hidden",
-    marginBottom: 20,
   },
   feedSettingRow: {
     flexDirection: "row",
@@ -470,21 +501,6 @@ const styles = StyleSheet.create({
   feedSettingDivider: {
     height: 1,
     marginLeft: 42,
-  },
-  batchDownloadBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    marginTop: 12,
-    marginBottom: 4,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  batchDownloadText: {
-    fontSize: 14,
-    fontWeight: "600" as const,
   },
   sectionTitle: {
     fontSize: 18,
