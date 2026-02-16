@@ -39,7 +39,7 @@ function formatDate(dateStr: string | null): string {
 }
 
 function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
-  const { playEpisode, currentEpisode, playback, pause, resume } = useAudioPlayer();
+  const { playEpisode, currentEpisode, playback, pause, resume, queue, addToQueue } = useAudioPlayer();
   const { downloadEpisode, isDownloaded, isDownloading, downloadProgress } = useDownloads();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
@@ -50,6 +50,7 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
   const downloaded = isDownloaded(episode.id);
   const downloading = isDownloading(episode.id);
   const progress = downloading ? downloadProgress.get(episode.id) || 0 : 0;
+  const isInQueue = queue.some((item) => item.episodeId === episode.id);
 
   const handlePlay = async () => {
     lightHaptic();
@@ -64,6 +65,12 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
     if (downloaded || downloading) return;
     mediumHaptic();
     await downloadEpisode(episode, feed);
+  };
+
+  const handleAddToQueue = async () => {
+    if (isInQueue) return;
+    lightHaptic();
+    await addToQueue(episode.id, feed.id);
   };
 
   const handleToggleExpand = () => {
@@ -124,10 +131,24 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
         <Pressable
           onPress={(e) => {
             e.stopPropagation();
+            handleAddToQueue();
+          }}
+          hitSlop={10}
+          style={styles.actionBtn}
+        >
+          {isInQueue ? (
+            <Ionicons name="checkmark-circle" size={22} color={colors.success} />
+          ) : (
+            <Ionicons name="add-circle-outline" size={22} color={colors.textSecondary} />
+          )}
+        </Pressable>
+        <Pressable
+          onPress={(e) => {
+            e.stopPropagation();
             handleDownload();
           }}
           hitSlop={10}
-          style={styles.downloadBtn}
+          style={styles.actionBtn}
         >
           {downloading ? (
             <View style={styles.downloadingIndicator}>
@@ -204,8 +225,8 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     marginTop: 6,
   },
-  downloadBtn: {
-    width: 36,
+  actionBtn: {
+    width: 32,
     height: 36,
     alignItems: "center" as const,
     justifyContent: "center" as const,
