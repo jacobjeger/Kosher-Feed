@@ -13,6 +13,7 @@ import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import { getBookmarks, addBookmark, removeBookmark, type Bookmark } from "@/lib/bookmarks";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useFavorites } from "@/contexts/FavoritesContext";
+import OptionPickerModal, { type PickerOption } from "@/components/OptionPickerModal";
 
 function formatTime(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
@@ -57,6 +58,7 @@ export default function PlayerScreen() {
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [bookmarkSaved, setBookmarkSaved] = useState(false);
   const [webSleepIndex, setWebSleepIndex] = useState(0);
+  const [sleepModalVisible, setSleepModalVisible] = useState(false);
 
   const swipeAnim = useRef(new RNAnimated.Value(0)).current;
 
@@ -142,23 +144,23 @@ export default function PlayerScreen() {
         setSleepTimer(option as number);
       }
     } else {
-      Alert.alert(
-        "Sleep Timer",
-        sleepTimer.active
-          ? `Timer active: ${sleepTimer.mode === "endOfEpisode" ? "End of Episode" : formatTimerRemaining(sleepTimer.remainingMs)}`
-          : "Stop playback after:",
-        [
-          { text: "15 min", onPress: () => setSleepTimer(15) },
-          { text: "30 min", onPress: () => setSleepTimer(30) },
-          { text: "45 min", onPress: () => setSleepTimer(45) },
-          { text: "60 min", onPress: () => setSleepTimer(60) },
-          { text: "End of Episode", onPress: () => setSleepTimer("endOfEpisode") },
-          ...(sleepTimer.active ? [{ text: "Cancel Timer", style: "destructive" as const, onPress: () => cancelSleepTimer() }] : []),
-          { text: "Dismiss", style: "cancel" as const },
-        ]
-      );
+      setSleepModalVisible(true);
     }
   }, [sleepTimer, setSleepTimer, cancelSleepTimer, webSleepIndex]);
+
+  const sleepModalOptions = React.useMemo((): PickerOption[] => {
+    const opts: PickerOption[] = [
+      { label: "15 minutes", onPress: () => setSleepTimer(15) },
+      { label: "30 minutes", onPress: () => setSleepTimer(30) },
+      { label: "45 minutes", onPress: () => setSleepTimer(45) },
+      { label: "60 minutes", onPress: () => setSleepTimer(60) },
+      { label: "End of Episode", onPress: () => setSleepTimer("endOfEpisode"), selected: sleepTimer.active && sleepTimer.mode === "endOfEpisode" },
+    ];
+    if (sleepTimer.active) {
+      opts.push({ label: "Cancel Timer", onPress: () => cancelSleepTimer(), destructive: true });
+    }
+    return opts;
+  }, [sleepTimer, setSleepTimer, cancelSleepTimer]);
 
   const getSkipBackwardIcon = (): string => {
     switch (settings.skipBackwardSeconds) {
@@ -448,6 +450,16 @@ export default function PlayerScreen() {
       )}
 
       <View style={{ height: insets.bottom + 20 }} />
+
+      <OptionPickerModal
+        visible={sleepModalVisible}
+        title="Sleep Timer"
+        subtitle={sleepTimer.active
+          ? `Timer active: ${sleepTimer.mode === "endOfEpisode" ? "End of Episode" : formatTimerRemaining(sleepTimer.remainingMs)}`
+          : "Stop playback after:"}
+        options={sleepModalOptions}
+        onClose={() => setSleepModalVisible(false)}
+      />
     </ScrollView>
   );
 }
