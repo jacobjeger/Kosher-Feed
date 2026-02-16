@@ -1,10 +1,10 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { View, Text, FlatList, Pressable, StyleSheet, useColorScheme, ActivityIndicator, Platform, Switch, Alert, TextInput } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, router } from "expo-router";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useInfiniteQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient, getApiUrl } from "@/lib/query-client";
 import { getDeviceId } from "@/lib/device-id";
 import EpisodeItem from "@/components/EpisodeItem";
@@ -14,6 +14,15 @@ import { mediumHaptic, lightHaptic } from "@/lib/haptics";
 import { useSettings } from "@/contexts/SettingsContext";
 
 const EPISODE_LIMIT_OPTIONS = [3, 5, 10, 15, 25, 50];
+const PAGE_SIZE = 30;
+
+interface PaginatedResponse {
+  episodes: Episode[];
+  page: number;
+  totalPages: number;
+  totalCount: number;
+  hasMore: boolean;
+}
 
 export default function PodcastDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -29,17 +38,35 @@ export default function PodcastDetailScreen() {
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
   const feed = feedsQuery.data?.find(f => f.id === id);
 
-  const episodesQuery = useQuery<Episode[]>({
-    queryKey: [`/api/feeds/${id}/episodes`],
+  const episodesInfiniteQuery = useInfiniteQuery<PaginatedResponse>({
+    queryKey: [`/api/feeds/${id}/episodes`, "paginated"],
+    queryFn: async ({ pageParam }) => {
+      const baseUrl = getApiUrl();
+      const url = new URL(`/api/feeds/${id}/episodes`, baseUrl);
+      url.searchParams.set("paginated", "1");
+      url.searchParams.set("page", String(pageParam));
+      url.searchParams.set("limit", String(PAGE_SIZE));
+      const res = await fetch(url.toString());
+      if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
+      return res.json();
+    },
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => lastPage.hasMore ? lastPage.page + 1 : undefined,
     enabled: !!id,
   });
 
+  const allEpisodes = useMemo(() => {
+    if (!episodesInfiniteQuery.data) return [];
+    return episodesInfiniteQuery.data.pages.flatMap(page => page.episodes);
+  }, [episodesInfiniteQuery.data]);
+
+  const totalCount = episodesInfiniteQuery.data?.pages[0]?.totalCount || 0;
+
   const filteredEpisodes = useMemo(() => {
-    const eps = episodesQuery.data || [];
-    if (!episodeSearch.trim()) return eps;
+    if (!episodeSearch.trim()) return allEpisodes;
     const q = episodeSearch.toLowerCase().trim();
-    return eps.filter(ep => ep.title.toLowerCase().includes(q));
-  }, [episodesQuery.data, episodeSearch]);
+    return allEpisodes.filter(ep => ep.title.toLowerCase().includes(q));
+  }, [allEpisodes, episodeSearch]);
 
   const subsQuery = useQuery<Subscription[]>({
     queryKey: ["/api/subscriptions"],
@@ -112,8 +139,14 @@ export default function PodcastDetailScreen() {
     );
   };
 
-  const feedError = feedsQuery.isError || episodesQuery.isError;
-  const feedErrorMsg = feedsQuery.error?.message || episodesQuery.error?.message || "";
+  const handleLoadMore = useCallback(() => {
+    if (episodesInfiniteQuery.hasNextPage && !episodesInfiniteQuery.isFetchingNextPage && !episodeSearch.trim()) {
+      episodesInfiniteQuery.fetchNextPage();
+    }
+  }, [episodesInfiniteQuery, episodeSearch]);
+
+  const feedError = feedsQuery.isError || episodesInfiniteQuery.isError;
+  const feedErrorMsg = feedsQuery.error?.message || episodesInfiniteQuery.error?.message || "";
 
   if (feedError && !feed) {
     return (
@@ -133,7 +166,7 @@ export default function PodcastDetailScreen() {
             style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, marginTop: 8, backgroundColor: colors.accent }}
             onPress={() => {
               queryClient.invalidateQueries({ queryKey: ["/api/feeds"] });
-              queryClient.invalidateQueries({ queryKey: [`/api/feeds/${id}/episodes`] });
+              queryClient.invalidateQueries({ queryKey: [`/api/feeds/${id}/episodes`, "paginated"] });
             }}
           >
             <Ionicons name="refresh" size={18} color="#fff" />
@@ -158,6 +191,12 @@ export default function PodcastDetailScreen() {
         data={filteredEpisodes}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ paddingBottom: 120, paddingHorizontal: 16 }}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.5}
+        initialNumToRender={15}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS !== "web"}
         ListHeaderComponent={() => (
           <View>
             <View style={[styles.header, { paddingTop: insets.top + (Platform.OS === "web" ? 67 : 8) }]}>
@@ -249,7 +288,7 @@ export default function PodcastDetailScreen() {
             )}
 
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              Episodes ({episodesQuery.data?.length || 0})
+              Episodes{totalCount > 0 ? ` (${totalCount})` : ""}
             </Text>
 
             <View style={[styles.episodeSearchContainer, { backgroundColor: colors.surfaceAlt, borderColor: isEpisodeSearchFocused ? colors.accent : "transparent" }]}>
@@ -273,8 +312,28 @@ export default function PodcastDetailScreen() {
           </View>
         )}
         renderItem={({ item }) => <EpisodeItem episode={item} feed={feed} />}
+        ListFooterComponent={() => {
+          if (episodesInfiniteQuery.isFetchingNextPage) {
+            return (
+              <View style={styles.loadingMore}>
+                <ActivityIndicator size="small" color={colors.accent} />
+                <Text style={[styles.loadingMoreText, { color: colors.textSecondary }]}>Loading more episodes...</Text>
+              </View>
+            );
+          }
+          if (allEpisodes.length > 0 && !episodesInfiniteQuery.hasNextPage && !episodeSearch.trim()) {
+            return (
+              <View style={styles.endOfList}>
+                <Text style={[styles.endOfListText, { color: colors.textSecondary }]}>
+                  All {totalCount} episodes loaded
+                </Text>
+              </View>
+            );
+          }
+          return null;
+        }}
         ListEmptyComponent={() =>
-          episodesQuery.isLoading ? (
+          episodesInfiniteQuery.isLoading ? (
             <ActivityIndicator size="small" color={colors.accent} style={{ marginTop: 20 }} />
           ) : (
             <View style={styles.emptyState}>
@@ -313,7 +372,7 @@ const styles = StyleSheet.create({
   },
   podcastTitle: {
     fontSize: 20,
-    fontWeight: "700",
+    fontWeight: "700" as const,
     lineHeight: 24,
   },
   podcastAuthor: {
@@ -331,7 +390,7 @@ const styles = StyleSheet.create({
   },
   followText: {
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "600" as const,
   },
   descriptionBlock: {
     marginBottom: 16,
@@ -342,7 +401,7 @@ const styles = StyleSheet.create({
   },
   seeMoreText: {
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "600" as const,
     marginTop: 4,
   },
   feedSettingsCard: {
@@ -371,7 +430,7 @@ const styles = StyleSheet.create({
   },
   feedSettingLabel: {
     fontSize: 14,
-    fontWeight: "500",
+    fontWeight: "500" as const,
   },
   feedSettingValue: {
     fontSize: 14,
@@ -382,7 +441,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: "700",
+    fontWeight: "700" as const,
     marginBottom: 12,
   },
   episodeSearchContainer: {
@@ -402,6 +461,23 @@ const styles = StyleSheet.create({
   },
   episodeSearchClear: {
     padding: 8,
+  },
+  loadingMore: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 20,
+  },
+  loadingMoreText: {
+    fontSize: 13,
+  },
+  endOfList: {
+    alignItems: "center",
+    paddingVertical: 16,
+  },
+  endOfListText: {
+    fontSize: 12,
   },
   emptyState: {
     alignItems: "center",

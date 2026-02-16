@@ -51,6 +51,7 @@ interface AudioPlayerContextValue {
   setRate: (rate: number) => Promise<void>;
   stop: () => Promise<void>;
   getSavedPosition: (episodeId: string) => Promise<number>;
+  removeSavedPosition: (episodeId: string) => Promise<void>;
   recentlyPlayed: RecentlyPlayedEntry[];
   getFeedSpeed: (feedId: string) => Promise<number>;
   sleepTimer: SleepTimerState;
@@ -243,6 +244,16 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       return positions[episodeId]?.positionMs || 0;
     } catch {
       return 0;
+    }
+  }, []);
+
+  const removeSavedPosition = useCallback(async (episodeId: string): Promise<void> => {
+    try {
+      const positions = await loadPositions();
+      delete positions[episodeId];
+      await AsyncStorage.setItem(POSITIONS_KEY, JSON.stringify(positions));
+    } catch (e) {
+      console.error("Failed to remove saved position:", e);
     }
   }, []);
 
@@ -601,6 +612,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     setRate,
     stop,
     getSavedPosition,
+    removeSavedPosition,
     recentlyPlayed,
     getFeedSpeed,
     sleepTimer,
@@ -612,7 +624,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     removeFromQueue: handleRemoveFromQueue,
     clearQueue: handleClearQueue,
     playNext,
-  }), [currentEpisode, currentFeed, playback, playEpisode, pause, resume, seekTo, skip, setRate, stop, getSavedPosition, recentlyPlayed, getFeedSpeed, sleepTimer, setSleepTimerFn, cancelSleepTimer, getInProgressEpisodes, queue, handleAddToQueue, handleRemoveFromQueue, handleClearQueue, playNext]);
+  }), [currentEpisode, currentFeed, playback, playEpisode, pause, resume, seekTo, skip, setRate, stop, getSavedPosition, removeSavedPosition, recentlyPlayed, getFeedSpeed, sleepTimer, setSleepTimerFn, cancelSleepTimer, getInProgressEpisodes, queue, handleAddToQueue, handleRemoveFromQueue, handleClearQueue, playNext]);
 
   return (
     <AudioPlayerContext.Provider value={value}>

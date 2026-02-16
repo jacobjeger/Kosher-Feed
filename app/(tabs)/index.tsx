@@ -159,7 +159,7 @@ const SearchResultItem = React.memo(function SearchResultItem({ feed, colors }: 
   );
 });
 
-const ContinueListeningCard = React.memo(function ContinueListeningCard({ episode, feed, position, colors, onPlay }: { episode: Episode; feed: Feed; position: SavedPositionEntry; colors: any; onPlay: () => void }) {
+const ContinueListeningCard = React.memo(function ContinueListeningCard({ episode, feed, position, colors, onPlay, onDismiss }: { episode: Episode; feed: Feed; position: SavedPositionEntry; colors: any; onPlay: () => void; onDismiss: () => void }) {
   const progress = position.durationMs > 0 ? position.positionMs / position.durationMs : 0;
   return (
     <Pressable
@@ -169,6 +169,16 @@ const ContinueListeningCard = React.memo(function ContinueListeningCard({ episod
       ]}
       onPress={onPlay}
     >
+      <Pressable
+        onPress={(e) => {
+          e.stopPropagation?.();
+          onDismiss();
+        }}
+        hitSlop={6}
+        style={[styles.continueDismiss, { backgroundColor: colors.surfaceAlt }]}
+      >
+        <Ionicons name="close" size={12} color={colors.textSecondary} />
+      </Pressable>
       {feed.imageUrl ? (
         <Image source={{ uri: feed.imageUrl }} style={styles.continueImage} contentFit="cover" cachePolicy="memory-disk" />
       ) : (
@@ -196,7 +206,7 @@ export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
-  const { playEpisode, currentEpisode, playback, pause, resume, recentlyPlayed, getInProgressEpisodes } = useAudioPlayer();
+  const { playEpisode, currentEpisode, playback, pause, resume, recentlyPlayed, getInProgressEpisodes, removeSavedPosition } = useAudioPlayer();
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [inProgressPositions, setInProgressPositions] = useState<SavedPositionEntry[]>([]);
@@ -217,6 +227,12 @@ export default function HomeScreen() {
   const allFeeds = feedsQuery.data || [];
   const latestEpisodes = (latestQuery.data || []).slice(0, 20);
   const trendingEpisodes = trendingQuery.data || [];
+
+  const handleDismissContinue = useCallback(async (episodeId: string) => {
+    lightHaptic();
+    await removeSavedPosition(episodeId);
+    setInProgressPositions(prev => prev.filter(p => p.episodeId !== episodeId));
+  }, [removeSavedPosition]);
 
   const handlePlayEpisode = useCallback((episode: Episode, feed: Feed) => {
     lightHaptic();
@@ -419,6 +435,7 @@ export default function HomeScreen() {
                 position={item.position}
                 colors={colors}
                 onPlay={() => handlePlayEpisode(item.episode, item.feed)}
+                onDismiss={() => handleDismissContinue(item.episode.id)}
               />
             )}
             showsHorizontalScrollIndicator={false}
@@ -795,6 +812,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: "hidden",
     marginRight: 12,
+    position: "relative" as const,
+  },
+  continueDismiss: {
+    position: "absolute" as const,
+    top: 6,
+    right: 6,
+    zIndex: 10,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
   },
   continueImage: {
     width: "100%" as any,

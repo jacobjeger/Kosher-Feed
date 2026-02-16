@@ -52,6 +52,11 @@ export async function getEpisodesByFeedPaginated(feedId: string, page: number = 
   return db.select().from(episodes).where(eq(episodes.feedId, feedId)).orderBy(desc(episodes.publishedAt)).limit(pageLimit).offset(offset);
 }
 
+export async function getEpisodeCountByFeed(feedId: string): Promise<number> {
+  const result = await db.select({ value: count() }).from(episodes).where(eq(episodes.feedId, feedId));
+  return result[0]?.value || 0;
+}
+
 export async function getLatestEpisodes(limit: number = 50): Promise<Episode[]> {
   return db.select().from(episodes).orderBy(desc(episodes.publishedAt)).limit(limit);
 }

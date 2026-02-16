@@ -101,22 +101,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/feeds/:id/episodes", async (req: Request, res: Response) => {
     try {
       const page = parseInt(req.query.page as string) || 1;
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const limit = Math.min(parseInt(req.query.limit as string) || 30, 100);
+      const paginated = req.query.paginated === "1";
       const slim = req.query.slim === "1";
       const eps = await storage.getEpisodesByFeedPaginated(req.params.id, page, limit);
       res.setHeader("Cache-Control", "public, max-age=30");
-      if (slim) {
-        res.json(eps.map(ep => ({
-          id: ep.id,
-          feedId: ep.feedId,
-          title: ep.title,
-          audioUrl: ep.audioUrl,
-          duration: ep.duration,
-          publishedAt: ep.publishedAt,
-          imageUrl: ep.imageUrl,
-        })));
+
+      const mapEpisode = (ep: any) => slim ? ({
+        id: ep.id,
+        feedId: ep.feedId,
+        title: ep.title,
+        audioUrl: ep.audioUrl,
+        duration: ep.duration,
+        publishedAt: ep.publishedAt,
+        imageUrl: ep.imageUrl,
+      }) : ep;
+
+      if (paginated) {
+        const totalCount = await storage.getEpisodeCountByFeed(req.params.id);
+        const totalPages = Math.ceil(totalCount / limit);
+        res.json({
+          episodes: eps.map(mapEpisode),
+          page,
+          totalPages,
+          totalCount,
+          hasMore: page < totalPages,
+        });
       } else {
-        res.json(eps);
+        res.json(eps.map(mapEpisode));
       }
     } catch (e: any) {
       res.status(500).json({ error: e.message });
