@@ -168,6 +168,7 @@
       <button class="tab" onclick="switchTab('feeds', this)">Feeds</button>
       <button class="tab" onclick="switchTab('categories', this)">Categories</button>
       <button class="tab" onclick="switchTab('errors', this)">Error Reports</button>
+      <button class="tab" onclick="switchTab('feedback', this)">Feedback</button>
     </div>
 
     <div id="analyticsTab">
@@ -243,6 +244,29 @@
         <div id="errorReportsSummary" style="margin-bottom:12px;font-size:13px;color:#94a3b8;"></div>
         <div id="errorReportsList"></div>
         <div id="errorReportsPagination" style="display:flex;gap:8px;justify-content:center;margin-top:16px;"></div>
+      </div>
+    </div>
+
+    <div id="feedbackTab" class="hidden">
+      <div class="card">
+        <div class="card-header">
+          <h2>User Feedback</h2>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <select id="feedbackTypeFilter" onchange="loadFeedback()" style="width:auto;padding:6px 10px;font-size:12px;">
+              <option value="">All Types</option>
+              <option value="shiur_request">Shiur Requests</option>
+              <option value="technical_issue">Technical Issues</option>
+            </select>
+            <select id="feedbackStatusFilter" onchange="loadFeedback()" style="width:auto;padding:6px 10px;font-size:12px;">
+              <option value="new">New</option>
+              <option value="reviewed">Reviewed</option>
+              <option value="resolved">Resolved</option>
+              <option value="">All</option>
+            </select>
+          </div>
+        </div>
+        <div id="feedbackList"></div>
+        <div id="feedbackPagination" style="display:flex;gap:8px;justify-content:center;margin-top:16px;"></div>
       </div>
     </div>
   </div>
@@ -879,7 +903,9 @@ function switchTab(tab, btn) {
   document.getElementById('feedsTab').classList.toggle('hidden', tab !== 'feeds');
   document.getElementById('categoriesTab').classList.toggle('hidden', tab !== 'categories');
   document.getElementById('errorsTab').classList.toggle('hidden', tab !== 'errors');
+  document.getElementById('feedbackTab').classList.toggle('hidden', tab !== 'feedback');
   if (tab === 'errors') loadErrorReports();
+  if (tab === 'feedback') loadFeedback();
 }
 
 function formatDate(dateStr) {
@@ -958,6 +984,99 @@ async function deleteResolvedErrors() {
     const data = await api('/api/admin/error-reports/resolved', { method: 'DELETE' });
     showAlert(`Deleted ${data.deleted} resolved reports`, 'success');
     loadErrorReports();
+  } catch(e) {
+    showAlert(e.message, 'error');
+  }
+}
+
+let feedbackPage = 1;
+
+async function loadFeedback(page) {
+  if (page) feedbackPage = page;
+  const type = document.getElementById('feedbackTypeFilter').value;
+  const status = document.getElementById('feedbackStatusFilter').value;
+  let url = `/api/admin/feedback?page=${feedbackPage}&limit=30`;
+  if (type) url += `&type=${type}`;
+  if (status) url += `&status=${status}`;
+  try {
+    const data = await api(url);
+    const list = document.getElementById('feedbackList');
+    if (!data.items || data.items.length === 0) {
+      list.innerHTML = '<p style="color:#64748b;text-align:center;padding:40px;">No feedback found</p>';
+      document.getElementById('feedbackPagination').innerHTML = '';
+      return;
+    }
+    list.innerHTML = data.items.map(fb => {
+      const typeLabel = fb.type === 'shiur_request' ? '🎵 Shiur Request' : '🔧 Technical Issue';
+      const statusColor = fb.status === 'new' ? '#f59e0b' : fb.status === 'reviewed' ? '#3b82f6' : '#059669';
+      const d = new Date(fb.createdAt);
+      const dateStr = `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
+      return `<div style="background:#0f172a;border-radius:10px;padding:14px;margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:13px;">${typeLabel}</span>
+            <span style="background:${statusColor};color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">${esc(fb.status)}</span>
+          </div>
+          <span style="font-size:11px;color:#64748b;">${dateStr}</span>
+        </div>
+        <div style="font-weight:600;font-size:14px;color:#f8fafc;margin-bottom:4px;">${esc(fb.subject)}</div>
+        <div style="font-size:13px;color:#94a3b8;margin-bottom:8px;white-space:pre-wrap;max-height:100px;overflow-y:auto;">${esc(fb.message)}</div>
+        ${fb.contactInfo ? `<div style="font-size:12px;color:#3b82f6;margin-bottom:8px;">Contact: ${esc(fb.contactInfo)}</div>` : ''}
+        ${fb.adminNotes ? `<div style="font-size:12px;color:#a78bfa;margin-bottom:8px;padding:6px 8px;background:#1e1b4b;border-radius:6px;">Admin: ${esc(fb.adminNotes)}</div>` : ''}
+        <div style="font-size:11px;color:#475569;margin-bottom:8px;">Device: ${esc(fb.deviceId || 'Unknown')}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="btn btn-secondary btn-sm" onclick="updateFeedbackStatus('${fb.id}','reviewed')">Mark Reviewed</button>
+          <button class="btn btn-success btn-sm" onclick="updateFeedbackStatus('${fb.id}','resolved')">Resolve</button>
+          <button class="btn btn-primary btn-sm" onclick="addFeedbackNote('${fb.id}')">Add Note</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteFeedback('${fb.id}')">Delete</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    const totalPages = Math.ceil((data.total || 0) / 30);
+    const pag = document.getElementById('feedbackPagination');
+    if (totalPages > 1) {
+      let html = '';
+      if (feedbackPage > 1) html += `<button class="btn btn-secondary btn-sm" onclick="loadFeedback(${feedbackPage-1})">Prev</button>`;
+      html += `<span style="font-size:13px;color:#94a3b8;padding:6px;">Page ${feedbackPage} of ${totalPages}</span>`;
+      if (feedbackPage < totalPages) html += `<button class="btn btn-secondary btn-sm" onclick="loadFeedback(${feedbackPage+1})">Next</button>`;
+      pag.innerHTML = html;
+    } else {
+      pag.innerHTML = '';
+    }
+  } catch(e) {
+    showAlert(e.message, 'error');
+  }
+}
+
+async function updateFeedbackStatus(id, status) {
+  try {
+    await api(`/api/admin/feedback/${id}`, { method: 'PUT', body: JSON.stringify({ status }) });
+    showAlert('Feedback updated', 'success');
+    loadFeedback();
+  } catch(e) {
+    showAlert(e.message, 'error');
+  }
+}
+
+async function addFeedbackNote(id) {
+  const note = prompt('Enter admin note:');
+  if (note === null) return;
+  try {
+    await api(`/api/admin/feedback/${id}`, { method: 'PUT', body: JSON.stringify({ adminNotes: note }) });
+    showAlert('Note added', 'success');
+    loadFeedback();
+  } catch(e) {
+    showAlert(e.message, 'error');
+  }
+}
+
+async function deleteFeedback(id) {
+  if (!confirm('Delete this feedback?')) return;
+  try {
+    await api(`/api/admin/feedback/${id}`, { method: 'DELETE' });
+    showAlert('Feedback deleted', 'success');
+    loadFeedback();
   } catch(e) {
     showAlert(e.message, 'error');
   }
