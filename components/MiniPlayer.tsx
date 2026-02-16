@@ -5,7 +5,6 @@ import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { router } from "expo-router";
-import Animated, { FadeInDown, FadeOutDown } from "react-native-reanimated";
 import Colors from "@/constants/colors";
 
 export default function MiniPlayer() {
@@ -16,13 +15,11 @@ export default function MiniPlayer() {
 
   if (!currentEpisode) return null;
 
-  const progress = playback.durationMs > 0 ? playback.positionMs / playback.durationMs : 0;
+  const rawProgress = playback.durationMs > 0 ? playback.positionMs / playback.durationMs : 0;
+  const progress = isNaN(rawProgress) ? 0 : Math.min(rawProgress, 1);
 
   return (
-    <Animated.View
-      entering={FadeInDown.duration(300)}
-      exiting={FadeOutDown.duration(200)}
-    >
+    <View>
       <Pressable
         style={[styles.container, { backgroundColor: colors.playerBg }]}
         onPress={() => router.push("/player")}
@@ -69,7 +66,7 @@ export default function MiniPlayer() {
           </Pressable>
         </View>
       </Pressable>
-    </Animated.View>
+    </View>
   );
 }
 

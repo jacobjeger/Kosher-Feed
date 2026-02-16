@@ -1,6 +1,4 @@
-import { isLiquidGlassAvailable } from "expo-glass-effect";
 import { Tabs } from "expo-router";
-import { NativeTabs, Icon, Label } from "expo-router/unstable-native-tabs";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { Platform, StyleSheet, View } from "react-native";
@@ -10,37 +8,7 @@ import React from "react";
 import Colors from "@/constants/colors";
 import MiniPlayer from "@/components/MiniPlayer";
 
-function NativeTabLayout() {
-  return (
-    <>
-      <MiniPlayer />
-      <NativeTabs>
-        <NativeTabs.Trigger name="index">
-          <Icon sf={{ default: "house", selected: "house.fill" }} />
-          <Label>Home</Label>
-        </NativeTabs.Trigger>
-        <NativeTabs.Trigger name="following">
-          <Icon sf={{ default: "heart", selected: "heart.fill" }} />
-          <Label>Following</Label>
-        </NativeTabs.Trigger>
-        <NativeTabs.Trigger name="favorites">
-          <Icon sf={{ default: "star", selected: "star.fill" }} />
-          <Label>Favorites</Label>
-        </NativeTabs.Trigger>
-        <NativeTabs.Trigger name="downloads">
-          <Icon sf={{ default: "arrow.down.circle", selected: "arrow.down.circle.fill" }} />
-          <Label>Downloads</Label>
-        </NativeTabs.Trigger>
-        <NativeTabs.Trigger name="settings">
-          <Icon sf={{ default: "gearshape", selected: "gearshape.fill" }} />
-          <Label>Settings</Label>
-        </NativeTabs.Trigger>
-      </NativeTabs>
-    </>
-  );
-}
-
-function ClassicTabLayout() {
+export default function TabLayout() {
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
@@ -126,11 +94,4 @@ function ClassicTabLayout() {
       </View>
     </>
   );
-}
-
-export default function TabLayout() {
-  if (isLiquidGlassAvailable()) {
-    return <NativeTabLayout />;
-  }
-  return <ClassicTabLayout />;
 }

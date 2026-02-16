@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { useSettings } from "@/contexts/SettingsContext";
@@ -19,6 +19,12 @@ export function BackgroundSync() {
   const hasInitialized = useRef(false);
   const lastCheckRef = useRef(0);
 
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setReady(true), 15000);
+    return () => clearTimeout(timer);
+  }, []);
+
   const subscribedFeedsQuery = useQuery<Feed[]>({
     queryKey: ["/api/subscriptions/feeds/bg"],
     queryFn: async () => {
@@ -30,6 +36,7 @@ export function BackgroundSync() {
     },
     refetchInterval: 5 * 60 * 1000,
     staleTime: 2 * 60 * 1000,
+    enabled: ready,
   });
 
   const latestEpisodesQuery = useQuery<Episode[]>({
@@ -42,6 +49,7 @@ export function BackgroundSync() {
     },
     refetchInterval: 5 * 60 * 1000,
     staleTime: 2 * 60 * 1000,
+    enabled: ready,
   });
 
   useEffect(() => {
