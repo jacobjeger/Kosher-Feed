@@ -23,13 +23,16 @@
   .btn-danger:hover { background: #dc2626; }
   .btn-secondary { background: #1e293b; color: #e2e8f0; }
   .btn-secondary:hover { background: #334155; }
+  .btn-success { background: #059669; color: #fff; }
+  .btn-success:hover { background: #047857; }
   .btn-sm { padding: 6px 12px; font-size: 12px; }
   .btn-full { width: 100%; justify-content: center; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
   .admin-panel { display: none; }
-  .header { background: #151c2c; border-bottom: 1px solid #1e293b; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .header { background: #151c2c; border-bottom: 1px solid #1e293b; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; }
   .header h1 { font-size: 20px; color: #f8fafc; }
-  .main { padding: 24px; max-width: 1200px; margin: 0 auto; }
+  .main { padding: 24px; max-width: 1400px; margin: 0 auto; }
 
   .tabs { display: flex; gap: 4px; margin-bottom: 24px; background: #151c2c; border-radius: 10px; padding: 4px; }
   .tab { flex: 1; padding: 10px 16px; border: none; background: none; color: #94a3b8; font-size: 14px; font-weight: 500; cursor: pointer; border-radius: 8px; transition: all 0.15s; }
@@ -37,7 +40,7 @@
   .tab:hover:not(.active) { background: #1e293b; }
 
   .card { background: #151c2c; border-radius: 12px; border: 1px solid #1e293b; padding: 20px; margin-bottom: 16px; }
-  .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
   .card-header h2 { font-size: 18px; color: #f8fafc; }
 
   .feed-item { display: flex; align-items: center; gap: 14px; padding: 14px; background: #0f172a; border-radius: 10px; margin-bottom: 8px; }
@@ -46,12 +49,15 @@
   .feed-title { font-weight: 600; font-size: 14px; color: #f8fafc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .feed-meta { font-size: 12px; color: #64748b; margin-top: 2px; }
   .feed-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .feed-stats-inline { display: flex; gap: 12px; margin-top: 4px; }
+  .feed-stat { font-size: 11px; color: #94a3b8; }
+  .feed-stat strong { color: #e2e8f0; }
 
   .category-tag { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: #0f172a; border-radius: 6px; font-size: 13px; color: #94a3b8; margin: 0 6px 6px 0; }
   .category-tag .remove { background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px; line-height: 1; }
 
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
-  .modal { background: #151c2c; border-radius: 16px; border: 1px solid #1e293b; padding: 24px; width: 100%; max-width: 500px; }
+  .modal { background: #151c2c; border-radius: 16px; border: 1px solid #1e293b; padding: 24px; width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; }
   .modal h2 { font-size: 18px; color: #f8fafc; margin-bottom: 20px; }
 
   .status-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
@@ -63,10 +69,70 @@
   .alert-error { background: #7f1d1d; color: #fca5a5; border: 1px solid #991b1b; }
   .hidden { display: none !important; }
 
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
   .stat-card { background: #151c2c; border: 1px solid #1e293b; border-radius: 12px; padding: 16px; }
   .stat-value { font-size: 28px; font-weight: 700; color: #f8fafc; }
   .stat-label { font-size: 12px; color: #64748b; margin-top: 4px; }
+  .stat-sub { font-size: 11px; color: #3b82f6; margin-top: 2px; }
+
+  .search-container { position: relative; }
+  .search-container input { padding-right: 40px; }
+  .search-spinner { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); display: none; }
+  .search-spinner.active { display: block; }
+  .spinner { width: 18px; height: 18px; border: 2px solid #1e293b; border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .search-results { margin-top: 12px; max-height: 400px; overflow-y: auto; }
+  .search-result { display: flex; align-items: center; gap: 12px; padding: 12px; background: #0f172a; border-radius: 10px; margin-bottom: 8px; cursor: pointer; transition: background 0.15s; border: 1px solid transparent; }
+  .search-result:hover { background: #1e293b; border-color: #334155; }
+  .search-result.selected { border-color: #3b82f6; background: #172554; }
+  .search-result img { width: 56px; height: 56px; border-radius: 8px; object-fit: cover; flex-shrink: 0; }
+  .search-result-info { flex: 1; min-width: 0; }
+  .search-result-title { font-weight: 600; font-size: 14px; color: #f8fafc; }
+  .search-result-meta { font-size: 12px; color: #64748b; margin-top: 2px; }
+  .search-result-genre { display: inline-block; font-size: 11px; color: #94a3b8; background: #1e293b; padding: 2px 8px; border-radius: 4px; margin-top: 4px; }
+
+  .preview-card { background: #0f172a; border-radius: 10px; padding: 16px; margin-top: 12px; display: flex; gap: 14px; align-items: flex-start; }
+  .preview-card img { width: 80px; height: 80px; border-radius: 10px; object-fit: cover; flex-shrink: 0; }
+  .preview-info { flex: 1; }
+  .preview-info h3 { font-size: 16px; color: #f8fafc; margin-bottom: 4px; }
+  .preview-info p { font-size: 13px; color: #94a3b8; margin-bottom: 4px; }
+  .preview-info .ep-count { font-size: 12px; color: #3b82f6; }
+
+  .tab-mode-toggle { display: flex; gap: 4px; background: #0f172a; border-radius: 8px; padding: 3px; margin-bottom: 16px; }
+  .tab-mode-btn { padding: 8px 16px; border: none; background: none; color: #94a3b8; font-size: 13px; font-weight: 500; cursor: pointer; border-radius: 6px; transition: all 0.15s; }
+  .tab-mode-btn.active { background: #1e293b; color: #f8fafc; }
+
+  .chart-container { padding: 16px 0; }
+  .chart-bar-container { display: flex; align-items: flex-end; gap: 3px; height: 120px; padding: 0 4px; }
+  .chart-bar { flex: 1; background: #3b82f6; border-radius: 3px 3px 0 0; min-width: 4px; transition: height 0.3s; position: relative; }
+  .chart-bar:hover { background: #60a5fa; }
+  .chart-bar:hover::after { content: attr(data-tooltip); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: #1e293b; color: #f8fafc; padding: 4px 8px; border-radius: 4px; font-size: 11px; white-space: nowrap; margin-bottom: 4px; }
+  .chart-label { font-size: 11px; color: #64748b; text-align: center; margin-top: 4px; }
+
+  .top-episodes { list-style: none; }
+  .top-episode { display: flex; align-items: center; gap: 10px; padding: 10px; background: #0f172a; border-radius: 8px; margin-bottom: 6px; }
+  .top-episode-rank { font-size: 16px; font-weight: 700; color: #64748b; width: 24px; text-align: center; flex-shrink: 0; }
+  .top-episode-title { font-size: 13px; color: #f8fafc; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .top-episode-count { font-size: 12px; color: #3b82f6; font-weight: 600; flex-shrink: 0; }
+
+  .feed-table { width: 100%; border-collapse: collapse; }
+  .feed-table th { text-align: left; font-size: 12px; color: #64748b; font-weight: 500; padding: 8px 12px; border-bottom: 1px solid #1e293b; }
+  .feed-table td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid #0f172a; }
+  .feed-table tr:hover td { background: #0f172a; }
+
+  .toggle-btn { width: 40px; height: 22px; border-radius: 11px; border: none; cursor: pointer; position: relative; transition: background 0.2s; }
+  .toggle-btn.on { background: #059669; }
+  .toggle-btn.off { background: #334155; }
+  .toggle-btn::after { content: ''; width: 16px; height: 16px; border-radius: 50%; background: #fff; position: absolute; top: 3px; transition: left 0.2s; }
+  .toggle-btn.on::after { left: 21px; }
+  .toggle-btn.off::after { left: 3px; }
+
+  @media (max-width: 768px) {
+    .feed-item { flex-wrap: wrap; }
+    .feed-actions { width: 100%; justify-content: flex-end; margin-top: 8px; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+  }
 </style>
 </head>
 <body>
@@ -97,14 +163,40 @@
   <div class="main">
     <div id="alertArea"></div>
 
-    <div class="stats" id="statsArea"></div>
-
     <div class="tabs">
-      <button class="tab active" onclick="switchTab('feeds', this)">Feeds</button>
+      <button class="tab active" onclick="switchTab('analytics', this)">Analytics</button>
+      <button class="tab" onclick="switchTab('feeds', this)">Feeds</button>
       <button class="tab" onclick="switchTab('categories', this)">Categories</button>
     </div>
 
-    <div id="feedsTab">
+    <div id="analyticsTab">
+      <div class="stats" id="statsArea"></div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div class="card" style="grid-column:1/3;">
+          <div class="card-header">
+            <h2>Listens (Last 30 Days)</h2>
+          </div>
+          <div id="listenChart" class="chart-container"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2>Top Episodes</h2>
+          </div>
+          <div id="topEpisodes"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2>Feed Performance</h2>
+          </div>
+          <div id="feedPerformance" style="max-height:400px;overflow-y:auto;"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="feedsTab" class="hidden">
       <div class="card">
         <div class="card-header">
           <h2>Approved RSS Feeds</h2>
@@ -138,6 +230,9 @@
 <script>
 let token = localStorage.getItem('admin_token') || '';
 let categories = [];
+let analyticsData = null;
+let searchTimeout = null;
+let selectedSearchResult = null;
 
 const api = async (url, opts = {}) => {
   const headers = { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Basic ${token}` } : {}), ...opts.headers };
@@ -174,7 +269,7 @@ function logout() {
 async function showAdmin() {
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('adminPanel').style.display = 'block';
-  await Promise.all([loadFeeds(), loadCategories(), loadStats()]);
+  await Promise.all([loadAnalytics(), loadFeeds(), loadCategories()]);
 }
 
 function showAlert(msg, type = 'success') {
@@ -183,16 +278,113 @@ function showAlert(msg, type = 'success') {
   setTimeout(() => area.innerHTML = '', 4000);
 }
 
-async function loadStats() {
+async function loadAnalytics() {
   try {
-    const feeds = await api('/api/admin/feeds');
-    const cats = await api('/api/categories');
-    document.getElementById('statsArea').innerHTML = `
-      <div class="stat-card"><div class="stat-value">${feeds.length}</div><div class="stat-label">Total Feeds</div></div>
-      <div class="stat-card"><div class="stat-value">${feeds.filter(f => f.isActive).length}</div><div class="stat-label">Active Feeds</div></div>
-      <div class="stat-card"><div class="stat-value">${cats.length}</div><div class="stat-label">Categories</div></div>
-    `;
-  } catch(e) {}
+    analyticsData = await api('/api/admin/analytics');
+    renderStats();
+    renderListenChart();
+    renderTopEpisodes();
+    renderFeedPerformance();
+  } catch(e) {
+    console.error('Analytics error:', e);
+  }
+}
+
+function renderStats() {
+  if (!analyticsData) return;
+  const d = analyticsData;
+  document.getElementById('statsArea').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-value">${d.totalListens.toLocaleString()}</div>
+      <div class="stat-label">Total Listens</div>
+      <div class="stat-sub">${d.recentListens.toLocaleString()} this week</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${d.uniqueDevices.toLocaleString()}</div>
+      <div class="stat-label">Active Devices</div>
+      <div class="stat-sub">${d.totalSubscriptions.toLocaleString()} subscriptions</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${d.activeFeeds}</div>
+      <div class="stat-label">Active Feeds</div>
+      <div class="stat-sub">${d.totalFeeds} total</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${d.totalEpisodes.toLocaleString()}</div>
+      <div class="stat-label">Total Episodes</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${d.totalCategories}</div>
+      <div class="stat-label">Categories</div>
+    </div>
+  `;
+}
+
+function renderListenChart() {
+  if (!analyticsData) return;
+  const container = document.getElementById('listenChart');
+  const data = analyticsData.dailyListens;
+
+  if (data.length === 0) {
+    container.innerHTML = '<p style="color:#64748b;text-align:center;padding:40px;">No listen data yet. Listens will appear here once users start listening.</p>';
+    return;
+  }
+
+  const maxCount = Math.max(...data.map(d => d.count), 1);
+  const bars = data.map(d => {
+    const height = Math.max((d.count / maxCount) * 100, 2);
+    const date = new Date(d.day);
+    const label = `${date.getMonth()+1}/${date.getDate()}`;
+    return `<div class="chart-bar" style="height:${height}%" data-tooltip="${d.count} listens on ${label}"></div>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="chart-bar-container">${bars}</div>
+    <div style="display:flex;justify-content:space-between;padding:0 4px;">
+      <span class="chart-label">${formatDate(data[0].day)}</span>
+      <span class="chart-label">${formatDate(data[data.length-1].day)}</span>
+    </div>
+  `;
+}
+
+function renderTopEpisodes() {
+  if (!analyticsData) return;
+  const container = document.getElementById('topEpisodes');
+  const eps = analyticsData.topEpisodes;
+
+  if (eps.length === 0) {
+    container.innerHTML = '<p style="color:#64748b;text-align:center;padding:20px;">No data yet.</p>';
+    return;
+  }
+
+  container.innerHTML = '<div class="top-episodes">' + eps.map((ep, i) => `
+    <div class="top-episode">
+      <div class="top-episode-rank">${i + 1}</div>
+      <div class="top-episode-title" title="${esc(ep.title)}">${esc(ep.title)}</div>
+      <div class="top-episode-count">${ep.listenCount} plays</div>
+    </div>
+  `).join('') + '</div>';
+}
+
+function renderFeedPerformance() {
+  if (!analyticsData) return;
+  const container = document.getElementById('feedPerformance');
+  const stats = analyticsData.feedStats;
+
+  if (stats.length === 0) {
+    container.innerHTML = '<p style="color:#64748b;text-align:center;padding:20px;">No feeds added yet.</p>';
+    return;
+  }
+
+  container.innerHTML = '<table class="feed-table"><thead><tr><th>Feed</th><th>Episodes</th><th>Listens</th><th>Subscribers</th></tr></thead><tbody>' +
+    stats.map(f => `
+      <tr>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(f.title)}">${esc(f.title)}</td>
+        <td>${f.episodeCount}</td>
+        <td>${f.listenCount}</td>
+        <td>${f.subscriberCount}</td>
+      </tr>
+    `).join('') + '</tbody></table>';
 }
 
 async function loadFeeds() {
@@ -209,10 +401,11 @@ async function loadFeeds() {
         <div class="feed-info">
           <div class="feed-title">${esc(f.title)}</div>
           <div class="feed-meta">${esc(f.author || 'Unknown')} &bull; ${categories.find(c => c.id === f.categoryId)?.name || 'Uncategorized'}</div>
-          <div class="feed-meta" style="font-size:11px;margin-top:2px;">${esc(f.rssUrl)}</div>
+          <div class="feed-meta" style="font-size:11px;margin-top:2px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.rssUrl)}</div>
         </div>
-        <span class="status-badge ${f.isActive ? 'status-active' : 'status-inactive'}">${f.isActive ? 'Active' : 'Inactive'}</span>
+        <button class="toggle-btn ${f.isActive ? 'on' : 'off'}" onclick="toggleFeedActive('${f.id}', ${!f.isActive})" title="${f.isActive ? 'Active' : 'Inactive'}"></button>
         <div class="feed-actions">
+          <button class="btn btn-secondary btn-sm" onclick="editFeed('${f.id}')">Edit</button>
           <button class="btn btn-secondary btn-sm" onclick="refreshFeed('${f.id}')">Refresh</button>
           <button class="btn btn-danger btn-sm" onclick="deleteFeed('${f.id}')">Remove</button>
         </div>
@@ -238,17 +431,144 @@ async function loadCategories() {
 }
 
 function showAddFeedModal() {
+  selectedSearchResult = null;
   const catOptions = categories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
   document.getElementById('modalContent').innerHTML = `
-    <h2>Add RSS Feed</h2>
-    <div class="form-group"><label>RSS Feed URL</label><input type="url" id="feedUrl" placeholder="https://example.com/feed.xml"></div>
-    <div class="form-group"><label>Category</label><select id="feedCategory"><option value="">Uncategorized</option>${catOptions}</select></div>
+    <h2>Add Shiur Feed</h2>
+    <div class="tab-mode-toggle">
+      <button class="tab-mode-btn active" onclick="switchAddMode('search', this)">Search</button>
+      <button class="tab-mode-btn" onclick="switchAddMode('url', this)">Paste URL</button>
+    </div>
+
+    <div id="addModeSearch">
+      <div class="form-group">
+        <label>Search by name</label>
+        <div class="search-container">
+          <input type="text" id="podcastSearch" placeholder="Search for a podcast or shiur..." oninput="handleSearch(this.value)">
+          <div id="searchSpinner" class="search-spinner"><div class="spinner"></div></div>
+        </div>
+      </div>
+      <div id="searchResults" class="search-results"></div>
+      <div id="feedPreview"></div>
+    </div>
+
+    <div id="addModeUrl" class="hidden">
+      <div class="form-group">
+        <label>RSS Feed URL</label>
+        <input type="url" id="feedUrl" placeholder="https://example.com/feed.xml">
+      </div>
+      <div id="urlPreview"></div>
+      <button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="previewUrl()">Preview Feed</button>
+    </div>
+
+    <div class="form-group" style="margin-top:16px;">
+      <label>Category</label>
+      <select id="feedCategory"><option value="">Uncategorized</option>${catOptions}</select>
+    </div>
+
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;">
       <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="addFeed()">Add Feed</button>
+      <button class="btn btn-primary" id="addFeedBtn" onclick="addFeed()">Add Feed</button>
     </div>
   `;
   document.getElementById('modalOverlay').classList.remove('hidden');
+  setTimeout(() => document.getElementById('podcastSearch')?.focus(), 100);
+}
+
+function switchAddMode(mode, btn) {
+  document.querySelectorAll('.tab-mode-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('addModeSearch').classList.toggle('hidden', mode !== 'search');
+  document.getElementById('addModeUrl').classList.toggle('hidden', mode !== 'url');
+  selectedSearchResult = null;
+}
+
+function handleSearch(term) {
+  clearTimeout(searchTimeout);
+  if (term.trim().length < 2) {
+    document.getElementById('searchResults').innerHTML = '';
+    return;
+  }
+  document.getElementById('searchSpinner').classList.add('active');
+  searchTimeout = setTimeout(async () => {
+    try {
+      const data = await api(`/api/admin/search-podcasts?term=${encodeURIComponent(term)}`);
+      renderSearchResults(data.results);
+    } catch(e) {
+      document.getElementById('searchResults').innerHTML = `<p style="color:#fca5a5;font-size:13px;">Search failed: ${esc(e.message)}</p>`;
+    } finally {
+      document.getElementById('searchSpinner').classList.remove('active');
+    }
+  }, 400);
+}
+
+function renderSearchResults(results) {
+  const container = document.getElementById('searchResults');
+  if (results.length === 0) {
+    container.innerHTML = '<p style="color:#64748b;font-size:13px;padding:12px;">No results found. Try a different search term, or paste the RSS URL directly.</p>';
+    return;
+  }
+  container.innerHTML = results.map((r, i) => `
+    <div class="search-result" onclick="selectSearchResult(${i})" id="sr-${i}">
+      ${r.artworkUrl ? `<img src="${r.artworkUrl}" onerror="this.style.display='none'">` : '<div style="width:56px;height:56px;background:#1e293b;border-radius:8px;flex-shrink:0;"></div>'}
+      <div class="search-result-info">
+        <div class="search-result-title">${esc(r.name)}</div>
+        <div class="search-result-meta">${esc(r.artist || 'Unknown')}</div>
+        <div style="display:flex;gap:6px;align-items:center;margin-top:4px;">
+          ${r.genre ? `<span class="search-result-genre">${esc(r.genre)}</span>` : ''}
+          ${r.episodeCount ? `<span style="font-size:11px;color:#64748b;">${r.episodeCount} episodes</span>` : ''}
+        </div>
+      </div>
+    </div>
+  `).join('');
+  window._searchResults = results;
+}
+
+async function selectSearchResult(index) {
+  const results = window._searchResults;
+  if (!results || !results[index]) return;
+  const r = results[index];
+
+  document.querySelectorAll('.search-result').forEach(el => el.classList.remove('selected'));
+  document.getElementById(`sr-${index}`).classList.add('selected');
+
+  selectedSearchResult = r;
+
+  const preview = document.getElementById('feedPreview');
+  preview.innerHTML = `
+    <div class="preview-card">
+      ${r.artworkUrl ? `<img src="${r.artworkUrl}" onerror="this.style.display='none'">` : ''}
+      <div class="preview-info">
+        <h3>${esc(r.name)}</h3>
+        <p>${esc(r.artist || 'Unknown author')}</p>
+        <div class="ep-count">Feed URL: ${esc(r.feedUrl)}</div>
+        <div style="margin-top:4px;font-size:11px;color:#64748b;">Click "Add Feed" to import this shiur</div>
+      </div>
+    </div>
+  `;
+}
+
+async function previewUrl() {
+  const rssUrl = document.getElementById('feedUrl').value.trim();
+  if (!rssUrl) return;
+  const preview = document.getElementById('urlPreview');
+  preview.innerHTML = '<p style="color:#94a3b8;font-size:13px;padding:8px;">Loading preview...</p>';
+  try {
+    const data = await api('/api/admin/preview-feed', { method: 'POST', body: JSON.stringify({ rssUrl }) });
+    preview.innerHTML = `
+      <div class="preview-card">
+        ${data.imageUrl ? `<img src="${data.imageUrl}" onerror="this.style.display='none'">` : ''}
+        <div class="preview-info">
+          <h3>${esc(data.title)}</h3>
+          <p>${esc(data.author || 'Unknown author')}</p>
+          ${data.description ? `<p style="font-size:12px;color:#64748b;margin-top:4px;max-height:60px;overflow:hidden;">${esc(data.description.slice(0, 200))}</p>` : ''}
+          <div class="ep-count">${data.episodeCount} episodes found</div>
+        </div>
+      </div>
+    `;
+  } catch(e) {
+    preview.innerHTML = `<p style="color:#fca5a5;font-size:13px;padding:8px;">${esc(e.message)}</p>`;
+  }
 }
 
 function showAddCategoryModal() {
@@ -267,19 +587,42 @@ function showAddCategoryModal() {
 function closeModal(e) {
   if (e && e.target !== e.currentTarget) return;
   document.getElementById('modalOverlay').classList.add('hidden');
+  selectedSearchResult = null;
 }
 
 async function addFeed() {
-  const rssUrl = document.getElementById('feedUrl').value.trim();
+  const btn = document.getElementById('addFeedBtn');
+  btn.disabled = true;
+  btn.textContent = 'Adding...';
+
+  let rssUrl;
+  const isSearch = !document.getElementById('addModeSearch').classList.contains('hidden');
+
+  if (isSearch && selectedSearchResult) {
+    rssUrl = selectedSearchResult.feedUrl;
+  } else {
+    rssUrl = document.getElementById('feedUrl')?.value?.trim();
+  }
+
   const categoryId = document.getElementById('feedCategory').value || null;
-  if (!rssUrl) return;
+
+  if (!rssUrl) {
+    showAlert('Please select a podcast from search results or enter an RSS URL.', 'error');
+    btn.disabled = false;
+    btn.textContent = 'Add Feed';
+    return;
+  }
+
   try {
     await api('/api/admin/feeds', { method: 'POST', body: JSON.stringify({ rssUrl, categoryId }) });
     closeModal();
     showAlert('Feed added and episodes fetched!');
-    await Promise.all([loadFeeds(), loadStats()]);
+    await Promise.all([loadFeeds(), loadAnalytics()]);
   } catch (e) {
     showAlert(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Add Feed';
   }
 }
 
@@ -291,7 +634,7 @@ async function addCategory() {
     await api('/api/admin/categories', { method: 'POST', body: JSON.stringify({ name, slug }) });
     closeModal();
     showAlert('Category added!');
-    await Promise.all([loadCategories(), loadStats()]);
+    await Promise.all([loadCategories(), loadAnalytics()]);
   } catch (e) {
     showAlert(e.message, 'error');
   }
@@ -302,7 +645,7 @@ async function deleteFeed(id) {
   try {
     await api(`/api/admin/feeds/${id}`, { method: 'DELETE' });
     showAlert('Feed removed');
-    await Promise.all([loadFeeds(), loadStats()]);
+    await Promise.all([loadFeeds(), loadAnalytics()]);
   } catch (e) {
     showAlert(e.message, 'error');
   }
@@ -313,7 +656,7 @@ async function deleteCategory(id) {
   try {
     await api(`/api/admin/categories/${id}`, { method: 'DELETE' });
     showAlert('Category removed');
-    await Promise.all([loadCategories(), loadStats()]);
+    await Promise.all([loadCategories(), loadAnalytics()]);
   } catch (e) {
     showAlert(e.message, 'error');
   }
@@ -330,6 +673,7 @@ async function refreshFeed(id) {
 
 async function refreshAllFeeds() {
   try {
+    showAlert('Refreshing all feeds...', 'success');
     const data = await api('/api/admin/feeds/refresh-all', { method: 'POST' });
     showAlert(`Refreshed ${data.refreshed} feeds. ${data.newEpisodes} new episodes found.`);
     await loadFeeds();
@@ -338,11 +682,71 @@ async function refreshAllFeeds() {
   }
 }
 
+async function toggleFeedActive(id, isActive) {
+  try {
+    await api(`/api/admin/feeds/${id}`, { method: 'PUT', body: JSON.stringify({ isActive }) });
+    showAlert(`Feed ${isActive ? 'activated' : 'deactivated'}.`);
+    await Promise.all([loadFeeds(), loadAnalytics()]);
+  } catch(e) {
+    showAlert(e.message, 'error');
+  }
+}
+
+async function editFeed(id) {
+  try {
+    const feeds = await api('/api/admin/feeds');
+    const feed = feeds.find(f => f.id === id);
+    if (!feed) return;
+
+    const catOptions = categories.map(c => `<option value="${c.id}" ${c.id === feed.categoryId ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+
+    document.getElementById('modalContent').innerHTML = `
+      <h2>Edit Feed</h2>
+      <div class="form-group"><label>Title</label><input type="text" id="editTitle" value="${esc(feed.title)}"></div>
+      <div class="form-group"><label>Author</label><input type="text" id="editAuthor" value="${esc(feed.author || '')}"></div>
+      <div class="form-group"><label>Image URL</label><input type="url" id="editImage" value="${esc(feed.imageUrl || '')}"></div>
+      <div class="form-group"><label>Category</label><select id="editCategory"><option value="">Uncategorized</option>${catOptions}</select></div>
+      <div class="form-group"><label>Description</label><textarea id="editDesc">${esc(feed.description || '')}</textarea></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveFeedEdit('${id}')">Save Changes</button>
+      </div>
+    `;
+    document.getElementById('modalOverlay').classList.remove('hidden');
+  } catch(e) {
+    showAlert(e.message, 'error');
+  }
+}
+
+async function saveFeedEdit(id) {
+  try {
+    const data = {
+      title: document.getElementById('editTitle').value.trim(),
+      author: document.getElementById('editAuthor').value.trim() || null,
+      imageUrl: document.getElementById('editImage').value.trim() || null,
+      categoryId: document.getElementById('editCategory').value || null,
+      description: document.getElementById('editDesc').value.trim() || null,
+    };
+    await api(`/api/admin/feeds/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+    closeModal();
+    showAlert('Feed updated!');
+    await loadFeeds();
+  } catch(e) {
+    showAlert(e.message, 'error');
+  }
+}
+
 function switchTab(tab, btn) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
+  document.getElementById('analyticsTab').classList.toggle('hidden', tab !== 'analytics');
   document.getElementById('feedsTab').classList.toggle('hidden', tab !== 'feeds');
   document.getElementById('categoriesTab').classList.toggle('hidden', tab !== 'categories');
+}
+
+function formatDate(dateStr) {
+  const d = new Date(dateStr);
+  return `${d.getMonth()+1}/${d.getDate()}`;
 }
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
