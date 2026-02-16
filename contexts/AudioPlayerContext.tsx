@@ -496,10 +496,31 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           initialStatus.positionMillis = savedPos;
         }
 
-        const { sound } = await Audio.Sound.createAsync(
-          { uri: episode.audioUrl },
-          initialStatus
-        );
+        let retryCount = 0;
+        const maxRetries = 2;
+        let sound: any = null;
+
+        while (retryCount <= maxRetries) {
+          try {
+            const result = await Audio.Sound.createAsync(
+              { uri: episode.audioUrl },
+              initialStatus
+            );
+            sound = result.sound;
+            break;
+          } catch (loadError: any) {
+            retryCount++;
+            console.error(`Audio load failed (attempt ${retryCount}/${maxRetries + 1}):`, loadError?.message || loadError);
+            if (retryCount > maxRetries) {
+              throw loadError;
+            }
+            await new Promise(resolve => setTimeout(resolve, 1500 * retryCount));
+          }
+        }
+
+        if (!sound) {
+          throw new Error("Audio failed to load after retries");
+        }
 
         soundRef.current = sound;
 
@@ -511,6 +532,9 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
             } else {
               playNextRef.current();
             }
+          }
+          if (status?.error) {
+            console.error("Audio playback error:", status.error);
           }
         });
 
@@ -578,7 +602,13 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         if (status?.isLoaded) {
           await soundRef.current.playAsync?.();
         } else {
-          console.error("Cannot resume: audio not loaded");
+          const ep = currentEpisodeRef.current;
+          const feed = currentFeedRef.current;
+          if (ep && feed) {
+            console.warn("Audio unloaded, reloading episode...");
+            await playEpisodeInternal(ep, feed, true);
+            return;
+          }
           return;
         }
       }
@@ -586,7 +616,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       console.error("Resume failed:", e);
     }
-  }, []);
+  }, [playEpisodeInternal]);
 
   const seekTo = useCallback(async (positionMs: number) => {
     if (Platform.OS === "web" && audioRef.current) {
