@@ -102,6 +102,9 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
       if (isInQueue) return;
       lightHaptic();
       await addToQueue(episode.id, feed.id);
+      if (Platform.OS !== "web") {
+        Alert.alert("Added to Queue", episode.title);
+      }
     } catch (e) {
       console.error(e);
     }
@@ -157,7 +160,9 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
   };
 
   return (
-    <View
+    <Pressable
+      onLongPress={handleLongPress}
+      delayLongPress={400}
       style={[
         styles.container,
         { backgroundColor: colors.surface, borderColor: colors.cardBorder },
@@ -171,7 +176,7 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
             color={isCurrentlyPlaying ? "#fff" : colors.accent}
           />
         </Pressable>
-        <Pressable onPress={handleToggleExpand} onLongPress={handleLongPress} delayLongPress={400} style={styles.info}>
+        <Pressable onPress={handleToggleExpand} style={styles.info}>
           {showFeedTitle && (
             <Text style={[styles.feedTitle, { color: colors.accent }]} numberOfLines={1}>
               {feed.title}
@@ -287,7 +292,7 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
           </View>
         </View>
       )}
-    </View>
+    </Pressable>
   );
 }
 
