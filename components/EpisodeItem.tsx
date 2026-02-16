@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, Pressable, StyleSheet, Linking } from "react-native";
+import { View, Text, Pressable, StyleSheet, Linking, Alert, Platform } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -43,10 +43,10 @@ function formatDate(dateStr: string | null): string {
 }
 
 function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
-  const { playEpisode, currentEpisode, playback, pause, resume, queue, addToQueue } = useAudioPlayer();
+  const { playEpisode, currentEpisode, playback, pause, resume, queue, addToQueue, removeFromQueue } = useAudioPlayer();
   const { downloadEpisode, isDownloaded, isDownloading, downloadProgress } = useDownloads();
   const { isFavorite, toggleFavorite } = useFavorites();
-  const { isPlayed, togglePlayed } = usePlayedEpisodes();
+  const { isPlayed, togglePlayed, markAsPlayed, markAsUnplayed } = usePlayedEpisodes();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
@@ -127,6 +127,35 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
     }
   };
 
+  const handleLongPress = () => {
+    mediumHaptic();
+    if (Platform.OS === "web") {
+      setExpanded(true);
+      return;
+    }
+    const actions: { text: string; onPress: () => void; style?: "destructive" | "cancel" }[] = [];
+    if (!isInQueue) {
+      actions.push({ text: "Add to Queue", onPress: handleAddToQueue });
+    } else {
+      actions.push({ text: "Remove from Queue", onPress: async () => { lightHaptic(); await removeFromQueue(episode.id); } });
+    }
+    if (!played) {
+      actions.push({ text: "Mark as Played", onPress: () => { lightHaptic(); markAsPlayed(episode.id); } });
+    } else {
+      actions.push({ text: "Mark as Unplayed", onPress: () => { lightHaptic(); markAsUnplayed(episode.id); } });
+    }
+    if (!favorited) {
+      actions.push({ text: "Add to Favorites", onPress: handleToggleFavorite });
+    } else {
+      actions.push({ text: "Remove from Favorites", onPress: handleToggleFavorite });
+    }
+    if (!downloaded && !downloading) {
+      actions.push({ text: "Download", onPress: handleDownload });
+    }
+    actions.push({ text: "Cancel", style: "cancel", onPress: () => {} });
+    Alert.alert(episode.title, undefined, actions);
+  };
+
   return (
     <View
       style={[
@@ -142,7 +171,7 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
             color={isCurrentlyPlaying ? "#fff" : colors.accent}
           />
         </Pressable>
-        <Pressable onPress={handleToggleExpand} style={styles.info}>
+        <Pressable onPress={handleToggleExpand} onLongPress={handleLongPress} delayLongPress={400} style={styles.info}>
           {showFeedTitle && (
             <Text style={[styles.feedTitle, { color: colors.accent }]} numberOfLines={1}>
               {feed.title}

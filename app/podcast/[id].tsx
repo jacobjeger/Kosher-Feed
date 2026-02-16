@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef, memo, useEffect } from "react";
-import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Platform, Switch, Alert, TextInput } from "react-native";
+import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Platform, Switch, Alert, TextInput, RefreshControl } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
 import { Ionicons, Feather } from "@expo/vector-icons";
@@ -188,6 +188,12 @@ function PodcastDetailScreenInner() {
       })),
     );
   }, [id, feedSettings.maxEpisodes, updateFeedSettings]);
+
+  const handleRefresh = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: [`/api/feeds/${id}/episodes`, "paginated"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/feeds"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/subscriptions"] });
+  }, [id]);
 
   const handleLoadMore = useCallback(() => {
     if (episodesInfiniteQuery.hasNextPage && !episodesInfiniteQuery.isFetchingNextPage && !episodeSearch.trim()) {
@@ -457,6 +463,9 @@ function PodcastDetailScreenInner() {
         renderItem={renderEpisodeItem}
         ListFooterComponent={footerElement}
         ListEmptyComponent={emptyElement}
+        refreshControl={
+          <RefreshControl refreshing={false} onRefresh={handleRefresh} tintColor={colors.accent} />
+        }
       />
     </View>
   );

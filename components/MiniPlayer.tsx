@@ -1,5 +1,6 @@
 import React from "react";
 import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
+import Animated, { FadeInDown } from "react-native-reanimated";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,8 +20,10 @@ export default function MiniPlayer() {
   const rawProgress = position.durationMs > 0 ? position.positionMs / position.durationMs : 0;
   const progress = isNaN(rawProgress) ? 0 : Math.min(rawProgress, 1);
 
+  const enteringAnimation = Platform.OS !== "web" ? FadeInDown.duration(250) : undefined;
+
   return (
-    <View>
+    <Animated.View entering={enteringAnimation}>
       <Pressable
         style={[styles.container, { backgroundColor: colors.playerBg }]}
         onPress={() => router.push("/player")}
@@ -70,7 +73,7 @@ export default function MiniPlayer() {
           </Pressable>
         </View>
       </Pressable>
-    </View>
+    </Animated.View>
   );
 }
 
