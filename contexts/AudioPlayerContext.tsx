@@ -608,7 +608,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           const ep = currentEpisodeRef.current;
           const feed = currentFeedRef.current;
           if (ep && feed) {
-            console.warn("Audio unloaded, reloading episode...");
+            addLog("warn", "Audio unloaded, reloading episode...", undefined, "audio");
             await playEpisodeInternal(ep, feed, true);
             return;
           }
@@ -622,12 +622,19 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   }, [playEpisodeInternal]);
 
   const seekTo = useCallback(async (positionMs: number) => {
-    if (Platform.OS === "web" && audioRef.current) {
-      audioRef.current.currentTime = positionMs / 1000;
-    } else if (soundRef.current) {
-      await soundRef.current.setPositionAsync?.(positionMs);
+    try {
+      if (Platform.OS === "web" && audioRef.current) {
+        audioRef.current.currentTime = positionMs / 1000;
+      } else if (soundRef.current) {
+        const status = await soundRef.current.getStatusAsync?.();
+        if (status?.isLoaded) {
+          await soundRef.current.setPositionAsync?.(positionMs);
+        }
+      }
+      setPlayback(prev => ({ ...prev, positionMs }));
+    } catch (e) {
+      addLog("warn", `Seek failed: ${(e as any)?.message || e}`, undefined, "audio");
     }
-    setPlayback(prev => ({ ...prev, positionMs }));
   }, []);
 
   const skip = useCallback(async (seconds: number) => {
@@ -637,10 +644,17 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
   const setRate = useCallback(async (rate: number) => {
     setPlayback(prev => ({ ...prev, playbackRate: rate }));
-    if (Platform.OS === "web" && audioRef.current) {
-      audioRef.current.playbackRate = rate;
-    } else if (soundRef.current) {
-      await soundRef.current.setRateAsync?.(rate, true);
+    try {
+      if (Platform.OS === "web" && audioRef.current) {
+        audioRef.current.playbackRate = rate;
+      } else if (soundRef.current) {
+        const status = await soundRef.current.getStatusAsync?.();
+        if (status?.isLoaded) {
+          await soundRef.current.setRateAsync?.(rate, true);
+        }
+      }
+    } catch (e) {
+      addLog("warn", `Set rate failed: ${(e as any)?.message || e}`, undefined, "audio");
     }
     const feed = currentFeedRef.current;
     if (feed) {
