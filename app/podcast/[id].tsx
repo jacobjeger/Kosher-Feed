@@ -18,6 +18,7 @@ import { useDownloads } from "@/contexts/DownloadsContext";
 import { usePlayedEpisodes } from "@/contexts/PlayedEpisodesContext";
 import { loadPositions } from "@/contexts/AudioPlayerContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import OptionPickerModal from "@/components/OptionPickerModal";
 
 const StableArtwork = memo(function StableArtwork({ imageUrl, fallbackColor, iconColor }: { imageUrl?: string | null; fallbackColor: string; iconColor: string }) {
   if (imageUrl) {
@@ -127,6 +128,7 @@ function PodcastDetailScreenInner() {
 
   const isFollowing = subsQuery.data?.some(s => s.feedId === id) || false;
   const feedSettings = id ? getFeedSettings(id) : { notificationsEnabled: false, maxEpisodes: 5 };
+  const [episodeLimitPickerVisible, setEpisodeLimitPickerVisible] = useState(false);
 
   const followMutation = useMutation({
     mutationFn: async () => {
@@ -179,17 +181,7 @@ function PodcastDetailScreenInner() {
       updateFeedSettings(id, { maxEpisodes: EPISODE_LIMIT_OPTIONS[nextIndex] });
       return;
     }
-    Alert.alert(
-      "Episodes to Keep",
-      "Choose how many episodes to keep downloaded for this shiur.",
-      [
-        ...EPISODE_LIMIT_OPTIONS.map(n => ({
-          text: `${n} episodes`,
-          onPress: () => updateFeedSettings(id, { maxEpisodes: n }),
-        })),
-        { text: "Cancel", style: "cancel" as const },
-      ],
-    );
+    setEpisodeLimitPickerVisible(true);
   }, [id, feedSettings.maxEpisodes, updateFeedSettings]);
 
   const handleRefresh = useCallback(() => {
@@ -469,6 +461,18 @@ function PodcastDetailScreenInner() {
         refreshControl={
           <RefreshControl refreshing={false} onRefresh={handleRefresh} tintColor={colors.accent} />
         }
+      />
+
+      <OptionPickerModal
+        visible={episodeLimitPickerVisible}
+        title="Episodes to Keep"
+        subtitle="Choose how many episodes to keep downloaded for this shiur."
+        options={EPISODE_LIMIT_OPTIONS.map(n => ({
+          label: `${n} episodes`,
+          onPress: () => { if (id) updateFeedSettings(id, { maxEpisodes: n }); },
+          selected: feedSettings.maxEpisodes === n,
+        }))}
+        onClose={() => setEpisodeLimitPickerVisible(false)}
       />
     </View>
   );

@@ -637,13 +637,21 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
         try {
           player.setActiveForLockScreen?.(true);
-          player.updateNowPlayingMetadata?.({
-            title: episode.title || "Unknown",
-            artist: feed.title || "ShiurPod",
-            album: feed.title || "ShiurPod",
-            artwork: feed.imageUrl || undefined,
-          });
         } catch {}
+
+        const applyMetadata = () => {
+          try {
+            soundRef.current?.updateNowPlayingMetadata?.({
+              title: episode.title || "Unknown",
+              artist: feed.title || "ShiurPod",
+              album: feed.title || "ShiurPod",
+              artwork: feed.imageUrl || undefined,
+            });
+          } catch {}
+        };
+        applyMetadata();
+        setTimeout(applyMetadata, 500);
+        setTimeout(applyMetadata, 2000);
 
         setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true }));
         addLog("info", `Playing: ${episode.title} (feed: ${feed.title})`, undefined, "audio");
@@ -710,6 +718,18 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         await audioRef.current?.play();
       } else if (soundRef.current) {
         soundRef.current.play();
+        try {
+          const ep = currentEpisodeRef.current;
+          const feed = currentFeedRef.current;
+          if (ep && feed) {
+            soundRef.current.updateNowPlayingMetadata?.({
+              title: ep.title || "Unknown",
+              artist: feed.title || "ShiurPod",
+              album: feed.title || "ShiurPod",
+              artwork: feed.imageUrl || undefined,
+            });
+          }
+        } catch {}
       } else {
         const ep = currentEpisodeRef.current;
         const feed = currentFeedRef.current;

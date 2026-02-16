@@ -13,6 +13,7 @@ import { requestNotificationPermissions, sendLocalNotification, checkNotificatio
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { getLogsSnapshot } from "@/lib/error-logger";
+import OptionPickerModal, { type PickerOption } from "@/components/OptionPickerModal";
 
 const EPISODE_LIMIT_OPTIONS = [3, 5, 10, 15, 25, 50];
 const SKIP_OPTIONS = [10, 15, 30, 45, 60];
@@ -71,6 +72,7 @@ function SettingsScreenInner() {
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [feedbackContact, setFeedbackContact] = useState("");
   const [feedbackSending, setFeedbackSending] = useState(false);
+  const [activePicker, setActivePicker] = useState<string | null>(null);
 
   useEffect(() => {
     getDeviceId().then(setDeviceId);
@@ -174,18 +176,7 @@ function SettingsScreenInner() {
       updateSettings({ maxEpisodesPerFeed: EPISODE_LIMIT_OPTIONS[nextIndex] });
       return;
     }
-
-    Alert.alert(
-      "Episodes Per Shiur",
-      "Choose how many episodes to keep downloaded per shiur.",
-      [
-        ...EPISODE_LIMIT_OPTIONS.map(n => ({
-          text: `${n} episodes`,
-          onPress: () => updateSettings({ maxEpisodesPerFeed: n }),
-        })),
-        { text: "Cancel", style: "cancel" as const },
-      ],
-    );
+    setActivePicker("episodeLimit");
   };
 
   const handleChangeSkipForward = () => {
@@ -196,17 +187,7 @@ function SettingsScreenInner() {
       updateSettings({ skipForwardSeconds: SKIP_OPTIONS[nextIndex] });
       return;
     }
-    Alert.alert(
-      "Skip Forward",
-      "Choose skip forward duration.",
-      [
-        ...SKIP_OPTIONS.map(n => ({
-          text: `${n}s`,
-          onPress: () => updateSettings({ skipForwardSeconds: n }),
-        })),
-        { text: "Cancel", style: "cancel" as const },
-      ],
-    );
+    setActivePicker("skipForward");
   };
 
   const handleChangeSkipBackward = () => {
@@ -217,17 +198,7 @@ function SettingsScreenInner() {
       updateSettings({ skipBackwardSeconds: SKIP_OPTIONS[nextIndex] });
       return;
     }
-    Alert.alert(
-      "Skip Backward",
-      "Choose skip backward duration.",
-      [
-        ...SKIP_OPTIONS.map(n => ({
-          text: `${n}s`,
-          onPress: () => updateSettings({ skipBackwardSeconds: n }),
-        })),
-        { text: "Cancel", style: "cancel" as const },
-      ],
-    );
+    setActivePicker("skipBackward");
   };
 
   const handleToggleAudioBoost = (value: boolean) => {
@@ -243,17 +214,7 @@ function SettingsScreenInner() {
       updateSettings({ darkModeOverride: THEME_OPTIONS[nextIndex] });
       return;
     }
-    Alert.alert(
-      "Theme",
-      "Choose app theme.",
-      [
-        ...THEME_OPTIONS.map(t => ({
-          text: THEME_LABELS[t],
-          onPress: () => updateSettings({ darkModeOverride: t }),
-        })),
-        { text: "Cancel", style: "cancel" as const },
-      ],
-    );
+    setActivePicker("theme");
   };
 
   const handleToggleDailyReminder = (value: boolean) => {
@@ -269,17 +230,7 @@ function SettingsScreenInner() {
       updateSettings({ dailyReminderHour: REMINDER_HOUR_OPTIONS[nextIndex] });
       return;
     }
-    Alert.alert(
-      "Reminder Time",
-      "Choose reminder time.",
-      [
-        ...REMINDER_HOUR_OPTIONS.map(h => ({
-          text: formatHour(h),
-          onPress: () => updateSettings({ dailyReminderHour: h }),
-        })),
-        { text: "Cancel", style: "cancel" as const },
-      ],
-    );
+    setActivePicker("reminderHour");
   };
 
   const handleTestNotification = async () => {
@@ -676,6 +627,66 @@ function SettingsScreenInner() {
           </Pressable>
         </KeyboardAvoidingView>
       </Modal>
+
+      <OptionPickerModal
+        visible={activePicker === "episodeLimit"}
+        title="Episodes Per Shiur"
+        subtitle="Choose how many episodes to keep downloaded per shiur."
+        options={EPISODE_LIMIT_OPTIONS.map(n => ({
+          label: `${n} episodes`,
+          onPress: () => updateSettings({ maxEpisodesPerFeed: n }),
+          selected: settings.maxEpisodesPerFeed === n,
+        }))}
+        onClose={() => setActivePicker(null)}
+      />
+
+      <OptionPickerModal
+        visible={activePicker === "skipForward"}
+        title="Skip Forward"
+        subtitle="Choose skip forward duration."
+        options={SKIP_OPTIONS.map(n => ({
+          label: `${n} seconds`,
+          onPress: () => updateSettings({ skipForwardSeconds: n }),
+          selected: settings.skipForwardSeconds === n,
+        }))}
+        onClose={() => setActivePicker(null)}
+      />
+
+      <OptionPickerModal
+        visible={activePicker === "skipBackward"}
+        title="Skip Backward"
+        subtitle="Choose skip backward duration."
+        options={SKIP_OPTIONS.map(n => ({
+          label: `${n} seconds`,
+          onPress: () => updateSettings({ skipBackwardSeconds: n }),
+          selected: settings.skipBackwardSeconds === n,
+        }))}
+        onClose={() => setActivePicker(null)}
+      />
+
+      <OptionPickerModal
+        visible={activePicker === "theme"}
+        title="Theme"
+        subtitle="Choose app theme."
+        options={THEME_OPTIONS.map(t => ({
+          label: THEME_LABELS[t],
+          onPress: () => updateSettings({ darkModeOverride: t }),
+          selected: settings.darkModeOverride === t,
+        }))}
+        onClose={() => setActivePicker(null)}
+      />
+
+      <OptionPickerModal
+        visible={activePicker === "reminderHour"}
+        title="Reminder Time"
+        subtitle="Choose when to receive daily reminders."
+        options={REMINDER_HOUR_OPTIONS.map(h => ({
+          label: formatHour(h),
+          onPress: () => updateSettings({ dailyReminderHour: h }),
+          selected: settings.dailyReminderHour === h,
+        }))}
+        onClose={() => setActivePicker(null)}
+      />
     </ScrollView>
   );
 }
