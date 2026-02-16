@@ -68,6 +68,7 @@ interface AudioPlayerContextValue {
   addToQueue: (episodeId: string, feedId: string) => Promise<void>;
   removeFromQueue: (episodeId: string) => Promise<void>;
   clearQueue: () => Promise<void>;
+  refreshQueue: () => Promise<void>;
   playNext: () => Promise<void>;
   subscribePosition: (cb: () => void) => () => void;
   getPositionSnapshot: () => PositionState;
@@ -146,6 +147,18 @@ async function saveFeedSpeed(feedId: string, rate: number) {
   } catch (e) {
     console.error("Failed to save feed speed:", e);
   }
+}
+
+async function markEpisodeAsPlayedDirectly(episodeId: string) {
+  try {
+    const data = await AsyncStorage.getItem("@shiurpod_played_episodes");
+    const arr: string[] = data ? JSON.parse(data) : [];
+    if (!arr.includes(episodeId)) {
+      arr.push(episodeId);
+      if (arr.length > 5000) arr.splice(0, arr.length - 5000);
+      await AsyncStorage.setItem("@shiurpod_played_episodes", JSON.stringify(arr));
+    }
+  } catch {}
 }
 
 async function fetchEpisodeAndFeed(episodeId: string, feedId: string): Promise<{ episode: Episode; feed: Feed } | null> {
@@ -455,13 +468,50 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           savePosition(episode.id, feed.id, 0, 0);
           removeSavedPosition(episode.id).catch(() => {});
           updateHistoryPosition(episode.id, 0, 0).catch(() => {});
+          markEpisodeAsPlayedDirectly(episode.id);
           if (sleepTimerRef.current.active && sleepTimerRef.current.mode === "endOfEpisode") {
             cancelSleepTimer();
           } else if (queueRef.current.length > 0) {
             playNextRef.current();
           } else {
-            setEpisodeCompleted(episode.id);
-            stopRef.current();
+            AsyncStorage.getItem("@kosher_shiurim_settings").then(data => {
+              try {
+                const settings = data ? JSON.parse(data) : {};
+                if (settings.continuousPlayback !== false) {
+                  const feedId = currentFeedRef.current?.id;
+                  if (feedId) {
+                    const baseUrl = getApiUrl();
+                    fetch(new URL(`/api/feeds/${feedId}/episodes?sort=newest&limit=50`, baseUrl).toString())
+                      .then(r => r.json())
+                      .then((episodes: any[]) => {
+                        const currentIdx = episodes.findIndex((e: any) => e.id === episode.id);
+                        const nextEp = currentIdx >= 0 && currentIdx < episodes.length - 1 ? episodes[currentIdx + 1] : null;
+                        if (nextEp && currentFeedRef.current) {
+                          playEpisodeInternalRef.current(nextEp, currentFeedRef.current, false);
+                        } else {
+                          setEpisodeCompleted(episode.id);
+                          stopRef.current();
+                        }
+                      }).catch(() => {
+                        setEpisodeCompleted(episode.id);
+                        stopRef.current();
+                      });
+                  } else {
+                    setEpisodeCompleted(episode.id);
+                    stopRef.current();
+                  }
+                } else {
+                  setEpisodeCompleted(episode.id);
+                  stopRef.current();
+                }
+              } catch {
+                setEpisodeCompleted(episode.id);
+                stopRef.current();
+              }
+            }).catch(() => {
+              setEpisodeCompleted(episode.id);
+              stopRef.current();
+            });
           }
         };
         audio.onerror = () => {
@@ -526,13 +576,50 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
             savePosition(episode.id, feed.id, 0, 0);
             removeSavedPosition(episode.id).catch(() => {});
             updateHistoryPosition(episode.id, 0, 0).catch(() => {});
+            markEpisodeAsPlayedDirectly(episode.id);
             if (sleepTimerRef.current.active && sleepTimerRef.current.mode === "endOfEpisode") {
               cancelSleepTimer();
             } else if (queueRef.current.length > 0) {
               playNextRef.current();
             } else {
-              setEpisodeCompleted(episode.id);
-              stopRef.current();
+              AsyncStorage.getItem("@kosher_shiurim_settings").then(data => {
+                try {
+                  const settings = data ? JSON.parse(data) : {};
+                  if (settings.continuousPlayback !== false) {
+                    const feedId = currentFeedRef.current?.id;
+                    if (feedId) {
+                      const baseUrl = getApiUrl();
+                      fetch(new URL(`/api/feeds/${feedId}/episodes?sort=newest&limit=50`, baseUrl).toString())
+                        .then(r => r.json())
+                        .then((episodes: any[]) => {
+                          const currentIdx = episodes.findIndex((e: any) => e.id === episode.id);
+                          const nextEp = currentIdx >= 0 && currentIdx < episodes.length - 1 ? episodes[currentIdx + 1] : null;
+                          if (nextEp && currentFeedRef.current) {
+                            playEpisodeInternalRef.current(nextEp, currentFeedRef.current, false);
+                          } else {
+                            setEpisodeCompleted(episode.id);
+                            stopRef.current();
+                          }
+                        }).catch(() => {
+                          setEpisodeCompleted(episode.id);
+                          stopRef.current();
+                        });
+                    } else {
+                      setEpisodeCompleted(episode.id);
+                      stopRef.current();
+                    }
+                  } else {
+                    setEpisodeCompleted(episode.id);
+                    stopRef.current();
+                  }
+                } catch {
+                  setEpisodeCompleted(episode.id);
+                  stopRef.current();
+                }
+              }).catch(() => {
+                setEpisodeCompleted(episode.id);
+                stopRef.current();
+              });
             }
           }
           if (status?.error) {
@@ -601,6 +688,9 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     playNextRef.current = playNext;
   }, [playNext]);
+
+  const playEpisodeInternalRef = useRef(playEpisodeInternal);
+  useEffect(() => { playEpisodeInternalRef.current = playEpisodeInternal; }, [playEpisodeInternal]);
 
   const resume = useCallback(async () => {
     try {
@@ -719,6 +809,11 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     setQueue([]);
   }, []);
 
+  const refreshQueue = useCallback(async () => {
+    const q = await getQueue();
+    setQueue(q);
+  }, []);
+
   const value = useMemo(() => ({
     currentEpisode,
     currentFeed,
@@ -742,12 +837,13 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     addToQueue: handleAddToQueue,
     removeFromQueue: handleRemoveFromQueue,
     clearQueue: handleClearQueue,
+    refreshQueue,
     playNext,
     subscribePosition,
     getPositionSnapshot,
     episodeCompleted,
     clearEpisodeCompleted,
-  }), [currentEpisode, currentFeed, playback, playEpisode, pause, resume, seekTo, skip, setRate, stop, getSavedPosition, removeSavedPosition, recentlyPlayed, getFeedSpeed, sleepTimer, setSleepTimerFn, cancelSleepTimer, getInProgressEpisodes, queue, handleAddToQueue, handleRemoveFromQueue, handleClearQueue, playNext, subscribePosition, getPositionSnapshot, episodeCompleted, clearEpisodeCompleted]);
+  }), [currentEpisode, currentFeed, playback, playEpisode, pause, resume, seekTo, skip, setRate, stop, getSavedPosition, removeSavedPosition, recentlyPlayed, getFeedSpeed, sleepTimer, setSleepTimerFn, cancelSleepTimer, getInProgressEpisodes, queue, handleAddToQueue, handleRemoveFromQueue, handleClearQueue, refreshQueue, playNext, subscribePosition, getPositionSnapshot, episodeCompleted, clearEpisodeCompleted]);
 
   return (
     <AudioPlayerContext.Provider value={value}>

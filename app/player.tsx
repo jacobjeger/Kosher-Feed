@@ -188,13 +188,14 @@ export default function PlayerScreen() {
     if (!currentEpisode || !currentFeed) return;
     try {
       lightHaptic();
+      const timestamp = position.positionMs > 5000 ? ` at ${formatTime(position.positionMs)}` : "";
       await Share.share({
-        message: `Listen to "${currentEpisode.title}" from ${currentFeed.title}`,
+        message: `Listen to "${currentEpisode.title}" from ${currentFeed.title}${timestamp}`,
         url: currentEpisode.audioUrl,
       });
     } catch (e) {
     }
-  }, [currentEpisode, currentFeed]);
+  }, [currentEpisode, currentFeed, position.positionMs]);
 
   const handleToggleFavorite = useCallback(async () => {
     if (!currentEpisode) return;
@@ -401,6 +402,13 @@ export default function PlayerScreen() {
             size={18}
             color={isFavorite(currentEpisode.id) ? colors.accent : colors.textSecondary}
           />
+        </Pressable>
+
+        <Pressable
+          onPress={() => { lightHaptic(); router.push("/queue"); }}
+          style={[styles.secondaryBtn, { backgroundColor: colors.surfaceAlt }]}
+        >
+          <Ionicons name="list" size={18} color={colors.textSecondary} />
         </Pressable>
       </View>
 

@@ -1,11 +1,12 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { View, Text, Pressable, StyleSheet, Linking } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
+import { useAudioPlayer, loadPositions } from "@/contexts/AudioPlayerContext";
 import { useDownloads } from "@/contexts/DownloadsContext";
 import { useFavorites } from "@/contexts/FavoritesContext";
+import { usePlayedEpisodes } from "@/contexts/PlayedEpisodesContext";
 import Colors from "@/constants/colors";
 import type { Episode, Feed } from "@/lib/types";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
@@ -45,10 +46,12 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
   const { playEpisode, currentEpisode, playback, pause, resume, queue, addToQueue } = useAudioPlayer();
   const { downloadEpisode, isDownloaded, isDownloading, downloadProgress } = useDownloads();
   const { isFavorite, toggleFavorite } = useFavorites();
+  const { isPlayed, togglePlayed } = usePlayedEpisodes();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const [expanded, setExpanded] = useState<boolean>(false);
+  const [savedProgress, setSavedProgress] = useState(0);
 
   const isCurrentlyPlaying = currentEpisode?.id === episode.id;
   const downloaded = isDownloaded(episode.id);
@@ -56,6 +59,14 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
   const progress = downloading ? downloadProgress.get(episode.id) || 0 : 0;
   const isInQueue = queue.some((item) => item.episodeId === episode.id);
   const favorited = isFavorite(episode.id);
+  const played = isPlayed(episode.id);
+
+  useEffect(() => {
+    loadPositions().then(positions => {
+      const pos = positions[episode.id];
+      if (pos && pos.durationMs > 0) setSavedProgress(pos.positionMs / pos.durationMs);
+    });
+  }, [episode.id]);
 
   const handlePlay = async () => {
     try {
@@ -138,7 +149,7 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
             </Text>
           )}
           <View style={styles.titleRow}>
-            <Text style={[styles.title, { color: colors.text, flex: 1 }]} numberOfLines={expanded ? undefined : 2}>
+            <Text style={[styles.title, { color: colors.text, flex: 1, opacity: played ? 0.6 : 1 }]} numberOfLines={expanded ? undefined : 2}>
               {episode.title}
             </Text>
             <Ionicons
@@ -173,6 +184,17 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
               <Ionicons name="open-outline" size={14} color={colors.accent} />
               <Text style={[styles.sourceSheetText, { color: colors.accent }]}>
                 View Source Sheet
+              </Text>
+            </Pressable>
+          )}
+          {expanded && (
+            <Pressable
+              onPress={() => { lightHaptic(); togglePlayed(episode.id); }}
+              style={[styles.sourceSheetLink, { borderTopColor: colors.cardBorder }]}
+            >
+              <Ionicons name={played ? "checkmark-circle" : "checkmark-circle-outline"} size={14} color={played ? colors.success : colors.accent} />
+              <Text style={[styles.sourceSheetText, { color: played ? colors.success : colors.accent }]}>
+                {played ? "Mark as Unplayed" : "Mark as Played"}
               </Text>
             </Pressable>
           )}
@@ -226,6 +248,16 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
           )}
         </Pressable>
       </View>
+      {(savedProgress > 0 || played) && (
+        <View style={styles.progressBarContainer}>
+          <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
+            <View style={[styles.progressFill, {
+              width: `${played ? 100 : Math.min(savedProgress * 100, 100)}%`,
+              backgroundColor: played ? colors.success : colors.accent
+            }]} />
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -315,6 +347,19 @@ const styles = StyleSheet.create({
   progressText: {
     fontSize: 10,
     fontWeight: "700" as const,
+  },
+  progressBarContainer: {
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+  },
+  progressBar: {
+    height: 3,
+    borderRadius: 1.5,
+    overflow: "hidden" as const,
+  },
+  progressFill: {
+    height: "100%" as any,
+    borderRadius: 1.5,
   },
 });
 

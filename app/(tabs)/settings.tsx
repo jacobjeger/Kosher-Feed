@@ -401,6 +401,19 @@ function SettingsScreenInner() {
               />
             }
           />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingRow
+            icon={<Ionicons name="play-skip-forward" size={20} color={colors.accent} />}
+            label="Continuous Playback"
+            rightElement={
+              <Switch
+                value={settings.continuousPlayback}
+                onValueChange={(value: boolean) => { lightHaptic(); updateSettings({ continuousPlayback: value }); }}
+                trackColor={{ false: colors.border, true: colors.accent }}
+                thumbColor="#fff"
+              />
+            }
+          />
         </View>
       </View>
 

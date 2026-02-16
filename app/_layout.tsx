@@ -10,6 +10,7 @@ import { AudioPlayerProvider } from "@/contexts/AudioPlayerContext";
 import { DownloadsProvider } from "@/contexts/DownloadsContext";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 import { FavoritesProvider } from "@/contexts/FavoritesContext";
+import { PlayedEpisodesProvider } from "@/contexts/PlayedEpisodesContext";
 import { BackgroundSync } from "@/components/BackgroundSync";
 import OfflineBanner from "@/components/OfflineBanner";
 import { setupNotificationChannel } from "@/lib/notifications";
@@ -25,6 +26,14 @@ function RootLayoutNav() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen
         name="player"
+        options={{
+          headerShown: false,
+          presentation: "modal",
+          animation: "slide_from_bottom",
+        }}
+      />
+      <Stack.Screen
+        name="queue"
         options={{
           headerShown: false,
           presentation: "modal",
@@ -56,6 +65,7 @@ export default function RootLayout() {
           <AudioPlayerProvider>
             <DownloadsProvider>
               <FavoritesProvider>
+                <PlayedEpisodesProvider>
                 <GestureHandlerRootView>
                   <KeyboardProvider>
                     <BackgroundSync />
@@ -63,6 +73,7 @@ export default function RootLayout() {
                     <RootLayoutNav />
                   </KeyboardProvider>
                 </GestureHandlerRootView>
+                </PlayedEpisodesProvider>
               </FavoritesProvider>
             </DownloadsProvider>
           </AudioPlayerProvider>

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef, memo } from "react";
+import React, { useState, useMemo, useCallback, useRef, memo, useEffect } from "react";
 import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Platform, Switch, Alert, TextInput } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
@@ -15,6 +15,8 @@ import type { Feed, Episode, Subscription } from "@/lib/types";
 import { mediumHaptic, lightHaptic } from "@/lib/haptics";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useDownloads } from "@/contexts/DownloadsContext";
+import { usePlayedEpisodes } from "@/contexts/PlayedEpisodesContext";
+import { loadPositions } from "@/contexts/AudioPlayerContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const StableArtwork = memo(function StableArtwork({ imageUrl, fallbackColor, iconColor }: { imageUrl?: string | null; fallbackColor: string; iconColor: string }) {
@@ -46,7 +48,8 @@ function PodcastDetailScreenInner() {
   const isDark = colorScheme === "dark";
   const colors = useMemo(() => isDark ? Colors.dark : Colors.light, [isDark]);
   const { getFeedSettings, updateFeedSettings } = useSettings();
-  const { batchDownload } = useDownloads();
+  const { batchDownload, isDownloaded } = useDownloads();
+  const { isPlayed } = usePlayedEpisodes();
   const batchDownloadRef = useRef(batchDownload);
   batchDownloadRef.current = batchDownload;
   const [showFullDescription, setShowFullDescription] = useState<boolean>(false);
@@ -54,6 +57,14 @@ function PodcastDetailScreenInner() {
   const [isEpisodeSearchFocused, setIsEpisodeSearchFocused] = useState(false);
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [showPreferences, setShowPreferences] = useState(false);
+  const [episodeFilter, setEpisodeFilter] = useState<'all' | 'unplayed' | 'inprogress' | 'downloaded'>('all');
+  const [inProgressIds, setInProgressIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    loadPositions().then(positions => {
+      setInProgressIds(new Set(Object.keys(positions)));
+    });
+  }, []);
 
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
   const feed = useMemo(() => feedsQuery.data?.find(f => f.id === id), [feedsQuery.data, id]);
@@ -84,10 +95,24 @@ function PodcastDetailScreenInner() {
   const totalCount = episodesInfiniteQuery.data?.pages[0]?.totalCount || 0;
 
   const filteredEpisodes = useMemo(() => {
-    if (!episodeSearch.trim()) return allEpisodes;
-    const q = episodeSearch.toLowerCase().trim();
-    return allEpisodes.filter(ep => ep.title.toLowerCase().includes(q));
-  }, [allEpisodes, episodeSearch]);
+    let eps = allEpisodes;
+    if (episodeSearch.trim()) {
+      const q = episodeSearch.toLowerCase().trim();
+      eps = eps.filter(ep => ep.title.toLowerCase().includes(q));
+    }
+    switch (episodeFilter) {
+      case 'unplayed':
+        eps = eps.filter(ep => !isPlayed(ep.id));
+        break;
+      case 'inprogress':
+        eps = eps.filter(ep => inProgressIds.has(ep.id));
+        break;
+      case 'downloaded':
+        eps = eps.filter(ep => isDownloaded(ep.id));
+        break;
+    }
+    return eps;
+  }, [allEpisodes, episodeSearch, episodeFilter, isPlayed, inProgressIds, isDownloaded]);
 
   const subsQuery = useQuery<Subscription[]>({
     queryKey: ["/api/subscriptions"],
@@ -343,9 +368,23 @@ function PodcastDetailScreenInner() {
         >
           <Ionicons name={sortOrder === 'newest' ? 'arrow-down' : 'arrow-up'} size={14} color={colors.accent} />
           <Text style={[styles.sortBtnText, { color: colors.text }]}>
-            {sortOrder === 'newest' ? 'Newest First' : 'Oldest First'}
+            {sortOrder === 'newest' ? 'Newest' : 'Oldest'}
           </Text>
         </Pressable>
+        {(['all', 'unplayed', 'inprogress', 'downloaded'] as const).map(filter => (
+          <Pressable
+            key={filter}
+            onPress={() => { lightHaptic(); setEpisodeFilter(filter); }}
+            style={[
+              styles.sortBtn,
+              { backgroundColor: episodeFilter === filter ? colors.accent : colors.surfaceAlt },
+            ]}
+          >
+            <Text style={[styles.sortBtnText, { color: episodeFilter === filter ? '#fff' : colors.text }]}>
+              {filter === 'all' ? 'All' : filter === 'unplayed' ? 'Unplayed' : filter === 'inprogress' ? 'Started' : 'Saved'}
+            </Text>
+          </Pressable>
+        ))}
       </View>
 
       <View style={[styles.episodeSearchContainer, { backgroundColor: colors.surfaceAlt, borderColor: isEpisodeSearchFocused ? colors.accent : "transparent" }]}>
@@ -367,7 +406,7 @@ function PodcastDetailScreenInner() {
         )}
       </View>
     </View>
-  ), [feed, colors, insets.top, isFollowing, showFullDescription, showPreferences, feedSettings, allEpisodes.length, totalCount, sortOrder, episodeSearch, isEpisodeSearchFocused, handleFollow, handleToggleNotifications, handleChangeEpisodeLimit]);
+  ), [feed, colors, insets.top, isFollowing, showFullDescription, showPreferences, feedSettings, allEpisodes.length, totalCount, sortOrder, episodeSearch, isEpisodeSearchFocused, handleFollow, handleToggleNotifications, handleChangeEpisodeLimit, episodeFilter, inProgressIds]);
 
   const footerElement = useMemo(() => {
     if (episodesInfiniteQuery.isFetchingNextPage) {
@@ -541,9 +580,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sortRow: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    marginBottom: 8,
+    flexDirection: "row" as const,
+    flexWrap: "wrap" as const,
+    gap: 8,
+    marginBottom: 12,
   },
   sortBtn: {
     flexDirection: "row",
