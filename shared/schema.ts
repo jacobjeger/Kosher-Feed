@@ -109,6 +109,18 @@ export const errorReports = pgTable("error_reports", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const feedback = pgTable("feedback", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  deviceId: text("device_id"),
+  type: text("type").notNull().default("shiur_request"),
+  subject: text("subject").notNull(),
+  message: text("message").notNull(),
+  contactInfo: text("contact_info"),
+  status: text("status").notNull().default("new"),
+  adminNotes: text("admin_notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const insertFeedSchema = createInsertSchema(feeds).pick({
   title: true,
   rssUrl: true,
@@ -144,3 +156,4 @@ export type Favorite = typeof favorites.$inferSelect;
 export type PlaybackPosition = typeof playbackPositions.$inferSelect;
 export type AdminNotification = typeof adminNotifications.$inferSelect;
 export type ErrorReport = typeof errorReports.$inferSelect;
+export type Feedback = typeof feedback.$inferSelect;
