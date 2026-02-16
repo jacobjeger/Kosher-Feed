@@ -3,19 +3,20 @@ import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
-import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
+import { useAudioPlayer, usePlaybackPosition } from "@/contexts/AudioPlayerContext";
 import { router } from "expo-router";
 import Colors from "@/constants/colors";
 
 export default function MiniPlayer() {
   const { currentEpisode, currentFeed, playback, pause, resume } = useAudioPlayer();
+  const position = usePlaybackPosition();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
 
   if (!currentEpisode) return null;
 
-  const rawProgress = playback.durationMs > 0 ? playback.positionMs / playback.durationMs : 0;
+  const rawProgress = position.durationMs > 0 ? position.positionMs / position.durationMs : 0;
   const progress = isNaN(rawProgress) ? 0 : Math.min(rawProgress, 1);
 
   return (

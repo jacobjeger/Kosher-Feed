@@ -6,7 +6,7 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import Slider from "@react-native-community/slider";
-import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
+import { useAudioPlayer, usePlaybackPosition } from "@/contexts/AudioPlayerContext";
 import Colors from "@/constants/colors";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import { getBookmarks, addBookmark, removeBookmark, type Bookmark } from "@/lib/bookmarks";
@@ -48,6 +48,7 @@ export default function PlayerScreen() {
     pause, resume, seekTo, skip, setRate, stop,
     sleepTimer, setSleepTimer, cancelSleepTimer,
   } = useAudioPlayer();
+  const position = usePlaybackPosition();
   const { settings } = useSettings();
   const { toggleFavorite, isFavorite } = useFavorites();
   const colorScheme = useAppColorScheme();
@@ -105,17 +106,17 @@ export default function PlayerScreen() {
   const handleAddBookmark = useCallback(async () => {
     if (!currentEpisode || !currentFeed) return;
     lightHaptic();
-    const note = `Bookmark at ${formatTime(playback.positionMs)}`;
+    const note = `Bookmark at ${formatTime(position.positionMs)}`;
     const bm = await addBookmark({
       episodeId: currentEpisode.id,
       feedId: currentFeed.id,
-      positionMs: playback.positionMs,
+      positionMs: position.positionMs,
       note,
     });
     setBookmarks(prev => [...prev, bm]);
     setBookmarkSaved(true);
     setTimeout(() => setBookmarkSaved(false), 1500);
-  }, [currentEpisode, currentFeed, playback.positionMs]);
+  }, [currentEpisode, currentFeed, position.positionMs]);
 
   const handleRemoveBookmark = useCallback(async (id: string) => {
     lightHaptic();
@@ -215,7 +216,7 @@ export default function PlayerScreen() {
     );
   }
 
-  const progress = playback.durationMs > 0 ? (isSeeking ? seekValue : playback.positionMs) / playback.durationMs : 0;
+  const progress = position.durationMs > 0 ? (isSeeking ? seekValue : position.positionMs) / position.durationMs : 0;
   const currentRateIndex = RATES.indexOf(playback.playbackRate);
 
   const cycleRate = async () => {
@@ -275,9 +276,9 @@ export default function PlayerScreen() {
           maximumValue={1}
           value={progress}
           onSlidingStart={() => setIsSeeking(true)}
-          onValueChange={(val) => setSeekValue(val * playback.durationMs)}
+          onValueChange={(val) => setSeekValue(val * position.durationMs)}
           onSlidingComplete={async (val) => {
-            await seekTo(val * playback.durationMs);
+            await seekTo(val * position.durationMs);
             setIsSeeking(false);
           }}
           minimumTrackTintColor={colors.accent}
@@ -286,10 +287,10 @@ export default function PlayerScreen() {
         />
         <View style={styles.timeRow}>
           <Text style={[styles.timeText, { color: colors.textSecondary }]}>
-            {formatTime(isSeeking ? seekValue : playback.positionMs)}
+            {formatTime(isSeeking ? seekValue : position.positionMs)}
           </Text>
           <Text style={[styles.timeText, { color: colors.textSecondary }]}>
-            -{formatTime(Math.max(0, playback.durationMs - (isSeeking ? seekValue : playback.positionMs)))}
+            -{formatTime(Math.max(0, position.durationMs - (isSeeking ? seekValue : position.positionMs)))}
           </Text>
         </View>
       </View>

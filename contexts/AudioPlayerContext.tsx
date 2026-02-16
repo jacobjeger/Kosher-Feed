@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from "react";
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Episode, Feed } from "@/lib/types";
@@ -39,6 +39,11 @@ interface SleepTimerState {
   mode: "time" | "endOfEpisode";
 }
 
+interface PositionState {
+  positionMs: number;
+  durationMs: number;
+}
+
 interface AudioPlayerContextValue {
   currentEpisode: Episode | null;
   currentFeed: Feed | null;
@@ -63,6 +68,8 @@ interface AudioPlayerContextValue {
   removeFromQueue: (episodeId: string) => Promise<void>;
   clearQueue: () => Promise<void>;
   playNext: () => Promise<void>;
+  subscribePosition: (cb: () => void) => () => void;
+  getPositionSnapshot: () => PositionState;
 }
 
 const AudioPlayerContext = createContext<AudioPlayerContextValue | null>(null);
@@ -187,6 +194,16 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   const sleepTimerRef = useRef<SleepTimerState>(sleepTimer);
   const queueRef = useRef<QueueItem[]>(queue);
 
+  const positionRef = useRef<PositionState>({ positionMs: 0, durationMs: 0 });
+  const positionListenersRef = useRef<Set<() => void>>(new Set());
+
+  const subscribePosition = useCallback((cb: () => void) => {
+    positionListenersRef.current.add(cb);
+    return () => { positionListenersRef.current.delete(cb); };
+  }, []);
+
+  const getPositionSnapshot = useCallback(() => positionRef.current, []);
+
   useEffect(() => {
     sleepTimerRef.current = sleepTimer;
   }, [sleepTimer]);
@@ -290,31 +307,48 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const notifyPositionListeners = useCallback(() => {
+    positionListenersRef.current.forEach(fn => fn());
+  }, []);
+
   const startPositionTracking = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
+    const trackingInterval = Platform.OS === "web" ? 500 : 1000;
     intervalRef.current = setInterval(() => {
       if (Platform.OS === "web" && audioRef.current) {
-        setPlayback(prev => ({
-          ...prev,
-          positionMs: (audioRef.current?.currentTime || 0) * 1000,
-          durationMs: (audioRef.current?.duration || 0) * 1000,
-          isPlaying: !audioRef.current?.paused,
-        }));
+        const newPos = (audioRef.current.currentTime || 0) * 1000;
+        const newDur = (audioRef.current.duration || 0) * 1000;
+        const newIsPlaying = !audioRef.current.paused;
+        positionRef.current = { positionMs: newPos, durationMs: newDur };
+        playbackRef.current = { ...playbackRef.current, positionMs: newPos, durationMs: newDur, isPlaying: newIsPlaying };
+        notifyPositionListeners();
+        setPlayback(prev => {
+          if (prev.isPlaying !== newIsPlaying) {
+            return { ...prev, positionMs: newPos, durationMs: newDur, isPlaying: newIsPlaying };
+          }
+          return prev;
+        });
       } else if (soundRef.current) {
         soundRef.current.getStatusAsync?.().then((status: any) => {
           if (status?.isLoaded) {
-            setPlayback(prev => ({
-              ...prev,
-              positionMs: status.positionMillis || 0,
-              durationMs: status.durationMillis || 0,
-              isPlaying: status.isPlaying || false,
-              isLoading: status.isBuffering || false,
-            }));
+            const newPos = status.positionMillis || 0;
+            const newDur = status.durationMillis || 0;
+            const newIsPlaying = status.isPlaying || false;
+            const newIsLoading = status.isBuffering || false;
+            positionRef.current = { positionMs: newPos, durationMs: newDur };
+            playbackRef.current = { ...playbackRef.current, positionMs: newPos, durationMs: newDur, isPlaying: newIsPlaying, isLoading: newIsLoading };
+            notifyPositionListeners();
+            setPlayback(prev => {
+              if (prev.isPlaying !== newIsPlaying || prev.isLoading !== newIsLoading) {
+                return { ...prev, positionMs: newPos, durationMs: newDur, isPlaying: newIsPlaying, isLoading: newIsLoading };
+              }
+              return prev;
+            });
           }
         }).catch(() => {});
       }
-    }, 500);
-  }, []);
+    }, trackingInterval);
+  }, [notifyPositionListeners]);
 
   const pause = useCallback(async () => {
     if (Platform.OS === "web") {
@@ -445,7 +479,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           shouldPlay: true,
           rate: feedSpeed,
           shouldCorrectPitch: true,
-          progressUpdateIntervalMillis: 500,
+          progressUpdateIntervalMillis: 1000,
           androidImplementation: "MediaPlayer",
         };
         if (savedPos > 0) {
@@ -637,7 +671,9 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     removeFromQueue: handleRemoveFromQueue,
     clearQueue: handleClearQueue,
     playNext,
-  }), [currentEpisode, currentFeed, playback, playEpisode, pause, resume, seekTo, skip, setRate, stop, getSavedPosition, removeSavedPosition, recentlyPlayed, getFeedSpeed, sleepTimer, setSleepTimerFn, cancelSleepTimer, getInProgressEpisodes, queue, handleAddToQueue, handleRemoveFromQueue, handleClearQueue, playNext]);
+    subscribePosition,
+    getPositionSnapshot,
+  }), [currentEpisode, currentFeed, playback, playEpisode, pause, resume, seekTo, skip, setRate, stop, getSavedPosition, removeSavedPosition, recentlyPlayed, getFeedSpeed, sleepTimer, setSleepTimerFn, cancelSleepTimer, getInProgressEpisodes, queue, handleAddToQueue, handleRemoveFromQueue, handleClearQueue, playNext, subscribePosition, getPositionSnapshot]);
 
   return (
     <AudioPlayerContext.Provider value={value}>
@@ -652,4 +688,9 @@ export function useAudioPlayer() {
     throw new Error("useAudioPlayer must be used within AudioPlayerProvider");
   }
   return context;
+}
+
+export function usePlaybackPosition() {
+  const { subscribePosition, getPositionSnapshot } = useAudioPlayer();
+  return useSyncExternalStore(subscribePosition, getPositionSnapshot, getPositionSnapshot);
 }
