@@ -281,6 +281,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/playback-positions", async (req: Request, res: Response) => {
+    try {
+      const { episodeId, feedId, deviceId, positionMs, durationMs, completed } = req.body;
+      if (!episodeId || !deviceId) return res.status(400).json({ error: "episodeId and deviceId required" });
+      const pos = await storage.syncPlaybackPosition(episodeId, feedId || "", deviceId, positionMs || 0, durationMs || 0, completed || false);
+      res.json(pos);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/playback-positions/:deviceId", async (req: Request, res: Response) => {
+    try {
+      const positions = await storage.getPlaybackPositions(req.params.deviceId);
+      res.json(positions);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/episodes/trending", async (req: Request, res: Response) => {
     try {
       const limit = parseInt(req.query.limit as string) || 20;
