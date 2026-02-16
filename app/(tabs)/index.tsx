@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useCallback, useEffect } from "react";
-import { View, Text, FlatList, ScrollView, Pressable, StyleSheet, ActivityIndicator, RefreshControl, Platform, Dimensions, TextInput } from "react-native";
+import { View, Text, FlatList, ScrollView, Pressable, StyleSheet, ActivityIndicator, RefreshControl, Platform, TextInput } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
@@ -22,8 +22,6 @@ interface SavedPositionEntry {
   durationMs: number;
   updatedAt: string;
 }
-
-const SCREEN_WIDTH = Dimensions.get("window").width;
 
 interface TrendingEpisode extends Episode {
   listenCount: number;
