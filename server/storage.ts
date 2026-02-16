@@ -1,7 +1,7 @@
 import { db } from "./db";
-import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens } from "@shared/schema";
-import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription } from "@shared/schema";
-import { eq, and, desc, inArray, sql, count } from "drizzle-orm";
+import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications } from "@shared/schema";
+import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification } from "@shared/schema";
+import { eq, and, desc, inArray, sql, count, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
 export async function getAllCategories(): Promise<Category[]> {
@@ -148,6 +148,8 @@ export async function getTrendingEpisodes(limit: number = 20): Promise<(Episode 
       guid: episodes.guid,
       imageUrl: episodes.imageUrl,
       createdAt: episodes.createdAt,
+      adminNotes: episodes.adminNotes,
+      sourceSheetUrl: episodes.sourceSheetUrl,
       listenCount: count(episodeListens.id),
     })
     .from(episodes)
@@ -255,5 +257,178 @@ export async function getAnalytics() {
     feedStats: enrichedFeedStats,
     dailyListens: dailyListens.map(d => ({ day: d.day, count: Number(d.count) })),
     topEpisodes: topEpisodes.map(e => ({ ...e, listenCount: Number(e.listenCount) })),
+  };
+}
+
+export async function addFavorite(episodeId: string, deviceId: string): Promise<Favorite | undefined> {
+  const [fav] = await db.insert(favorites).values({ episodeId, deviceId }).onConflictDoNothing().returning();
+  return fav;
+}
+
+export async function removeFavorite(episodeId: string, deviceId: string): Promise<void> {
+  await db.delete(favorites).where(and(eq(favorites.episodeId, episodeId), eq(favorites.deviceId, deviceId)));
+}
+
+export async function getFavorites(deviceId: string): Promise<Favorite[]> {
+  return db.select().from(favorites).where(eq(favorites.deviceId, deviceId)).orderBy(desc(favorites.createdAt));
+}
+
+export async function isFavorite(episodeId: string, deviceId: string): Promise<boolean> {
+  const result = await db.select().from(favorites).where(and(eq(favorites.episodeId, episodeId), eq(favorites.deviceId, deviceId))).limit(1);
+  return result.length > 0;
+}
+
+export async function syncPlaybackPosition(episodeId: string, feedId: string, deviceId: string, positionMs: number, durationMs: number, completed: boolean): Promise<PlaybackPosition> {
+  const [pos] = await db.insert(playbackPositions).values({ episodeId, feedId, deviceId, positionMs, durationMs, completed }).onConflictDoUpdate({
+    target: [playbackPositions.episodeId, playbackPositions.deviceId],
+    set: { positionMs, durationMs, completed, updatedAt: new Date() },
+  }).returning();
+  return pos;
+}
+
+export async function getPlaybackPositions(deviceId: string): Promise<PlaybackPosition[]> {
+  return db.select().from(playbackPositions).where(eq(playbackPositions.deviceId, deviceId)).orderBy(desc(playbackPositions.updatedAt));
+}
+
+export async function getPlaybackPosition(episodeId: string, deviceId: string): Promise<PlaybackPosition | undefined> {
+  const [pos] = await db.select().from(playbackPositions).where(and(eq(playbackPositions.episodeId, episodeId), eq(playbackPositions.deviceId, deviceId))).limit(1);
+  return pos;
+}
+
+export async function getCompletedEpisodes(deviceId: string): Promise<PlaybackPosition[]> {
+  return db.select().from(playbackPositions).where(and(eq(playbackPositions.deviceId, deviceId), eq(playbackPositions.completed, true))).orderBy(desc(playbackPositions.updatedAt));
+}
+
+export async function getListeningStats(deviceId: string) {
+  const [totalResult] = await db.select({ count: count() }).from(episodeListens).where(eq(episodeListens.deviceId, deviceId));
+  const totalListens = Number(totalResult.count);
+
+  const uniqueResult = await db.selectDistinct({ episodeId: episodeListens.episodeId }).from(episodeListens).where(eq(episodeListens.deviceId, deviceId));
+  const uniqueEpisodes = uniqueResult.length;
+
+  const topFeeds = await db
+    .select({
+      feedId: episodes.feedId,
+      title: feeds.title,
+      count: count(episodeListens.id),
+    })
+    .from(episodeListens)
+    .innerJoin(episodes, eq(episodeListens.episodeId, episodes.id))
+    .innerJoin(feeds, eq(episodes.feedId, feeds.id))
+    .where(eq(episodeListens.deviceId, deviceId))
+    .groupBy(episodes.feedId, feeds.title)
+    .orderBy(desc(count(episodeListens.id)))
+    .limit(10);
+
+  return {
+    totalListens,
+    uniqueEpisodes,
+    topFeeds: topFeeds.map(f => ({ feedId: f.feedId, title: f.title, count: Number(f.count) })),
+  };
+}
+
+export async function getWeeklyPopularEpisodes(limit: number = 20) {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const result = await db
+    .select({
+      episodeId: episodeListens.episodeId,
+      title: episodes.title,
+      feedId: episodes.feedId,
+      description: episodes.description,
+      audioUrl: episodes.audioUrl,
+      duration: episodes.duration,
+      publishedAt: episodes.publishedAt,
+      imageUrl: episodes.imageUrl,
+      listenCount: count(episodeListens.id),
+    })
+    .from(episodeListens)
+    .innerJoin(episodes, eq(episodeListens.episodeId, episodes.id))
+    .where(sql`${episodeListens.listenedAt} > ${sevenDaysAgo}`)
+    .groupBy(episodeListens.episodeId, episodes.id)
+    .orderBy(desc(count(episodeListens.id)))
+    .limit(limit);
+
+  return result.map(r => ({ ...r, listenCount: Number(r.listenCount) }));
+}
+
+export async function getFeedListenerCount(feedId: string): Promise<number> {
+  const feedEpisodes = await db.select({ id: episodes.id }).from(episodes).where(eq(episodes.feedId, feedId));
+  if (feedEpisodes.length === 0) return 0;
+  const episodeIds = feedEpisodes.map(e => e.id);
+  const result = await db.selectDistinct({ deviceId: episodeListens.deviceId }).from(episodeListens).where(inArray(episodeListens.episodeId, episodeIds));
+  return result.length;
+}
+
+export async function searchEpisodes(query: string, limit: number = 20): Promise<Episode[]> {
+  return db.select().from(episodes).where(ilike(episodes.title, `%${query}%`)).orderBy(desc(episodes.publishedAt)).limit(limit);
+}
+
+export async function getNewEpisodesForSubscribedFeeds(deviceId: string, limit: number = 50, since?: Date): Promise<Episode[]> {
+  const subs = await getSubscriptions(deviceId);
+  if (subs.length === 0) return [];
+  const feedIds = subs.map(s => s.feedId);
+  let query = db.select().from(episodes).where(
+    since
+      ? and(inArray(episodes.feedId, feedIds), sql`${episodes.publishedAt} > ${since}`)
+      : inArray(episodes.feedId, feedIds)
+  ).orderBy(desc(episodes.publishedAt)).limit(limit);
+  return query;
+}
+
+export async function getFeaturedFeeds(): Promise<Feed[]> {
+  return db.select().from(feeds).where(and(eq(feeds.isFeatured, true), eq(feeds.isActive, true))).orderBy(feeds.title);
+}
+
+export async function setFeedFeatured(feedId: string, featured: boolean): Promise<Feed> {
+  const [feed] = await db.update(feeds).set({ isFeatured: featured }).where(eq(feeds.id, feedId)).returning();
+  return feed;
+}
+
+export async function createAdminNotification(title: string, message: string): Promise<AdminNotification> {
+  const [notif] = await db.insert(adminNotifications).values({ title, message }).returning();
+  return notif;
+}
+
+export async function getAdminNotifications(): Promise<AdminNotification[]> {
+  return db.select().from(adminNotifications).orderBy(desc(adminNotifications.createdAt));
+}
+
+export async function markNotificationSent(id: string): Promise<void> {
+  await db.update(adminNotifications).set({ sentAt: new Date() }).where(eq(adminNotifications.id, id));
+}
+
+export async function recordListenWithDuration(episodeId: string, deviceId: string, durationMs: number): Promise<void> {
+  await db.insert(episodeListens).values({ episodeId, deviceId, durationListenedMs: durationMs });
+}
+
+export async function getEnhancedAnalytics() {
+  const baseAnalytics = await getAnalytics();
+
+  const [listeningTimeResult] = await db
+    .select({ total: sql<string>`COALESCE(SUM(${episodeListens.durationListenedMs}), 0)` })
+    .from(episodeListens);
+  const totalListeningTimeMs = Number(listeningTimeResult.total);
+
+  const [completedResult] = await db
+    .select({ count: count() })
+    .from(playbackPositions)
+    .where(eq(playbackPositions.completed, true));
+  const completedEpisodes = Number(completedResult.count);
+
+  const topListeners = await db
+    .select({
+      deviceId: episodeListens.deviceId,
+      listenCount: count(episodeListens.id),
+    })
+    .from(episodeListens)
+    .groupBy(episodeListens.deviceId)
+    .orderBy(desc(count(episodeListens.id)))
+    .limit(10);
+
+  return {
+    ...baseAnalytics,
+    totalListeningTimeMs,
+    completedEpisodes,
+    topListeners: topListeners.map(l => ({ deviceId: l.deviceId, listenCount: Number(l.listenCount) })),
   };
 }

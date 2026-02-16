@@ -85,6 +85,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Featured Feeds (must be before :id routes)
+  app.get("/api/feeds/featured", async (_req: Request, res: Response) => {
+    try {
+      const featured = await storage.getFeaturedFeeds();
+      res.setHeader("Cache-Control", "public, max-age=60");
+      res.json(featured);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/feeds/category/:categoryId", async (req: Request, res: Response) => {
     try {
       const feedList = await storage.getFeedsByCategory(req.params.categoryId);
@@ -375,6 +386,254 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/subscriptions/:deviceId/:feedId", async (req: Request, res: Response) => {
     try {
       await storage.removeSubscription(req.params.deviceId, req.params.feedId);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Favorites
+  app.get("/api/favorites/:deviceId", async (req: Request, res: Response) => {
+    try {
+      const favs = await storage.getFavorites(req.params.deviceId);
+      res.json(favs);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/favorites", async (req: Request, res: Response) => {
+    try {
+      const { episodeId, deviceId } = req.body;
+      if (!episodeId || !deviceId) return res.status(400).json({ error: "episodeId and deviceId required" });
+      const fav = await storage.addFavorite(episodeId, deviceId);
+      res.json(fav || { ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/favorites/:deviceId/:episodeId", async (req: Request, res: Response) => {
+    try {
+      await storage.removeFavorite(req.params.episodeId, req.params.deviceId);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Playback Position Sync
+  app.post("/api/positions/sync", async (req: Request, res: Response) => {
+    try {
+      const { episodeId, feedId, deviceId, positionMs, durationMs, completed } = req.body;
+      if (!episodeId || !feedId || !deviceId) return res.status(400).json({ error: "episodeId, feedId, and deviceId required" });
+      await storage.syncPlaybackPosition(episodeId, feedId, deviceId, positionMs || 0, durationMs || 0, completed || false);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/positions/:deviceId", async (req: Request, res: Response) => {
+    try {
+      const positions = await storage.getPlaybackPositions(req.params.deviceId);
+      res.json(positions);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/positions/:deviceId/:episodeId", async (req: Request, res: Response) => {
+    try {
+      const pos = await storage.getPlaybackPosition(req.params.episodeId, req.params.deviceId);
+      res.json(pos || { positionMs: 0, durationMs: 0, completed: false });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/completed/:deviceId", async (req: Request, res: Response) => {
+    try {
+      const completed = await storage.getCompletedEpisodes(req.params.deviceId);
+      res.json(completed);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Listening Stats
+  app.get("/api/stats/:deviceId", async (req: Request, res: Response) => {
+    try {
+      const stats = await storage.getListeningStats(req.params.deviceId);
+      res.json(stats);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Popular This Week
+  app.get("/api/episodes/popular", async (req: Request, res: Response) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 20;
+      const eps = await storage.getWeeklyPopularEpisodes(limit);
+      res.setHeader("Cache-Control", "public, max-age=60");
+      res.json(eps);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Feed Listener Count
+  app.get("/api/feeds/:id/listeners", async (req: Request, res: Response) => {
+    try {
+      const count = await storage.getFeedListenerCount(req.params.id);
+      res.setHeader("Cache-Control", "public, max-age=60");
+      res.json({ count });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Global Episode Search
+  app.get("/api/episodes/search", async (req: Request, res: Response) => {
+    try {
+      const q = req.query.q as string;
+      const limit = parseInt(req.query.limit as string) || 30;
+      if (!q || q.trim().length < 2) return res.json([]);
+      const eps = await storage.searchEpisodes(q, limit);
+      res.json(eps);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // What's New (episodes from subscribed feeds)
+  app.get("/api/whatsnew/:deviceId", async (req: Request, res: Response) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 50;
+      const since = req.query.since ? new Date(req.query.since as string) : undefined;
+      const eps = await storage.getNewEpisodesForSubscribedFeeds(req.params.deviceId, limit, since);
+      res.json(eps);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Featured toggle
+  app.put("/api/admin/feeds/:id/featured", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { featured } = req.body;
+      await storage.setFeedFeatured(req.params.id, featured);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Bulk Feed Import
+  app.post("/api/admin/feeds/bulk-import", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { feeds: feedUrls, categoryId } = req.body;
+      if (!Array.isArray(feedUrls) || feedUrls.length === 0) return res.status(400).json({ error: "feeds array required" });
+      const results: { url: string; success: boolean; title?: string; error?: string }[] = [];
+      for (const rssUrl of feedUrls) {
+        try {
+          const parsed = await parseFeed("temp", rssUrl);
+          const feed = await storage.createFeed({
+            title: parsed.title,
+            rssUrl,
+            imageUrl: parsed.imageUrl || null,
+            description: parsed.description || null,
+            author: parsed.author || null,
+            categoryId: categoryId || null,
+          });
+          const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
+          await storage.upsertEpisodes(feed.id, episodeData);
+          results.push({ url: rssUrl, success: true, title: parsed.title });
+        } catch (e: any) {
+          results.push({ url: rssUrl, success: false, error: e.message });
+        }
+      }
+      res.json({ results });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Episode Notes & Source Sheets
+  app.put("/api/admin/episodes/:id/notes", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { adminNotes, sourceSheetUrl } = req.body;
+      const { db } = await import("./db");
+      const { episodes } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const [updated] = await db.update(episodes).set({ adminNotes, sourceSheetUrl }).where(eq(episodes.id, req.params.id)).returning();
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Notifications
+  app.get("/api/admin/notifications", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const notifs = await storage.getAdminNotifications();
+      res.json(notifs);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/admin/notifications", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { title, message } = req.body;
+      if (!title || !message) return res.status(400).json({ error: "title and message required" });
+      const notif = await storage.createAdminNotification(title, message);
+      res.json(notif);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/admin/notifications/:id/send", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      await storage.markNotificationSent(req.params.id);
+      res.json({ ok: true, sent: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Enhanced Analytics
+  app.get("/api/admin/analytics/enhanced", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const analytics = await storage.getEnhancedAnalytics();
+      res.json(analytics);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Scheduled Publishing
+  app.put("/api/admin/feeds/:id/schedule", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { scheduledPublishAt } = req.body;
+      const feed = await storage.updateFeed(req.params.id, {
+        scheduledPublishAt: scheduledPublishAt ? new Date(scheduledPublishAt) : null,
+        isActive: !scheduledPublishAt,
+      });
+      res.json(feed);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Record listen with duration
+  app.post("/api/listens/duration", async (req: Request, res: Response) => {
+    try {
+      const { episodeId, deviceId, durationMs } = req.body;
+      if (!episodeId || !deviceId) return res.status(400).json({ error: "episodeId and deviceId required" });
+      await storage.recordListenWithDuration(episodeId, deviceId, durationMs || 0);
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
