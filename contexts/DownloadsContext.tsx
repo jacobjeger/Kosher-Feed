@@ -18,6 +18,7 @@ interface DownloadsContextValue {
   autoDownloadNewEpisodes: (feeds: Feed[], maxPerFeed: number) => Promise<void>;
   enforceStorageLimit: (feedId: string, maxPerFeed: number) => Promise<void>;
   getDownloadsForFeed: (feedId: string) => DownloadedEpisode[];
+  batchDownload: (episodes: Episode[], feed: Feed) => Promise<void>;
 }
 
 const DOWNLOADS_KEY = "@kosher_podcast_downloads";
@@ -166,6 +167,17 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     return downloads.filter(d => d.feedId === feedId);
   }, [downloads]);
 
+  const batchDownload = useCallback(async (episodes: Episode[], feed: Feed) => {
+    const toDownload = episodes.filter(ep => !downloadsRef.current.some(d => d.id === ep.id));
+    for (const episode of toDownload) {
+      try {
+        await downloadEpisode(episode, feed);
+      } catch (e) {
+        console.error("Batch download error for episode:", episode.id, e);
+      }
+    }
+  }, [downloadEpisode]);
+
   const enforceStorageLimit = useCallback(async (feedId: string, maxPerFeed: number) => {
     const feedDownloads = downloadsRef.current
       .filter(d => d.feedId === feedId)
@@ -243,7 +255,8 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     autoDownloadNewEpisodes,
     enforceStorageLimit,
     getDownloadsForFeed,
-  }), [downloads, downloadProgress, downloadEpisode, removeDownload, isDownloaded, isDownloading, getLocalUri, autoDownloadNewEpisodes, enforceStorageLimit, getDownloadsForFeed]);
+    batchDownload,
+  }), [downloads, downloadProgress, downloadEpisode, removeDownload, isDownloaded, isDownloading, getLocalUri, autoDownloadNewEpisodes, enforceStorageLimit, getDownloadsForFeed, batchDownload]);
 
   return (
     <DownloadsContext.Provider value={value}>

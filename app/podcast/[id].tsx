@@ -12,6 +12,7 @@ import Colors from "@/constants/colors";
 import type { Feed, Episode, Subscription } from "@/lib/types";
 import { mediumHaptic, lightHaptic } from "@/lib/haptics";
 import { useSettings } from "@/contexts/SettingsContext";
+import { useDownloads } from "@/contexts/DownloadsContext";
 
 const EPISODE_LIMIT_OPTIONS = [3, 5, 10, 15, 25, 50];
 const PAGE_SIZE = 30;
@@ -31,6 +32,7 @@ export default function PodcastDetailScreen() {
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const { getFeedSettings, updateFeedSettings } = useSettings();
+  const { batchDownload, isDownloading, downloads } = useDownloads();
   const [showFullDescription, setShowFullDescription] = useState<boolean>(false);
   const [episodeSearch, setEpisodeSearch] = useState("");
   const [isEpisodeSearchFocused, setIsEpisodeSearchFocused] = useState(false);
@@ -289,6 +291,21 @@ export default function PodcastDetailScreen() {
               </View>
             )}
 
+            {isFollowing && allEpisodes.length > 0 && (
+              <Pressable
+                style={[styles.batchDownloadBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.cardBorder }]}
+                onPress={() => {
+                  lightHaptic();
+                  if (feed) batchDownload(allEpisodes.slice(0, 20), feed);
+                }}
+              >
+                <Ionicons name="cloud-download-outline" size={18} color={colors.accent} />
+                <Text style={[styles.batchDownloadText, { color: colors.text }]}>
+                  Download Latest Episodes
+                </Text>
+              </Pressable>
+            )}
+
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
               Episodes{totalCount > 0 ? ` (${totalCount})` : ""}
             </Text>
@@ -452,6 +469,21 @@ const styles = StyleSheet.create({
   feedSettingDivider: {
     height: 1,
     marginLeft: 42,
+  },
+  batchDownloadBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 12,
+    marginBottom: 4,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  batchDownloadText: {
+    fontSize: 14,
+    fontWeight: "600" as const,
   },
   sectionTitle: {
     fontSize: 18,
