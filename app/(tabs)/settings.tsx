@@ -9,7 +9,7 @@ import { getDeviceId } from "@/lib/device-id";
 import { getApiUrl } from "@/lib/query-client";
 import { useDownloads } from "@/contexts/DownloadsContext";
 import { useSettings } from "@/contexts/SettingsContext";
-import { requestNotificationPermissions } from "@/lib/notifications";
+import { requestNotificationPermissions, sendLocalNotification, checkNotificationPermission } from "@/lib/notifications";
 import { lightHaptic } from "@/lib/haptics";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
@@ -218,6 +218,41 @@ function SettingsScreenInner() {
         onPress: () => updateSettings({ dailyReminderHour: h }),
       })),
     );
+  };
+
+  const handleTestNotification = async () => {
+    lightHaptic();
+    const hasPermission = await checkNotificationPermission();
+    if (!hasPermission) {
+      const granted = await requestNotificationPermissions();
+      if (!granted) {
+        Alert.alert("Notifications", "Please enable notifications in your device settings first.");
+        return;
+      }
+    }
+    const testEpisode = {
+      id: "test-" + Date.now(),
+      feedId: "test",
+      title: "This is a test notification from ShiurPod",
+      audioUrl: "",
+      description: "",
+      publishedAt: new Date().toISOString(),
+      guid: "test",
+    };
+    const testFeed = {
+      id: "test",
+      title: "ShiurPod",
+      rssUrl: "",
+      imageUrl: null,
+      description: "",
+      author: "",
+      categoryId: null,
+      isActive: true,
+      isFeatured: false,
+      lastFetchedAt: null,
+    };
+    await sendLocalNotification(testEpisode as any, testFeed as any);
+    Alert.alert("Sent", "A test notification was sent. Check your notification shade.");
   };
 
   const formatHour = (hour: number): string => {
@@ -445,6 +480,12 @@ function SettingsScreenInner() {
       <View style={[styles.section, { borderColor: colors.cardBorder }]}>
         <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>DEVELOPER</Text>
         <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+          <SettingRow
+            icon={<Ionicons name="notifications-outline" size={20} color={colors.accent} />}
+            label="Test Notification"
+            onPress={handleTestNotification}
+          />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <SettingRow
             icon={<Ionicons name="bug" size={20} color="#ef4444" />}
             label="Debug Logs"
