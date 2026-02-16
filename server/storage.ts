@@ -494,6 +494,7 @@ export async function createFeedback(data: {
   subject: string;
   message: string;
   contactInfo: string | null;
+  deviceLogs: string | null;
 }): Promise<Feedback> {
   const [fb] = await db.insert(feedback).values(data).returning();
   return fb;

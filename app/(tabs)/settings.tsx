@@ -12,6 +12,7 @@ import { useSettings } from "@/contexts/SettingsContext";
 import { requestNotificationPermissions, sendLocalNotification, checkNotificationPermission, setupNotificationChannel } from "@/lib/notifications";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { getLogsSnapshot } from "@/lib/error-logger";
 
 const EPISODE_LIMIT_OPTIONS = [3, 5, 10, 15, 25, 50];
 const SKIP_OPTIONS = [10, 15, 30, 45, 60];
@@ -133,12 +134,22 @@ function SettingsScreenInner() {
     }
     setFeedbackSending(true);
     try {
+      let deviceLogs: string | null = null;
+      if (feedbackType === "technical_issue") {
+        try {
+          const logs = getLogsSnapshot();
+          if (logs.length > 0) {
+            deviceLogs = JSON.stringify(logs.slice(0, 100));
+          }
+        } catch {}
+      }
       await apiRequest("POST", "/api/feedback", {
         deviceId,
         type: feedbackType,
         subject: feedbackSubject.trim(),
         message: feedbackMessage.trim(),
         contactInfo: feedbackContact.trim() || null,
+        deviceLogs,
       });
       mediumHaptic();
       setShowFeedbackModal(false);

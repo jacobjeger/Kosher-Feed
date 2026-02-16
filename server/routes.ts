@@ -722,15 +722,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Feedback - public endpoint (no auth needed)
   app.post("/api/feedback", async (req: Request, res: Response) => {
     try {
-      const { deviceId, type, subject, message, contactInfo } = req.body;
+      const { deviceId, type, subject, message, contactInfo, deviceLogs } = req.body;
       if (!subject || !message) return res.status(400).json({ error: "subject and message required" });
       if (!["shiur_request", "technical_issue"].includes(type)) return res.status(400).json({ error: "type must be shiur_request or technical_issue" });
+      let logsStr: string | null = null;
+      if (deviceLogs && typeof deviceLogs === "string") {
+        logsStr = deviceLogs.substring(0, 50000);
+      } else if (Array.isArray(deviceLogs)) {
+        logsStr = JSON.stringify(deviceLogs).substring(0, 50000);
+      }
       const fb = await storage.createFeedback({
         deviceId: deviceId || null,
         type: type || "shiur_request",
         subject: (subject as string).substring(0, 200),
         message: (message as string).substring(0, 5000),
         contactInfo: contactInfo ? (contactInfo as string).substring(0, 200) : null,
+        deviceLogs: logsStr,
       });
       res.json({ ok: true, id: fb.id });
     } catch (e: any) {

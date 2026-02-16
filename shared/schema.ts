@@ -118,6 +118,7 @@ export const feedback = pgTable("feedback", {
   contactInfo: text("contact_info"),
   status: text("status").notNull().default("new"),
   adminNotes: text("admin_notes"),
+  deviceLogs: text("device_logs"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
