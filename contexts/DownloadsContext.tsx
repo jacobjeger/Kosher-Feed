@@ -41,7 +41,45 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     try {
       const data = await AsyncStorage.getItem(DOWNLOADS_KEY);
       if (data) {
-        setDownloads(JSON.parse(data));
+        let parsed: DownloadedEpisode[];
+        try {
+          parsed = JSON.parse(data);
+          if (!Array.isArray(parsed)) {
+            console.error("Downloads data corrupted, resetting");
+            await AsyncStorage.removeItem(DOWNLOADS_KEY);
+            return;
+          }
+        } catch {
+          console.error("Downloads JSON parse failed, resetting");
+          await AsyncStorage.removeItem(DOWNLOADS_KEY);
+          return;
+        }
+
+        if (Platform.OS !== "web") {
+          const validated: DownloadedEpisode[] = [];
+          for (const dl of parsed) {
+            try {
+              if (!dl.localUri || dl.localUri === dl.audioUrl) {
+                validated.push(dl);
+                continue;
+              }
+              const info = await FileSystem.getInfoAsync(dl.localUri);
+              if (info.exists) {
+                validated.push(dl);
+              } else {
+                console.warn(`Download file missing, removing: ${dl.title}`);
+              }
+            } catch {
+              validated.push(dl);
+            }
+          }
+          if (validated.length !== parsed.length) {
+            await AsyncStorage.setItem(DOWNLOADS_KEY, JSON.stringify(validated));
+          }
+          setDownloads(validated);
+        } else {
+          setDownloads(parsed);
+        }
       }
     } catch (e) {
       console.error("Failed to load downloads:", e);

@@ -455,7 +455,17 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           }
         };
         audio.onerror = () => {
-          setPlayback(prev => ({ ...prev, isLoading: false }));
+          const retryCount = (audio as any).__retryCount || 0;
+          if (retryCount < 2) {
+            (audio as any).__retryCount = retryCount + 1;
+            console.error(`Audio load failed, retrying (${retryCount + 1}/2)...`);
+            setTimeout(() => {
+              audio.load();
+            }, 1000 * (retryCount + 1));
+          } else {
+            console.error("Audio playback failed after retries");
+            setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: false }));
+          }
         };
       } else {
         if (soundRef.current) {
@@ -560,12 +570,22 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   }, [playNext]);
 
   const resume = useCallback(async () => {
-    if (Platform.OS === "web") {
-      audioRef.current?.play();
-    } else if (soundRef.current) {
-      await soundRef.current.playAsync?.();
+    try {
+      if (Platform.OS === "web") {
+        await audioRef.current?.play();
+      } else if (soundRef.current) {
+        const status = await soundRef.current.getStatusAsync?.();
+        if (status?.isLoaded) {
+          await soundRef.current.playAsync?.();
+        } else {
+          console.error("Cannot resume: audio not loaded");
+          return;
+        }
+      }
+      setPlayback(prev => ({ ...prev, isPlaying: true }));
+    } catch (e) {
+      console.error("Resume failed:", e);
     }
-    setPlayback(prev => ({ ...prev, isPlaying: true }));
   }, []);
 
   const seekTo = useCallback(async (positionMs: number) => {
