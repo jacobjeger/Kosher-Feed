@@ -10,6 +10,7 @@ import { AudioPlayerProvider } from "@/contexts/AudioPlayerContext";
 import { DownloadsProvider } from "@/contexts/DownloadsContext";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 import { BackgroundSync } from "@/components/BackgroundSync";
+import { setupNotificationChannel } from "@/lib/notifications";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -38,6 +39,7 @@ function RootLayoutNav() {
 export default function RootLayout() {
   useEffect(() => {
     SplashScreen.hideAsync();
+    setupNotificationChannel();
   }, []);
 
   return (

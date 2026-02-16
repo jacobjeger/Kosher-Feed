@@ -75,8 +75,21 @@ export default function PodcastDetailScreen() {
     followMutation.mutate();
   };
 
-  const handleToggleNotifications = (value: boolean) => {
+  const handleToggleNotifications = async (value: boolean) => {
     lightHaptic();
+    if (value) {
+      const { requestNotificationPermissions } = await import("@/lib/notifications");
+      const granted = await requestNotificationPermissions();
+      if (!granted) {
+        if (Platform.OS !== "web") {
+          Alert.alert(
+            "Notifications",
+            "Please enable notifications in your device settings to receive alerts for new episodes."
+          );
+        }
+        return;
+      }
+    }
     if (id) updateFeedSettings(id, { notificationsEnabled: value });
   };
 

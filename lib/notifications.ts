@@ -1,8 +1,19 @@
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Notifications from "expo-notifications";
 import type { Episode, Feed } from "@/lib/types";
 
 const SEEN_EPISODES_KEY = "@kosher_shiurim_seen_episodes";
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 async function getSeenEpisodeIds(): Promise<Set<string>> {
   try {
@@ -35,7 +46,17 @@ export async function requestNotificationPermissions(): Promise<boolean> {
     } catch {}
     return false;
   }
-  return true;
+
+  try {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== "granted") {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    return finalStatus === "granted";
+  } catch {}
+  return false;
 }
 
 export async function checkNotificationPermission(): Promise<boolean> {
@@ -47,7 +68,12 @@ export async function checkNotificationPermission(): Promise<boolean> {
     } catch {}
     return false;
   }
-  return true;
+
+  try {
+    const { status } = await Notifications.getPermissionsAsync();
+    return status === "granted";
+  } catch {}
+  return false;
 }
 
 export async function checkForNewEpisodes(
@@ -80,6 +106,18 @@ export async function sendLocalNotification(episode: Episode, feed: Feed) {
     } catch {}
     return;
   }
+
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: `New from ${feed.title}`,
+        body: episode.title,
+        data: { episodeId: episode.id, feedId: episode.feedId },
+        sound: "default",
+      },
+      trigger: null,
+    });
+  } catch {}
 }
 
 export async function notifyNewEpisodes(newEpisodes: Episode[], feeds: Feed[]) {
@@ -113,6 +151,18 @@ export async function notifyNewEpisodes(newEpisodes: Episode[], feeds: Feed[]) {
             });
           }
         } catch {}
+      } else {
+        try {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: feed.title,
+              body: `${episodes.length} new episodes available`,
+              data: { feedId: feed.id },
+              sound: "default",
+            },
+            trigger: null,
+          });
+        } catch {}
       }
     }
   }
@@ -122,5 +172,18 @@ export async function initializeSeenEpisodes(episodes: Episode[]) {
   const seen = await getSeenEpisodeIds();
   if (seen.size === 0 && episodes.length > 0) {
     await markEpisodesSeen(episodes.map(e => e.id));
+  }
+}
+
+export async function setupNotificationChannel() {
+  if (Platform.OS === "android") {
+    try {
+      await Notifications.setNotificationChannelAsync("new-episodes", {
+        name: "New Episodes",
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        sound: "default",
+      });
+    } catch {}
   }
 }
