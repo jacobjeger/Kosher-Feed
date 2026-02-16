@@ -240,8 +240,11 @@ function HomeScreenInner() {
     lightHaptic();
     if (currentEpisode?.id === episode.id) {
       playback.isPlaying ? pause() : resume();
+      router.push("/player");
     } else {
-      playEpisode(episode, feed);
+      playEpisode(episode, feed).then(() => {
+        router.push("/player");
+      }).catch(console.error);
     }
   }, [currentEpisode?.id, playback.isPlaying, pause, resume, playEpisode]);
 

@@ -264,7 +264,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const positionSaveInterval = setInterval(saveCurrentPosition, 10000);
+    const positionSaveInterval = setInterval(saveCurrentPosition, 30000);
     return () => clearInterval(positionSaveInterval);
   }, [saveCurrentPosition]);
 
@@ -313,7 +313,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
   const startPositionTracking = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
-    const trackingInterval = Platform.OS === "web" ? 500 : 1000;
+    const trackingInterval = Platform.OS === "web" ? 500 : 2000;
     intervalRef.current = setInterval(() => {
       if (Platform.OS === "web" && audioRef.current) {
         const newPos = (audioRef.current.currentTime || 0) * 1000;
@@ -490,7 +490,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           rate: feedSpeed,
           shouldCorrectPitch: true,
           progressUpdateIntervalMillis: 1000,
-          androidImplementation: "MediaPlayer",
+          androidImplementation: "SimpleExoPlayer",
         };
         if (savedPos > 0) {
           initialStatus.positionMillis = savedPos;

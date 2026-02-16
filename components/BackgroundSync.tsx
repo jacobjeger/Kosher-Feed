@@ -22,7 +22,7 @@ export function BackgroundSync() {
 
   const [ready, setReady] = useState(false);
   useEffect(() => {
-    const timer = setTimeout(() => setReady(true), 15000);
+    const timer = setTimeout(() => setReady(true), 30000);
     return () => clearTimeout(timer);
   }, []);
 

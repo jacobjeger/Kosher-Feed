@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { View, Text, Pressable, StyleSheet, Linking } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Ionicons, Feather } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { useDownloads } from "@/contexts/DownloadsContext";
 import { useFavorites } from "@/contexts/FavoritesContext";
@@ -60,9 +61,15 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
     try {
       lightHaptic();
       if (isCurrentlyPlaying) {
-        playback.isPlaying ? await pause() : await resume();
+        if (playback.isPlaying) {
+          await pause();
+        } else {
+          await resume();
+        }
+        router.push("/player");
       } else {
         await playEpisode(episode, feed);
+        router.push("/player");
       }
     } catch (e) {
       console.error(e);
