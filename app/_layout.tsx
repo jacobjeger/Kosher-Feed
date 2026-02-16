@@ -11,6 +11,7 @@ import { DownloadsProvider } from "@/contexts/DownloadsContext";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 import { FavoritesProvider } from "@/contexts/FavoritesContext";
 import { BackgroundSync } from "@/components/BackgroundSync";
+import OfflineBanner from "@/components/OfflineBanner";
 import { setupNotificationChannel } from "@/lib/notifications";
 import { initErrorLogger } from "@/lib/error-logger";
 
@@ -57,6 +58,7 @@ export default function RootLayout() {
                 <GestureHandlerRootView>
                   <KeyboardProvider>
                     <BackgroundSync />
+                    <OfflineBanner />
                     <RootLayoutNav />
                   </KeyboardProvider>
                 </GestureHandlerRootView>
