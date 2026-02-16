@@ -15,9 +15,9 @@ Preferred communication style: Simple, everyday language.
 ### Frontend (Expo / React Native)
 - **Framework**: Expo SDK 54 with React Native 0.81, using expo-router for file-based routing
 - **Routing structure**: Tab-based navigation with 4 tabs (Home, Following, Downloads, Settings), a modal player screen, and a podcast detail screen at `podcast/[id]`
-- **State management**: React Context for audio playback (`AudioPlayerContext`), downloads (`DownloadsContext`), and user settings (`SettingsContext`); TanStack React Query for server state
-- **Audio playback**: Uses `expo-av` for native and HTML5 Audio for web, with a unified context API providing play/pause/seek/skip/rate controls. Saves playback position to AsyncStorage every 10 seconds and on pause/stop, resuming from saved position on replay. Pre-buffers audio with `preload="auto"` on web and native buffer settings.
-- **Offline support**: Episode downloads managed via `expo-file-system` with progress tracking, persisted to AsyncStorage. Auto-download on WiFi for followed shiurim with configurable per-shiur episode storage limits.
+- **State management**: React Context for audio playback (`AudioPlayerContext`), downloads (`DownloadsContext`), user settings (`SettingsContext`), and favorites (`FavoritesContext`); TanStack React Query for server state
+- **Audio playback**: Uses `expo-av` for native and HTML5 Audio for web, with a unified context API providing play/pause/seek/skip/rate controls. Saves playback position to AsyncStorage every 10 seconds and on pause/stop, resuming from saved position on replay. Pre-buffers audio with `preload="auto"` on web and native buffer settings. Server-side position sync for cross-device resume.
+- **Offline support**: Episode downloads managed via `expo-file-system` with progress tracking, persisted to AsyncStorage. Auto-download on WiFi for followed shiurim with configurable per-shiur episode storage limits. Batch download support for downloading multiple episodes at once.
 - **Notifications**: Local browser notifications (web) for new episodes from followed shiurim. Tracks seen episodes in AsyncStorage to avoid duplicate alerts.
 - **Background sync**: `BackgroundSync` component polls for new episodes every 5 minutes and triggers notifications/auto-downloads based on user settings.
 - **Device identification**: Anonymous device IDs generated with `expo-crypto` and stored in AsyncStorage — no user accounts required for subscriptions
@@ -29,10 +29,16 @@ Preferred communication style: Simple, everyday language.
 - **API pattern**: RESTful JSON API under `/api/` prefix
 - **Key endpoints**:
   - `GET /api/feeds` — list all feeds
-  - `GET /api/feeds/:id/episodes` — episodes for a feed
+  - `GET /api/feeds/featured` — list featured feeds
+  - `GET /api/feeds/:id/episodes` — episodes for a feed (supports sort=newest|oldest)
   - `GET /api/categories` — list categories
   - `POST/DELETE /api/subscriptions` — manage device subscriptions
   - `GET /api/subscriptions/:deviceId/feeds` — get subscribed feeds
+  - `GET/POST/DELETE /api/favorites` — manage favorite episodes
+  - `POST /api/playback-positions` — sync playback position to server
+  - `GET /api/stats/:deviceId` — listening statistics
+  - `GET /api/episodes/search` — global episode search
+  - `GET /api/episodes/trending` — popular/trending episodes
   - Admin CRUD endpoints for feeds/categories (Basic auth protected)
 - **RSS parsing**: `rss-parser` library fetches and parses podcast RSS feeds, extracting episode metadata
 - **Admin panel**: Server-rendered HTML admin interface at `/admin` for managing feeds and categories
@@ -44,10 +50,14 @@ Preferred communication style: Simple, everyday language.
 - **ORM**: Drizzle ORM with PostgreSQL dialect
 - **Schema** (defined in `shared/schema.ts`):
   - `categories` — podcast categories (id, name, slug)
-  - `feeds` — podcast feeds (id, title, rssUrl, imageUrl, description, author, categoryId, isActive, lastFetchedAt)
-  - `episodes` — individual episodes (id, feedId, title, description, audioUrl, duration, publishedAt, guid, imageUrl) with unique index on (guid, feedId)
+  - `feeds` — podcast feeds (id, title, rssUrl, imageUrl, description, author, categoryId, isActive, isFeatured, lastFetchedAt)
+  - `episodes` — individual episodes (id, feedId, title, description, audioUrl, duration, publishedAt, guid, imageUrl, sourceSheetUrl, adminNotes) with unique index on (guid, feedId)
   - `subscriptions` — device-feed subscriptions with unique index on (deviceId, feedId)
   - `admin_users` — admin credentials for the management panel
+  - `favorites` — favorite episodes per device with unique index on (episodeId, deviceId)
+  - `playbackPositions` — server-synced playback positions per device/episode with upsert on (episodeId, deviceId)
+  - `adminNotifications` — admin notification campaigns
+  - `episodeListens` — episode listen tracking for trending/analytics
 - **Migrations**: Managed via `drizzle-kit push` (schema push approach, not file-based migrations)
 - **Connection**: `pg` Pool with `DATABASE_URL` environment variable
 
