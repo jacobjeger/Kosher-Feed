@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, FlatList, StyleSheet, useColorScheme, ActivityIndicator, RefreshControl, Platform } from "react-native";
+import { View, Text, FlatList, Pressable, StyleSheet, useColorScheme, ActivityIndicator, RefreshControl, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
@@ -48,6 +48,8 @@ export default function FollowingScreen() {
   const subscribedFeeds = feedsQuery.data || [];
   const episodes = episodesQuery.data || [];
   const isLoading = feedsQuery.isLoading || episodesQuery.isLoading;
+  const hasError = feedsQuery.isError || episodesQuery.isError;
+  const errorMessage = feedsQuery.error?.message || episodesQuery.error?.message || "Could not connect to server";
 
   const getFeedForEpisode = (ep: Episode): Feed | undefined => {
     return subscribedFeeds.find(f => f.id === ep.feedId);
@@ -62,6 +64,29 @@ export default function FollowingScreen() {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.accent} style={{ marginTop: 100 }} />
+      </View>
+    );
+  }
+
+  if (hasError) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.errorState}>
+          <Ionicons name="cloud-offline-outline" size={56} color={colors.textSecondary} />
+          <Text style={[styles.errorTitle, { color: colors.text }]}>Connection Issue</Text>
+          <Text style={[styles.errorSubtitle, { color: colors.textSecondary }]}>
+            {errorMessage.includes("Network") || errorMessage.includes("fetch")
+              ? "Unable to reach the server. Check your connection and try again."
+              : `Something went wrong: ${errorMessage}`}
+          </Text>
+          <Pressable
+            style={[styles.retryButton, { backgroundColor: colors.accent }]}
+            onPress={onRefresh}
+          >
+            <Ionicons name="refresh" size={18} color="#fff" />
+            <Text style={styles.retryText}>Try Again</Text>
+          </Pressable>
+        </View>
       </View>
     );
   }
@@ -143,5 +168,35 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
     lineHeight: 20,
+  },
+  errorState: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 80,
+    paddingHorizontal: 40,
+    gap: 12,
+  },
+  errorTitle: {
+    fontSize: 22,
+    fontWeight: "700" as const,
+  },
+  errorSubtitle: {
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  retryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  retryText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600" as const,
   },
 });

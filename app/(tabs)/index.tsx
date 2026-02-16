@@ -166,6 +166,8 @@ export default function HomeScreen() {
   const trendingQuery = useQuery<TrendingEpisode[]>({ queryKey: ["/api/episodes/trending"] });
 
   const isLoading = categoriesQuery.isLoading || feedsQuery.isLoading;
+  const hasError = feedsQuery.isError || categoriesQuery.isError;
+  const errorMessage = feedsQuery.error?.message || categoriesQuery.error?.message || "Could not connect to server";
   const categories = categoriesQuery.data || [];
   const allFeeds = feedsQuery.data || [];
   const latestEpisodes = (latestQuery.data || []).slice(0, 20);
@@ -235,6 +237,34 @@ export default function HomeScreen() {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.accent} style={{ marginTop: 100 }} />
+      </View>
+    );
+  }
+
+  if (hasError) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.errorState}>
+          <Ionicons name="cloud-offline-outline" size={56} color={colors.textSecondary} />
+          <Text style={[styles.errorTitle, { color: colors.text }]}>Connection Issue</Text>
+          <Text style={[styles.errorSubtitle, { color: colors.textSecondary }]}>
+            {errorMessage.includes("Network") || errorMessage.includes("fetch")
+              ? "Unable to reach the server. Please check your internet connection and try again."
+              : `Something went wrong: ${errorMessage}`}
+          </Text>
+          <Pressable
+            style={[styles.retryButton, { backgroundColor: colors.accent }]}
+            onPress={() => {
+              queryClient.invalidateQueries({ queryKey: ["/api/feeds"] });
+              queryClient.invalidateQueries({ queryKey: ["/api/categories"] });
+              queryClient.invalidateQueries({ queryKey: ["/api/episodes/latest"] });
+              queryClient.invalidateQueries({ queryKey: ["/api/episodes/trending"] });
+            }}
+          >
+            <Ionicons name="refresh" size={18} color="#fff" />
+            <Text style={styles.retryButtonText}>Try Again</Text>
+          </Pressable>
+        </View>
       </View>
     );
   }
@@ -642,5 +672,35 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
     lineHeight: 20,
+  },
+  errorState: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 80,
+    paddingHorizontal: 40,
+    gap: 12,
+  },
+  errorTitle: {
+    fontSize: 22,
+    fontWeight: "700" as const,
+  },
+  errorSubtitle: {
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  retryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  retryButtonText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600" as const,
   },
 });
