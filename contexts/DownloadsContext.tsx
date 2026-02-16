@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as FileSystem from "expo-file-system";
+import { File, Directory, Paths } from "expo-file-system";
+import * as LegacyFS from "expo-file-system/legacy";
 import { Platform } from "react-native";
 import type { Episode, Feed, DownloadedEpisode } from "@/lib/types";
 import { isOnWifi } from "@/lib/network";
@@ -23,6 +24,26 @@ interface DownloadsContextValue {
 
 const DOWNLOADS_KEY = "@kosher_podcast_downloads";
 const DownloadsContext = createContext<DownloadsContextValue | null>(null);
+
+function fileExistsSafe(uri: string): boolean {
+  try {
+    if (!uri) return false;
+    const f = new File(uri);
+    return f.exists;
+  } catch {
+    return false;
+  }
+}
+
+function deleteFileSafe(uri: string): void {
+  try {
+    if (!uri) return;
+    const f = new File(uri);
+    if (f.exists) {
+      f.delete();
+    }
+  } catch {}
+}
 
 export function DownloadsProvider({ children }: { children: ReactNode }) {
   const [downloads, setDownloads] = useState<DownloadedEpisode[]>([]);
@@ -63,8 +84,7 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
                 validated.push(dl);
                 continue;
               }
-              const info = await FileSystem.getInfoAsync(dl.localUri);
-              if (info.exists) {
+              if (fileExistsSafe(dl.localUri)) {
                 validated.push(dl);
               } else {
                 console.warn(`Download file missing, removing: ${dl.title}`);
@@ -111,14 +131,13 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const fileDir = `${FileSystem.documentDirectory}podcasts/`;
-    const dirInfo = await FileSystem.getInfoAsync(fileDir);
-    if (!dirInfo.exists) {
-      await FileSystem.makeDirectoryAsync(fileDir, { intermediates: true });
+    const podcastsDir = new Directory(Paths.document, 'podcasts');
+    if (!podcastsDir.exists) {
+      podcastsDir.create();
     }
 
     const safeFilename = episode.id.replace(/[^a-zA-Z0-9]/g, "_") + ".mp3";
-    const fileUri = fileDir + safeFilename;
+    const fileUri = podcastsDir.uri + '/' + safeFilename;
 
     setDownloadProgress(prev => {
       const next = new Map(prev);
@@ -127,7 +146,7 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     });
 
     try {
-      const downloadResumable = FileSystem.createDownloadResumable(
+      const downloadResumable = LegacyFS.createDownloadResumable(
         episode.audioUrl,
         fileUri,
         {},
@@ -172,10 +191,7 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     const ep = downloadsRef.current.find(d => d.id === episodeId);
     if (ep && Platform.OS !== "web") {
       try {
-        const info = await FileSystem.getInfoAsync(ep.localUri);
-        if (info.exists) {
-          await FileSystem.deleteAsync(ep.localUri);
-        }
+        deleteFileSafe(ep.localUri);
       } catch (e) {
         console.error("Failed to delete file:", e);
       }
@@ -226,12 +242,7 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     const toRemove = feedDownloads.slice(maxPerFeed);
     for (const ep of toRemove) {
       if (Platform.OS !== "web") {
-        try {
-          const info = await FileSystem.getInfoAsync(ep.localUri);
-          if (info.exists) {
-            await FileSystem.deleteAsync(ep.localUri);
-          }
-        } catch {}
+        deleteFileSafe(ep.localUri);
       }
     }
 
