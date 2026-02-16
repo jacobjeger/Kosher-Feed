@@ -167,6 +167,7 @@
       <button class="tab active" onclick="switchTab('analytics', this)">Analytics</button>
       <button class="tab" onclick="switchTab('feeds', this)">Feeds</button>
       <button class="tab" onclick="switchTab('categories', this)">Categories</button>
+      <button class="tab" onclick="switchTab('errors', this)">Error Reports</button>
     </div>
 
     <div id="analyticsTab">
@@ -217,6 +218,31 @@
           <button class="btn btn-primary btn-sm" onclick="showAddCategoryModal()">Add Category</button>
         </div>
         <div id="categoryList"></div>
+      </div>
+    </div>
+
+    <div id="errorsTab" class="hidden">
+      <div class="card">
+        <div class="card-header">
+          <h2>Error Reports</h2>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <select id="errorLevelFilter" onchange="loadErrorReports()" style="width:auto;padding:6px 10px;font-size:12px;">
+              <option value="">All Levels</option>
+              <option value="error">Errors Only</option>
+              <option value="warn">Warnings Only</option>
+              <option value="info">Info Only</option>
+            </select>
+            <select id="errorResolvedFilter" onchange="loadErrorReports()" style="width:auto;padding:6px 10px;font-size:12px;">
+              <option value="false">Unresolved</option>
+              <option value="true">Resolved</option>
+              <option value="">All</option>
+            </select>
+            <button class="btn btn-danger btn-sm" onclick="deleteResolvedErrors()">Delete Resolved</button>
+          </div>
+        </div>
+        <div id="errorReportsSummary" style="margin-bottom:12px;font-size:13px;color:#94a3b8;"></div>
+        <div id="errorReportsList"></div>
+        <div id="errorReportsPagination" style="display:flex;gap:8px;justify-content:center;margin-top:16px;"></div>
       </div>
     </div>
   </div>
@@ -852,6 +878,8 @@ function switchTab(tab, btn) {
   document.getElementById('analyticsTab').classList.toggle('hidden', tab !== 'analytics');
   document.getElementById('feedsTab').classList.toggle('hidden', tab !== 'feeds');
   document.getElementById('categoriesTab').classList.toggle('hidden', tab !== 'categories');
+  document.getElementById('errorsTab').classList.toggle('hidden', tab !== 'errors');
+  if (tab === 'errors') loadErrorReports();
 }
 
 function formatDate(dateStr) {
@@ -860,6 +888,80 @@ function formatDate(dateStr) {
 }
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+let errorReportsPage = 1;
+
+async function loadErrorReports(page) {
+  if (page) errorReportsPage = page;
+  const level = document.getElementById('errorLevelFilter').value;
+  const resolved = document.getElementById('errorResolvedFilter').value;
+  let url = `/api/admin/error-reports?page=${errorReportsPage}&limit=30`;
+  if (level) url += `&level=${level}`;
+  if (resolved !== '') url += `&resolved=${resolved}`;
+  try {
+    const data = await api(url);
+    const list = document.getElementById('errorReportsList');
+    const summary = document.getElementById('errorReportsSummary');
+    summary.textContent = `${data.total} total report${data.total !== 1 ? 's' : ''} — Page ${data.page} of ${data.totalPages || 1}`;
+    if (data.reports.length === 0) {
+      list.innerHTML = '<div style="text-align:center;padding:40px;color:#64748b;">No error reports found</div>';
+    } else {
+      list.innerHTML = data.reports.map(r => {
+        const levelColor = r.level === 'error' ? '#ef4444' : r.level === 'warn' ? '#f59e0b' : '#3b82f6';
+        const levelBg = r.level === 'error' ? 'rgba(239,68,68,0.1)' : r.level === 'warn' ? 'rgba(245,158,11,0.1)' : 'rgba(59,130,246,0.1)';
+        const time = new Date(r.createdAt).toLocaleString();
+        return `<div style="padding:14px;background:#0f172a;border-radius:10px;margin-bottom:8px;border-left:3px solid ${levelColor};${r.resolved ? 'opacity:0.5;' : ''}">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:${levelBg};color:${levelColor};text-transform:uppercase;">${esc(r.level)}</span>
+              <span style="font-size:11px;color:#64748b;">${esc(r.source || '')}</span>
+              <span style="font-size:11px;color:#64748b;">${esc(r.platform || '')}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span style="font-size:11px;color:#64748b;">${time}</span>
+              ${!r.resolved ? `<button class="btn btn-success btn-sm" onclick="resolveError('${r.id}')" style="padding:3px 8px;font-size:11px;">Resolve</button>` : '<span style="font-size:11px;color:#059669;">Resolved</span>'}
+            </div>
+          </div>
+          <div style="font-size:13px;color:#e2e8f0;word-break:break-word;margin-bottom:4px;">${esc(r.message)}</div>
+          ${r.stack ? `<details style="margin-top:6px;"><summary style="font-size:11px;color:#64748b;cursor:pointer;">Stack trace</summary><pre style="font-size:11px;color:#94a3b8;margin-top:6px;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow:auto;background:#0a0f1a;padding:8px;border-radius:6px;">${esc(r.stack)}</pre></details>` : ''}
+          ${r.deviceId ? `<div style="font-size:11px;color:#475569;margin-top:4px;">Device: ${esc(r.deviceId.substring(0,12))}...</div>` : ''}
+        </div>`;
+      }).join('');
+    }
+    const pag = document.getElementById('errorReportsPagination');
+    if (data.totalPages > 1) {
+      let btns = '';
+      if (data.page > 1) btns += `<button class="btn btn-secondary btn-sm" onclick="loadErrorReports(${data.page - 1})">Prev</button>`;
+      btns += `<span style="font-size:13px;color:#94a3b8;padding:6px;">Page ${data.page}/${data.totalPages}</span>`;
+      if (data.page < data.totalPages) btns += `<button class="btn btn-secondary btn-sm" onclick="loadErrorReports(${data.page + 1})">Next</button>`;
+      pag.innerHTML = btns;
+    } else {
+      pag.innerHTML = '';
+    }
+  } catch(e) {
+    showAlert(e.message, 'error');
+  }
+}
+
+async function resolveError(id) {
+  try {
+    await api(`/api/admin/error-reports/${id}/resolve`, { method: 'PUT' });
+    loadErrorReports();
+  } catch(e) {
+    showAlert(e.message, 'error');
+  }
+}
+
+async function deleteResolvedErrors() {
+  if (!confirm('Delete all resolved error reports?')) return;
+  try {
+    const data = await api('/api/admin/error-reports/resolved', { method: 'DELETE' });
+    showAlert(`Deleted ${data.deleted} resolved reports`, 'success');
+    loadErrorReports();
+  } catch(e) {
+    showAlert(e.message, 'error');
+  }
+}
 
 if (token) { showAdmin(); }
 </script>

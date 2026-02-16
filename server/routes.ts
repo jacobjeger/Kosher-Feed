@@ -641,6 +641,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Error Reports - public endpoint (no auth needed, devices send errors here)
+  app.post("/api/error-reports", async (req: Request, res: Response) => {
+    try {
+      const { deviceId, level, message, stack, source, platform, appVersion } = req.body;
+      if (!message) return res.status(400).json({ error: "message required" });
+      const report = await storage.createErrorReport({
+        deviceId: deviceId || null,
+        level: level || "error",
+        message: (message as string).substring(0, 5000),
+        stack: stack ? (stack as string).substring(0, 10000) : null,
+        source: source || null,
+        platform: platform || null,
+        appVersion: appVersion || null,
+      });
+      res.json({ ok: true, id: report.id });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Batch error reports
+  app.post("/api/error-reports/batch", async (req: Request, res: Response) => {
+    try {
+      const { reports } = req.body;
+      if (!Array.isArray(reports)) return res.status(400).json({ error: "reports array required" });
+      const limited = reports.slice(0, 20);
+      const results = [];
+      for (const r of limited) {
+        if (!r.message) continue;
+        const report = await storage.createErrorReport({
+          deviceId: r.deviceId || null,
+          level: r.level || "error",
+          message: (r.message as string).substring(0, 5000),
+          stack: r.stack ? (r.stack as string).substring(0, 10000) : null,
+          source: r.source || null,
+          platform: r.platform || null,
+          appVersion: r.appVersion || null,
+        });
+        results.push(report.id);
+      }
+      res.json({ ok: true, count: results.length });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Error Reports
+  app.get("/api/admin/error-reports", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+      const level = req.query.level as string || undefined;
+      const resolved = req.query.resolved === "true" ? true : req.query.resolved === "false" ? false : undefined;
+      const reports = await storage.getErrorReports({ page, limit, level, resolved });
+      res.json(reports);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.put("/api/admin/error-reports/:id/resolve", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const report = await storage.resolveErrorReport(req.params.id);
+      res.json(report);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/admin/error-reports/resolved", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const count = await storage.deleteResolvedErrorReports();
+      res.json({ ok: true, deleted: count });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

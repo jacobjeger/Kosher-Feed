@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications } from "@shared/schema";
-import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification } from "@shared/schema";
+import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports } from "@shared/schema";
+import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport } from "@shared/schema";
 import { eq, and, desc, asc, inArray, sql, count, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
@@ -432,4 +432,58 @@ export async function getEnhancedAnalytics() {
     completedEpisodes,
     topListeners: topListeners.map(l => ({ deviceId: l.deviceId, listenCount: Number(l.listenCount) })),
   };
+}
+
+// Error Reports
+export async function createErrorReport(data: {
+  deviceId: string | null;
+  level: string;
+  message: string;
+  stack: string | null;
+  source: string | null;
+  platform: string | null;
+  appVersion: string | null;
+}): Promise<ErrorReport> {
+  const [report] = await db.insert(errorReports).values(data).returning();
+  return report;
+}
+
+export async function getErrorReports(opts: {
+  page: number;
+  limit: number;
+  level?: string;
+  resolved?: boolean;
+}): Promise<{ reports: ErrorReport[]; total: number; page: number; totalPages: number }> {
+  const conditions = [];
+  if (opts.level) conditions.push(eq(errorReports.level, opts.level));
+  if (opts.resolved !== undefined) conditions.push(eq(errorReports.resolved, opts.resolved));
+
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const [{ total }] = await db.select({ total: count() }).from(errorReports).where(where);
+  const reports = await db.select().from(errorReports)
+    .where(where)
+    .orderBy(desc(errorReports.createdAt))
+    .limit(opts.limit)
+    .offset((opts.page - 1) * opts.limit);
+
+  return {
+    reports,
+    total: Number(total),
+    page: opts.page,
+    totalPages: Math.ceil(Number(total) / opts.limit),
+  };
+}
+
+export async function resolveErrorReport(id: string): Promise<ErrorReport> {
+  const [report] = await db.update(errorReports)
+    .set({ resolved: true })
+    .where(eq(errorReports.id, id))
+    .returning();
+  return report;
+}
+
+export async function deleteResolvedErrorReports(): Promise<number> {
+  const result = await db.delete(errorReports).where(eq(errorReports.resolved, true)).returning();
+  return result.length;
 }

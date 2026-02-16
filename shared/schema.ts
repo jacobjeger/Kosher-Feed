@@ -96,6 +96,19 @@ export const adminNotifications = pgTable("admin_notifications", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const errorReports = pgTable("error_reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  deviceId: text("device_id"),
+  level: text("level").notNull().default("error"),
+  message: text("message").notNull(),
+  stack: text("stack"),
+  source: text("source"),
+  platform: text("platform"),
+  appVersion: text("app_version"),
+  resolved: boolean("resolved").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const insertFeedSchema = createInsertSchema(feeds).pick({
   title: true,
   rssUrl: true,
@@ -130,3 +143,4 @@ export type AdminUser = typeof adminUsers.$inferSelect;
 export type Favorite = typeof favorites.$inferSelect;
 export type PlaybackPosition = typeof playbackPositions.$inferSelect;
 export type AdminNotification = typeof adminNotifications.$inferSelect;
+export type ErrorReport = typeof errorReports.$inferSelect;

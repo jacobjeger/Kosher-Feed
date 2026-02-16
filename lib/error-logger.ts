@@ -1,7 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Platform } from "react-native";
+import { getApiUrl } from "@/lib/query-client";
 
 const LOG_KEY = "APP_ERROR_LOGS";
+const PENDING_REPORTS_KEY = "APP_PENDING_ERROR_REPORTS";
 const MAX_LOGS = 200;
+const REPORT_BATCH_INTERVAL = 30000;
+const REPORT_LEVELS: Set<string> = new Set(["error"]);
 
 export interface LogEntry {
   id: string;
@@ -15,6 +20,10 @@ export interface LogEntry {
 let logs: LogEntry[] = [];
 let listeners: Set<() => void> = new Set();
 let initialized = false;
+let pendingReports: LogEntry[] = [];
+let reportTimer: ReturnType<typeof setTimeout> | null = null;
+let isSendingReports = false;
+let deviceIdCache: string | null = null;
 
 function notifyListeners() {
   listeners.forEach((fn) => fn());
@@ -48,6 +57,100 @@ export function addLog(
   logs = [entry, ...logs].slice(0, MAX_LOGS);
   notifyListeners();
   persistLogs();
+
+  if (REPORT_LEVELS.has(level) && source !== "fetch") {
+    queueForServerReport(entry);
+  }
+}
+
+function queueForServerReport(entry: LogEntry) {
+  pendingReports.push(entry);
+  if (pendingReports.length >= 10) {
+    flushReportsToServer();
+  } else if (!reportTimer) {
+    reportTimer = setTimeout(() => {
+      reportTimer = null;
+      flushReportsToServer();
+    }, REPORT_BATCH_INTERVAL);
+  }
+}
+
+async function getDeviceIdForReport(): Promise<string | null> {
+  if (deviceIdCache) return deviceIdCache;
+  try {
+    const raw = await AsyncStorage.getItem("@shiurpod_device_id");
+    deviceIdCache = raw;
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
+async function flushReportsToServer() {
+  if (isSendingReports || pendingReports.length === 0) return;
+  isSendingReports = true;
+
+  const batch = pendingReports.splice(0, 20);
+
+  try {
+    const deviceId = await getDeviceIdForReport();
+    const baseUrl = getApiUrl();
+    const url = new URL("/api/error-reports/batch", baseUrl).toString();
+
+    const reports = batch.map(entry => ({
+      deviceId,
+      level: entry.level,
+      message: entry.message,
+      stack: entry.stack || null,
+      source: entry.source || null,
+      platform: Platform.OS,
+      appVersion: null,
+    }));
+
+    const origFetch = (globalThis as any).__origFetch || globalThis.fetch;
+    const res = await origFetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reports }),
+    });
+
+    if (!res.ok) {
+      await savePendingReports(batch);
+    }
+  } catch {
+    await savePendingReports(batch);
+  } finally {
+    isSendingReports = false;
+    if (pendingReports.length > 0) {
+      flushReportsToServer();
+    }
+  }
+}
+
+async function savePendingReports(entries: LogEntry[]) {
+  try {
+    const raw = await AsyncStorage.getItem(PENDING_REPORTS_KEY);
+    let existing: LogEntry[] = [];
+    if (raw) {
+      try { existing = JSON.parse(raw); } catch {}
+    }
+    const combined = [...existing, ...entries].slice(-50);
+    await AsyncStorage.setItem(PENDING_REPORTS_KEY, JSON.stringify(combined));
+  } catch {}
+}
+
+async function retryPendingReports() {
+  try {
+    const raw = await AsyncStorage.getItem(PENDING_REPORTS_KEY);
+    if (!raw) return;
+    const entries: LogEntry[] = JSON.parse(raw);
+    if (entries.length === 0) return;
+    await AsyncStorage.removeItem(PENDING_REPORTS_KEY);
+    for (const entry of entries) {
+      pendingReports.push(entry);
+    }
+    flushReportsToServer();
+  } catch {}
 }
 
 async function persistLogs() {
@@ -79,6 +182,7 @@ export function initErrorLogger() {
   initialized = true;
 
   loadLogs();
+  setTimeout(retryPendingReports, 10000);
 
   const origError = console.error;
   const origWarn = console.warn;
@@ -154,6 +258,7 @@ export function initErrorLogger() {
   }
 
   const origFetch = globalThis.fetch;
+  (globalThis as any).__origFetch = origFetch;
   if (origFetch) {
     globalThis.fetch = async (...args: Parameters<typeof fetch>) => {
       try {
@@ -165,13 +270,15 @@ export function initErrorLogger() {
               : args[0] instanceof Request
                 ? args[0].url
                 : String(args[0]);
-          const shortUrl = url.length > 120 ? url.substring(0, 120) + "..." : url;
-          addLog(
-            res.status >= 500 ? "error" : "warn",
-            `HTTP ${res.status} ${res.statusText} — ${shortUrl}`,
-            undefined,
-            "fetch"
-          );
+          if (!url.includes("/api/error-reports")) {
+            const shortUrl = url.length > 120 ? url.substring(0, 120) + "..." : url;
+            addLog(
+              res.status >= 500 ? "error" : "warn",
+              `HTTP ${res.status} ${res.statusText} — ${shortUrl}`,
+              undefined,
+              "fetch"
+            );
+          }
         }
         return res;
       } catch (err: any) {
@@ -181,8 +288,10 @@ export function initErrorLogger() {
             : args[0] instanceof Request
               ? args[0].url
               : String(args[0]);
-        const shortUrl = url.length > 120 ? url.substring(0, 120) + "..." : url;
-        addLog("error", `Network error: ${err?.message || "Unknown"} — ${shortUrl}`, err?.stack, "fetch");
+        if (!url.includes("/api/error-reports")) {
+          const shortUrl = url.length > 120 ? url.substring(0, 120) + "..." : url;
+          addLog("error", `Network error: ${err?.message || "Unknown"} — ${shortUrl}`, err?.stack, "fetch");
+        }
         throw err;
       }
     };

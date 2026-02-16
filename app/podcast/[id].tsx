@@ -14,6 +14,7 @@ import type { Feed, Episode, Subscription } from "@/lib/types";
 import { mediumHaptic, lightHaptic } from "@/lib/haptics";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useDownloads } from "@/contexts/DownloadsContext";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const EPISODE_LIMIT_OPTIONS = [3, 5, 10, 15, 25, 50];
 const PAGE_SIZE = 30;
@@ -26,7 +27,7 @@ interface PaginatedResponse {
   hasMore: boolean;
 }
 
-export default function PodcastDetailScreen() {
+function PodcastDetailScreenInner() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const colorScheme = useAppColorScheme();
@@ -395,6 +396,14 @@ export default function PodcastDetailScreen() {
         }
       />
     </View>
+  );
+}
+
+export default function PodcastDetailScreen() {
+  return (
+    <ErrorBoundary>
+      <PodcastDetailScreenInner />
+    </ErrorBoundary>
   );
 }
 
