@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
 import { View, Text, FlatList, ScrollView, Pressable, StyleSheet, useColorScheme, ActivityIndicator, RefreshControl, Platform, Dimensions, TextInput } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
@@ -13,6 +13,14 @@ import { queryClient } from "@/lib/query-client";
 import { router } from "expo-router";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { lightHaptic } from "@/lib/haptics";
+
+interface SavedPositionEntry {
+  episodeId: string;
+  feedId: string;
+  positionMs: number;
+  durationMs: number;
+  updatedAt: string;
+}
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
@@ -151,14 +159,51 @@ const SearchResultItem = React.memo(function SearchResultItem({ feed, colors }: 
   );
 });
 
+const ContinueListeningCard = React.memo(function ContinueListeningCard({ episode, feed, position, colors, onPlay }: { episode: Episode; feed: Feed; position: SavedPositionEntry; colors: any; onPlay: () => void }) {
+  const progress = position.durationMs > 0 ? position.positionMs / position.durationMs : 0;
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.continueCard,
+        { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.95 : 1 },
+      ]}
+      onPress={onPlay}
+    >
+      {feed.imageUrl ? (
+        <Image source={{ uri: feed.imageUrl }} style={styles.continueImage} contentFit="cover" cachePolicy="memory-disk" />
+      ) : (
+        <View style={[styles.continueImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
+          <Ionicons name="mic" size={20} color={colors.textSecondary} />
+        </View>
+      )}
+      <View style={styles.continueInfo}>
+        <Text style={[styles.continueEpTitle, { color: colors.text }]} numberOfLines={2}>
+          {episode.title}
+        </Text>
+        <Text style={[styles.continueFeedTitle, { color: colors.textSecondary }]} numberOfLines={1}>
+          {feed.title}
+        </Text>
+        <View style={[styles.continueProgressBg, { backgroundColor: colors.border }]}>
+          <View style={[styles.continueProgressFill, { width: `${Math.min(progress * 100, 100)}%` as any, backgroundColor: colors.accent }]} />
+        </View>
+      </View>
+    </Pressable>
+  );
+});
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
-  const { playEpisode, currentEpisode, playback, pause, resume, recentlyPlayed } = useAudioPlayer();
+  const { playEpisode, currentEpisode, playback, pause, resume, recentlyPlayed, getInProgressEpisodes } = useAudioPlayer();
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [inProgressPositions, setInProgressPositions] = useState<SavedPositionEntry[]>([]);
+
+  useEffect(() => {
+    getInProgressEpisodes().then(setInProgressPositions).catch(() => {});
+  }, [getInProgressEpisodes]);
 
   const categoriesQuery = useQuery<Category[]>({ queryKey: ["/api/categories"] });
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
@@ -198,6 +243,21 @@ export default function HomeScreen() {
     
     return { heroEpisode: hero, heroFeed: hFeed || null, quickPlayItems: qpItems };
   }, [trendingEpisodes, latestEpisodes, allFeeds]);
+
+  const continueListeningItems = useMemo(() => {
+    if (inProgressPositions.length === 0 || allFeeds.length === 0) return [];
+    const allEpisodes = latestQuery.data || [];
+    const episodeMap = new Map(allEpisodes.map(ep => [ep.id, ep]));
+    return inProgressPositions
+      .map(pos => {
+        const episode = episodeMap.get(pos.episodeId);
+        const feed = allFeeds.find(f => f.id === pos.feedId);
+        if (episode && feed) return { episode, feed, position: pos };
+        return null;
+      })
+      .filter(Boolean)
+      .slice(0, 10) as { episode: Episode; feed: Feed; position: SavedPositionEntry }[];
+  }, [inProgressPositions, latestQuery.data, allFeeds]);
 
   const recentlyListenedItems = useMemo(() => {
     if (recentlyPlayed.length === 0) return [];
@@ -342,6 +402,32 @@ export default function HomeScreen() {
           <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
             Shiurim will appear here once approved RSS feeds are added.
           </Text>
+        </View>
+      )}
+
+      {!isSearching && continueListeningItems.length > 0 && (
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Continue Listening</Text>
+          <FlatList
+            horizontal
+            data={continueListeningItems}
+            keyExtractor={(item) => item.episode.id}
+            renderItem={({ item }) => (
+              <ContinueListeningCard
+                episode={item.episode}
+                feed={item.feed}
+                position={item.position}
+                colors={colors}
+                onPlay={() => handlePlayEpisode(item.episode, item.feed)}
+              />
+            )}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 20 }}
+            initialNumToRender={5}
+            maxToRenderPerBatch={5}
+            windowSize={3}
+            removeClippedSubviews={Platform.OS !== "web"}
+          />
         </View>
       )}
 
@@ -702,5 +788,40 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 15,
     fontWeight: "600" as const,
+  },
+  continueCard: {
+    width: 160,
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: "hidden",
+    marginRight: 12,
+  },
+  continueImage: {
+    width: "100%" as any,
+    height: 100,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  continueInfo: {
+    padding: 10,
+    gap: 4,
+  },
+  continueEpTitle: {
+    fontSize: 12,
+    fontWeight: "600" as const,
+    lineHeight: 16,
+  },
+  continueFeedTitle: {
+    fontSize: 10,
+    fontWeight: "500" as const,
+  },
+  continueProgressBg: {
+    height: 3,
+    borderRadius: 2,
+    marginTop: 4,
+  },
+  continueProgressFill: {
+    height: "100%" as any,
+    borderRadius: 2,
   },
 });

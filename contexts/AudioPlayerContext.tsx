@@ -7,6 +7,7 @@ import { getDeviceId } from "@/lib/device-id";
 
 const POSITIONS_KEY = "@kosher_shiurim_positions";
 const RECENTLY_PLAYED_KEY = "@shiurpod_recently_played";
+const FEED_SPEEDS_KEY = "@shiurpod_feed_speeds";
 
 interface SavedPosition {
   episodeId: string;
@@ -30,6 +31,12 @@ interface PlaybackState {
   playbackRate: number;
 }
 
+interface SleepTimerState {
+  active: boolean;
+  remainingMs: number;
+  mode: "time" | "endOfEpisode";
+}
+
 interface AudioPlayerContextValue {
   currentEpisode: Episode | null;
   currentFeed: Feed | null;
@@ -43,11 +50,16 @@ interface AudioPlayerContextValue {
   stop: () => Promise<void>;
   getSavedPosition: (episodeId: string) => Promise<number>;
   recentlyPlayed: RecentlyPlayedEntry[];
+  getFeedSpeed: (feedId: string) => Promise<number>;
+  sleepTimer: SleepTimerState;
+  setSleepTimer: (minutes: number | "endOfEpisode") => void;
+  cancelSleepTimer: () => void;
+  getInProgressEpisodes: () => Promise<SavedPosition[]>;
 }
 
 const AudioPlayerContext = createContext<AudioPlayerContextValue | null>(null);
 
-async function loadPositions(): Promise<Record<string, SavedPosition>> {
+export async function loadPositions(): Promise<Record<string, SavedPosition>> {
   try {
     const data = await AsyncStorage.getItem(POSITIONS_KEY);
     return data ? JSON.parse(data) : {};
@@ -86,6 +98,25 @@ async function savePosition(episodeId: string, feedId: string, positionMs: numbe
   }
 }
 
+async function loadFeedSpeeds(): Promise<Record<string, number>> {
+  try {
+    const data = await AsyncStorage.getItem(FEED_SPEEDS_KEY);
+    return data ? JSON.parse(data) : {};
+  } catch {
+    return {};
+  }
+}
+
+async function saveFeedSpeed(feedId: string, rate: number) {
+  try {
+    const speeds = await loadFeedSpeeds();
+    speeds[feedId] = rate;
+    await AsyncStorage.setItem(FEED_SPEEDS_KEY, JSON.stringify(speeds));
+  } catch (e) {
+    console.error("Failed to save feed speed:", e);
+  }
+}
+
 export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   const [currentEpisode, setCurrentEpisode] = useState<Episode | null>(null);
   const [currentFeed, setCurrentFeed] = useState<Feed | null>(null);
@@ -97,6 +128,11 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     playbackRate: 1.0,
   });
   const [recentlyPlayed, setRecentlyPlayed] = useState<RecentlyPlayedEntry[]>([]);
+  const [sleepTimer, setSleepTimerState] = useState<SleepTimerState>({
+    active: false,
+    remainingMs: 0,
+    mode: "time",
+  });
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const soundRef = useRef<any>(null);
@@ -105,6 +141,12 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   const currentEpisodeRef = useRef<Episode | null>(null);
   const currentFeedRef = useRef<Feed | null>(null);
   const playbackRef = useRef<PlaybackState>(playback);
+  const sleepTimerIntervalRef = useRef<any>(null);
+  const sleepTimerRef = useRef<SleepTimerState>(sleepTimer);
+
+  useEffect(() => {
+    sleepTimerRef.current = sleepTimer;
+  }, [sleepTimer]);
 
   useEffect(() => {
     AsyncStorage.getItem(RECENTLY_PLAYED_KEY).then(data => {
@@ -140,6 +182,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
+      if (sleepTimerIntervalRef.current) clearInterval(sleepTimerIntervalRef.current);
     };
   }, []);
 
@@ -163,6 +206,26 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       return positions[episodeId]?.positionMs || 0;
     } catch {
       return 0;
+    }
+  }, []);
+
+  const getFeedSpeed = useCallback(async (feedId: string): Promise<number> => {
+    try {
+      const speeds = await loadFeedSpeeds();
+      return speeds[feedId] || 1.0;
+    } catch {
+      return 1.0;
+    }
+  }, []);
+
+  const getInProgressEpisodes = useCallback(async (): Promise<SavedPosition[]> => {
+    try {
+      const positions = await loadPositions();
+      return Object.values(positions).sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      );
+    } catch {
+      return [];
     }
   }, []);
 
@@ -192,6 +255,59 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     }, 500);
   }, []);
 
+  const pause = useCallback(async () => {
+    if (Platform.OS === "web") {
+      audioRef.current?.pause();
+    } else if (soundRef.current) {
+      await soundRef.current.pauseAsync?.();
+    }
+    setPlayback(prev => ({ ...prev, isPlaying: false }));
+    saveCurrentPosition();
+  }, [saveCurrentPosition]);
+
+  const pauseRef = useRef(pause);
+  useEffect(() => {
+    pauseRef.current = pause;
+  }, [pause]);
+
+  const setSleepTimerFn = useCallback((minutes: number | "endOfEpisode") => {
+    if (sleepTimerIntervalRef.current) {
+      clearInterval(sleepTimerIntervalRef.current);
+      sleepTimerIntervalRef.current = null;
+    }
+
+    if (minutes === "endOfEpisode") {
+      setSleepTimerState({ active: true, remainingMs: 0, mode: "endOfEpisode" });
+    } else {
+      const ms = minutes * 60 * 1000;
+      setSleepTimerState({ active: true, remainingMs: ms, mode: "time" });
+
+      sleepTimerIntervalRef.current = setInterval(() => {
+        setSleepTimerState(prev => {
+          if (!prev.active || prev.mode !== "time") return prev;
+          const newRemaining = prev.remainingMs - 1000;
+          if (newRemaining <= 0) {
+            if (sleepTimerIntervalRef.current) {
+              clearInterval(sleepTimerIntervalRef.current);
+              sleepTimerIntervalRef.current = null;
+            }
+            pauseRef.current();
+            return { active: false, remainingMs: 0, mode: "time" };
+          }
+          return { ...prev, remainingMs: newRemaining };
+        });
+      }, 1000);
+    }
+  }, []);
+
+  const cancelSleepTimer = useCallback(() => {
+    if (sleepTimerIntervalRef.current) {
+      clearInterval(sleepTimerIntervalRef.current);
+      sleepTimerIntervalRef.current = null;
+    }
+    setSleepTimerState({ active: false, remainingMs: 0, mode: "time" });
+  }, []);
+
   const playEpisode = useCallback(async (episode: Episode, feed: Feed) => {
     if (isLoadingRef.current) return;
     isLoadingRef.current = true;
@@ -201,7 +317,10 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     try {
       if (intervalRef.current) clearInterval(intervalRef.current);
 
-      const savedPos = await getSavedPosition(episode.id);
+      const [savedPos, feedSpeed] = await Promise.all([
+        getSavedPosition(episode.id),
+        getFeedSpeed(feed.id),
+      ]);
 
       if (Platform.OS === "web") {
         if (audioRef.current) {
@@ -209,13 +328,13 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           audioRef.current.src = "";
         }
         const audio = new Audio(episode.audioUrl);
-        audio.playbackRate = playback.playbackRate;
+        audio.playbackRate = feedSpeed;
         audio.preload = "auto";
         audioRef.current = audio;
 
         setCurrentEpisode(episode);
         setCurrentFeed(feed);
-        setPlayback(prev => ({ ...prev, isLoading: true, isPlaying: false, positionMs: savedPos, durationMs: 0 }));
+        setPlayback(prev => ({ ...prev, isLoading: true, isPlaying: false, positionMs: savedPos, durationMs: 0, playbackRate: feedSpeed }));
 
         audio.oncanplay = () => {
           if (savedPos > 0) {
@@ -228,6 +347,9 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         audio.onended = () => {
           setPlayback(prev => ({ ...prev, isPlaying: false }));
           savePosition(episode.id, feed.id, 0, 0);
+          if (sleepTimerRef.current.active && sleepTimerRef.current.mode === "endOfEpisode") {
+            cancelSleepTimer();
+          }
         };
         audio.onerror = () => {
           setPlayback(prev => ({ ...prev, isLoading: false }));
@@ -240,7 +362,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
         setCurrentEpisode(episode);
         setCurrentFeed(feed);
-        setPlayback(prev => ({ ...prev, isLoading: true, isPlaying: false, positionMs: savedPos, durationMs: 0 }));
+        setPlayback(prev => ({ ...prev, isLoading: true, isPlaying: false, positionMs: savedPos, durationMs: 0, playbackRate: feedSpeed }));
 
         const { Audio } = require("expo-av");
         await Audio.setAudioModeAsync({
@@ -252,7 +374,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
         const initialStatus: any = {
           shouldPlay: true,
-          rate: playback.playbackRate,
+          rate: feedSpeed,
           shouldCorrectPitch: true,
           progressUpdateIntervalMillis: 500,
           androidImplementation: "MediaPlayer",
@@ -282,17 +404,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     } finally {
       isLoadingRef.current = false;
     }
-  }, [playback.playbackRate, startPositionTracking, getSavedPosition, saveCurrentPosition, addRecentlyPlayed]);
-
-  const pause = useCallback(async () => {
-    if (Platform.OS === "web") {
-      audioRef.current?.pause();
-    } else if (soundRef.current) {
-      await soundRef.current.pauseAsync?.();
-    }
-    setPlayback(prev => ({ ...prev, isPlaying: false }));
-    saveCurrentPosition();
-  }, [saveCurrentPosition]);
+  }, [startPositionTracking, getSavedPosition, getFeedSpeed, saveCurrentPosition, addRecentlyPlayed, cancelSleepTimer]);
 
   const resume = useCallback(async () => {
     if (Platform.OS === "web") {
@@ -324,10 +436,15 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     } else if (soundRef.current) {
       await soundRef.current.setRateAsync?.(rate, true);
     }
+    const feed = currentFeedRef.current;
+    if (feed) {
+      saveFeedSpeed(feed.id, rate);
+    }
   }, []);
 
   const stop = useCallback(async () => {
     saveCurrentPosition();
+    cancelSleepTimer();
     if (intervalRef.current) clearInterval(intervalRef.current);
     if (Platform.OS === "web") {
       if (audioRef.current) {
@@ -343,7 +460,16 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     setCurrentEpisode(null);
     setCurrentFeed(null);
     setPlayback({ isPlaying: false, isLoading: false, positionMs: 0, durationMs: 0, playbackRate: 1.0 });
-  }, [saveCurrentPosition]);
+  }, [saveCurrentPosition, cancelSleepTimer]);
+
+  useEffect(() => {
+    if (sleepTimerRef.current.active && sleepTimerRef.current.mode === "endOfEpisode" && !playback.isPlaying && playback.positionMs > 0 && playback.durationMs > 0) {
+      const ratio = playback.positionMs / playback.durationMs;
+      if (ratio > 0.97) {
+        cancelSleepTimer();
+      }
+    }
+  }, [playback.isPlaying, playback.positionMs, playback.durationMs, cancelSleepTimer]);
 
   const value = useMemo(() => ({
     currentEpisode,
@@ -358,7 +484,12 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     stop,
     getSavedPosition,
     recentlyPlayed,
-  }), [currentEpisode, currentFeed, playback, playEpisode, pause, resume, seekTo, skip, setRate, stop, getSavedPosition, recentlyPlayed]);
+    getFeedSpeed,
+    sleepTimer,
+    setSleepTimer: setSleepTimerFn,
+    cancelSleepTimer,
+    getInProgressEpisodes,
+  }), [currentEpisode, currentFeed, playback, playEpisode, pause, resume, seekTo, skip, setRate, stop, getSavedPosition, recentlyPlayed, getFeedSpeed, sleepTimer, setSleepTimerFn, cancelSleepTimer, getInProgressEpisodes]);
 
   return (
     <AudioPlayerContext.Provider value={value}>
