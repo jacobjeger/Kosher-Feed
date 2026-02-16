@@ -91,3 +91,13 @@ Preferred communication style: Simple, everyday language.
 - **expo-haptics** — Haptic feedback on native
 - **expo-crypto** — UUID generation for device IDs
 - **zod** + **drizzle-zod** — Schema validation
+
+## Stability & Error Handling
+
+- **Per-screen ErrorBoundary**: Each tab screen (Home, Following, Favorites, Downloads, Settings) is wrapped in its own ErrorBoundary, so a crash in one screen doesn't take down the entire app
+- **Audio retry**: Web audio playback auto-retries up to 2 times on failure with exponential backoff; native resume is guarded against stale/unloaded sound refs
+- **Download validation**: On app start (native only), downloads are verified to ensure local files still exist; stale entries are automatically cleaned up
+- **Safe storage**: `lib/safe-storage.ts` provides `safeGetJSON`/`safeSetJSON` helpers with fallback values; all AsyncStorage JSON.parse calls are wrapped in try-catch throughout the codebase
+- **Offline banner**: `components/OfflineBanner.tsx` displays a dismissible red banner when the device loses internet connectivity (uses browser events on web, expo-network polling on native)
+- **Debug logs**: In-app debug log viewer accessible from Settings, captures errors, warnings, network failures, and unhandled promise rejections (filters out known dev warnings)
+- **Error logger**: `lib/error-logger.ts` captures global errors and stores them in AsyncStorage for the debug log screen
