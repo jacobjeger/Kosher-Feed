@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports } from "@shared/schema";
-import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport } from "@shared/schema";
+import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback } from "@shared/schema";
+import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback } from "@shared/schema";
 import { eq, and, desc, asc, inArray, sql, count, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
@@ -486,4 +486,53 @@ export async function resolveErrorReport(id: string): Promise<ErrorReport> {
 export async function deleteResolvedErrorReports(): Promise<number> {
   const result = await db.delete(errorReports).where(eq(errorReports.resolved, true)).returning();
   return result.length;
+}
+
+export async function createFeedback(data: {
+  deviceId: string | null;
+  type: string;
+  subject: string;
+  message: string;
+  contactInfo: string | null;
+}): Promise<Feedback> {
+  const [fb] = await db.insert(feedback).values(data).returning();
+  return fb;
+}
+
+export async function getFeedbackList(opts: {
+  page: number;
+  limit: number;
+  type?: string;
+  status?: string;
+}): Promise<{ items: Feedback[]; total: number; page: number; totalPages: number }> {
+  const conditions = [];
+  if (opts.type) conditions.push(eq(feedback.type, opts.type));
+  if (opts.status) conditions.push(eq(feedback.status, opts.status));
+
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const [{ total }] = await db.select({ total: count() }).from(feedback).where(where);
+  const items = await db.select().from(feedback)
+    .where(where)
+    .orderBy(desc(feedback.createdAt))
+    .limit(opts.limit)
+    .offset((opts.page - 1) * opts.limit);
+
+  return {
+    items,
+    total: Number(total),
+    page: opts.page,
+    totalPages: Math.ceil(Number(total) / opts.limit),
+  };
+}
+
+export async function updateFeedbackStatus(id: string, status: string, adminNotes?: string): Promise<Feedback> {
+  const set: any = { status };
+  if (adminNotes !== undefined) set.adminNotes = adminNotes;
+  const [fb] = await db.update(feedback).set(set).where(eq(feedback.id, id)).returning();
+  return fb;
+}
+
+export async function deleteFeedback(id: string): Promise<void> {
+  await db.delete(feedback).where(eq(feedback.id, id));
 }

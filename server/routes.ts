@@ -719,6 +719,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Feedback - public endpoint (no auth needed)
+  app.post("/api/feedback", async (req: Request, res: Response) => {
+    try {
+      const { deviceId, type, subject, message, contactInfo } = req.body;
+      if (!subject || !message) return res.status(400).json({ error: "subject and message required" });
+      if (!["shiur_request", "technical_issue"].includes(type)) return res.status(400).json({ error: "type must be shiur_request or technical_issue" });
+      const fb = await storage.createFeedback({
+        deviceId: deviceId || null,
+        type: type || "shiur_request",
+        subject: (subject as string).substring(0, 200),
+        message: (message as string).substring(0, 5000),
+        contactInfo: contactInfo ? (contactInfo as string).substring(0, 200) : null,
+      });
+      res.json({ ok: true, id: fb.id });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Feedback management
+  app.get("/api/admin/feedback", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = Math.min(parseInt(req.query.limit as string) || 30, 100);
+      const type = req.query.type as string || undefined;
+      const status = req.query.status as string || undefined;
+      const data = await storage.getFeedbackList({ page, limit, type, status });
+      res.json(data);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.put("/api/admin/feedback/:id", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { status, adminNotes } = req.body;
+      const fb = await storage.updateFeedbackStatus(req.params.id, status, adminNotes);
+      res.json(fb);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/admin/feedback/:id", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteFeedback(req.params.id);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
