@@ -799,13 +799,31 @@ async function refreshAllFeeds() {
   }
 }
 
+let bulkSelectedFeeds = [];
+
 function showBulkImportModal() {
+  bulkSelectedFeeds = [];
   document.getElementById('modalContent').innerHTML = `
-    <h2 style="margin-bottom:16px;color:#f8fafc;">Bulk Import RSS Feeds</h2>
-    <p style="color:#94a3b8;margin-bottom:16px;font-size:13px;">Paste one RSS URL per line. Each URL will be added as a new feed.</p>
-    <div class="form-group">
-      <label>RSS URLs (one per line)</label>
-      <textarea id="bulkUrls" rows="10" placeholder="https://example.com/feed1.xml&#10;https://example.com/feed2.xml&#10;https://example.com/feed3.xml"></textarea>
+    <h2 style="margin-bottom:16px;color:#f8fafc;">Bulk Import Shiurim</h2>
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <button class="btn btn-primary btn-sm" onclick="showBulkSearchView()" id="bulkSearchBtn" style="opacity:1;">Search</button>
+      <button class="btn btn-secondary btn-sm" onclick="showBulkUrlView()" id="bulkUrlBtn">Paste URLs</button>
+    </div>
+    <div id="bulkSearchView">
+      <div class="form-group" style="margin-bottom:8px;">
+        <div style="display:flex;gap:6px;">
+          <input type="text" id="bulkSearchInput" placeholder="Search podcasts..." style="flex:1;" onkeydown="if(event.key==='Enter')bulkSearch()">
+          <button class="btn btn-primary btn-sm" onclick="bulkSearch()">Search</button>
+        </div>
+      </div>
+      <div id="bulkSearchResults" style="max-height:300px;overflow-y:auto;margin-bottom:8px;"></div>
+      <div id="bulkSelectedSummary" style="margin-bottom:8px;"></div>
+    </div>
+    <div id="bulkUrlView" class="hidden">
+      <div class="form-group">
+        <label>RSS URLs (one per line)</label>
+        <textarea id="bulkUrls" rows="8" placeholder="https://example.com/feed1.xml&#10;https://example.com/feed2.xml"></textarea>
+      </div>
     </div>
     <div class="form-group">
       <label>Category (optional)</label>
@@ -816,26 +834,111 @@ function showBulkImportModal() {
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;">
       <button class="btn btn-secondary" onclick="closeModal(event)">Cancel</button>
-      <button class="btn btn-primary" onclick="bulkImport()">Import All</button>
+      <button class="btn btn-primary" onclick="bulkImport()" id="bulkImportBtn">Import Selected (0)</button>
     </div>
   `;
   document.getElementById('modalOverlay').classList.remove('hidden');
+  setTimeout(() => document.getElementById('bulkSearchInput')?.focus(), 100);
+}
+
+function showBulkSearchView() {
+  document.getElementById('bulkSearchView').classList.remove('hidden');
+  document.getElementById('bulkUrlView').classList.add('hidden');
+  document.getElementById('bulkSearchBtn').classList.remove('btn-secondary');
+  document.getElementById('bulkSearchBtn').classList.add('btn-primary');
+  document.getElementById('bulkUrlBtn').classList.remove('btn-primary');
+  document.getElementById('bulkUrlBtn').classList.add('btn-secondary');
+}
+
+function showBulkUrlView() {
+  document.getElementById('bulkSearchView').classList.add('hidden');
+  document.getElementById('bulkUrlView').classList.remove('hidden');
+  document.getElementById('bulkUrlBtn').classList.remove('btn-secondary');
+  document.getElementById('bulkUrlBtn').classList.add('btn-primary');
+  document.getElementById('bulkSearchBtn').classList.remove('btn-primary');
+  document.getElementById('bulkSearchBtn').classList.add('btn-secondary');
+}
+
+async function bulkSearch() {
+  const term = document.getElementById('bulkSearchInput').value.trim();
+  if (term.length < 2) return showAlert('Enter at least 2 characters', 'error');
+  const results = document.getElementById('bulkSearchResults');
+  results.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:20px;">Searching...</p>';
+  try {
+    const data = await api(`/api/admin/search-podcasts?term=${encodeURIComponent(term)}`);
+    if (!data.results || data.results.length === 0) {
+      results.innerHTML = '<p style="color:#64748b;text-align:center;padding:20px;">No results found</p>';
+      return;
+    }
+    results.innerHTML = data.results.map(r => {
+      const isSelected = bulkSelectedFeeds.some(f => f.feedUrl === r.feedUrl);
+      return `<div style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;background:${isSelected ? '#1e3a5f' : '#0f172a'};margin-bottom:4px;cursor:pointer;" onclick="toggleBulkSelect('${esc(r.feedUrl)}','${esc(r.name)}','${esc(r.artworkUrl || '')}')">
+        <input type="checkbox" ${isSelected ? 'checked' : ''} style="flex-shrink:0;width:18px;height:18px;accent-color:#3b82f6;" onclick="event.stopPropagation();toggleBulkSelect('${esc(r.feedUrl)}','${esc(r.name)}','${esc(r.artworkUrl || '')}')">
+        ${r.artworkUrl ? `<img src="${esc(r.artworkUrl)}" style="width:40px;height:40px;border-radius:6px;object-fit:cover;flex-shrink:0;">` : '<div style="width:40px;height:40px;border-radius:6px;background:#334155;flex-shrink:0;"></div>'}
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:600;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(r.name)}</div>
+          <div style="font-size:11px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(r.artist || '')} ${r.episodeCount ? '· ' + r.episodeCount + ' episodes' : ''}</div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    results.innerHTML = `<p style="color:#ef4444;text-align:center;padding:20px;">${e.message}</p>`;
+  }
+}
+
+function toggleBulkSelect(feedUrl, name, artworkUrl) {
+  const idx = bulkSelectedFeeds.findIndex(f => f.feedUrl === feedUrl);
+  if (idx >= 0) {
+    bulkSelectedFeeds.splice(idx, 1);
+  } else {
+    bulkSelectedFeeds.push({ feedUrl, name, artworkUrl });
+  }
+  updateBulkSummary();
+  const results = document.getElementById('bulkSearchResults');
+  if (results.children.length > 0) bulkSearch();
+}
+
+function updateBulkSummary() {
+  const btn = document.getElementById('bulkImportBtn');
+  if (btn) btn.textContent = `Import Selected (${bulkSelectedFeeds.length})`;
+  const summary = document.getElementById('bulkSelectedSummary');
+  if (!summary) return;
+  if (bulkSelectedFeeds.length === 0) {
+    summary.innerHTML = '';
+    return;
+  }
+  summary.innerHTML = `
+    <div style="font-size:12px;color:#3b82f6;margin-bottom:4px;">${bulkSelectedFeeds.length} selected:</div>
+    <div style="display:flex;flex-wrap:wrap;gap:4px;">
+      ${bulkSelectedFeeds.map(f => `<span style="background:#1e3a5f;color:#93c5fd;padding:2px 8px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
+        ${esc(f.name.length > 25 ? f.name.substring(0,25) + '...' : f.name)}
+        <span style="cursor:pointer;font-weight:bold;" onclick="event.stopPropagation();toggleBulkSelect('${esc(f.feedUrl)}','${esc(f.name)}','${esc(f.artworkUrl || '')}')">×</span>
+      </span>`).join('')}
+    </div>`;
 }
 
 async function bulkImport() {
-  const urlsText = document.getElementById('bulkUrls').value.trim();
-  if (!urlsText) return showAlert('Please enter at least one URL', 'error');
-  
-  const urls = urlsText.split('\n').map(u => u.trim()).filter(u => u.length > 0);
-  if (urls.length === 0) return showAlert('No valid URLs found', 'error');
-  
+  const isUrlView = !document.getElementById('bulkUrlView').classList.contains('hidden');
+  let urls = [];
+
+  if (isUrlView) {
+    const urlsText = (document.getElementById('bulkUrls')?.value || '').trim();
+    if (!urlsText) return showAlert('Please enter at least one URL', 'error');
+    urls = urlsText.split('\n').map(u => u.trim()).filter(u => u.length > 0);
+  } else {
+    urls = bulkSelectedFeeds.map(f => f.feedUrl);
+  }
+
+  if (urls.length === 0) return showAlert('No feeds selected', 'error');
   const categoryId = document.getElementById('bulkCategory').value || null;
-  
+
   try {
     showAlert(`Importing ${urls.length} feeds... This may take a moment.`, 'info');
     const result = await api('/api/admin/feeds/bulk-import', { method: 'POST', body: JSON.stringify({ feeds: urls, categoryId }) });
     closeModal(new Event('click'));
-    showAlert(`Successfully imported ${result.results.filter(r => r.success).length} feeds! ${result.results.filter(r => !r.success).length} failed.`, 'success');
+    const successes = result.results.filter(r => r.success).length;
+    const failures = result.results.filter(r => !r.success).length;
+    showAlert(`Imported ${successes} feeds!${failures > 0 ? ` ${failures} failed.` : ''}`, 'success');
     await Promise.all([loadFeeds(), loadAnalytics()]);
   } catch (e) {
     showAlert('Bulk import failed: ' + e.message, 'error');
@@ -989,6 +1092,31 @@ async function deleteResolvedErrors() {
   }
 }
 
+function toggleDeviceLogs(id) {
+  const el = document.getElementById('logs-' + id);
+  if (el) el.classList.toggle('hidden');
+}
+
+function formatDeviceLogs(logsStr) {
+  try {
+    const logs = JSON.parse(logsStr);
+    if (!Array.isArray(logs)) return esc(logsStr);
+    return logs.map(log => {
+      const levelColor = log.level === 'error' ? '#ef4444' : log.level === 'warn' ? '#f59e0b' : '#94a3b8';
+      const ts = log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : '';
+      return `<div style="margin-bottom:3px;border-bottom:1px solid #1e293b;padding-bottom:3px;">
+        <span style="color:${levelColor};font-weight:600;">[${esc(log.level || 'info')}]</span>
+        <span style="color:#64748b;">${ts}</span>
+        ${log.source ? `<span style="color:#6366f1;">[${esc(log.source)}]</span>` : ''}
+        <span style="color:#e2e8f0;">${esc(log.message || '')}</span>
+        ${log.stack ? `<div style="color:#64748b;margin-left:12px;font-size:10px;white-space:pre-wrap;">${esc(log.stack.substring(0, 500))}</div>` : ''}
+      </div>`;
+    }).join('');
+  } catch {
+    return esc(logsStr);
+  }
+}
+
 let feedbackPage = 1;
 
 async function loadFeedback(page) {
@@ -1024,6 +1152,12 @@ async function loadFeedback(page) {
         ${fb.contactInfo ? `<div style="font-size:12px;color:#3b82f6;margin-bottom:8px;">Contact: ${esc(fb.contactInfo)}</div>` : ''}
         ${fb.adminNotes ? `<div style="font-size:12px;color:#a78bfa;margin-bottom:8px;padding:6px 8px;background:#1e1b4b;border-radius:6px;">Admin: ${esc(fb.adminNotes)}</div>` : ''}
         <div style="font-size:11px;color:#475569;margin-bottom:8px;">Device: ${esc(fb.deviceId || 'Unknown')}</div>
+        ${fb.deviceLogs ? `<div style="margin-bottom:8px;">
+          <button class="btn btn-secondary btn-sm" onclick="toggleDeviceLogs('${fb.id}')" style="font-size:11px;">View Device Logs</button>
+          <div id="logs-${fb.id}" class="hidden" style="margin-top:6px;background:#020617;border:1px solid #1e293b;border-radius:6px;padding:8px;max-height:200px;overflow-y:auto;font-family:monospace;font-size:11px;color:#94a3b8;">
+            ${formatDeviceLogs(fb.deviceLogs)}
+          </div>
+        </div>` : ''}
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           <button class="btn btn-secondary btn-sm" onclick="updateFeedbackStatus('${fb.id}','reviewed')">Mark Reviewed</button>
           <button class="btn btn-success btn-sm" onclick="updateFeedbackStatus('${fb.id}','resolved')">Resolve</button>
