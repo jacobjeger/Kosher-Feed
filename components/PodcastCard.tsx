@@ -13,7 +13,7 @@ interface Props {
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
-export default function PodcastCard({ feed, size = "small" }: Props) {
+function PodcastCard({ feed, size = "small" }: Props) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
@@ -28,7 +28,7 @@ export default function PodcastCard({ feed, size = "small" }: Props) {
         onPress={() => router.push({ pathname: "/podcast/[id]", params: { id: feed.id } })}
       >
         {feed.imageUrl ? (
-          <Image source={{ uri: feed.imageUrl }} style={styles.featuredImage} contentFit="cover" />
+          <Image source={{ uri: feed.imageUrl }} style={styles.featuredImage} contentFit="cover" cachePolicy="memory-disk" />
         ) : (
           <View style={[styles.featuredImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
             <Ionicons name="mic" size={48} color={colors.textSecondary} />
@@ -69,7 +69,7 @@ export default function PodcastCard({ feed, size = "small" }: Props) {
         onPress={() => router.push({ pathname: "/podcast/[id]", params: { id: feed.id } })}
       >
         {feed.imageUrl ? (
-          <Image source={{ uri: feed.imageUrl }} style={styles.mediumImage} contentFit="cover" />
+          <Image source={{ uri: feed.imageUrl }} style={styles.mediumImage} contentFit="cover" cachePolicy="memory-disk" />
         ) : (
           <View style={[styles.mediumImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
             <Ionicons name="mic" size={28} color={colors.textSecondary} />
@@ -98,7 +98,7 @@ export default function PodcastCard({ feed, size = "small" }: Props) {
       onPress={() => router.push({ pathname: "/podcast/[id]", params: { id: feed.id } })}
     >
       {feed.imageUrl ? (
-        <Image source={{ uri: feed.imageUrl }} style={styles.smallImage} contentFit="cover" />
+        <Image source={{ uri: feed.imageUrl }} style={styles.smallImage} contentFit="cover" cachePolicy="memory-disk" />
       ) : (
         <View style={[styles.smallImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="mic" size={24} color={colors.textSecondary} />
@@ -218,3 +218,5 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
 });
+
+export default React.memo(PodcastCard);

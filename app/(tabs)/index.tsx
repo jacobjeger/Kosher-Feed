@@ -20,14 +20,14 @@ interface TrendingEpisode extends Episode {
   listenCount: number;
 }
 
-function TrendingHero({ episode, feed, colors, onPlay }: { episode: TrendingEpisode; feed: Feed; colors: any; onPlay: () => void }) {
+const TrendingHero = React.memo(function TrendingHero({ episode, feed, colors, onPlay }: { episode: TrendingEpisode; feed: Feed; colors: any; onPlay: () => void }) {
   return (
     <Pressable
       style={({ pressed }) => [styles.heroCard, { opacity: pressed ? 0.95 : 1 }]}
       onPress={onPlay}
     >
       {feed.imageUrl ? (
-        <Image source={{ uri: feed.imageUrl }} style={styles.heroImage} contentFit="cover" />
+        <Image source={{ uri: feed.imageUrl }} style={styles.heroImage} contentFit="cover" cachePolicy="memory-disk" />
       ) : (
         <View style={[styles.heroImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="mic" size={56} color={colors.textSecondary} />
@@ -55,9 +55,9 @@ function TrendingHero({ episode, feed, colors, onPlay }: { episode: TrendingEpis
       </View>
     </Pressable>
   );
-}
+});
 
-function TrendingEpisodeCard({ episode, feed, rank, colors, onPlay }: { episode: TrendingEpisode; feed: Feed; rank: number; colors: any; onPlay: () => void }) {
+const TrendingEpisodeCard = React.memo(function TrendingEpisodeCard({ episode, feed, rank, colors, onPlay }: { episode: TrendingEpisode; feed: Feed; rank: number; colors: any; onPlay: () => void }) {
   return (
     <Pressable
       style={({ pressed }) => [
@@ -70,7 +70,7 @@ function TrendingEpisodeCard({ episode, feed, rank, colors, onPlay }: { episode:
         <Text style={[styles.rankText, { color: rank <= 3 ? "#fff" : colors.textSecondary }]}>{rank}</Text>
       </View>
       {feed.imageUrl ? (
-        <Image source={{ uri: feed.imageUrl }} style={styles.trendingImage} contentFit="cover" />
+        <Image source={{ uri: feed.imageUrl }} style={styles.trendingImage} contentFit="cover" cachePolicy="memory-disk" />
       ) : (
         <View style={[styles.trendingImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="mic" size={16} color={colors.textSecondary} />
@@ -97,9 +97,9 @@ function TrendingEpisodeCard({ episode, feed, rank, colors, onPlay }: { episode:
       </View>
     </Pressable>
   );
-}
+});
 
-function CategorySection({ category, feeds, colors }: { category: Category; feeds: Feed[]; colors: any }) {
+const CategorySection = React.memo(function CategorySection({ category, feeds, colors }: { category: Category; feeds: Feed[]; colors: any }) {
   if (feeds.length === 0) return null;
   return (
     <View style={styles.section}>
@@ -111,12 +111,16 @@ function CategorySection({ category, feeds, colors }: { category: Category; feed
         renderItem={({ item }) => <PodcastCard feed={item} size="small" />}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 20 }}
+        initialNumToRender={5}
+        maxToRenderPerBatch={5}
+        windowSize={3}
+        removeClippedSubviews={Platform.OS !== "web"}
       />
     </View>
   );
-}
+});
 
-function SearchResultItem({ feed, colors }: { feed: Feed; colors: any }) {
+const SearchResultItem = React.memo(function SearchResultItem({ feed, colors }: { feed: Feed; colors: any }) {
   return (
     <Pressable
       style={({ pressed }) => [
@@ -126,7 +130,7 @@ function SearchResultItem({ feed, colors }: { feed: Feed; colors: any }) {
       onPress={() => router.push(`/podcast/${feed.id}`)}
     >
       {feed.imageUrl ? (
-        <Image source={{ uri: feed.imageUrl }} style={styles.searchResultImage} contentFit="cover" />
+        <Image source={{ uri: feed.imageUrl }} style={styles.searchResultImage} contentFit="cover" cachePolicy="memory-disk" />
       ) : (
         <View style={[styles.searchResultImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="mic" size={20} color={colors.textSecondary} />
@@ -145,7 +149,7 @@ function SearchResultItem({ feed, colors }: { feed: Feed; colors: any }) {
       <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
     </Pressable>
   );
-}
+});
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
@@ -167,14 +171,14 @@ export default function HomeScreen() {
   const latestEpisodes = (latestQuery.data || []).slice(0, 20);
   const trendingEpisodes = trendingQuery.data || [];
 
-  const handlePlayEpisode = (episode: Episode, feed: Feed) => {
+  const handlePlayEpisode = useCallback((episode: Episode, feed: Feed) => {
     lightHaptic();
     if (currentEpisode?.id === episode.id) {
       playback.isPlaying ? pause() : resume();
     } else {
       playEpisode(episode, feed);
     }
-  };
+  }, [currentEpisode?.id, playback.isPlaying, pause, resume, playEpisode]);
 
   const { heroEpisode, heroFeed, quickPlayItems } = useMemo(() => {
     const trending = trendingEpisodes.length > 0 ? trendingEpisodes : latestEpisodes.map(e => ({ ...e, listenCount: 0 }));
@@ -220,12 +224,12 @@ export default function HomeScreen() {
 
   const isSearching = searchQuery.trim().length > 0;
 
-  const onRefresh = () => {
+  const onRefresh = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/categories"] });
     queryClient.invalidateQueries({ queryKey: ["/api/feeds"] });
     queryClient.invalidateQueries({ queryKey: ["/api/episodes/latest"] });
     queryClient.invalidateQueries({ queryKey: ["/api/episodes/trending"] });
-  };
+  }, []);
 
   if (isLoading) {
     return (
@@ -353,6 +357,10 @@ export default function HomeScreen() {
             renderItem={({ item }) => <PodcastCard feed={item} size="small" />}
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ paddingHorizontal: 20 }}
+            initialNumToRender={5}
+            maxToRenderPerBatch={5}
+            windowSize={3}
+            removeClippedSubviews={Platform.OS !== "web"}
           />
         </View>
       )}

@@ -38,7 +38,7 @@ function formatDate(dateStr: string | null): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-export default function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
+function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
   const { playEpisode, currentEpisode, playback, pause, resume } = useAudioPlayer();
   const { downloadEpisode, isDownloaded, isDownloading, downloadProgress } = useDownloads();
   const colorScheme = useColorScheme();
@@ -221,3 +221,5 @@ const styles = StyleSheet.create({
     fontWeight: "700" as const,
   },
 });
+
+export default React.memo(EpisodeItem);

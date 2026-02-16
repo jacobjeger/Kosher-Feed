@@ -48,6 +48,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/categories", async (_req: Request, res: Response) => {
     try {
       const cats = await storage.getAllCategories();
+      res.setHeader("Cache-Control", "public, max-age=60");
       res.json(cats);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -77,6 +78,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/feeds", async (_req: Request, res: Response) => {
     try {
       const feedList = await storage.getActiveFeeds();
+      res.setHeader("Cache-Control", "public, max-age=60");
       res.json(feedList);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -95,6 +97,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/feeds/:id/episodes", async (req: Request, res: Response) => {
     try {
       const eps = await storage.getEpisodesByFeed(req.params.id);
+      res.setHeader("Cache-Control", "public, max-age=30");
       res.json(eps);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -203,6 +206,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const limit = parseInt(req.query.limit as string) || 50;
       const eps = await storage.getLatestEpisodes(limit);
+      res.setHeader("Cache-Control", "public, max-age=30");
       res.json(eps);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -225,6 +229,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const limit = parseInt(req.query.limit as string) || 20;
       const eps = await storage.getTrendingEpisodes(limit);
+      res.setHeader("Cache-Control", "public, max-age=30");
       res.json(eps);
     } catch (e: any) {
       res.status(500).json({ error: e.message });

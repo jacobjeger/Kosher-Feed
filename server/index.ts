@@ -1,5 +1,6 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
+import compression from "compression";
 import { registerRoutes } from "./routes";
 import { seedIfEmpty } from "./seed";
 import * as fs from "fs";
@@ -266,6 +267,7 @@ function setupErrorHandler(app: express.Application) {
 
 (async () => {
   setupCors(app);
+  app.use(compression());
   setupBodyParsing(app);
   setupRequestLogging(app);
 
