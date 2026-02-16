@@ -8,6 +8,12 @@ interface AppSettings {
   notificationsEnabled: boolean;
   autoDownloadOnWifi: boolean;
   maxEpisodesPerFeed: number;
+  skipForwardSeconds: number;
+  skipBackwardSeconds: number;
+  audioBoostEnabled: boolean;
+  darkModeOverride: 'system' | 'light' | 'dark';
+  dailyReminderEnabled: boolean;
+  dailyReminderHour: number;
 }
 
 export interface FeedSettings {
@@ -19,6 +25,12 @@ const DEFAULT_SETTINGS: AppSettings = {
   notificationsEnabled: false,
   autoDownloadOnWifi: false,
   maxEpisodesPerFeed: 5,
+  skipForwardSeconds: 30,
+  skipBackwardSeconds: 30,
+  audioBoostEnabled: false,
+  darkModeOverride: 'system',
+  dailyReminderEnabled: false,
+  dailyReminderHour: 8,
 };
 
 interface SettingsContextValue {

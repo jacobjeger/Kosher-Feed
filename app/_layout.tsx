@@ -9,6 +9,7 @@ import { queryClient } from "@/lib/query-client";
 import { AudioPlayerProvider } from "@/contexts/AudioPlayerContext";
 import { DownloadsProvider } from "@/contexts/DownloadsContext";
 import { SettingsProvider } from "@/contexts/SettingsContext";
+import { FavoritesProvider } from "@/contexts/FavoritesContext";
 import { BackgroundSync } from "@/components/BackgroundSync";
 import { setupNotificationChannel } from "@/lib/notifications";
 
@@ -48,12 +49,14 @@ export default function RootLayout() {
         <SettingsProvider>
           <AudioPlayerProvider>
             <DownloadsProvider>
-              <GestureHandlerRootView>
-                <KeyboardProvider>
-                  <BackgroundSync />
-                  <RootLayoutNav />
-                </KeyboardProvider>
-              </GestureHandlerRootView>
+              <FavoritesProvider>
+                <GestureHandlerRootView>
+                  <KeyboardProvider>
+                    <BackgroundSync />
+                    <RootLayoutNav />
+                  </KeyboardProvider>
+                </GestureHandlerRootView>
+              </FavoritesProvider>
             </DownloadsProvider>
           </AudioPlayerProvider>
         </SettingsProvider>

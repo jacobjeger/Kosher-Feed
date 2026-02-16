@@ -7,6 +7,8 @@ export interface Feed {
   author: string | null;
   categoryId: string | null;
   isActive: boolean;
+  isFeatured: boolean;
+  scheduledPublishAt: string | null;
   lastFetchedAt: string | null;
   createdAt: string;
 }
@@ -21,7 +23,33 @@ export interface Episode {
   publishedAt: string | null;
   guid: string;
   imageUrl: string | null;
+  adminNotes: string | null;
+  sourceSheetUrl: string | null;
   createdAt: string;
+}
+
+export interface Favorite {
+  id: string;
+  episodeId: string;
+  deviceId: string;
+  createdAt: string;
+}
+
+export interface PlaybackPosition {
+  id: string;
+  episodeId: string;
+  feedId: string;
+  deviceId: string;
+  positionMs: number;
+  durationMs: number;
+  completed: boolean;
+  updatedAt: string;
+}
+
+export interface ListeningStats {
+  totalListens: number;
+  uniqueEpisodes: number;
+  topFeeds: { feedId: string; title: string; count: number }[];
 }
 
 export interface Category {

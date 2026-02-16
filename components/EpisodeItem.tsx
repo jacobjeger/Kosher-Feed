@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { View, Text, Pressable, StyleSheet, useColorScheme } from "react-native";
+import { View, Text, Pressable, StyleSheet, useColorScheme, Linking } from "react-native";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { useDownloads } from "@/contexts/DownloadsContext";
+import { useFavorites } from "@/contexts/FavoritesContext";
 import Colors from "@/constants/colors";
 import type { Episode, Feed } from "@/lib/types";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
@@ -41,6 +42,7 @@ function formatDate(dateStr: string | null): string {
 function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
   const { playEpisode, currentEpisode, playback, pause, resume, queue, addToQueue } = useAudioPlayer();
   const { downloadEpisode, isDownloaded, isDownloading, downloadProgress } = useDownloads();
+  const { isFavorite, toggleFavorite } = useFavorites();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
@@ -51,6 +53,7 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
   const downloading = isDownloading(episode.id);
   const progress = downloading ? downloadProgress.get(episode.id) || 0 : 0;
   const isInQueue = queue.some((item) => item.episodeId === episode.id);
+  const favorited = isFavorite(episode.id);
 
   const handlePlay = async () => {
     lightHaptic();
@@ -76,6 +79,17 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
   const handleToggleExpand = () => {
     lightHaptic();
     setExpanded(prev => !prev);
+  };
+
+  const handleToggleFavorite = async () => {
+    lightHaptic();
+    await toggleFavorite(episode.id);
+  };
+
+  const handleOpenSourceSheet = async () => {
+    if (episode.sourceSheetUrl) {
+      await Linking.openURL(episode.sourceSheetUrl);
+    }
   };
 
   return (
@@ -127,6 +141,31 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
               {episode.description}
             </Text>
           )}
+          {expanded && episode.sourceSheetUrl && (
+            <Pressable
+              onPress={handleOpenSourceSheet}
+              style={[styles.sourceSheetLink, { borderTopColor: colors.cardBorder }]}
+            >
+              <Ionicons name="open-outline" size={14} color={colors.accent} />
+              <Text style={[styles.sourceSheetText, { color: colors.accent }]}>
+                View Source Sheet
+              </Text>
+            </Pressable>
+          )}
+        </Pressable>
+        <Pressable
+          onPress={(e) => {
+            e.stopPropagation();
+            handleToggleFavorite();
+          }}
+          hitSlop={10}
+          style={styles.actionBtn}
+        >
+          <Ionicons
+            name={favorited ? "star" : "star-outline"}
+            size={22}
+            color={favorited ? colors.accent : colors.textSecondary}
+          />
         </Pressable>
         <Pressable
           onPress={(e) => {
@@ -224,6 +263,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     marginTop: 6,
+  },
+  sourceSheetLink: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    gap: 6,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+  },
+  sourceSheetText: {
+    fontSize: 12,
+    fontWeight: "600" as const,
   },
   actionBtn: {
     width: 32,

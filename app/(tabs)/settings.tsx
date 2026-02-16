@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { View, Text, Pressable, StyleSheet, useColorScheme, ScrollView, Platform, Switch, Alert, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
+import { router } from "expo-router";
 import Colors from "@/constants/colors";
 import { getDeviceId } from "@/lib/device-id";
 import { getApiUrl } from "@/lib/query-client";
@@ -11,6 +12,10 @@ import { requestNotificationPermissions } from "@/lib/notifications";
 import { lightHaptic } from "@/lib/haptics";
 
 const EPISODE_LIMIT_OPTIONS = [3, 5, 10, 15, 25, 50];
+const SKIP_OPTIONS = [10, 15, 30, 45, 60];
+const THEME_OPTIONS: Array<'system' | 'light' | 'dark'> = ['system', 'light', 'dark'];
+const THEME_LABELS: Record<string, string> = { system: 'System', light: 'Light', dark: 'Dark' };
+const REMINDER_HOUR_OPTIONS = [6, 7, 8, 9, 10, 12, 18, 20];
 
 interface SettingRowProps {
   icon: React.ReactNode;
@@ -131,6 +136,94 @@ export default function SettingsScreen() {
     );
   };
 
+  const handleChangeSkipForward = () => {
+    lightHaptic();
+    if (Platform.OS === "web") {
+      const currentIndex = SKIP_OPTIONS.indexOf(settings.skipForwardSeconds);
+      const nextIndex = (currentIndex + 1) % SKIP_OPTIONS.length;
+      updateSettings({ skipForwardSeconds: SKIP_OPTIONS[nextIndex] });
+      return;
+    }
+    Alert.alert(
+      "Skip Forward",
+      "Choose skip forward duration.",
+      SKIP_OPTIONS.map(n => ({
+        text: `${n}s`,
+        onPress: () => updateSettings({ skipForwardSeconds: n }),
+      })),
+    );
+  };
+
+  const handleChangeSkipBackward = () => {
+    lightHaptic();
+    if (Platform.OS === "web") {
+      const currentIndex = SKIP_OPTIONS.indexOf(settings.skipBackwardSeconds);
+      const nextIndex = (currentIndex + 1) % SKIP_OPTIONS.length;
+      updateSettings({ skipBackwardSeconds: SKIP_OPTIONS[nextIndex] });
+      return;
+    }
+    Alert.alert(
+      "Skip Backward",
+      "Choose skip backward duration.",
+      SKIP_OPTIONS.map(n => ({
+        text: `${n}s`,
+        onPress: () => updateSettings({ skipBackwardSeconds: n }),
+      })),
+    );
+  };
+
+  const handleToggleAudioBoost = (value: boolean) => {
+    lightHaptic();
+    updateSettings({ audioBoostEnabled: value });
+  };
+
+  const handleChangeTheme = () => {
+    lightHaptic();
+    if (Platform.OS === "web") {
+      const currentIndex = THEME_OPTIONS.indexOf(settings.darkModeOverride);
+      const nextIndex = (currentIndex + 1) % THEME_OPTIONS.length;
+      updateSettings({ darkModeOverride: THEME_OPTIONS[nextIndex] });
+      return;
+    }
+    Alert.alert(
+      "Theme",
+      "Choose app theme.",
+      THEME_OPTIONS.map(t => ({
+        text: THEME_LABELS[t],
+        onPress: () => updateSettings({ darkModeOverride: t }),
+      })),
+    );
+  };
+
+  const handleToggleDailyReminder = (value: boolean) => {
+    lightHaptic();
+    updateSettings({ dailyReminderEnabled: value });
+  };
+
+  const handleChangeReminderHour = () => {
+    lightHaptic();
+    if (Platform.OS === "web") {
+      const currentIndex = REMINDER_HOUR_OPTIONS.indexOf(settings.dailyReminderHour);
+      const nextIndex = (currentIndex + 1) % REMINDER_HOUR_OPTIONS.length;
+      updateSettings({ dailyReminderHour: REMINDER_HOUR_OPTIONS[nextIndex] });
+      return;
+    }
+    Alert.alert(
+      "Reminder Time",
+      "Choose reminder time.",
+      REMINDER_HOUR_OPTIONS.map(h => ({
+        text: formatHour(h),
+        onPress: () => updateSettings({ dailyReminderHour: h }),
+      })),
+    );
+  };
+
+  const formatHour = (hour: number): string => {
+    const period = hour >= 12 ? "PM" : "AM";
+    const h = hour % 12 === 0 ? 12 : hour % 12;
+    return `${h}:00 ${period}`;
+  };
+
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
@@ -196,12 +289,92 @@ export default function SettingsScreen() {
       </View>
 
       <View style={[styles.section, { borderColor: colors.cardBorder }]}>
+        <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>PLAYBACK</Text>
+        <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+          <SettingRow
+            icon={<Ionicons name="play-forward" size={20} color={colors.accent} />}
+            label="Skip Forward"
+            value={`${settings.skipForwardSeconds}s`}
+            onPress={handleChangeSkipForward}
+          />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingRow
+            icon={<Ionicons name="play-back" size={20} color={colors.accent} />}
+            label="Skip Backward"
+            value={`${settings.skipBackwardSeconds}s`}
+            onPress={handleChangeSkipBackward}
+          />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingRow
+            icon={<Ionicons name="volume-high" size={20} color={colors.accent} />}
+            label="Audio Boost"
+            rightElement={
+              <Switch
+                value={settings.audioBoostEnabled}
+                onValueChange={handleToggleAudioBoost}
+                trackColor={{ false: colors.border, true: colors.accent }}
+                thumbColor="#fff"
+              />
+            }
+          />
+        </View>
+      </View>
+
+      <View style={[styles.section, { borderColor: colors.cardBorder }]}>
+        <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>APPEARANCE</Text>
+        <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+          <SettingRow
+            icon={<Ionicons name="color-palette" size={20} color={colors.accent} />}
+            label="Theme"
+            value={THEME_LABELS[settings.darkModeOverride]}
+            onPress={handleChangeTheme}
+          />
+        </View>
+      </View>
+
+      <View style={[styles.section, { borderColor: colors.cardBorder }]}>
+        <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>REMINDERS</Text>
+        <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+          <SettingRow
+            icon={<Ionicons name="alarm" size={20} color={colors.accent} />}
+            label="Daily Reminder"
+            rightElement={
+              <Switch
+                value={settings.dailyReminderEnabled}
+                onValueChange={handleToggleDailyReminder}
+                trackColor={{ false: colors.border, true: colors.accent }}
+                thumbColor="#fff"
+              />
+            }
+          />
+          {settings.dailyReminderEnabled && (
+            <>
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
+              <SettingRow
+                icon={<Ionicons name="time" size={20} color={colors.accent} />}
+                label="Reminder Time"
+                value={formatHour(settings.dailyReminderHour)}
+                onPress={handleChangeReminderHour}
+              />
+            </>
+          )}
+        </View>
+      </View>
+
+      <View style={[styles.section, { borderColor: colors.cardBorder }]}>
         <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>STORAGE</Text>
         <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
           <SettingRow
             icon={<Ionicons name="cloud-download" size={20} color={colors.accent} />}
             label="Downloaded Episodes"
             value={`${downloads.length}`}
+          />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingRow
+            icon={<Ionicons name="stats-chart" size={20} color={colors.accent} />}
+            label="Listening History"
+            value="View"
+            onPress={() => router.push('/stats')}
           />
         </View>
       </View>

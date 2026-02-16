@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, Pressable, StyleSheet, useColorScheme, Platform, Alert, ScrollView } from "react-native";
+import { View, Text, Pressable, StyleSheet, useColorScheme, Platform, Alert, ScrollView, Share } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -9,6 +9,8 @@ import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import Colors from "@/constants/colors";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import { getBookmarks, addBookmark, removeBookmark, type Bookmark } from "@/lib/bookmarks";
+import { useSettings } from "@/contexts/SettingsContext";
+import { useFavorites } from "@/contexts/FavoritesContext";
 
 function formatTime(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
@@ -45,6 +47,8 @@ export default function PlayerScreen() {
     pause, resume, seekTo, skip, setRate, stop,
     sleepTimer, setSleepTimer, cancelSleepTimer,
   } = useAudioPlayer();
+  const { settings } = useSettings();
+  const { toggleFavorite, isFavorite } = useFavorites();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
@@ -113,6 +117,49 @@ export default function PlayerScreen() {
       );
     }
   }, [sleepTimer, setSleepTimer, cancelSleepTimer, webSleepIndex]);
+
+  const getSkipBackwardIcon = (): string => {
+    switch (settings.skipBackwardSeconds) {
+      case 10:
+        return "replay-10";
+      case 5:
+        return "replay-5";
+      case 30:
+      default:
+        return "replay-30";
+    }
+  };
+
+  const getSkipForwardIcon = (): string => {
+    switch (settings.skipForwardSeconds) {
+      case 10:
+        return "forward-10";
+      case 5:
+        return "forward-5";
+      case 30:
+      default:
+        return "forward-30";
+    }
+  };
+
+  const handleShareEpisode = useCallback(async () => {
+    if (!currentEpisode || !currentFeed) return;
+    try {
+      lightHaptic();
+      await Share.share({
+        message: `Listen to "${currentEpisode.title}" from ${currentFeed.title}`,
+        url: currentEpisode.audioUrl,
+      });
+    } catch (e) {
+      // Silently catch share errors
+    }
+  }, [currentEpisode, currentFeed]);
+
+  const handleToggleFavorite = useCallback(async () => {
+    if (!currentEpisode) return;
+    lightHaptic();
+    await toggleFavorite(currentEpisode.id);
+  }, [currentEpisode, toggleFavorite]);
 
   if (!currentEpisode || !currentFeed) {
     return (
@@ -215,11 +262,11 @@ export default function PlayerScreen() {
         </Pressable>
 
         <Pressable
-          onPress={() => { lightHaptic(); skip(-30); }}
+          onPress={() => { lightHaptic(); skip(-settings.skipBackwardSeconds); }}
           hitSlop={8}
           style={styles.skipBtn}
         >
-          <MaterialIcons name="replay-30" size={36} color={colors.text} />
+          <MaterialIcons name={getSkipBackwardIcon()} size={36} color={colors.text} />
         </Pressable>
 
         <Pressable
@@ -238,11 +285,11 @@ export default function PlayerScreen() {
         </Pressable>
 
         <Pressable
-          onPress={() => { lightHaptic(); skip(30); }}
+          onPress={() => { lightHaptic(); skip(settings.skipForwardSeconds); }}
           hitSlop={8}
           style={styles.skipBtn}
         >
-          <MaterialIcons name="forward-30" size={36} color={colors.text} />
+          <MaterialIcons name={getSkipForwardIcon()} size={36} color={colors.text} />
         </Pressable>
 
         <Pressable
@@ -282,6 +329,28 @@ export default function PlayerScreen() {
             name={bookmarkSaved ? "checkmark" : "bookmark-outline"}
             size={18}
             color={bookmarkSaved ? colors.success : colors.textSecondary}
+          />
+        </Pressable>
+
+        <Pressable
+          onPress={handleShareEpisode}
+          style={[styles.secondaryBtn, { backgroundColor: colors.surfaceAlt }]}
+        >
+          <Ionicons
+            name="share-outline"
+            size={18}
+            color={colors.textSecondary}
+          />
+        </Pressable>
+
+        <Pressable
+          onPress={handleToggleFavorite}
+          style={[styles.secondaryBtn, { backgroundColor: colors.surfaceAlt }]}
+        >
+          <Ionicons
+            name={isFavorite(currentEpisode.id) ? "star" : "star-outline"}
+            size={18}
+            color={isFavorite(currentEpisode.id) ? colors.accent : colors.textSecondary}
           />
         </Pressable>
       </View>
