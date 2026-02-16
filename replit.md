@@ -38,6 +38,7 @@ Preferred communication style: Simple, everyday language.
 - **Admin panel**: Server-rendered HTML admin interface at `/admin` for managing feeds and categories
 - **Admin auth**: Simple Basic auth with bcrypt-hashed passwords, default credentials `admin/admin123`
 - **CORS**: Dynamic origin allowlist based on Replit environment variables, plus localhost support for dev
+- **Performance**: gzip compression via `compression` middleware; Cache-Control headers on read endpoints (feeds/categories 60s, episodes 30s)
 
 ### Database (PostgreSQL + Drizzle ORM)
 - **ORM**: Drizzle ORM with PostgreSQL dialect
