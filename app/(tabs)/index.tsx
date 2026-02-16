@@ -1,5 +1,5 @@
-import React, { useMemo, useState, useCallback, useEffect } from "react";
-import { View, Text, FlatList, ScrollView, Pressable, StyleSheet, ActivityIndicator, RefreshControl, Platform, TextInput } from "react-native";
+import React, { useMemo, useState, useCallback, useEffect, useRef } from "react";
+import { View, Text, FlatList, ScrollView, Pressable, StyleSheet, ActivityIndicator, RefreshControl, Platform, TextInput, Dimensions } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
@@ -28,40 +28,105 @@ interface TrendingEpisode extends Episode {
   listenCount: number;
 }
 
-const TrendingHero = React.memo(function TrendingHero({ episode, feed, colors, onPlay }: { episode: TrendingEpisode; feed: Feed; colors: any; onPlay: () => void }) {
-  return (
+const CAROUSEL_WIDTH = Dimensions.get("window").width - 40;
+const CAROUSEL_HEIGHT = 180;
+const AUTO_SCROLL_INTERVAL = 5000;
+
+const FeaturedCarousel = React.memo(function FeaturedCarousel({ feeds, colors }: { feeds: Feed[]; colors: any }) {
+  const scrollRef = useRef<FlatList>(null);
+  const activeIndexRef = useRef(0);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const startAutoScroll = useCallback(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (feeds.length <= 1) return;
+    timerRef.current = setInterval(() => {
+      const next = (activeIndexRef.current + 1) % feeds.length;
+      activeIndexRef.current = next;
+      setActiveIndex(next);
+      scrollRef.current?.scrollToIndex({ index: next, animated: true });
+    }, AUTO_SCROLL_INTERVAL);
+  }, [feeds.length]);
+
+  useEffect(() => {
+    startAutoScroll();
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [startAutoScroll]);
+
+  const handleScrollEnd = useCallback((e: any) => {
+    const idx = Math.round(e.nativeEvent.contentOffset.x / CAROUSEL_WIDTH);
+    activeIndexRef.current = idx;
+    setActiveIndex(idx);
+    startAutoScroll();
+  }, [startAutoScroll]);
+
+  const handleScrollBegin = useCallback(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+  }, []);
+
+  const renderItem = useCallback(({ item }: { item: Feed }) => (
     <Pressable
-      style={({ pressed }) => [styles.heroCard, { opacity: pressed ? 0.95 : 1 }]}
-      onPress={onPlay}
+      style={({ pressed }) => [styles.carouselSlide, { opacity: pressed ? 0.95 : 1 }]}
+      onPress={() => { lightHaptic(); router.push(`/podcast/${item.id}`); }}
     >
-      {feed.imageUrl ? (
-        <Image source={{ uri: feed.imageUrl }} style={styles.heroImage} contentFit="cover" cachePolicy="memory-disk" transition={0} />
+      {item.imageUrl ? (
+        <Image source={{ uri: item.imageUrl }} style={styles.carouselImage} contentFit="cover" cachePolicy="memory-disk" transition={0} />
       ) : (
-        <View style={[styles.heroImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
+        <View style={[styles.carouselImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="mic" size={56} color={colors.textSecondary} />
         </View>
       )}
       <LinearGradient
         colors={["transparent", "rgba(0,0,0,0.85)"]}
-        style={styles.heroGradient}
+        style={styles.carouselGradient}
       />
-      <View style={styles.heroContent}>
-        <View style={styles.heroBadge}>
-          <Ionicons name="flame" size={11} color="#f59e0b" />
-          <Text style={styles.heroBadgeText}>Trending</Text>
+      <View style={styles.carouselContent}>
+        <View style={styles.carouselBadge}>
+          <Ionicons name="star" size={11} color="#f59e0b" />
+          <Text style={styles.carouselBadgeText}>Featured</Text>
         </View>
-        <Text style={styles.heroTitle} numberOfLines={2}>{episode.title}</Text>
-        <Text style={styles.heroAuthor} numberOfLines={1}>{feed.title}</Text>
-        {episode.listenCount > 0 && (
-          <View style={styles.heroListens}>
-            <Ionicons name="headset-outline" size={12} color="rgba(255,255,255,0.6)" />
-            <Text style={styles.heroListensText}>
-              {episode.listenCount} {episode.listenCount === 1 ? "listen" : "listens"}
-            </Text>
-          </View>
-        )}
+        <Text style={styles.carouselTitle} numberOfLines={2}>{item.title}</Text>
+        {item.author ? (
+          <Text style={styles.carouselAuthor} numberOfLines={1}>{item.author}</Text>
+        ) : null}
       </View>
     </Pressable>
+  ), [colors]);
+
+  return (
+    <View style={styles.carouselContainer}>
+      <FlatList
+        ref={scrollRef}
+        data={feeds}
+        keyExtractor={(item) => item.id}
+        renderItem={renderItem}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={handleScrollEnd}
+        onScrollBeginDrag={handleScrollBegin}
+        snapToInterval={CAROUSEL_WIDTH}
+        decelerationRate="fast"
+        getItemLayout={(_, index) => ({ length: CAROUSEL_WIDTH, offset: CAROUSEL_WIDTH * index, index })}
+        initialNumToRender={2}
+        maxToRenderPerBatch={2}
+        windowSize={3}
+      />
+      {feeds.length > 1 && (
+        <View style={styles.carouselDots}>
+          {feeds.map((_, i) => (
+            <View
+              key={i}
+              style={[
+                styles.carouselDot,
+                { backgroundColor: i === activeIndex ? "#fff" : "rgba(255,255,255,0.4)" },
+              ]}
+            />
+          ))}
+        </View>
+      )}
+    </View>
   );
 });
 
@@ -248,21 +313,18 @@ function HomeScreenInner() {
     }
   }, [currentEpisode?.id, playback.isPlaying, pause, resume, playEpisode]);
 
-  const { heroEpisode, heroFeed, quickPlayItems } = useMemo(() => {
+  const quickPlayItems = useMemo(() => {
     const trending = trendingEpisodes.length > 0 ? trendingEpisodes : latestEpisodes.map(e => ({ ...e, listenCount: 0 }));
-    if (trending.length === 0) return { heroEpisode: null, heroFeed: null, quickPlayItems: [] };
+    if (trending.length === 0) return [];
     
-    const hero = trending[0] as TrendingEpisode;
-    const hFeed = allFeeds.find(f => f.id === hero.feedId);
-    
-    const qpItems: { episode: TrendingEpisode; feed: Feed }[] = [];
-    for (let i = 1; i < trending.length && qpItems.length < 5; i++) {
+    const items: { episode: TrendingEpisode; feed: Feed }[] = [];
+    for (let i = 0; i < trending.length && items.length < 6; i++) {
       const ep = trending[i] as TrendingEpisode;
       const feed = allFeeds.find(f => f.id === ep.feedId);
-      if (feed) qpItems.push({ episode: ep, feed });
+      if (feed) items.push({ episode: ep, feed });
     }
     
-    return { heroEpisode: hero, heroFeed: hFeed || null, quickPlayItems: qpItems };
+    return items;
   }, [trendingEpisodes, latestEpisodes, allFeeds]);
 
   const continueListeningItems = useMemo(() => {
@@ -495,35 +557,7 @@ function HomeScreenInner() {
       )}
 
       {!isSearching && featuredFeeds.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Ionicons name="star" size={18} color={colors.accent} />
-            <Text style={[styles.sectionTitle, { color: colors.text, paddingHorizontal: 0 }]}>Featured</Text>
-          </View>
-          <FlatList
-            horizontal
-            data={featuredFeeds}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => <PodcastCard feed={item} size="small" />}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 20 }}
-            initialNumToRender={5}
-            maxToRenderPerBatch={5}
-            windowSize={3}
-            removeClippedSubviews={Platform.OS !== "web"}
-          />
-        </View>
-      )}
-
-      {!isSearching && heroEpisode && heroFeed && (
-        <View style={styles.heroSection}>
-          <TrendingHero
-            episode={heroEpisode}
-            feed={heroFeed}
-            colors={colors}
-            onPlay={() => handlePlayEpisode(heroEpisode, heroFeed)}
-          />
-        </View>
+        <FeaturedCarousel feeds={featuredFeeds} colors={colors} />
       )}
 
       {!isSearching && quickPlayItems.length > 0 && (
@@ -538,7 +572,7 @@ function HomeScreenInner() {
                 key={episode.id}
                 episode={episode}
                 feed={feed}
-                rank={index + 2}
+                rank={index + 1}
                 colors={colors}
                 onPlay={() => handlePlayEpisode(episode, feed)}
               />
@@ -622,70 +656,74 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  heroSection: {
+  carouselContainer: {
     paddingHorizontal: 20,
     marginBottom: 20,
   },
-  heroCard: {
+  carouselSlide: {
+    width: CAROUSEL_WIDTH,
+    height: CAROUSEL_HEIGHT,
     borderRadius: 20,
     overflow: "hidden",
-    position: "relative",
+    position: "relative" as const,
   },
-  heroImage: {
+  carouselImage: {
     width: "100%" as any,
-    height: 180,
-    alignItems: "center",
-    justifyContent: "center",
+    height: CAROUSEL_HEIGHT,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
   },
-  heroGradient: {
+  carouselGradient: {
     ...StyleSheet.absoluteFillObject,
-    top: "40%" as any,
+    top: "35%" as any,
   },
-  heroContent: {
-    position: "absolute",
+  carouselContent: {
+    position: "absolute" as const,
     bottom: 0,
     left: 0,
     right: 0,
     padding: 18,
     gap: 4,
   },
-  heroBadge: {
-    flexDirection: "row",
-    alignItems: "center",
+  carouselBadge: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
     gap: 4,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    alignSelf: "flex-start",
+    backgroundColor: "rgba(255,255,255,0.18)",
+    alignSelf: "flex-start" as const,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
     marginBottom: 4,
   },
-  heroBadgeText: {
+  carouselBadgeText: {
     color: "#fff",
     fontSize: 10,
     fontWeight: "700" as const,
     textTransform: "uppercase" as const,
     letterSpacing: 0.5,
   },
-  heroTitle: {
+  carouselTitle: {
     color: "#fff",
     fontSize: 20,
     fontWeight: "800" as const,
     lineHeight: 24,
   },
-  heroAuthor: {
+  carouselAuthor: {
     color: "rgba(255,255,255,0.7)",
     fontSize: 13,
   },
-  heroListens: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginTop: 2,
+  carouselDots: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    gap: 6,
+    marginTop: 10,
   },
-  heroListensText: {
-    color: "rgba(255,255,255,0.6)",
-    fontSize: 11,
+  carouselDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
   },
 
   section: {
