@@ -14,8 +14,16 @@ Preferred communication style: Simple, everyday language.
 
 ### Frontend (Expo / React Native)
 - **Framework**: Expo SDK 54 with React Native 0.81, using expo-router for file-based routing
-- **Routing structure**: Tab-based navigation with 4 tabs (Home, Following, Downloads, Settings), a modal player screen, and a podcast detail screen at `podcast/[id]`
-- **State management**: React Context for audio playback (`AudioPlayerContext`), downloads (`DownloadsContext`), user settings (`SettingsContext`), and favorites (`FavoritesContext`); TanStack React Query for server state
+- **Routing structure**: Tab-based navigation with 4 tabs (Home, Following, Downloads, Settings), a modal player screen, a queue screen, and a podcast detail screen at `podcast/[id]`
+- **State management**: React Context for audio playback (`AudioPlayerContext`), downloads (`DownloadsContext`), user settings (`SettingsContext`), favorites (`FavoritesContext`), and played episodes (`PlayedEpisodesContext`); TanStack React Query for server state
+- **Played episodes tracking**: `PlayedEpisodesContext` stores played episode IDs in AsyncStorage (`@shiurpod_played_episodes`), auto-marks episodes when they finish, shows progress bars on episode cards (green=played, blue=in-progress)
+- **Continuous playback**: When enabled in settings, auto-plays next episode from same feed when current episode ends and queue is empty
+- **Queue management**: Queue screen at `app/queue.tsx` with up/down reorder buttons, remove items, clear queue, and play from queue. Queue state managed in AudioPlayerContext with `refreshQueue` for AsyncStorage sync
+- **Episode filtering**: Podcast detail screen has filter chips (All/Unplayed/Started/Saved) alongside sort options (Newest/Oldest)
+- **Long-press actions**: Context menu on episodes (native Alert) for quick access to queue, mark played, favorites, and download actions
+- **Pull-to-refresh**: Podcast detail screen supports pull-to-refresh to reload episodes and feed data
+- **Share with timestamp**: Player share includes current playback position when > 5 seconds
+- **Animated transitions**: MiniPlayer uses react-native-reanimated FadeInDown entrance animation (skipped on web)
 - **Audio playback**: Uses `expo-audio` (`createAudioPlayer`) for native and HTML5 Audio for web, with a unified context API providing play/pause/seek/skip/rate controls. Saves playback position to AsyncStorage every 30 seconds and on pause/stop, resuming from saved position on replay. Pre-buffers audio with `preload="auto"` on web and native buffer settings. Server-side position sync for cross-device resume. Audio position tracking runs every 2 seconds (optimized for low-end devices).
 - **Offline support**: Episode downloads managed via `expo-file-system` with progress tracking, persisted to AsyncStorage. Auto-download on WiFi for followed shiurim with configurable per-shiur episode storage limits. Batch download support for downloading multiple episodes at once.
 - **Notifications**: Local browser notifications (web) for new episodes from followed shiurim. Tracks seen episodes in AsyncStorage to avoid duplicate alerts.
