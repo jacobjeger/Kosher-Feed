@@ -169,6 +169,18 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     downloadingIdsCache.add(episode.id);
 
     if (Platform.OS === "web") {
+      try {
+        const apiUrl = getApiUrl();
+        const downloadUrl = new URL(`/api/episodes/${episode.id}/download`, apiUrl).toString();
+        const link = document.createElement("a");
+        link.href = downloadUrl;
+        link.download = "";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } catch (e) {
+        console.error("Web download failed:", e);
+      }
       activeDownloadsRef.current.delete(episode.id);
       downloadingIdsCache.delete(episode.id);
       return {

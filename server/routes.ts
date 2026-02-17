@@ -565,6 +565,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/episodes/:id/download", async (req: Request, res: Response) => {
+    try {
+      const episode = await storage.getEpisodeById(req.params.id);
+      if (!episode) return res.status(404).json({ error: "Episode not found" });
+      if (!episode.audioUrl) return res.status(404).json({ error: "No audio URL" });
+
+      const safeTitle = (episode.title || "episode").replace(/[^a-zA-Z0-9 _-]/g, "").replace(/\s+/g, "_").substring(0, 100);
+      const filename = `${safeTitle}.mp3`;
+
+      const audioResp = await fetch(episode.audioUrl, {
+        headers: { "User-Agent": "ShiurPod/1.0" },
+        redirect: "follow",
+      });
+
+      if (!audioResp.ok) return res.status(502).json({ error: "Failed to fetch audio" });
+
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("Content-Type", audioResp.headers.get("content-type") || "audio/mpeg");
+      const contentLength = audioResp.headers.get("content-length");
+      if (contentLength) res.setHeader("Content-Length", contentLength);
+
+      const reader = audioResp.body?.getReader();
+      if (!reader) return res.status(502).json({ error: "No stream" });
+
+      const pump = async () => {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (!res.writableEnded) res.write(Buffer.from(value));
+        }
+        res.end();
+      };
+      await pump();
+    } catch (e: any) {
+      if (!res.headersSent) res.status(500).json({ error: e.message });
+    }
+  });
+
   // What's New (episodes from subscribed feeds)
   app.get("/api/whatsnew/:deviceId", async (req: Request, res: Response) => {
     try {
