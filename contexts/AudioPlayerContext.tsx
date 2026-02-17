@@ -9,22 +9,18 @@ import { getQueue, addToQueue as addToQueueStorage, removeFromQueue as removeFro
 import { addToHistory, updateHistoryPosition } from "@/lib/history";
 import { notifyEpisodePlayed } from "@/contexts/PlayedEpisodesContext";
 
-let TrackPlayer: any = null;
-let TPEvent: any = null;
-let TPState: any = null;
-let TPCapability: any = null;
-let TPRepeatMode: any = null;
+let expoAudioModule: any = null;
+let createAudioPlayerFn: any = null;
+let setAudioModeAsyncFn: any = null;
 
 if (Platform.OS !== "web") {
   try {
-    const tp = require("react-native-track-player");
-    TrackPlayer = tp.default;
-    TPEvent = tp.Event;
-    TPState = tp.State;
-    TPCapability = tp.Capability;
-    TPRepeatMode = tp.RepeatMode;
+    const expoAudio = require("expo-audio");
+    createAudioPlayerFn = expoAudio.createAudioPlayer;
+    setAudioModeAsyncFn = expoAudio.setAudioModeAsync;
+    expoAudioModule = expoAudio.default || expoAudio.AudioModule;
   } catch (e) {
-    addLog("warn", `TrackPlayer not available: ${(e as any)?.message}`, undefined, "audio");
+    addLog("warn", `expo-audio not available: ${(e as any)?.message}`, undefined, "audio");
   }
 }
 
@@ -190,46 +186,21 @@ async function fetchEpisodeAndFeed(episodeId: string, feedId: string): Promise<{
   }
 }
 
-let trackPlayerInitialized = false;
+let nativePlayerInstance: any = null;
+let nativePlayerReady = false;
 
-async function initTrackPlayer() {
-  if (!TrackPlayer || trackPlayerInitialized) return;
+async function initNativeAudio() {
+  if (!setAudioModeAsyncFn || nativePlayerReady) return;
   try {
-    await TrackPlayer.setupPlayer({
-      maxCacheSize: 1024 * 50,
-      autoHandleInterruptions: true,
+    await setAudioModeAsyncFn({
+      playsInSilentMode: true,
+      interruptionMode: "doNotMix" as any,
+      shouldPlayInBackground: true,
     });
-    await TrackPlayer.updateOptions({
-      capabilities: [
-        TPCapability.Play,
-        TPCapability.Pause,
-        TPCapability.Stop,
-        TPCapability.SeekTo,
-        TPCapability.SkipToNext,
-        TPCapability.SkipToPrevious,
-        TPCapability.JumpForward,
-        TPCapability.JumpBackward,
-      ],
-      compactCapabilities: [TPCapability.Play, TPCapability.Pause, TPCapability.Stop],
-      forwardJumpInterval: 30,
-      backwardJumpInterval: 15,
-      notificationCapabilities: [
-        TPCapability.Play,
-        TPCapability.Pause,
-        TPCapability.SeekTo,
-        TPCapability.SkipToNext,
-        TPCapability.SkipToPrevious,
-      ],
-    });
-    await TrackPlayer.setRepeatMode(TPRepeatMode.Off);
-    trackPlayerInitialized = true;
-    addLog("info", "TrackPlayer initialized successfully", undefined, "audio");
+    nativePlayerReady = true;
+    addLog("info", "expo-audio initialized successfully", undefined, "audio");
   } catch (e: any) {
-    if (e?.message?.includes("already been initialized")) {
-      trackPlayerInitialized = true;
-    } else {
-      addLog("error", `TrackPlayer init failed: ${e?.message || e}`, e?.stack, "audio");
-    }
+    addLog("error", `expo-audio init failed: ${e?.message || e}`, e?.stack, "audio");
   }
 }
 
@@ -263,7 +234,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   const sleepTimerIntervalRef = useRef<any>(null);
   const sleepTimerRef = useRef<SleepTimerState>(sleepTimer);
   const queueRef = useRef<QueueItem[]>(queue);
-  const trackPlayerReadyRef = useRef(false);
+  const nativePlayerRef = useRef<any>(null);
 
   const positionRef = useRef<PositionState>({ positionMs: 0, durationMs: 0 });
   const positionListenersRef = useRef<Set<() => void>>(new Set());
@@ -298,10 +269,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (Platform.OS !== "web" && TrackPlayer) {
-      initTrackPlayer().then(() => {
-        trackPlayerReadyRef.current = true;
-      });
+    if (Platform.OS !== "web" && createAudioPlayerFn) {
+      initNativeAudio();
     }
   }, []);
 
@@ -392,7 +361,6 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
   const startPositionTracking = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
-    const trackingInterval = Platform.OS === "web" ? 500 : 500;
     intervalRef.current = setInterval(async () => {
       if (Platform.OS === "web" && audioRef.current) {
         const newPos = (audioRef.current.currentTime || 0) * 1000;
@@ -407,17 +375,12 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           }
           return prev;
         });
-      } else if (TrackPlayer && trackPlayerReadyRef.current) {
+      } else if (nativePlayerRef.current) {
         try {
-          const [pos, dur, tpState] = await Promise.all([
-            TrackPlayer.getPosition(),
-            TrackPlayer.getDuration(),
-            TrackPlayer.getPlaybackState(),
-          ]);
-          const newPos = (pos || 0) * 1000;
-          const newDur = (dur || 0) * 1000;
-          const state = tpState?.state ?? tpState;
-          const newIsPlaying = state === TPState?.Playing;
+          const player = nativePlayerRef.current;
+          const newPos = (player.currentTime || 0) * 1000;
+          const newDur = (player.duration || 0) * 1000;
+          const newIsPlaying = !!player.playing;
           positionRef.current = { positionMs: newPos, durationMs: newDur };
           playbackRef.current = { ...playbackRef.current, positionMs: newPos, durationMs: newDur, isPlaying: newIsPlaying };
           notifyPositionListeners();
@@ -429,14 +392,14 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           });
         } catch {}
       }
-    }, trackingInterval);
+    }, 500);
   }, [notifyPositionListeners]);
 
   const pause = useCallback(async () => {
     if (Platform.OS === "web") {
       audioRef.current?.pause();
-    } else if (TrackPlayer && trackPlayerReadyRef.current) {
-      await TrackPlayer.pause();
+    } else if (nativePlayerRef.current) {
+      nativePlayerRef.current.pause();
     }
     setPlayback(prev => ({ ...prev, isPlaying: false }));
     saveCurrentPosition();
@@ -547,30 +510,6 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   const handleEpisodeEndRef = useRef(handleEpisodeEnd);
   useEffect(() => { handleEpisodeEndRef.current = handleEpisodeEnd; }, [handleEpisodeEnd]);
 
-  useEffect(() => {
-    if (Platform.OS === "web" || !TrackPlayer || !TPEvent) return;
-
-    const subs: any[] = [];
-
-    subs.push(TrackPlayer.addEventListener(TPEvent.PlaybackQueueEnded, (data: any) => {
-      const ep = currentEpisodeRef.current;
-      const feed = currentFeedRef.current;
-      if (ep && feed && data?.track !== undefined) {
-        handleEpisodeEndRef.current(ep, feed);
-      }
-    }));
-
-    if (TPEvent.PlaybackError) {
-      subs.push(TrackPlayer.addEventListener(TPEvent.PlaybackError, (data: any) => {
-        const msg = data?.message || data?.code || "Unknown playback error";
-        addLog("error", `TrackPlayer error: ${msg}`, undefined, "audio");
-        setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: false }));
-      }));
-    }
-
-    return () => subs.forEach(s => s?.remove?.());
-  }, []);
-
   const playEpisodeInternal = useCallback(async (episode: Episode, feed: Feed, skipHistory?: boolean) => {
     if (isLoadingRef.current) return;
     isLoadingRef.current = true;
@@ -615,39 +554,66 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           addLog("error", `Web audio error: ${episode.title}`, undefined, "audio");
           setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: false }));
         };
-      } else if (TrackPlayer && trackPlayerReadyRef.current) {
+      } else if (createAudioPlayerFn && nativePlayerReady) {
         setCurrentEpisode(episode);
         setCurrentFeed(feed);
         setPlayback(prev => ({ ...prev, isLoading: true, isPlaying: false, positionMs: savedPos, durationMs: 0, playbackRate: feedSpeed }));
 
         try {
-          await TrackPlayer.reset();
-          await TrackPlayer.add({
-            id: episode.id,
-            url: episode.audioUrl,
-            title: episode.title || "Unknown",
-            artist: feed.title || "ShiurPod",
-            album: feed.title || "ShiurPod",
-            artwork: feed.imageUrl || undefined,
-            duration: episode.duration ? parseInt(String(episode.duration), 10) / 1000 : undefined,
+          if (nativePlayerRef.current) {
+            try {
+              nativePlayerRef.current.clearLockScreenControls();
+              nativePlayerRef.current.remove();
+            } catch {}
+            nativePlayerRef.current = null;
+            nativePlayerInstance = null;
+          }
+
+          const player = createAudioPlayerFn(episode.audioUrl, {
+            updateInterval: 500,
+          });
+          nativePlayerRef.current = player;
+          nativePlayerInstance = player;
+
+          const statusSub = player.addListener("playbackStatusUpdate", (status: any) => {
+            if (status.playing === false && status.currentTime > 0 && status.duration > 0) {
+              const ratio = status.currentTime / status.duration;
+              if (ratio > 0.97) {
+                const ep = currentEpisodeRef.current;
+                const fd = currentFeedRef.current;
+                if (ep && fd) {
+                  handleEpisodeEndRef.current(ep, fd);
+                }
+              }
+            }
           });
 
-          if (feedSpeed !== 1.0) {
-            await TrackPlayer.setRate(feedSpeed);
-          }
+          player.playbackRate = feedSpeed;
 
           if (savedPos > 0) {
-            await TrackPlayer.seekTo(savedPos / 1000);
+            player.seekTo(savedPos / 1000);
           }
 
-          await TrackPlayer.play();
+          player.play();
+
+          try {
+            player.setActiveForLockScreen(true);
+            player.updateLockScreenMetadata({
+              title: episode.title || "Unknown",
+              artist: feed.title || "ShiurPod",
+              artworkUrl: feed.imageUrl || undefined,
+            });
+          } catch (lockErr: any) {
+            addLog("warn", `Lock screen setup failed: ${lockErr?.message}`, undefined, "audio");
+          }
+
           setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true }));
-          addLog("info", `Playing (TrackPlayer): ${episode.title} (feed: ${feed.title})`, undefined, "audio");
+          addLog("info", `Playing (expo-audio): ${episode.title} (feed: ${feed.title})`, undefined, "audio");
           startPositionTracking();
-        } catch (tpErr: any) {
-          const msg = tpErr?.message || String(tpErr);
+        } catch (audioErr: any) {
+          const msg = audioErr?.message || String(audioErr);
           const isNetwork = /resolve host|no address|connection abort|network/i.test(msg);
-          addLog("error", `TrackPlayer play failed: ${msg}`, tpErr?.stack, "audio");
+          addLog("error", `expo-audio play failed: ${msg}`, audioErr?.stack, "audio");
           setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: false }));
           if (isNetwork) {
             addLog("warn", "Network unavailable — check your internet connection", undefined, "audio");
@@ -716,13 +682,13 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     try {
       if (Platform.OS === "web") {
         await audioRef.current?.play();
-      } else if (TrackPlayer && trackPlayerReadyRef.current) {
-        await TrackPlayer.play();
+      } else if (nativePlayerRef.current) {
+        nativePlayerRef.current.play();
       } else {
         const ep = currentEpisodeRef.current;
         const feed = currentFeedRef.current;
         if (ep && feed) {
-          addLog("warn", "TrackPlayer not ready, reloading episode...", undefined, "audio");
+          addLog("warn", "Player not ready, reloading episode...", undefined, "audio");
           await playEpisodeInternal(ep, feed, true);
           return;
         }
@@ -738,8 +704,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     try {
       if (Platform.OS === "web" && audioRef.current) {
         audioRef.current.currentTime = positionMs / 1000;
-      } else if (TrackPlayer && trackPlayerReadyRef.current) {
-        await TrackPlayer.seekTo(positionMs / 1000);
+      } else if (nativePlayerRef.current) {
+        nativePlayerRef.current.seekTo(positionMs / 1000);
       }
       setPlayback(prev => ({ ...prev, positionMs }));
     } catch (e) {
@@ -757,8 +723,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     try {
       if (Platform.OS === "web" && audioRef.current) {
         audioRef.current.playbackRate = rate;
-      } else if (TrackPlayer && trackPlayerReadyRef.current) {
-        await TrackPlayer.setRate(rate);
+      } else if (nativePlayerRef.current) {
+        nativePlayerRef.current.playbackRate = rate;
       }
     } catch (e) {
       addLog("warn", `Set rate failed: ${(e as any)?.message || e}`, undefined, "audio");
@@ -785,10 +751,13 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         audioRef.current.src = "";
         audioRef.current = null;
       }
-    } else if (TrackPlayer && trackPlayerReadyRef.current) {
+    } else if (nativePlayerRef.current) {
       try {
-        await TrackPlayer.reset();
+        nativePlayerRef.current.clearLockScreenControls();
+        nativePlayerRef.current.remove();
       } catch {}
+      nativePlayerRef.current = null;
+      nativePlayerInstance = null;
     }
     setCurrentEpisode(null);
     setCurrentFeed(null);
