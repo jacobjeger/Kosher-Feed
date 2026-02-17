@@ -597,7 +597,7 @@ async function loadFeeds() {
           <div class="feed-meta" style="font-size:11px;margin-top:2px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.rssUrl)}</div>
         </div>
         <button class="toggle-btn ${f.isActive ? 'on' : 'off'}" onclick="toggleFeedActive('${f.id}', ${!f.isActive})" title="${f.isActive ? 'Active' : 'Inactive'}"></button>
-        <button class="featured-star ${f.featured ? 'featured' : ''}" onclick="toggleFeedFeatured('${f.id}', ${!f.featured})" title="${f.featured ? 'Featured' : 'Not Featured'}">★</button>
+        <button class="featured-star ${f.isFeatured ? 'featured' : ''}" onclick="toggleFeedFeatured('${f.id}', ${!f.isFeatured})" title="${f.isFeatured ? 'Featured' : 'Not Featured'}">★</button>
         <div class="feed-actions">
           <button class="btn btn-secondary btn-sm" onclick="editFeed('${f.id}')">Edit</button>
           <button class="btn btn-secondary btn-sm" onclick="refreshFeed('${f.id}')">Refresh</button>
