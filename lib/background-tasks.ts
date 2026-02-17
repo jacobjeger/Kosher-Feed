@@ -6,12 +6,12 @@ const BACKGROUND_SYNC_TASK = "BACKGROUND_SYNC_TASK";
 const LAST_BG_SYNC_KEY = "@shiurpod_last_bg_sync";
 
 let TaskManager: any = null;
-let BackgroundFetch: any = null;
+let BackgroundTask: any = null;
 
 if (Platform.OS !== "web") {
   try {
     TaskManager = require("expo-task-manager");
-    BackgroundFetch = require("expo-background-fetch");
+    BackgroundTask = require("expo-background-task");
   } catch (e) {
     console.warn("Background task modules not available:", e);
   }
@@ -25,7 +25,7 @@ async function backgroundSyncHandler() {
     const now = Date.now();
     if (lastSync && now - parseInt(lastSync, 10) < 4 * 60 * 1000) {
       addLog("info", "Background sync skipped (too soon)", undefined, "background-sync");
-      return BackgroundFetch?.BackgroundFetchResult?.NoData;
+      return BackgroundTask?.BackgroundTaskResult?.Success;
     }
 
     await AsyncStorage.setItem(LAST_BG_SYNC_KEY, now.toString());
@@ -47,7 +47,7 @@ async function backgroundSyncHandler() {
 
     if (!feeds || feeds.length === 0) {
       addLog("info", "Background sync: no subscribed feeds", undefined, "background-sync");
-      return BackgroundFetch?.BackgroundFetchResult?.NoData;
+      return BackgroundTask?.BackgroundTaskResult?.Success;
     }
 
     const episodesUrl = new URL("/api/episodes/latest?limit=100", baseUrl);
@@ -135,19 +135,16 @@ async function backgroundSyncHandler() {
       addLog("warn", `Background auto-download failed: ${(dlError as any)?.message}`, undefined, "background-sync");
     }
 
-    if (hasNewData) {
-      return BackgroundFetch?.BackgroundFetchResult?.NewData;
-    }
-    addLog("info", "Background sync completed (no new data)", undefined, "background-sync");
-    return BackgroundFetch?.BackgroundFetchResult?.NoData;
+    addLog("info", `Background sync completed (${hasNewData ? "new data" : "no new data"})`, undefined, "background-sync");
+    return BackgroundTask?.BackgroundTaskResult?.Success;
   } catch (e) {
     addLog("error", `Background sync failed: ${(e as any)?.message || e}`, (e as any)?.stack, "background-sync");
-    return BackgroundFetch?.BackgroundFetchResult?.Failed;
+    return BackgroundTask?.BackgroundTaskResult?.Failed;
   }
 }
 
 export function defineBackgroundTasks() {
-  if (Platform.OS === "web" || !TaskManager || !BackgroundFetch) return;
+  if (Platform.OS === "web" || !TaskManager || !BackgroundTask) return;
 
   try {
     TaskManager.defineTask(BACKGROUND_SYNC_TASK, async () => {
@@ -160,7 +157,7 @@ export function defineBackgroundTasks() {
 }
 
 export async function registerBackgroundSync() {
-  if (Platform.OS === "web" || !BackgroundFetch) return;
+  if (Platform.OS === "web" || !BackgroundTask) return;
 
   try {
     const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_SYNC_TASK);
@@ -169,10 +166,8 @@ export async function registerBackgroundSync() {
       return;
     }
 
-    await BackgroundFetch.registerTaskAsync(BACKGROUND_SYNC_TASK, {
+    await BackgroundTask.registerTaskAsync(BACKGROUND_SYNC_TASK, {
       minimumInterval: 15 * 60,
-      stopOnTerminate: false,
-      startOnBoot: true,
     });
 
     addLog("info", "Background sync registered (15 min interval)", undefined, "background-sync");
@@ -182,12 +177,12 @@ export async function registerBackgroundSync() {
 }
 
 export async function unregisterBackgroundSync() {
-  if (Platform.OS === "web" || !TaskManager) return;
+  if (Platform.OS === "web" || !TaskManager || !BackgroundTask) return;
 
   try {
     const isRegistered = await TaskManager.isTaskRegisteredAsync(BACKGROUND_SYNC_TASK);
     if (isRegistered) {
-      await BackgroundFetch.unregisterTaskAsync(BACKGROUND_SYNC_TASK);
+      await BackgroundTask.unregisterTaskAsync(BACKGROUND_SYNC_TASK);
       addLog("info", "Background sync unregistered", undefined, "background-sync");
     }
   } catch (e) {

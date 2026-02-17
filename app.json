@@ -54,7 +54,7 @@
       ],
       "expo-font",
       "expo-web-browser",
-      "expo-background-fetch",
+      "expo-background-task",
       "expo-task-manager"
     ],
     "experiments": {
