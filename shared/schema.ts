@@ -137,6 +137,7 @@ export const contactMessages = pgTable("contact_messages", {
   email: text("email"),
   message: text("message").notNull(),
   isRead: boolean("is_read").default(false).notNull(),
+  status: text("status").default("new").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

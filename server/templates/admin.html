@@ -173,6 +173,8 @@
       <button class="tab" onclick="switchTab('categories', this)">Categories</button>
       <button class="tab" onclick="switchTab('errors', this)">Error Reports</button>
       <button class="tab" onclick="switchTab('feedback', this)">Feedback</button>
+      <button class="tab" onclick="switchTab('messages', this)">Messages</button>
+      <button class="tab" onclick="switchTab('settings', this)">Settings</button>
     </div>
 
     <div id="analyticsTab">
@@ -248,6 +250,46 @@
         <div id="errorReportsSummary" style="margin-bottom:12px;font-size:13px;color:#94a3b8;"></div>
         <div id="errorReportsList"></div>
         <div id="errorReportsPagination" style="display:flex;gap:8px;justify-content:center;margin-top:16px;"></div>
+      </div>
+    </div>
+
+    <div id="messagesTab" class="hidden">
+      <div class="card">
+        <div class="card-header">
+          <h2>Contact Messages</h2>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select id="messageStatusFilter" onchange="loadMessages()" style="width:auto;padding:6px 10px;font-size:12px;">
+              <option value="">All</option>
+              <option value="new">New</option>
+              <option value="read">Read</option>
+              <option value="replied">Replied</option>
+            </select>
+          </div>
+        </div>
+        <div id="messagesList"></div>
+        <div id="messagesPagination" style="display:flex;gap:8px;justify-content:center;margin-top:16px;"></div>
+      </div>
+    </div>
+
+    <div id="settingsTab" class="hidden">
+      <div class="card" style="max-width:500px;">
+        <div class="card-header">
+          <h2>Change Password</h2>
+        </div>
+        <div id="settingsAlert"></div>
+        <div class="form-group">
+          <label>Current Password</label>
+          <input type="password" id="currentPassword">
+        </div>
+        <div class="form-group">
+          <label>New Password</label>
+          <input type="password" id="newPassword">
+        </div>
+        <div class="form-group">
+          <label>Confirm New Password</label>
+          <input type="password" id="confirmPassword">
+        </div>
+        <button class="btn btn-primary" onclick="changePassword()">Update Password</button>
       </div>
     </div>
 
@@ -1017,13 +1059,12 @@ async function saveFeedEdit(id) {
 function switchTab(tab, btn) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
-  document.getElementById('analyticsTab').classList.toggle('hidden', tab !== 'analytics');
-  document.getElementById('feedsTab').classList.toggle('hidden', tab !== 'feeds');
-  document.getElementById('categoriesTab').classList.toggle('hidden', tab !== 'categories');
-  document.getElementById('errorsTab').classList.toggle('hidden', tab !== 'errors');
-  document.getElementById('feedbackTab').classList.toggle('hidden', tab !== 'feedback');
+  ['analytics','feeds','categories','errors','feedback','messages','settings'].forEach(t => {
+    document.getElementById(t + 'Tab').classList.toggle('hidden', tab !== t);
+  });
   if (tab === 'errors') loadErrorReports();
   if (tab === 'feedback') loadFeedback();
+  if (tab === 'messages') loadMessages();
 }
 
 function formatDate(dateStr) {
@@ -1228,6 +1269,111 @@ async function deleteFeedback(id) {
     loadFeedback();
   } catch(e) {
     showAlert(e.message, 'error');
+  }
+}
+
+let messagesPage = 1;
+
+async function loadMessages(page) {
+  if (page) messagesPage = page;
+  const status = document.getElementById('messageStatusFilter').value;
+  let url = `/api/admin/contact-messages?page=${messagesPage}&limit=30`;
+  if (status) url += `&status=${status}`;
+  try {
+    const data = await api(url);
+    const list = document.getElementById('messagesList');
+    if (!data.messages || data.messages.length === 0) {
+      list.innerHTML = '<p style="color:#64748b;text-align:center;padding:40px;">No messages found</p>';
+      document.getElementById('messagesPagination').innerHTML = '';
+      return;
+    }
+    list.innerHTML = data.messages.map(m => {
+      const statusColor = m.status === 'new' ? '#f59e0b' : m.status === 'read' ? '#3b82f6' : '#059669';
+      const d = new Date(m.createdAt);
+      const dateStr = `${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
+      return `<div style="background:#0f172a;border-radius:10px;padding:14px;margin-bottom:8px;${m.status === 'new' ? 'border-left:3px solid #f59e0b;' : ''}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-weight:600;font-size:14px;color:#f8fafc;">${esc(m.name)}</span>
+            <span style="background:${statusColor};color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">${esc(m.status)}</span>
+          </div>
+          <span style="font-size:11px;color:#64748b;">${dateStr}</span>
+        </div>
+        ${m.email ? `<div style="font-size:12px;color:#3b82f6;margin-bottom:6px;">${esc(m.email)}</div>` : ''}
+        <div style="font-size:13px;color:#94a3b8;white-space:pre-wrap;max-height:150px;overflow-y:auto;margin-bottom:10px;">${esc(m.message)}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${m.status === 'new' ? `<button class="btn btn-secondary btn-sm" onclick="updateMessageStatus('${m.id}','read')">Mark Read</button>` : ''}
+          <button class="btn btn-success btn-sm" onclick="updateMessageStatus('${m.id}','replied')">Mark Replied</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteMessage('${m.id}')">Delete</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    const totalPages = Math.ceil((data.total || 0) / 30);
+    const pag = document.getElementById('messagesPagination');
+    if (totalPages > 1) {
+      let html = '';
+      if (messagesPage > 1) html += `<button class="btn btn-secondary btn-sm" onclick="loadMessages(${messagesPage-1})">Prev</button>`;
+      html += `<span style="font-size:13px;color:#94a3b8;padding:6px;">Page ${messagesPage} of ${totalPages}</span>`;
+      if (messagesPage < totalPages) html += `<button class="btn btn-secondary btn-sm" onclick="loadMessages(${messagesPage+1})">Next</button>`;
+      pag.innerHTML = html;
+    } else {
+      pag.innerHTML = '';
+    }
+  } catch(e) {
+    showAlert(e.message, 'error');
+  }
+}
+
+async function updateMessageStatus(id, status) {
+  try {
+    await api(`/api/admin/contact-messages/${id}`, { method: 'PUT', body: JSON.stringify({ status }) });
+    showAlert('Message updated', 'success');
+    loadMessages();
+  } catch(e) {
+    showAlert(e.message, 'error');
+  }
+}
+
+async function deleteMessage(id) {
+  if (!confirm('Delete this message?')) return;
+  try {
+    await api(`/api/admin/contact-messages/${id}`, { method: 'DELETE' });
+    showAlert('Message deleted', 'success');
+    loadMessages();
+  } catch(e) {
+    showAlert(e.message, 'error');
+  }
+}
+
+async function changePassword() {
+  const currentPassword = document.getElementById('currentPassword').value;
+  const newPassword = document.getElementById('newPassword').value;
+  const confirmPassword = document.getElementById('confirmPassword').value;
+  const alertArea = document.getElementById('settingsAlert');
+
+  if (!currentPassword || !newPassword) {
+    alertArea.innerHTML = '<div class="alert alert-error">Please fill in all fields</div>';
+    return;
+  }
+  if (newPassword.length < 6) {
+    alertArea.innerHTML = '<div class="alert alert-error">New password must be at least 6 characters</div>';
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    alertArea.innerHTML = '<div class="alert alert-error">New passwords do not match</div>';
+    return;
+  }
+
+  try {
+    await api('/api/admin/change-password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) });
+    alertArea.innerHTML = '<div class="alert alert-success">Password changed successfully!</div>';
+    document.getElementById('currentPassword').value = '';
+    document.getElementById('newPassword').value = '';
+    document.getElementById('confirmPassword').value = '';
+    setTimeout(() => alertArea.innerHTML = '', 4000);
+  } catch(e) {
+    alertArea.innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
   }
 }
 

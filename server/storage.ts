@@ -577,7 +577,16 @@ export async function getAllContactMessages(): Promise<ContactMessage[]> {
 }
 
 export async function markContactMessageRead(id: string): Promise<void> {
-  await db.update(contactMessages).set({ isRead: true }).where(eq(contactMessages.id, id));
+  await db.update(contactMessages).set({ isRead: true, status: "read" }).where(eq(contactMessages.id, id));
+}
+
+export async function updateContactMessageStatus(id: string, status: string): Promise<void> {
+  await db.update(contactMessages).set({ status }).where(eq(contactMessages.id, id));
+}
+
+export async function getAdminUser(username: string) {
+  const [user] = await db.select().from(adminUsers).where(eq(adminUsers.username, username));
+  return user || null;
 }
 
 export async function deleteContactMessage(id: string): Promise<void> {

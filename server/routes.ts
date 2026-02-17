@@ -918,20 +918,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Admin: get contact messages
-  app.get("/api/admin/contact-messages", adminAuth as any, async (_req: Request, res: Response) => {
+  // Admin: get contact messages with pagination and filtering
+  app.get("/api/admin/contact-messages", adminAuth as any, async (req: Request, res: Response) => {
     try {
-      const messages = await storage.getAllContactMessages();
-      res.json(messages);
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 30;
+      const status = (req.query.status as string) || undefined;
+      const allMessages = await storage.getAllContactMessages();
+      const filtered = status ? allMessages.filter((m: any) => m.status === status) : allMessages;
+      const total = filtered.length;
+      const start = (page - 1) * limit;
+      const messages = filtered.slice(start, start + limit);
+      res.json({ messages, total, page, totalPages: Math.ceil(total / limit) });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
-  // Admin: mark contact message as read
-  app.put("/api/admin/contact-messages/:id/read", adminAuth as any, async (req: Request, res: Response) => {
+  // Admin: update contact message status
+  app.put("/api/admin/contact-messages/:id", adminAuth as any, async (req: Request, res: Response) => {
     try {
-      await storage.markContactMessageRead(req.params.id);
+      const { status } = req.body;
+      if (status === 'read') {
+        await storage.markContactMessageRead(req.params.id);
+      } else {
+        await storage.updateContactMessageStatus(req.params.id, status);
+      }
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -951,14 +963,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Admin: change password
   app.post("/api/admin/change-password", adminAuth as any, async (req: Request, res: Response) => {
     try {
-      const { username, oldPassword, newPassword } = req.body;
-      if (!username || !oldPassword || !newPassword) {
+      const { currentPassword, newPassword } = req.body;
+      if (!currentPassword || !newPassword) {
         return res.status(400).json({ error: "All fields are required" });
       }
       if (newPassword.length < 6) {
         return res.status(400).json({ error: "New password must be at least 6 characters" });
       }
-      const changed = await storage.changeAdminPassword(username, oldPassword, newPassword);
+      const adminUser = await storage.getAdminUser("admin");
+      if (!adminUser) {
+        return res.status(404).json({ error: "Admin user not found" });
+      }
+      const changed = await storage.changeAdminPassword("admin", currentPassword, newPassword);
       if (!changed) {
         return res.status(401).json({ error: "Current password is incorrect" });
       }
