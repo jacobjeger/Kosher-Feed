@@ -11,6 +11,7 @@ import { usePositions } from "@/contexts/PositionsContext";
 import Colors from "@/constants/colors";
 import type { Episode, Feed } from "@/lib/types";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
+import { getApiUrl } from "@/lib/query-client";
 
 interface Props {
   episode: Episode;
@@ -271,11 +272,11 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
           onPress={(e) => {
             e.stopPropagation();
             if (Platform.OS === "web") {
-              if (episode.audioUrl) {
+              if (episode.id) {
+                const downloadUrl = `${getApiUrl()}/api/episodes/${episode.id}/download`;
                 const link = document.createElement("a");
-                link.href = episode.audioUrl;
-                link.download = `${episode.title || "episode"}.mp3`;
-                link.target = "_blank";
+                link.href = downloadUrl;
+                link.style.display = "none";
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);

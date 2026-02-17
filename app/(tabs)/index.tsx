@@ -28,7 +28,8 @@ interface TrendingEpisode extends Episode {
   listenCount: number;
 }
 
-const CAROUSEL_WIDTH = Dimensions.get("window").width - 40;
+const screenWidth = Dimensions.get("window").width;
+const CAROUSEL_WIDTH = Platform.OS === "web" ? Math.min(screenWidth - 40, 1160) : screenWidth - 40;
 const CAROUSEL_HEIGHT = 180;
 const AUTO_SCROLL_INTERVAL = 5000;
 
@@ -434,7 +435,7 @@ function HomeScreenInner() {
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
-      contentContainerStyle={{ paddingBottom: 140 }}
+      contentContainerStyle={{ paddingBottom: 140, maxWidth: Platform.OS === "web" ? 1200 : undefined, marginHorizontal: Platform.OS === "web" ? "auto" as any : undefined, width: Platform.OS === "web" ? "100%" as any : undefined }}
       refreshControl={
         <RefreshControl refreshing={false} onRefresh={onRefresh} tintColor={colors.accent} />
       }

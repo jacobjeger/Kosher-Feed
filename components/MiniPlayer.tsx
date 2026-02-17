@@ -84,6 +84,12 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: "hidden",
     ...Platform.select({
+      web: {
+        boxShadow: "0 -2px 16px rgba(0,0,0,0.3)",
+        maxWidth: 1200,
+        marginHorizontal: "auto" as any,
+        width: "calc(100% - 24px)" as any,
+      },
       ios: {
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 4 },
