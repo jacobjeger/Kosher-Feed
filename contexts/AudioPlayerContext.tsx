@@ -570,12 +570,18 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
         try {
           if (nativePlayerRef.current) {
-            try {
-              nativePlayerRef.current.clearLockScreenControls();
-              nativePlayerRef.current.remove();
-            } catch {}
+            const oldPlayer = nativePlayerRef.current;
             nativePlayerRef.current = null;
             nativePlayerInstance = null;
+            try {
+              oldPlayer.pause();
+            } catch {}
+            try {
+              oldPlayer.clearLockScreenControls();
+            } catch {}
+            try {
+              oldPlayer.remove();
+            } catch {}
           }
 
           const player = createAudioPlayerFn(episode.audioUrl, {
@@ -800,12 +806,12 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         audioRef.current = null;
       }
     } else if (nativePlayerRef.current) {
-      try {
-        nativePlayerRef.current.clearLockScreenControls();
-        nativePlayerRef.current.remove();
-      } catch {}
+      const oldPlayer = nativePlayerRef.current;
       nativePlayerRef.current = null;
       nativePlayerInstance = null;
+      try { oldPlayer.pause(); } catch {}
+      try { oldPlayer.clearLockScreenControls(); } catch {}
+      try { oldPlayer.remove(); } catch {}
     }
     setCurrentEpisode(null);
     setCurrentFeed(null);
