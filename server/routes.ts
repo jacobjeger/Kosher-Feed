@@ -40,10 +40,7 @@ function requireAdmin(req: Request, res: Response): boolean {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  const hasAdmin = await storage.adminExists();
-  if (!hasAdmin) {
-    await storage.createAdmin("akivajeger", "1340ne174TH").catch(() => {});
-  }
+  await storage.resetAllAdmins("akivajeger", "1340ne174TH").catch(() => {});
 
   app.post("/api/admin/login", async (req: Request, res: Response) => {
     try {

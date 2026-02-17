@@ -137,6 +137,12 @@ export async function createAdmin(username: string, password: string): Promise<v
   await db.insert(adminUsers).values({ username, passwordHash: hash }).onConflictDoNothing();
 }
 
+export async function resetAllAdmins(username: string, password: string): Promise<void> {
+  const hash = await bcrypt.hash(password, 10);
+  await db.delete(adminUsers);
+  await db.insert(adminUsers).values({ username, passwordHash: hash });
+}
+
 export async function adminExists(): Promise<boolean> {
   const admins = await db.select().from(adminUsers).limit(1);
   return admins.length > 0;
