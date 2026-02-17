@@ -397,6 +397,12 @@ function HomeScreenInner() {
     );
   }, [searchQuery, allFeeds]);
 
+  const speakerSearchResults = useMemo(() => {
+    if (!searchQuery.trim() || searchQuery.trim().length < 2) return [];
+    const q = searchQuery.toLowerCase().trim();
+    return maggidShiurim.filter(s => s.author.toLowerCase().includes(q));
+  }, [searchQuery, maggidShiurim]);
+
   const episodeSearchQuery = useQuery<Episode[]>({
     queryKey: ["/api/episodes/search", searchQuery],
     queryFn: async () => {
@@ -489,7 +495,7 @@ function HomeScreenInner() {
           <Ionicons name="search" size={18} color={colors.textSecondary} style={{ marginLeft: 14 }} />
           <TextInput
             style={[styles.searchInput, { color: colors.text }]}
-            placeholder="Search shiurim..."
+            placeholder="Search shiurim, speakers, episodes..."
             placeholderTextColor={colors.textSecondary}
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -508,7 +514,7 @@ function HomeScreenInner() {
 
       {isSearching && (
         <View style={styles.searchResultsSection}>
-          {searchResults.length === 0 && searchedEpisodes.length === 0 && searchQuery.trim().length >= 3 && !episodeSearchQuery.isLoading ? (
+          {searchResults.length === 0 && searchedEpisodes.length === 0 && speakerSearchResults.length === 0 && searchQuery.trim().length >= 3 && !episodeSearchQuery.isLoading ? (
             <View style={styles.noResults}>
               <Ionicons name="search-outline" size={40} color={colors.textSecondary} />
               <Text style={[styles.noResultsText, { color: colors.textSecondary }]}>
@@ -517,6 +523,40 @@ function HomeScreenInner() {
             </View>
           ) : (
             <>
+              {speakerSearchResults.length > 0 && (
+                <>
+                  <Text style={[styles.searchSectionLabel, { color: colors.textSecondary }]}>Maggidei Shiur</Text>
+                  <View style={{ paddingHorizontal: 20 }}>
+                    {speakerSearchResults.map((speaker) => (
+                      <Pressable
+                        key={speaker.author}
+                        style={({ pressed }) => [
+                          styles.searchResult,
+                          { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.9 : 1 },
+                        ]}
+                        onPress={() => { lightHaptic(); router.push({ pathname: "/maggid-shiur/[author]" as any, params: { author: speaker.author, feedIds: speaker.feeds.map((f: Feed) => f.id).join(",") } }); }}
+                      >
+                        {speaker.feeds[0]?.imageUrl ? (
+                          <Image source={{ uri: speaker.feeds[0].imageUrl }} style={styles.searchResultImage} contentFit="cover" cachePolicy="memory-disk" transition={0} />
+                        ) : (
+                          <View style={[styles.searchResultImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
+                            <Ionicons name="person" size={20} color={colors.textSecondary} />
+                          </View>
+                        )}
+                        <View style={styles.searchResultInfo}>
+                          <Text style={[styles.searchResultTitle, { color: colors.text }]} numberOfLines={1}>
+                            {speaker.author}
+                          </Text>
+                          <Text style={[styles.searchResultAuthor, { color: colors.textSecondary }]} numberOfLines={1}>
+                            {speaker.feeds.length} {speaker.feeds.length === 1 ? "shiur" : "shiurim"}
+                          </Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+                      </Pressable>
+                    ))}
+                  </View>
+                </>
+              )}
               {searchResults.length > 0 && (
                 <>
                   <Text style={[styles.searchSectionLabel, { color: colors.textSecondary }]}>Shiurim</Text>
@@ -539,7 +579,7 @@ function HomeScreenInner() {
                   </View>
                 </>
               )}
-              {searchQuery.trim().length < 3 && searchResults.length === 0 && (
+              {searchQuery.trim().length < 3 && searchResults.length === 0 && speakerSearchResults.length === 0 && (
                 <View style={styles.noResults}>
                   <Text style={[styles.noResultsText, { color: colors.textSecondary }]}>
                     Type 3+ characters to search episodes

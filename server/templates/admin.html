@@ -735,8 +735,11 @@ function showAddFeedModal() {
     </div>
 
     <div class="form-group" style="margin-top:16px;">
-      <label>Category</label>
-      <select id="feedCategory"><option value="">Uncategorized</option>${catOptions}</select>
+      <label>Categories</label>
+      <div id="addFeedCategories" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;">
+        ${categories.map(c => `<label style="display:flex;align-items:center;gap:4px;font-size:13px;color:#cbd5e1;cursor:pointer;"><input type="checkbox" class="addFeedCatCb" value="${c.id}"> ${esc(c.name)}</label>`).join('')}
+      </div>
+      ${categories.length === 0 ? '<p style="color:#64748b;font-size:12px;">No categories yet. Add categories first.</p>' : ''}
     </div>
 
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;">
@@ -877,7 +880,7 @@ async function addFeed() {
     rssUrl = document.getElementById('feedUrl')?.value?.trim();
   }
 
-  const categoryId = document.getElementById('feedCategory').value || null;
+  const categoryIds = Array.from(document.querySelectorAll('.addFeedCatCb:checked')).map(cb => cb.value);
 
   if (!rssUrl) {
     showAlert('Please select a podcast from search results or enter an RSS URL.', 'error');
@@ -887,7 +890,7 @@ async function addFeed() {
   }
 
   try {
-    await api('/api/admin/feeds', { method: 'POST', body: JSON.stringify({ rssUrl, categoryId }) });
+    await api('/api/admin/feeds', { method: 'POST', body: JSON.stringify({ rssUrl, categoryIds }) });
     closeModal();
     showAlert('Feed added and episodes fetched!');
     await Promise.all([loadFeeds(), loadAnalytics()]);
@@ -1138,7 +1141,7 @@ async function editFeed(id) {
       <div class="form-group"><label>Title</label><input type="text" id="editTitle" value="${esc(feed.title)}"></div>
       <div class="form-group"><label>Author</label><input type="text" id="editAuthor" value="${esc(feed.author || '')}"></div>
       <div class="form-group"><label>Image URL</label><input type="url" id="editImage" value="${esc(feed.imageUrl || '')}"></div>
-      <div class="form-group"><label>Categories</label><div style="max-height:180px;overflow-y:auto;padding:8px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;">${catCheckboxes || '<span style="color:#94a3b8;">No categories created yet</span>'}</div></div>
+      <div class="form-group"><label>Categories</label><div style="max-height:180px;overflow-y:auto;padding:8px;border:1px solid #1e293b;border-radius:8px;background:#0f172a;">${catCheckboxes || '<span style="color:#94a3b8;">No categories created yet</span>'}</div></div>
       <div class="form-group"><label>Description</label><textarea id="editDesc">${esc(feed.description || '')}</textarea></div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;">
         <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>

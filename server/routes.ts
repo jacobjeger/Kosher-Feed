@@ -214,19 +214,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const parsed = await parseFeed("temp", rssUrl);
 
+      const effectiveCategoryId = categoryId || (categoryIds && categoryIds.length > 0 ? categoryIds[0] : null);
       const feed = await storage.createFeed({
         title: parsed.title,
         rssUrl,
         imageUrl: parsed.imageUrl || null,
         description: parsed.description || null,
         author: parsed.author || null,
-        categoryId: categoryId || null,
+        categoryId: effectiveCategoryId,
       });
 
-      if (categoryIds && Array.isArray(categoryIds) && categoryIds.length > 0) {
-        await storage.setFeedCategories(feed.id, categoryIds);
-      } else if (categoryId) {
-        await storage.setFeedCategories(feed.id, [categoryId]);
+      const effectiveCategoryIds = (categoryIds && Array.isArray(categoryIds) && categoryIds.length > 0)
+        ? categoryIds
+        : (categoryId ? [categoryId] : []);
+      if (effectiveCategoryIds.length > 0) {
+        await storage.setFeedCategories(feed.id, effectiveCategoryIds);
       }
 
       const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
