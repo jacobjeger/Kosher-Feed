@@ -141,6 +141,15 @@ export const contactMessages = pgTable("contact_messages", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const feedCategories = pgTable("feed_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  feedId: varchar("feed_id").references(() => feeds.id, { onDelete: "cascade" }).notNull(),
+  categoryId: varchar("category_id").references(() => categories.id, { onDelete: "cascade" }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("feed_categories_feed_cat_idx").on(table.feedId, table.categoryId),
+]);
+
 export const apkUploads = pgTable("apk_uploads", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   filename: text("filename").notNull(),
@@ -191,3 +200,4 @@ export type ErrorReport = typeof errorReports.$inferSelect;
 export type Feedback = typeof feedback.$inferSelect;
 export type PushToken = typeof pushTokens.$inferSelect;
 export type ContactMessage = typeof contactMessages.$inferSelect;
+export type FeedCategory = typeof feedCategories.$inferSelect;
