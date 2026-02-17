@@ -496,6 +496,12 @@ function SettingsScreenInner() {
             icon={<Ionicons name="information-circle" size={20} color={colors.accent} />}
             label="All content is reviewed and approved"
           />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingRow
+            icon={<Ionicons name="document-text" size={20} color={colors.accent} />}
+            label="Legal & Privacy"
+            onPress={() => router.push("/legal")}
+          />
         </View>
       </View>
 
