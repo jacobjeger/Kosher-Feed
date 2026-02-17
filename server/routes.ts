@@ -904,6 +904,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Contact form (public)
+  app.post("/api/contact", async (req: Request, res: Response) => {
+    try {
+      const { name, email, message } = req.body;
+      if (!name || !message) {
+        return res.status(400).json({ error: "Name and message are required" });
+      }
+      const msg = await storage.createContactMessage(name, email || null, message);
+      res.json({ ok: true, id: msg.id });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: get contact messages
+  app.get("/api/admin/contact-messages", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const messages = await storage.getAllContactMessages();
+      res.json(messages);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: mark contact message as read
+  app.put("/api/admin/contact-messages/:id/read", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      await storage.markContactMessageRead(req.params.id);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: delete contact message
+  app.delete("/api/admin/contact-messages/:id", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteContactMessage(req.params.id);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: change password
+  app.post("/api/admin/change-password", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { username, oldPassword, newPassword } = req.body;
+      if (!username || !oldPassword || !newPassword) {
+        return res.status(400).json({ error: "All fields are required" });
+      }
+      if (newPassword.length < 6) {
+        return res.status(400).json({ error: "New password must be at least 6 characters" });
+      }
+      const changed = await storage.changeAdminPassword(username, oldPassword, newPassword);
+      if (!changed) {
+        return res.status(401).json({ error: "Current password is incorrect" });
+      }
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

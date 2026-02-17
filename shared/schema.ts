@@ -131,6 +131,15 @@ export const feedback = pgTable("feedback", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const contactMessages = pgTable("contact_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  email: text("email"),
+  message: text("message").notNull(),
+  isRead: boolean("is_read").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const insertFeedSchema = createInsertSchema(feeds).pick({
   title: true,
   rssUrl: true,
@@ -168,3 +177,4 @@ export type AdminNotification = typeof adminNotifications.$inferSelect;
 export type ErrorReport = typeof errorReports.$inferSelect;
 export type Feedback = typeof feedback.$inferSelect;
 export type PushToken = typeof pushTokens.$inferSelect;
+export type ContactMessage = typeof contactMessages.$inferSelect;

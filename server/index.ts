@@ -191,6 +191,10 @@ function configureExpoAndLanding(app: express.Application) {
       return next();
     }
 
+    if (req.path.startsWith("/webapp")) {
+      return next();
+    }
+
     const platform = req.header("expo-platform");
     if (platform && (platform === "ios" || platform === "android")) {
       if (req.path === "/" || req.path === "/manifest") {
@@ -225,12 +229,23 @@ function configureExpoAndLanding(app: express.Application) {
   if (hasWebBuild) {
     app.use(express.static(webDistPath));
 
+    app.get("/webapp", (_req: Request, res: Response) => {
+      const indexPath = path.join(webDistPath, "index.html");
+      if (fs.existsSync(indexPath)) {
+        return res.sendFile(indexPath);
+      }
+      res.redirect("/");
+    });
+
     app.use((req: Request, res: Response, next: NextFunction) => {
       if (req.path.startsWith("/api") || req.path === "/admin" || req.path.startsWith("/share/")) {
         return next();
       }
       const platform = req.header("expo-platform");
       if (platform) {
+        return next();
+      }
+      if (req.path === "/") {
         return next();
       }
       const indexPath = path.join(webDistPath, "index.html");

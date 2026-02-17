@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens } from "@shared/schema";
-import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken } from "@shared/schema";
+import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages } from "@shared/schema";
+import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage } from "@shared/schema";
 import { eq, and, desc, asc, inArray, sql, count, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
@@ -565,4 +565,29 @@ export async function getSubscribersForFeed(feedId: string): Promise<PushToken[]
 
 export async function removePushToken(token: string): Promise<void> {
   await db.delete(pushTokens).where(eq(pushTokens.token, token));
+}
+
+export async function createContactMessage(name: string, email: string | null, message: string): Promise<ContactMessage> {
+  const [msg] = await db.insert(contactMessages).values({ name, email, message }).returning();
+  return msg;
+}
+
+export async function getAllContactMessages(): Promise<ContactMessage[]> {
+  return db.select().from(contactMessages).orderBy(desc(contactMessages.createdAt));
+}
+
+export async function markContactMessageRead(id: string): Promise<void> {
+  await db.update(contactMessages).set({ isRead: true }).where(eq(contactMessages.id, id));
+}
+
+export async function deleteContactMessage(id: string): Promise<void> {
+  await db.delete(contactMessages).where(eq(contactMessages.id, id));
+}
+
+export async function changeAdminPassword(username: string, oldPassword: string, newPassword: string): Promise<boolean> {
+  const valid = await verifyAdmin(username, oldPassword);
+  if (!valid) return false;
+  const hash = await bcrypt.hash(newPassword, 10);
+  await db.update(adminUsers).set({ passwordHash: hash }).where(eq(adminUsers.username, username));
+  return true;
 }
