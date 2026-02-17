@@ -588,7 +588,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
             }
           });
 
-          player.playbackRate = feedSpeed;
+          player.setPlaybackRate(feedSpeed);
 
           if (savedPos > 0) {
             player.seekTo(savedPos / 1000);
@@ -724,7 +724,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       if (Platform.OS === "web" && audioRef.current) {
         audioRef.current.playbackRate = rate;
       } else if (nativePlayerRef.current) {
-        nativePlayerRef.current.playbackRate = rate;
+        nativePlayerRef.current.setPlaybackRate(rate);
       }
     } catch (e) {
       addLog("warn", `Set rate failed: ${(e as any)?.message || e}`, undefined, "audio");
