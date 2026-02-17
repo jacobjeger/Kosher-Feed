@@ -150,6 +150,14 @@ export const feedCategories = pgTable("feed_categories", {
   uniqueIndex("feed_categories_feed_cat_idx").on(table.feedId, table.categoryId),
 ]);
 
+export const maggidShiurim = pgTable("maggid_shiurim", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull().unique(),
+  imageUrl: text("image_url"),
+  bio: text("bio"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const apkUploads = pgTable("apk_uploads", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   filename: text("filename").notNull(),
@@ -201,3 +209,5 @@ export type Feedback = typeof feedback.$inferSelect;
 export type PushToken = typeof pushTokens.$inferSelect;
 export type ContactMessage = typeof contactMessages.$inferSelect;
 export type FeedCategory = typeof feedCategories.$inferSelect;
+export type MaggidShiur = typeof maggidShiurim.$inferSelect;
+export type InsertMaggidShiur = typeof maggidShiurim.$inferInsert;

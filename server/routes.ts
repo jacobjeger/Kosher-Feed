@@ -664,15 +664,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Admin: Bulk Feed Import
+  // Admin: Maggid Shiur (speaker) management
+  app.get("/api/admin/maggid-shiurim", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const profiles = await storage.getAllMaggidShiurim();
+      res.json(profiles);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/admin/maggid-shiurim", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { name, imageUrl, bio } = req.body;
+      if (!name) return res.status(400).json({ error: "Name is required" });
+      const profile = await storage.createMaggidShiur({ name, imageUrl: imageUrl || null, bio: bio || null });
+      res.json(profile);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.put("/api/admin/maggid-shiurim/:id", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { name, imageUrl, bio } = req.body;
+      const profile = await storage.updateMaggidShiur(req.params.id, { name, imageUrl: imageUrl || null, bio: bio || null });
+      res.json(profile);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/admin/maggid-shiurim/:id", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteMaggidShiur(req.params.id);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Bulk Feed Import with streaming progress
   app.post("/api/admin/feeds/bulk-import", adminAuth as any, async (req: Request, res: Response) => {
     try {
       const { feeds: feedUrls, categoryId } = req.body;
       if (!Array.isArray(feedUrls) || feedUrls.length === 0) return res.status(400).json({ error: "feeds array required" });
+
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.flushHeaders();
+
       const results: { url: string; success: boolean; title?: string; error?: string }[] = [];
-      for (const rssUrl of feedUrls) {
+      for (let i = 0; i < feedUrls.length; i++) {
+        const rssUrl = feedUrls[i];
         try {
+          res.write(`data: ${JSON.stringify({ type: "progress", index: i, total: feedUrls.length, url: rssUrl, status: "parsing" })}\n\n`);
           const parsed = await parseFeed("temp", rssUrl);
+          res.write(`data: ${JSON.stringify({ type: "progress", index: i, total: feedUrls.length, url: rssUrl, status: "saving", title: parsed.title })}\n\n`);
           const feed = await storage.createFeed({
             title: parsed.title,
             rssUrl,
@@ -684,13 +733,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
           await storage.upsertEpisodes(feed.id, episodeData);
           results.push({ url: rssUrl, success: true, title: parsed.title });
+          res.write(`data: ${JSON.stringify({ type: "progress", index: i, total: feedUrls.length, url: rssUrl, status: "done", title: parsed.title })}\n\n`);
         } catch (e: any) {
           results.push({ url: rssUrl, success: false, error: e.message });
+          res.write(`data: ${JSON.stringify({ type: "progress", index: i, total: feedUrls.length, url: rssUrl, status: "error", error: e.message })}\n\n`);
         }
       }
-      res.json({ results });
+      res.write(`data: ${JSON.stringify({ type: "complete", results })}\n\n`);
+      res.end();
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      if (!res.headersSent) {
+        res.status(500).json({ error: e.message });
+      }
     }
   });
 

@@ -56,7 +56,7 @@ Preferred communication style: Simple, everyday language.
   - `GET /share/episode/:id` — web share page with OG tags, audio player, deep link
   - Admin CRUD endpoints for feeds/categories (Basic auth protected)
 - **RSS parsing**: `rss-parser` library fetches and parses podcast RSS feeds, extracting episode metadata
-- **Admin panel**: Server-rendered HTML admin interface at `/admin` for managing feeds and categories
+- **Admin panel**: Server-rendered HTML admin interface at `/admin` for managing feeds, categories, and speaker (Maggid Shiur) profiles
 - **Admin auth**: Simple Basic auth with bcrypt-hashed passwords, default credentials `admin/admin123`
 - **CORS**: Dynamic origin allowlist based on Replit environment variables, plus localhost support for dev
 - **Performance**: gzip compression via `compression` middleware; Cache-Control headers on read endpoints (feeds/categories 60s, episodes 30s)
@@ -75,6 +75,7 @@ Preferred communication style: Simple, everyday language.
   - `adminNotifications` — admin notification campaigns
   - `push_tokens` — Expo push notification tokens per device
   - `episodeListens` — episode listen tracking for trending/analytics
+  - `maggid_shiurim` — customizable speaker profiles (id, name, imageUrl, bio) linked to feeds by author name
 - **Migrations**: Managed via `drizzle-kit push` (schema push approach, not file-based migrations)
 - **Connection**: `pg` Pool with `DATABASE_URL` environment variable
 

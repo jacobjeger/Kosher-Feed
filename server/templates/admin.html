@@ -171,6 +171,7 @@
       <button class="tab active" onclick="switchTab('analytics', this)">Analytics</button>
       <button class="tab" onclick="switchTab('feeds', this)">Feeds</button>
       <button class="tab" onclick="switchTab('categories', this)">Categories</button>
+      <button class="tab" onclick="switchTab('speakers', this)">Speakers</button>
       <button class="tab" onclick="switchTab('errors', this)">Error Reports</button>
       <button class="tab" onclick="switchTab('feedback', this)">Feedback</button>
       <button class="tab" onclick="switchTab('messages', this)">Messages</button>
@@ -242,6 +243,16 @@
           <button class="btn btn-primary btn-sm" onclick="showAddCategoryModal()">Add Category</button>
         </div>
         <div id="categoryList"></div>
+      </div>
+    </div>
+
+    <div id="speakersTab" class="hidden">
+      <div class="card">
+        <div class="card-header">
+          <h2>Maggidei Shiur (Speakers)</h2>
+          <button class="btn btn-primary btn-sm" onclick="showAddSpeakerModal()">Add Speaker</button>
+        </div>
+        <div id="speakerList"></div>
       </div>
     </div>
 
@@ -377,6 +388,7 @@ let analyticsData = null;
 let searchTimeout = null;
 let selectedSearchResult = null;
 let allAdminFeeds = [];
+let allSpeakers = [];
 
 const api = async (url, opts = {}) => {
   const headers = { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Basic ${token}` } : {}), ...opts.headers };
@@ -1159,12 +1171,134 @@ async function saveFeedEdit(id) {
   }
 }
 
+async function loadSpeakers() {
+  try {
+    allSpeakers = await api('/api/admin/maggid-shiurim');
+    const grouped = await api('/api/feeds/maggid-shiur');
+    const list = document.getElementById('speakerList');
+    const profileMap = {};
+    allSpeakers.forEach(s => { profileMap[s.name.toLowerCase()] = true; });
+    const unmatched = grouped.filter(g => !profileMap[g.author.toLowerCase()]);
+
+    let html = '';
+    if (unmatched.length > 0) {
+      html += '<div style="margin-bottom:16px;padding:12px;background:#1a1f2e;border-radius:10px;border:1px solid #1e293b;"><p style="color:#f59e0b;font-size:13px;margin-bottom:8px;">Speakers without profiles (click to create):</p>';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:6px;">';
+      unmatched.forEach(s => {
+        html += `<button class="btn btn-secondary btn-sm" onclick="showAddSpeakerModal('${esc(s.author)}')" style="font-size:11px;">${esc(s.author)} (${s.feeds.length} feeds)</button>`;
+      });
+      html += '</div></div>';
+    }
+
+    if (allSpeakers.length === 0 && unmatched.length === 0) {
+      html += '<p style="color:#64748b;text-align:center;padding:20px;">No speaker profiles yet. Add feeds first, then create profiles.</p>';
+    } else {
+      const groupedMap = {};
+      grouped.forEach(g => { groupedMap[g.author.toLowerCase()] = g; });
+      html += allSpeakers.map(s => {
+        const g = groupedMap[s.name.toLowerCase()];
+        const feedCount = g ? g.feeds.length : 0;
+        return `<div class="feed-item">
+          ${s.imageUrl ? `<img src="${s.imageUrl}" style="width:48px;height:48px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'">` : '<div style="width:48px;height:48px;border-radius:50%;background:#1e293b;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;color:#94a3b8;">&#9787;</div>'}
+          <div class="feed-info">
+            <div class="feed-title">${esc(s.name)}</div>
+            <div class="feed-meta">${feedCount} feed${feedCount !== 1 ? 's' : ''}${s.bio ? ' &bull; ' + esc(s.bio.substring(0, 60)) + (s.bio.length > 60 ? '...' : '') : ''}</div>
+          </div>
+          <div class="feed-actions">
+            <button class="btn btn-secondary btn-sm" onclick="editSpeaker('${s.id}')">Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteSpeaker('${s.id}')">Delete</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+    list.innerHTML = html;
+  } catch(e) {
+    document.getElementById('speakerList').innerHTML = '<p style="color:#ef4444;padding:20px;">Failed to load speakers: ' + esc(e.message) + '</p>';
+  }
+}
+
+function showAddSpeakerModal(prefillName) {
+  document.getElementById('modalContent').innerHTML = `
+    <h2>Add Speaker Profile</h2>
+    <div class="form-group"><label>Name (must match feed author exactly)</label><input type="text" id="speakerName" value="${esc(prefillName || '')}"></div>
+    <div class="form-group"><label>Profile Image URL</label><input type="url" id="speakerImage" placeholder="https://..."></div>
+    <div class="form-group"><label>Bio</label><textarea id="speakerBio" placeholder="Short biography..."></textarea></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSpeaker()">Create Speaker</button>
+    </div>
+  `;
+  document.getElementById('modalOverlay').classList.remove('hidden');
+}
+
+async function saveSpeaker() {
+  try {
+    const data = {
+      name: document.getElementById('speakerName').value.trim(),
+      imageUrl: document.getElementById('speakerImage').value.trim() || null,
+      bio: document.getElementById('speakerBio').value.trim() || null,
+    };
+    if (!data.name) return showAlert('Name is required', 'error');
+    await api('/api/admin/maggid-shiurim', { method: 'POST', body: JSON.stringify(data) });
+    closeModal();
+    showAlert('Speaker profile created!');
+    await loadSpeakers();
+  } catch(e) {
+    showAlert(e.message, 'error');
+  }
+}
+
+async function editSpeaker(id) {
+  const speaker = allSpeakers.find(s => s.id === id);
+  if (!speaker) return;
+  document.getElementById('modalContent').innerHTML = `
+    <h2>Edit Speaker Profile</h2>
+    <div class="form-group"><label>Name</label><input type="text" id="speakerName" value="${esc(speaker.name)}"></div>
+    <div class="form-group"><label>Profile Image URL</label><input type="url" id="speakerImage" value="${esc(speaker.imageUrl || '')}"></div>
+    <div class="form-group"><label>Bio</label><textarea id="speakerBio">${esc(speaker.bio || '')}</textarea></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="updateSpeaker('${id}')">Save Changes</button>
+    </div>
+  `;
+  document.getElementById('modalOverlay').classList.remove('hidden');
+}
+
+async function updateSpeaker(id) {
+  try {
+    const data = {
+      name: document.getElementById('speakerName').value.trim(),
+      imageUrl: document.getElementById('speakerImage').value.trim() || null,
+      bio: document.getElementById('speakerBio').value.trim() || null,
+    };
+    if (!data.name) return showAlert('Name is required', 'error');
+    await api(`/api/admin/maggid-shiurim/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+    closeModal();
+    showAlert('Speaker profile updated!');
+    await loadSpeakers();
+  } catch(e) {
+    showAlert(e.message, 'error');
+  }
+}
+
+async function deleteSpeaker(id) {
+  if (!confirm('Delete this speaker profile?')) return;
+  try {
+    await api(`/api/admin/maggid-shiurim/${id}`, { method: 'DELETE' });
+    showAlert('Speaker profile deleted');
+    await loadSpeakers();
+  } catch(e) {
+    showAlert(e.message, 'error');
+  }
+}
+
 function switchTab(tab, btn) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
-  ['analytics','feeds','categories','errors','feedback','messages','apk','settings'].forEach(t => {
+  ['analytics','feeds','categories','speakers','errors','feedback','messages','apk','settings'].forEach(t => {
     document.getElementById(t + 'Tab').classList.toggle('hidden', tab !== t);
   });
+  if (tab === 'speakers') loadSpeakers();
   if (tab === 'errors') loadErrorReports();
   if (tab === 'feedback') loadFeedback();
   if (tab === 'messages') loadMessages();

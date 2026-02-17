@@ -1,13 +1,32 @@
 import { Tabs, usePathname } from "expo-router";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
-import { Platform, StyleSheet, View, Text, Pressable } from "react-native";
+import { Platform, StyleSheet, View, Text, Pressable, Dimensions } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Colors from "@/constants/colors";
 import MiniPlayer from "@/components/MiniPlayer";
 import { router } from "expo-router";
+
+const DESKTOP_BREAKPOINT = 768;
+
+function useIsDesktopWeb() {
+  const [isDesktop, setIsDesktop] = useState(() => {
+    if (Platform.OS !== "web") return false;
+    return Dimensions.get("window").width >= DESKTOP_BREAKPOINT;
+  });
+
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const sub = Dimensions.addEventListener("change", ({ window }) => {
+      setIsDesktop(window.width >= DESKTOP_BREAKPOINT);
+    });
+    return () => sub?.remove();
+  }, []);
+
+  return Platform.OS === "web" && isDesktop;
+}
 
 function WebNavBar() {
   const colorScheme = useAppColorScheme();
@@ -74,22 +93,27 @@ export default function TabLayout() {
   const isWeb = Platform.OS === "web";
   const isIOS = Platform.OS === "ios";
   const safeAreaInsets = useSafeAreaInsets();
+  const isDesktopWeb = useIsDesktopWeb();
+
+  const showTopNav = isDesktopWeb;
+  const showBottomTabs = !isDesktopWeb;
 
   return (
     <>
-      {isWeb && <WebNavBar />}
+      {showTopNav && <WebNavBar />}
       <Tabs
         screenOptions={{
           headerShown: false,
           tabBarActiveTintColor: colors.tint,
           tabBarInactiveTintColor: colors.tabIconDefault,
-          tabBarStyle: isWeb
+          tabBarStyle: showTopNav
             ? { display: "none" as const }
             : {
                 position: "absolute" as const,
                 backgroundColor: isIOS ? "transparent" : isDark ? "#0a0f1a" : "#f8f9fc",
                 borderTopWidth: 0,
                 elevation: 0,
+                ...(isWeb ? { height: 56, paddingBottom: 34 } : {}),
               },
           tabBarBackground: () =>
             isIOS ? (
@@ -132,7 +156,7 @@ export default function TabLayout() {
           name="downloads"
           options={{
             title: "Downloads",
-            href: isWeb ? null : undefined,
+            href: isDesktopWeb ? null : undefined,
             tabBarIcon: ({ color, focused }) => (
               <Ionicons name={focused ? "cloud-download" : "cloud-download-outline"} size={22} color={color} />
             ),
@@ -142,19 +166,19 @@ export default function TabLayout() {
           name="settings"
           options={{
             title: "Settings",
-            href: isWeb ? null : undefined,
+            href: isDesktopWeb ? null : undefined,
             tabBarIcon: ({ color, focused }) => (
               <Ionicons name={focused ? "settings" : "settings-outline"} size={22} color={color} />
             ),
           }}
         />
       </Tabs>
-      {isWeb ? (
+      {showTopNav ? (
         <View style={webStyles.miniPlayerWeb}>
           <MiniPlayer />
         </View>
       ) : (
-        <View style={{ position: "absolute", bottom: (Platform.OS === "ios" ? 80 : 56) + safeAreaInsets.bottom, left: 0, right: 0 }}>
+        <View style={{ position: "absolute", bottom: (isWeb ? 56 + 34 : (isIOS ? 80 : 56) + safeAreaInsets.bottom), left: 0, right: 0 }}>
           <MiniPlayer />
         </View>
       )}

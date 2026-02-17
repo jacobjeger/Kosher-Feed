@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories } from "@shared/schema";
-import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory } from "@shared/schema";
+import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim } from "@shared/schema";
+import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur } from "@shared/schema";
 import { eq, and, desc, asc, inArray, sql, count, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
@@ -413,8 +413,12 @@ export async function getFeedsByCategories(categoryId: string): Promise<Feed[]> 
   return db.select().from(feeds).where(and(inArray(feeds.id, feedIds), eq(feeds.isActive, true))).orderBy(feeds.title);
 }
 
-export async function getActiveFeedsGroupedByAuthor(): Promise<{ author: string; feeds: Feed[] }[]> {
+export async function getActiveFeedsGroupedByAuthor(): Promise<{ author: string; feeds: Feed[]; imageUrl?: string | null; bio?: string | null; profileId?: string }[]> {
   const allActive = await db.select().from(feeds).where(eq(feeds.isActive, true)).orderBy(feeds.author, feeds.title);
+  const profiles = await db.select().from(maggidShiurim);
+  const profileMap = new Map<string, MaggidShiur>();
+  for (const p of profiles) profileMap.set(p.name.toLowerCase(), p);
+
   const grouped = new Map<string, Feed[]>();
   for (const feed of allActive) {
     const author = feed.author?.trim();
@@ -422,14 +426,44 @@ export async function getActiveFeedsGroupedByAuthor(): Promise<{ author: string;
     if (!grouped.has(author)) grouped.set(author, []);
     grouped.get(author)!.push(feed);
   }
-  const result: { author: string; feeds: Feed[] }[] = [];
+  const result: { author: string; feeds: Feed[]; imageUrl?: string | null; bio?: string | null; profileId?: string }[] = [];
   for (const [author, authorFeeds] of grouped) {
     if (authorFeeds.length >= 1) {
-      result.push({ author, feeds: authorFeeds });
+      const profile = profileMap.get(author.toLowerCase());
+      result.push({
+        author: profile?.name || author,
+        feeds: authorFeeds,
+        imageUrl: profile?.imageUrl || null,
+        bio: profile?.bio || null,
+        profileId: profile?.id,
+      });
     }
   }
   result.sort((a, b) => b.feeds.length - a.feeds.length || a.author.localeCompare(b.author));
   return result;
+}
+
+export async function getAllMaggidShiurim(): Promise<MaggidShiur[]> {
+  return db.select().from(maggidShiurim).orderBy(maggidShiurim.name);
+}
+
+export async function getMaggidShiurByName(name: string): Promise<MaggidShiur | undefined> {
+  const [result] = await db.select().from(maggidShiurim).where(eq(maggidShiurim.name, name)).limit(1);
+  return result;
+}
+
+export async function createMaggidShiur(data: InsertMaggidShiur): Promise<MaggidShiur> {
+  const [result] = await db.insert(maggidShiurim).values(data).returning();
+  return result;
+}
+
+export async function updateMaggidShiur(id: string, data: Partial<InsertMaggidShiur>): Promise<MaggidShiur> {
+  const [result] = await db.update(maggidShiurim).set(data).where(eq(maggidShiurim.id, id)).returning();
+  return result;
+}
+
+export async function deleteMaggidShiur(id: string): Promise<void> {
+  await db.delete(maggidShiurim).where(eq(maggidShiurim.id, id));
 }
 
 export async function setFeedFeatured(feedId: string, featured: boolean): Promise<Feed> {
