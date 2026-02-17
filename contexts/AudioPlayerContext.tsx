@@ -550,15 +550,25 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (Platform.OS === "web" || !TrackPlayer || !TPEvent) return;
 
-    const sub = TrackPlayer.addEventListener(TPEvent.PlaybackQueueEnded, (data: any) => {
+    const subs: any[] = [];
+
+    subs.push(TrackPlayer.addEventListener(TPEvent.PlaybackQueueEnded, (data: any) => {
       const ep = currentEpisodeRef.current;
       const feed = currentFeedRef.current;
       if (ep && feed && data?.track !== undefined) {
         handleEpisodeEndRef.current(ep, feed);
       }
-    });
+    }));
 
-    return () => sub?.remove?.();
+    if (TPEvent.PlaybackError) {
+      subs.push(TrackPlayer.addEventListener(TPEvent.PlaybackError, (data: any) => {
+        const msg = data?.message || data?.code || "Unknown playback error";
+        addLog("error", `TrackPlayer error: ${msg}`, undefined, "audio");
+        setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: false }));
+      }));
+    }
+
+    return () => subs.forEach(s => s?.remove?.());
   }, []);
 
   const playEpisodeInternal = useCallback(async (episode: Episode, feed: Feed, skipHistory?: boolean) => {
@@ -610,29 +620,39 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         setCurrentFeed(feed);
         setPlayback(prev => ({ ...prev, isLoading: true, isPlaying: false, positionMs: savedPos, durationMs: 0, playbackRate: feedSpeed }));
 
-        await TrackPlayer.reset();
-        await TrackPlayer.add({
-          id: episode.id,
-          url: episode.audioUrl,
-          title: episode.title || "Unknown",
-          artist: feed.title || "ShiurPod",
-          album: feed.title || "ShiurPod",
-          artwork: feed.imageUrl || undefined,
-          duration: episode.duration ? parseInt(String(episode.duration), 10) / 1000 : undefined,
-        });
+        try {
+          await TrackPlayer.reset();
+          await TrackPlayer.add({
+            id: episode.id,
+            url: episode.audioUrl,
+            title: episode.title || "Unknown",
+            artist: feed.title || "ShiurPod",
+            album: feed.title || "ShiurPod",
+            artwork: feed.imageUrl || undefined,
+            duration: episode.duration ? parseInt(String(episode.duration), 10) / 1000 : undefined,
+          });
 
-        if (feedSpeed !== 1.0) {
-          await TrackPlayer.setRate(feedSpeed);
+          if (feedSpeed !== 1.0) {
+            await TrackPlayer.setRate(feedSpeed);
+          }
+
+          if (savedPos > 0) {
+            await TrackPlayer.seekTo(savedPos / 1000);
+          }
+
+          await TrackPlayer.play();
+          setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true }));
+          addLog("info", `Playing (TrackPlayer): ${episode.title} (feed: ${feed.title})`, undefined, "audio");
+          startPositionTracking();
+        } catch (tpErr: any) {
+          const msg = tpErr?.message || String(tpErr);
+          const isNetwork = /resolve host|no address|connection abort|network/i.test(msg);
+          addLog("error", `TrackPlayer play failed: ${msg}`, tpErr?.stack, "audio");
+          setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: false }));
+          if (isNetwork) {
+            addLog("warn", "Network unavailable — check your internet connection", undefined, "audio");
+          }
         }
-
-        if (savedPos > 0) {
-          await TrackPlayer.seekTo(savedPos / 1000);
-        }
-
-        await TrackPlayer.play();
-        setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true }));
-        addLog("info", `Playing (TrackPlayer): ${episode.title} (feed: ${feed.title})`, undefined, "audio");
-        startPositionTracking();
       } else {
         addLog("error", "No audio player available", undefined, "audio");
         setPlayback(prev => ({ ...prev, isLoading: false }));
