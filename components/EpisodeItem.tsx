@@ -267,28 +267,38 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
             <Ionicons name="add-circle-outline" size={22} color={colors.textSecondary} />
           )}
         </Pressable>
-        {Platform.OS !== "web" && (
-          <Pressable
-            onPress={(e) => {
-              e.stopPropagation();
+        <Pressable
+          onPress={(e) => {
+            e.stopPropagation();
+            if (Platform.OS === "web") {
+              if (episode.audioUrl) {
+                const link = document.createElement("a");
+                link.href = episode.audioUrl;
+                link.download = `${episode.title || "episode"}.mp3`;
+                link.target = "_blank";
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              }
+            } else {
               handleDownload();
-            }}
-            hitSlop={10}
-            style={styles.actionBtn}
-          >
-            {downloading ? (
-              <View style={styles.downloadingIndicator}>
-                <Text style={[styles.progressText, { color: colors.accent }]}>
-                  {Math.round(progress * 100)}%
-                </Text>
-              </View>
-            ) : downloaded ? (
-              <Ionicons name="checkmark-circle" size={22} color={colors.success} />
-            ) : (
-              <Feather name="download" size={20} color={colors.textSecondary} />
-            )}
-          </Pressable>
-        )}
+            }
+          }}
+          hitSlop={10}
+          style={styles.actionBtn}
+        >
+          {Platform.OS !== "web" && downloading ? (
+            <View style={styles.downloadingIndicator}>
+              <Text style={[styles.progressText, { color: colors.accent }]}>
+                {Math.round(progress * 100)}%
+              </Text>
+            </View>
+          ) : Platform.OS !== "web" && downloaded ? (
+            <Ionicons name="checkmark-circle" size={22} color={colors.success} />
+          ) : (
+            <Feather name="download" size={20} color={colors.textSecondary} />
+          )}
+        </Pressable>
       </View>
       {(savedProgress || played) && (
         <View style={styles.progressTextContainer}>
