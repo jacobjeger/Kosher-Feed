@@ -204,9 +204,9 @@ function PodcastDetailScreenInner() {
   const feedError = feedsQuery.isError || episodesInfiniteQuery.isError;
   const feedErrorMsg = feedsQuery.error?.message || episodesInfiniteQuery.error?.message || "";
 
-  if (feedError && !feed) {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+  const headerElement = useMemo(() => {
+    if (feedError && !feed) {
+      return (
         <View style={{ alignItems: "center", justifyContent: "center", paddingVertical: 80, paddingHorizontal: 40, gap: 12 }}>
           <Pressable onPress={() => safeGoBack()} style={{ alignSelf: "flex-start", paddingTop: insets.top + 8 }}>
             <Ionicons name="arrow-back" size={24} color={colors.text} />
@@ -229,19 +229,16 @@ function PodcastDetailScreenInner() {
             <Text style={{ color: "#fff", fontSize: 15, fontWeight: "600" as const }}>Try Again</Text>
           </Pressable>
         </View>
-      </View>
-    );
-  }
+      );
+    }
 
-  if (!feed) {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+    if (!feed) {
+      return (
         <ActivityIndicator size="large" color={colors.accent} style={{ marginTop: 100 }} />
-      </View>
-    );
-  }
+      );
+    }
 
-  const headerElement = useMemo(() => (
+    return (
     <View>
       <View style={[styles.header, { paddingTop: insets.top + (Platform.OS === "web" ? 67 : 8) }]}>
         <Pressable onPress={() => safeGoBack()} hitSlop={12}>
@@ -407,7 +404,8 @@ function PodcastDetailScreenInner() {
         )}
       </View>
     </View>
-  ), [feed, colors, insets.top, isFollowing, showFullDescription, showPreferences, feedSettings, allEpisodes.length, totalCount, sortOrder, episodeSearch, isEpisodeSearchFocused, handleFollow, handleToggleNotifications, handleChangeEpisodeLimit, episodeFilter, inProgressIds]);
+  );
+  }, [feed, feedError, feedErrorMsg, colors, insets.top, isFollowing, showFullDescription, showPreferences, feedSettings, allEpisodes.length, totalCount, sortOrder, episodeSearch, isEpisodeSearchFocused, handleFollow, handleToggleNotifications, handleChangeEpisodeLimit, episodeFilter, inProgressIds, id]);
 
   const footerElement = useMemo(() => {
     if (episodesInfiniteQuery.isFetchingNextPage) {
