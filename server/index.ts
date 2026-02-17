@@ -207,6 +207,9 @@ function configureExpoAndLanding(app: express.Application) {
 
   const loadingHtml = '<html><body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f172a;color:#94a3b8;"><div style="text-align:center;"><h2 style="color:#f8fafc;">Web App Loading...</h2><p>The Expo dev server is starting up. Please refresh in a few seconds.</p></div></body></html>';
 
+  const staticBuildPath = path.resolve(process.cwd(), "static-build");
+  const staticIndexPath = path.join(staticBuildPath, "index.html");
+
   const serveExpoWebApp = async (_req: Request, res: Response) => {
     try {
       const resp = await fetch(expoDevTarget);
@@ -217,7 +220,15 @@ function configureExpoAndLanding(app: express.Application) {
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.send(html);
     } catch {
-      res.status(502).send(loadingHtml);
+      if (fs.existsSync(staticIndexPath)) {
+        let html = fs.readFileSync(staticIndexPath, "utf-8");
+        const routerFix = `<script>if(window.location.pathname.startsWith('/webapp')){history.replaceState(null,'','/' + window.location.pathname.slice('/webapp'.length).replace(/^\\//, '') + window.location.search + window.location.hash);}</script>`;
+        html = html.replace('</head>', `${routerFix}</head>`);
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        res.send(html);
+      } else {
+        res.status(502).send(loadingHtml);
+      }
     }
   };
 
