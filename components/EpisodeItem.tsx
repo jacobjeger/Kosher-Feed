@@ -262,7 +262,7 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
           style={styles.actionBtn}
         >
           {isInQueue ? (
-            <Ionicons name="checkmark-circle" size={22} color={colors.success} />
+            <Ionicons name="list-circle" size={22} color={colors.accent} />
           ) : (
             <Ionicons name="add-circle-outline" size={22} color={colors.textSecondary} />
           )}
