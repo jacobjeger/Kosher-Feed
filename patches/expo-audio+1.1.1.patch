@@ -1,6 +1,45 @@
 --- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
 +++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
-@@ -114,6 +114,7 @@
+@@ -20,6 +20,7 @@
+ import androidx.media3.common.Player
+ import androidx.media3.common.util.UnstableApi
+ import androidx.media3.session.CommandButton
++import androidx.media3.session.MediaNotification
+ import androidx.media3.session.MediaSession
+ import androidx.media3.session.MediaSessionService
+ import androidx.media3.session.MediaStyleNotificationHelper
+@@ -80,6 +81,30 @@
+     instance = this
+     createNotificationChannelIfNeeded()
+ 
++    setMediaNotificationProvider(object : MediaNotification.Provider {
++      override fun createNotification(
++        session: MediaSession,
++        customLayout: com.google.common.collect.ImmutableList<CommandButton>,
++        actionFactory: MediaNotification.ActionFactory,
++        onNotificationChangedCallback: MediaNotification.Provider.Callback
++      ): MediaNotification {
++        val notification = buildNotification() ?: run {
++          val fallback = NotificationCompat.Builder(this@AudioControlsService, CHANNEL_ID)
++            .setSmallIcon(androidx.media3.session.R.drawable.media3_icon_circular_play)
++            .setContentTitle(currentMetadata?.title ?: "\u200E")
++            .build()
++          return MediaNotification(notificationId, fallback)
++        }
++        return MediaNotification(notificationId, notification)
++      }
++
++      override fun handleCustomCommand(
++        session: MediaSession,
++        action: String,
++        extras: Bundle
++      ): Boolean = false
++    })
++
+     pendingPlayer?.let { player ->
+       setActivePlayerInternal(player, pendingMetadata, pendingOptions)
+       pendingPlayer = null
+@@ -114,6 +139,7 @@
  
    private fun buildNotification(): Notification? {
      val session = mediaSession ?: return null
@@ -8,7 +47,7 @@
  
      val builder = NotificationCompat.Builder(this, CHANNEL_ID)
        .setSmallIcon(androidx.media3.session.R.drawable.media3_icon_circular_play)
-@@ -123,11 +124,49 @@
+@@ -123,11 +149,49 @@
        .setLargeIcon(currentArtwork)
        .setContentIntent(buildContentIntent())
        .setAutoCancel(false)
