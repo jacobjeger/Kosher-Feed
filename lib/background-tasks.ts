@@ -41,8 +41,11 @@ async function backgroundSyncHandler() {
     const deviceId = await getDeviceId();
     const baseUrl = getApiUrl();
 
+    const controller1 = new AbortController();
+    const t1 = setTimeout(() => controller1.abort(), 15000);
     const feedsUrl = new URL(`/api/subscriptions/${deviceId}/feeds`, baseUrl);
-    const feedsRes = await fetch(feedsUrl.toString());
+    const feedsRes = await fetch(feedsUrl.toString(), { signal: controller1.signal });
+    clearTimeout(t1);
     const feeds = await feedsRes.json();
 
     if (!feeds || feeds.length === 0) {
@@ -50,8 +53,11 @@ async function backgroundSyncHandler() {
       return BackgroundTask?.BackgroundTaskResult?.Success;
     }
 
+    const controller2 = new AbortController();
+    const t2 = setTimeout(() => controller2.abort(), 15000);
     const episodesUrl = new URL("/api/episodes/latest?limit=100", baseUrl);
-    const episodesRes = await fetch(episodesUrl.toString());
+    const episodesRes = await fetch(episodesUrl.toString(), { signal: controller2.signal });
+    clearTimeout(t2);
     const episodes = await episodesRes.json();
 
     const hasPermission = await checkNotificationPermission();

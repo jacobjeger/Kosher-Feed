@@ -9,7 +9,7 @@ import { getDeviceId } from "@/lib/device-id";
 import { getApiUrl, apiRequest } from "@/lib/query-client";
 import { useDownloads } from "@/contexts/DownloadsContext";
 import { useSettings } from "@/contexts/SettingsContext";
-import { requestNotificationPermissions, sendLocalNotification, checkNotificationPermission, setupNotificationChannel } from "@/lib/notifications";
+import { requestNotificationPermissions, checkNotificationPermission, setupNotificationChannel } from "@/lib/notifications";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { getLogsSnapshot } from "@/lib/error-logger";
@@ -243,29 +243,27 @@ function SettingsScreenInner() {
         return;
       }
     }
-    const testEpisode = {
-      id: "test-" + Date.now(),
-      feedId: "test",
-      title: "This is a test notification from ShiurPod",
-      audioUrl: "",
-      description: "",
-      publishedAt: new Date().toISOString(),
-      guid: "test",
-    };
-    const testFeed = {
-      id: "test",
-      title: "ShiurPod",
-      rssUrl: "",
-      imageUrl: null,
-      description: "",
-      author: "",
-      categoryId: null,
-      isActive: true,
-      isFeatured: false,
-      lastFetchedAt: null,
-    };
-    await sendLocalNotification(testEpisode as any, testFeed as any);
-    Alert.alert("Sent", "A test notification was sent. Check your notification shade.");
+    try {
+      await setupNotificationChannel();
+      const Notifications = require("expo-notifications");
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: "ShiurPod",
+          body: "This is a test notification from ShiurPod",
+          data: { episodeId: "test", feedId: "test" },
+          sound: "default",
+          ...(Platform.OS === "android" ? { channelId: "new-episodes" } : {}),
+        } as any,
+        trigger: Platform.OS === "web" ? null : {
+          type: "timeInterval" as any,
+          seconds: 60,
+          repeats: false,
+        },
+      });
+      Alert.alert("Scheduled", "A test notification will arrive in 60 seconds. You can close the app to test background delivery.");
+    } catch (e) {
+      Alert.alert("Error", "Failed to schedule test notification: " + ((e as any)?.message || e));
+    }
   };
 
   const formatHour = (hour: number): string => {

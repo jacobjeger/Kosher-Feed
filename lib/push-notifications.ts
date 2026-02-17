@@ -6,23 +6,18 @@ import { addLog } from "@/lib/error-logger";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const PUSH_TOKEN_KEY = "@shiurpod_push_token";
+const TOKEN_FETCH_TIMEOUT_MS = 10000;
 
-async function getExpoPushTokenWithRetry(maxRetries = 3): Promise<string | null> {
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const tokenData = await Notifications.getExpoPushTokenAsync();
-      return tokenData.data;
-    } catch (e) {
-      const msg = (e as any)?.message || String(e);
-      const isConnectionError = msg.includes("connection abort") || msg.includes("ECONNRESET") || msg.includes("network") || msg.includes("timeout");
-      addLog("warn", `Push token attempt ${attempt}/${maxRetries} failed: ${msg}`, undefined, "push");
-      if (!isConnectionError || attempt === maxRetries) {
-        throw e;
-      }
-      await new Promise(r => setTimeout(r, attempt * 2000));
-    }
-  }
-  return null;
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+    promise.then(
+      (val) => { clearTimeout(timer); resolve(val); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
 }
 
 export async function registerPushToken(): Promise<string | null> {
@@ -40,11 +35,30 @@ export async function registerPushToken(): Promise<string | null> {
       return null;
     }
 
-    const token = await getExpoPushTokenWithRetry(3);
+    let token: string | null = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const tokenData = await withTimeout(
+          Notifications.getExpoPushTokenAsync(),
+          TOKEN_FETCH_TIMEOUT_MS,
+          "getExpoPushTokenAsync"
+        );
+        token = tokenData.data;
+        break;
+      } catch (e) {
+        const msg = (e as any)?.message || String(e);
+        addLog("warn", `Push token attempt ${attempt}/2 failed: ${msg}`, undefined, "push");
+        if (attempt < 2) {
+          await new Promise(r => setTimeout(r, 3000));
+        }
+      }
+    }
+
     if (!token) {
-      addLog("warn", "Could not obtain push token after retries", undefined, "push");
+      addLog("warn", "Could not obtain push token after retries, will try again later", undefined, "push");
       return null;
     }
+
     const deviceId = await getDeviceId();
     const platform = Platform.OS;
 
@@ -55,7 +69,11 @@ export async function registerPushToken(): Promise<string | null> {
     }
 
     try {
-      await apiRequest("POST", "/api/push-token", { deviceId, token, platform });
+      await withTimeout(
+        apiRequest("POST", "/api/push-token", { deviceId, token, platform }),
+        8000,
+        "push-token-register"
+      );
       await AsyncStorage.setItem(PUSH_TOKEN_KEY, token);
       addLog("info", `Push token registered: ${token.substring(0, 20)}...`, undefined, "push");
     } catch (e) {
@@ -73,7 +91,6 @@ export async function initPushNotifications(): Promise<void> {
 
   try {
     await registerPushToken();
-  } catch (e) {
-    addLog("error", `initPushNotifications failed: ${(e as any)?.message || e}`, (e as any)?.stack, "push");
+  } catch (_e) {
   }
 }
