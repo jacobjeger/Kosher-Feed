@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { File, Directory, Paths } from "expo-file-system";
+import { File } from "expo-file-system";
 import * as LegacyFS from "expo-file-system/legacy";
 import { Platform, InteractionManager } from "react-native";
 import type { Episode, Feed, DownloadedEpisode } from "@/lib/types";
@@ -30,32 +30,53 @@ interface DownloadsContextValue {
 const DOWNLOADS_KEY = "@kosher_podcast_downloads";
 const DownloadsContext = createContext<DownloadsContextValue | null>(null);
 
+async function fileExistsSafeAsync(uri: string): Promise<boolean> {
+  try {
+    if (!uri) return false;
+    const info = await LegacyFS.getInfoAsync(uri);
+    return info.exists;
+  } catch {
+    return false;
+  }
+}
+
 function fileExistsSafe(uri: string): boolean {
   try {
     if (!uri) return false;
     const f = new File(uri);
     return f.exists;
   } catch {
-    return false;
+    try {
+      return false;
+    } catch {
+      return false;
+    }
   }
+}
+
+async function deleteFileSafeAsync(uri: string): Promise<void> {
+  try {
+    if (!uri) return;
+    await LegacyFS.deleteAsync(uri, { idempotent: true });
+  } catch {}
 }
 
 function deleteFileSafe(uri: string): void {
   try {
     if (!uri) return;
-    const f = new File(uri);
-    if (f.exists) {
-      f.delete();
-    }
+    LegacyFS.deleteAsync(uri, { idempotent: true }).catch(() => {});
   } catch {}
 }
 
-function ensurePodcastsDir(): string {
-  const podcastsDir = new Directory(Paths.document, 'podcasts');
-  if (!podcastsDir.exists) {
-    podcastsDir.create();
+async function ensurePodcastsDir(): Promise<string> {
+  const baseDir = LegacyFS.documentDirectory;
+  if (!baseDir) throw new Error("documentDirectory not available");
+  const podcastsDirUri = baseDir + 'podcasts/';
+  const dirInfo = await LegacyFS.getInfoAsync(podcastsDirUri);
+  if (!dirInfo.exists) {
+    await LegacyFS.makeDirectoryAsync(podcastsDirUri, { intermediates: true });
   }
-  return podcastsDir.uri;
+  return podcastsDirUri;
 }
 
 const downloadedIdsCache = new Set<string>();
@@ -133,7 +154,8 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
                 validated.push(dl);
                 continue;
               }
-              if (fileExistsSafe(dl.localUri)) {
+              const exists = await fileExistsSafeAsync(dl.localUri);
+              if (exists) {
                 validated.push(dl);
               } else {
                 console.warn(`Download file missing, removing: ${dl.title}`);
@@ -192,11 +214,13 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
       };
     }
 
-    const podcastsDirUri = ensurePodcastsDir();
+    const podcastsDirUri = await ensurePodcastsDir();
     const safeFilename = episode.id.replace(/[^a-zA-Z0-9]/g, "_") + ".mp3";
-    const fileUri = podcastsDirUri + '/' + safeFilename;
+    const fileUri = podcastsDirUri + safeFilename;
 
     progressRef.current.set(episode.id, 0);
+    addLog("info", `Starting download: ${episode.title} -> ${fileUri}`, undefined, "downloads");
+    addLog("info", `Audio URL: ${episode.audioUrl}`, undefined, "downloads");
 
     try {
       let lastReportedPct = 0;
@@ -204,13 +228,17 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
       const downloadResumable = LegacyFS.createDownloadResumable(
         episode.audioUrl,
         fileUri,
-        {},
+        {
+          headers: {
+            "User-Agent": "ShiurPod/1.0",
+          },
+        },
         (progress) => {
           if (progress.totalBytesExpectedToWrite <= 0) return;
           const now = Date.now();
-          if (now - lastCallbackTime < 2000) return;
+          if (now - lastCallbackTime < 1000) return;
           const pct = progress.totalBytesWritten / progress.totalBytesExpectedToWrite;
-          if (pct - lastReportedPct >= PROGRESS_UPDATE_MIN_CHANGE || pct >= 1) {
+          if (pct - lastReportedPct >= 0.02 || pct >= 1) {
             lastCallbackTime = now;
             lastReportedPct = pct;
             progressRef.current.set(episode.id, pct);
@@ -219,7 +247,26 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
       );
 
       const result = await downloadResumable.downloadAsync();
-      if (!result) throw new Error("Download failed");
+      if (!result) throw new Error("Download returned null result");
+
+      addLog("info", `Download result: uri=${result.uri}, status=${result.status}, headers=${JSON.stringify(result.headers || {}).substring(0, 200)}`, undefined, "downloads");
+
+      if (result.status && result.status >= 400) {
+        throw new Error(`Download failed with HTTP status ${result.status}`);
+      }
+
+      const fileInfo = await LegacyFS.getInfoAsync(result.uri, { size: true });
+      if (!fileInfo.exists) {
+        throw new Error(`Downloaded file does not exist at ${result.uri}`);
+      }
+      const fileSize = (fileInfo as any).size || 0;
+      addLog("info", `Download verified: ${episode.title} - ${fileSize} bytes at ${result.uri}`, undefined, "downloads");
+
+      if (fileSize < 1000) {
+        addLog("warn", `Downloaded file suspiciously small (${fileSize} bytes), may be invalid: ${episode.title}`, undefined, "downloads");
+        await deleteFileSafeAsync(result.uri);
+        throw new Error(`Downloaded file too small (${fileSize} bytes), likely not a valid audio file`);
+      }
 
       return {
         ...episode,

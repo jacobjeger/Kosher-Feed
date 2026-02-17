@@ -245,7 +245,7 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
             e.stopPropagation();
             handleToggleFavorite();
           }}
-          hitSlop={10}
+          hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
           style={styles.actionBtn}
         >
           <Ionicons
@@ -285,7 +285,7 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
               handleDownload();
             }
           }}
-          hitSlop={10}
+          hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
           style={styles.actionBtn}
         >
           {Platform.OS !== "web" && downloading ? (
@@ -393,12 +393,12 @@ const styles = StyleSheet.create({
     fontWeight: "600" as const,
   },
   actionBtn: {
-    width: 28,
-    height: 36,
+    width: 38,
+    height: 44,
     alignItems: "center" as const,
     justifyContent: "center" as const,
     flexShrink: 0,
-    marginTop: 2,
+    marginTop: 0,
   },
   downloadingIndicator: {
     alignItems: "center" as const,
