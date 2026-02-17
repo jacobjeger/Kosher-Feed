@@ -2,16 +2,16 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { File, Directory, Paths } from "expo-file-system";
 import * as LegacyFS from "expo-file-system/legacy";
-import { Platform } from "react-native";
+import { Platform, InteractionManager } from "react-native";
 import type { Episode, Feed, DownloadedEpisode } from "@/lib/types";
 import { isOnWifi } from "@/lib/network";
 import { getApiUrl } from "@/lib/query-client";
 import { getDeviceId } from "@/lib/device-id";
 import { addLog } from "@/lib/error-logger";
 
-const PROGRESS_THROTTLE_MS = 1500;
-const PROGRESS_UPDATE_MIN_CHANGE = 0.05;
-const MAX_CONCURRENT_DOWNLOADS = 3;
+const PROGRESS_THROTTLE_MS = 2500;
+const PROGRESS_UPDATE_MIN_CHANGE = 0.08;
+const MAX_CONCURRENT_DOWNLOADS = 1;
 
 interface DownloadsContextValue {
   downloads: DownloadedEpisode[];
@@ -58,6 +58,9 @@ function ensurePodcastsDir(): string {
   return podcastsDir.uri;
 }
 
+const downloadedIdsCache = new Set<string>();
+const downloadingIdsCache = new Set<string>();
+
 export function DownloadsProvider({ children }: { children: ReactNode }) {
   const [downloads, setDownloads] = useState<DownloadedEpisode[]>([]);
   const [downloadProgress, setDownloadProgress] = useState<Map<string, number>>(new Map());
@@ -65,12 +68,28 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
   const progressRef = useRef<Map<string, number>>(new Map());
   const progressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeDownloadsRef = useRef<Set<string>>(new Set());
+  const lastProgressSnapshotRef = useRef<string>("");
+  const downloadQueueRef = useRef<Array<{ episode: Episode; feed: Feed; resolve: (v: DownloadedEpisode | null) => void }>>([]);
+  const processingQueueRef = useRef(false);
 
   useEffect(() => {
     progressTimerRef.current = setInterval(() => {
       const current = progressRef.current;
       if (current.size > 0) {
-        setDownloadProgress(new Map(current));
+        const snapshot = Array.from(current.entries()).map(([k, v]) => `${k}:${Math.round(v * 100)}`).join(",");
+        if (snapshot !== lastProgressSnapshotRef.current) {
+          lastProgressSnapshotRef.current = snapshot;
+          if (Platform.OS !== "web") {
+            InteractionManager.runAfterInteractions(() => {
+              setDownloadProgress(new Map(current));
+            });
+          } else {
+            setDownloadProgress(new Map(current));
+          }
+        }
+      } else if (lastProgressSnapshotRef.current !== "") {
+        lastProgressSnapshotRef.current = "";
+        setDownloadProgress(new Map());
       }
     }, PROGRESS_THROTTLE_MS);
     return () => {
@@ -80,6 +99,8 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     downloadsRef.current = downloads;
+    downloadedIdsCache.clear();
+    downloads.forEach(d => downloadedIdsCache.add(d.id));
   }, [downloads]);
 
   useEffect(() => {
@@ -145,9 +166,11 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
   const downloadSingleEpisode = useCallback(async (episode: Episode, feed: Feed): Promise<DownloadedEpisode | null> => {
     if (activeDownloadsRef.current.has(episode.id)) return null;
     activeDownloadsRef.current.add(episode.id);
+    downloadingIdsCache.add(episode.id);
 
     if (Platform.OS === "web") {
       activeDownloadsRef.current.delete(episode.id);
+      downloadingIdsCache.delete(episode.id);
       return {
         ...episode,
         localUri: episode.audioUrl,
@@ -165,14 +188,18 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
 
     try {
       let lastReportedPct = 0;
+      let lastCallbackTime = 0;
       const downloadResumable = LegacyFS.createDownloadResumable(
         episode.audioUrl,
         fileUri,
         {},
         (progress) => {
           if (progress.totalBytesExpectedToWrite <= 0) return;
+          const now = Date.now();
+          if (now - lastCallbackTime < 2000) return;
           const pct = progress.totalBytesWritten / progress.totalBytesExpectedToWrite;
           if (pct - lastReportedPct >= PROGRESS_UPDATE_MIN_CHANGE || pct >= 1) {
+            lastCallbackTime = now;
             lastReportedPct = pct;
             progressRef.current.set(episode.id, pct);
           }
@@ -195,20 +222,66 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     } finally {
       progressRef.current.delete(episode.id);
       activeDownloadsRef.current.delete(episode.id);
+      downloadingIdsCache.delete(episode.id);
     }
   }, []);
 
-  const downloadEpisode = useCallback(async (episode: Episode, feed: Feed) => {
-    const result = await downloadSingleEpisode(episode, feed);
-    if (result) {
-      setDownloads(prev => {
-        const next = [result, ...prev.filter(d => d.id !== episode.id)];
-        saveDownloads(next);
-        return next;
-      });
+  const processDownloadQueue = useCallback(async () => {
+    if (processingQueueRef.current) return;
+    processingQueueRef.current = true;
+
+    while (downloadQueueRef.current.length > 0) {
+      const activeCount = activeDownloadsRef.current.size;
+      if (activeCount >= MAX_CONCURRENT_DOWNLOADS) {
+        await new Promise(r => setTimeout(r, 1000));
+        continue;
+      }
+
+      const item = downloadQueueRef.current.shift();
+      if (!item) break;
+
+      const result = await downloadSingleEpisode(item.episode, item.feed);
+      item.resolve(result);
+
+      if (result) {
+        if (Platform.OS !== "web") {
+          InteractionManager.runAfterInteractions(() => {
+            setDownloads(prev => {
+              const next = [result, ...prev.filter(d => d.id !== item.episode.id)];
+              saveDownloads(next);
+              return next;
+            });
+          });
+        } else {
+          setDownloads(prev => {
+            const next = [result, ...prev.filter(d => d.id !== item.episode.id)];
+            saveDownloads(next);
+            return next;
+          });
+        }
+      }
     }
-    setDownloadProgress(new Map(progressRef.current));
+
+    processingQueueRef.current = false;
+    if (Platform.OS !== "web") {
+      InteractionManager.runAfterInteractions(() => {
+        setDownloadProgress(new Map(progressRef.current));
+      });
+    } else {
+      setDownloadProgress(new Map(progressRef.current));
+    }
   }, [downloadSingleEpisode]);
+
+  const downloadEpisode = useCallback(async (episode: Episode, feed: Feed) => {
+    return new Promise<void>((resolve) => {
+      downloadQueueRef.current.push({
+        episode,
+        feed,
+        resolve: () => { resolve(); },
+      });
+      processDownloadQueue();
+    });
+  }, [processDownloadQueue]);
 
   const removeDownload = useCallback(async (episodeId: string) => {
     const ep = downloadsRef.current.find(d => d.id === episodeId);
@@ -228,55 +301,37 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const isDownloaded = useCallback((episodeId: string) => {
-    return downloads.some(d => d.id === episodeId);
+    return downloadedIdsCache.has(episodeId);
   }, [downloads]);
 
   const isDownloading = useCallback((episodeId: string) => {
-    return downloadProgress.has(episodeId);
+    return activeDownloadsRef.current.has(episodeId) || downloadQueueRef.current.some(q => q.episode.id === episodeId);
   }, [downloadProgress]);
 
   const getLocalUri = useCallback((episodeId: string) => {
-    const ep = downloads.find(d => d.id === episodeId);
+    const ep = downloadsRef.current.find(d => d.id === episodeId);
     return ep?.localUri || null;
   }, [downloads]);
 
   const getDownloadsForFeed = useCallback((feedId: string) => {
-    return downloads.filter(d => d.feedId === feedId);
+    return downloadsRef.current.filter(d => d.feedId === feedId);
   }, [downloads]);
 
   const batchDownload = useCallback(async (episodes: Episode[], feed: Feed) => {
-    const toDownload = episodes.filter(ep => !downloadsRef.current.some(d => d.id === ep.id) && !activeDownloadsRef.current.has(ep.id));
+    const toDownload = episodes.filter(ep => !downloadedIdsCache.has(ep.id) && !activeDownloadsRef.current.has(ep.id));
     if (toDownload.length === 0) return;
 
-    const chunks: Episode[][] = [];
-    for (let i = 0; i < toDownload.length; i += MAX_CONCURRENT_DOWNLOADS) {
-      chunks.push(toDownload.slice(i, i + MAX_CONCURRENT_DOWNLOADS));
-    }
-
-    for (const chunk of chunks) {
-      const results = await Promise.allSettled(
-        chunk.map(ep => downloadSingleEpisode(ep, feed))
-      );
-
-      const completed: DownloadedEpisode[] = [];
-      for (const result of results) {
-        if (result.status === "fulfilled" && result.value) {
-          completed.push(result.value);
-        }
-      }
-
-      if (completed.length > 0) {
-        setDownloads(prev => {
-          const ids = new Set(completed.map(c => c.id));
-          const next = [...completed, ...prev.filter(d => !ids.has(d.id))];
-          saveDownloads(next);
-          return next;
+    for (const ep of toDownload) {
+      await new Promise<void>((resolve) => {
+        downloadQueueRef.current.push({
+          episode: ep,
+          feed,
+          resolve: () => { resolve(); },
         });
-      }
-
-      setDownloadProgress(new Map(progressRef.current));
+        processDownloadQueue();
+      });
     }
-  }, [downloadSingleEpisode]);
+  }, [processDownloadQueue]);
 
   const enforceStorageLimit = useCallback(async (feedId: string, maxPerFeed: number) => {
     const feedDownloads = downloadsRef.current
