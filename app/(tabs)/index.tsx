@@ -308,7 +308,16 @@ const CategorySection = React.memo(function CategorySection({ category, feeds, c
   if (feeds.length === 0) return null;
   return (
     <View style={styles.section}>
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>{category.name}</Text>
+      <View style={styles.sectionHeaderRowSpaced}>
+        <Text style={[styles.sectionTitle, { color: colors.text, paddingHorizontal: 0, marginBottom: 0 }]}>{category.name}</Text>
+        <Pressable
+          onPress={() => { lightHaptic(); router.push({ pathname: "/category/[id]", params: { id: category.id, name: category.name } }); }}
+          style={({ pressed }) => [styles.seeAllBtn, { backgroundColor: colors.accentLight, opacity: pressed ? 0.8 : 1 }]}
+        >
+          <Text style={[styles.seeAllText, { color: colors.accent }]}>See All</Text>
+          <Ionicons name="chevron-forward" size={14} color={colors.accent} />
+        </Pressable>
+      </View>
       <WebScrollArrows colors={colors}>
         <FlatList
           horizontal
@@ -791,7 +800,16 @@ function HomeScreenInner() {
 
       {!isSearching && maggidShiurim.length > 0 && (
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Maggidei Shiur</Text>
+          <View style={styles.sectionHeaderRowSpaced}>
+            <Text style={[styles.sectionTitle, { color: colors.text, paddingHorizontal: 0, marginBottom: 0 }]}>Maggidei Shiur</Text>
+            <Pressable
+              onPress={() => { lightHaptic(); router.push("/all-maggidei-shiur"); }}
+              style={({ pressed }) => [styles.seeAllBtn, { backgroundColor: colors.accentLight, opacity: pressed ? 0.8 : 1 }]}
+            >
+              <Text style={[styles.seeAllText, { color: colors.accent }]}>See All</Text>
+              <Ionicons name="chevron-forward" size={14} color={colors.accent} />
+            </Pressable>
+          </View>
           <FlatList
             horizontal
             data={maggidShiurim}

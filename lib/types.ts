@@ -18,6 +18,9 @@ export interface MaggidShiur {
   author: string;
   feeds: Feed[];
   feedCount: number;
+  imageUrl?: string | null;
+  bio?: string | null;
+  profileId?: string;
 }
 
 export interface Episode {

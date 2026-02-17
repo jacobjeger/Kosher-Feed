@@ -15,7 +15,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 interface SpeakerGroup {
   author: string;
   feeds: Feed[];
-  imageUrl?: string;
+  imageUrl?: string | null;
 }
 
 const SpeakerCard = React.memo(function SpeakerCard({ speaker, colors }: { speaker: SpeakerGroup; colors: any }) {
