@@ -198,10 +198,6 @@ function configureExpoAndLanding(app: express.Application) {
       }
     }
 
-    if (hasWebBuild) {
-      return next();
-    }
-
     if (req.path === "/") {
       return serveLandingPage({
         req,
@@ -209,6 +205,10 @@ function configureExpoAndLanding(app: express.Application) {
         landingPageTemplate,
         appName,
       });
+    }
+
+    if (hasWebBuild) {
+      return next();
     }
 
     next();
