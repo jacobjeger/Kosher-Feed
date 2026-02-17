@@ -431,6 +431,7 @@ function SettingsScreenInner() {
             icon={<Ionicons name="cloud-download" size={20} color={colors.accent} />}
             label="Downloaded Episodes"
             value={`${downloads.length}`}
+            onPress={() => router.push("/storage")}
           />
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <SettingRow

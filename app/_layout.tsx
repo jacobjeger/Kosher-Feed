@@ -55,6 +55,7 @@ function RootLayoutNav() {
       />
       <Stack.Screen name="all-shiurim" options={{ headerShown: false }} />
       <Stack.Screen name="stats" options={{ headerShown: false }} />
+      <Stack.Screen name="storage" options={{ headerShown: false }} />
       <Stack.Screen name="debug-logs" options={{ headerShown: false }} />
       <Stack.Screen
         name="podcast/[id]"
