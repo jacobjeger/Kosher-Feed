@@ -183,7 +183,7 @@ function configureExpoAndLanding(app: express.Application) {
   log("Serving static Expo files with dynamic manifest routing");
 
   app.use((req: Request, res: Response, next: NextFunction) => {
-    if (req.path.startsWith("/api")) {
+    if (req.path.startsWith("/api") || req.path.startsWith("/share/")) {
       return next();
     }
 
@@ -226,7 +226,7 @@ function configureExpoAndLanding(app: express.Application) {
     app.use(express.static(webDistPath));
 
     app.use((req: Request, res: Response, next: NextFunction) => {
-      if (req.path.startsWith("/api") || req.path === "/admin") {
+      if (req.path.startsWith("/api") || req.path === "/admin" || req.path.startsWith("/share/")) {
         return next();
       }
       const platform = req.header("expo-platform");

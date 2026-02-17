@@ -13,6 +13,7 @@ import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import { getBookmarks, addBookmark, removeBookmark, type Bookmark } from "@/lib/bookmarks";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useFavorites } from "@/contexts/FavoritesContext";
+import { getApiUrl } from "@/lib/query-client";
 import OptionPickerModal, { type PickerOption } from "@/components/OptionPickerModal";
 
 function formatTime(ms: number): string {
@@ -190,10 +191,13 @@ export default function PlayerScreen() {
     if (!currentEpisode || !currentFeed) return;
     try {
       lightHaptic();
-      const timestamp = position.positionMs > 5000 ? ` at ${formatTime(position.positionMs)}` : "";
+      const baseUrl = getApiUrl();
+      const timestampParam = position.positionMs > 5000 ? `?t=${Math.round(position.positionMs)}` : "";
+      const shareUrl = `${baseUrl}/share/episode/${currentEpisode.id}${timestampParam}`;
+      const timestampText = position.positionMs > 5000 ? ` at ${formatTime(position.positionMs)}` : "";
       await Share.share({
-        message: `Listen to "${currentEpisode.title}" from ${currentFeed.title}${timestamp}`,
-        url: currentEpisode.audioUrl,
+        message: `Listen to "${currentEpisode.title}" from ${currentFeed.title}${timestampText}\n${shareUrl}`,
+        url: shareUrl,
       });
     } catch (e) {
     }

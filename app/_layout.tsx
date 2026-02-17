@@ -17,6 +17,7 @@ import OfflineBanner from "@/components/OfflineBanner";
 import { setupNotificationChannel } from "@/lib/notifications";
 import { initErrorLogger, setupGlobalErrorHandlers } from "@/lib/error-logger";
 import { defineBackgroundTasks } from "@/lib/background-tasks";
+import { DeepLinkHandler } from "@/components/DeepLinkHandler";
 
 SplashScreen.preventAutoHideAsync();
 initErrorLogger();
@@ -83,6 +84,7 @@ export default function RootLayout() {
                   <KeyboardProvider>
                     <BackgroundSync />
                     <OfflineBanner />
+                    <DeepLinkHandler />
                     <RootLayoutNav />
                   </KeyboardProvider>
                 </GestureHandlerRootView>

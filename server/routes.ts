@@ -833,6 +833,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/share/episode/:id", async (req: Request, res: Response) => {
+    try {
+      const episode = await storage.getEpisodeById(req.params.id);
+      if (!episode) return res.status(404).json({ error: "Episode not found" });
+      const allFeeds = await storage.getAllFeeds();
+      const feed = allFeeds.find(f => f.id === episode.feedId);
+      res.json({
+        episode: {
+          id: episode.id,
+          title: episode.title,
+          description: episode.description,
+          audioUrl: episode.audioUrl,
+          imageUrl: episode.imageUrl,
+          duration: episode.duration,
+          publishedAt: episode.publishedAt,
+        },
+        feed: feed ? { id: feed.id, title: feed.title, imageUrl: feed.imageUrl } : null,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/share/episode/:id", async (req: Request, res: Response) => {
+    try {
+      const episode = await storage.getEpisodeById(req.params.id);
+      if (!episode) return res.status(404).send("Episode not found");
+      const allFeeds = await storage.getAllFeeds();
+      const feed = allFeeds.find(f => f.id === episode.feedId);
+      const timestamp = req.query.t ? parseInt(req.query.t as string) : 0;
+      const host = req.get("host") || "";
+      const protocol = req.protocol;
+      const baseUrl = `${protocol}://${host}`;
+
+      res.send(`<!DOCTYPE html>
+<html><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${episode.title} - ShiurPod</title>
+  <meta property="og:title" content="${episode.title}">
+  <meta property="og:description" content="${feed?.title || 'ShiurPod'}${timestamp > 0 ? ' - at ' + Math.floor(timestamp / 60000) + ':' + String(Math.floor((timestamp % 60000) / 1000)).padStart(2, '0') : ''}">
+  <meta property="og:image" content="${episode.imageUrl || feed?.imageUrl || ''}">
+  <meta property="og:type" content="music.song">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#0A1628;color:#fff;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+    .card{max-width:400px;width:100%;text-align:center;background:#1a2744;border-radius:16px;padding:32px 24px;box-shadow:0 8px 32px rgba(0,0,0,0.4)}
+    .artwork{width:180px;height:180px;border-radius:12px;object-fit:cover;margin:0 auto 20px}
+    h1{font-size:18px;margin-bottom:8px;line-height:1.3}
+    .feed{color:#8BA4C4;font-size:14px;margin-bottom:24px}
+    .btn{display:inline-block;background:#3B82F6;color:#fff;padding:14px 32px;border-radius:12px;text-decoration:none;font-weight:600;font-size:16px;margin:8px}
+    .btn:hover{background:#2563EB}
+    .audio-wrap{margin-top:20px}
+    audio{width:100%}
+  </style>
+</head><body>
+  <div class="card">
+    <img class="artwork" src="${episode.imageUrl || feed?.imageUrl || ''}" alt="">
+    <h1>${episode.title}</h1>
+    <p class="feed">${feed?.title || ''}</p>
+    <a class="btn" href="shiurpod://episode/${episode.id}${timestamp > 0 ? '?t=' + timestamp : ''}">Open in ShiurPod</a>
+    <div class="audio-wrap">
+      <audio controls preload="none" src="${episode.audioUrl}"></audio>
+    </div>
+  </div>
+</body></html>`);
+    } catch (e: any) {
+      res.status(500).send("Error loading episode");
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

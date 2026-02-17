@@ -43,6 +43,11 @@ export async function deleteFeed(id: string): Promise<void> {
   await db.delete(feeds).where(eq(feeds.id, id));
 }
 
+export async function getEpisodeById(episodeId: string): Promise<Episode | undefined> {
+  const result = await db.select().from(episodes).where(eq(episodes.id, episodeId)).limit(1);
+  return result[0];
+}
+
 export async function getEpisodesByFeed(feedId: string): Promise<Episode[]> {
   return db.select().from(episodes).where(eq(episodes.feedId, feedId)).orderBy(desc(episodes.publishedAt));
 }
