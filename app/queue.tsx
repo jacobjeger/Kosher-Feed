@@ -1,10 +1,11 @@
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo, useState, useEffect } from "react";
 import { View, Text, FlatList, Pressable, StyleSheet, Platform } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
+import { useAudioPlayer, loadPositions } from "@/contexts/AudioPlayerContext";
+import { usePlayedEpisodes } from "@/contexts/PlayedEpisodesContext";
 import { useQuery } from "@tanstack/react-query";
 import { safeGoBack } from "@/lib/safe-back";
 import Colors from "@/constants/colors";
@@ -12,17 +13,35 @@ import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import type { Feed, Episode } from "@/lib/types";
 import { reorderQueue } from "@/lib/queue";
 
+function formatRemainingTime(positionMs: number, durationMs: number): string {
+  if (durationMs <= 0) return "";
+  const remainingMs = durationMs - positionMs;
+  const totalSeconds = Math.floor(remainingMs / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  if (hours > 0) return `${hours}h ${minutes}m left`;
+  return `${minutes} min left`;
+}
+
+type SavedPositionsMap = Record<string, { positionMs: number; durationMs: number }>;
+
 export default function QueueScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const { currentEpisode, currentFeed, queue, removeFromQueue, clearQueue, playEpisode, refreshQueue } = useAudioPlayer();
+  const { isPlayed } = usePlayedEpisodes();
+  const [positions, setPositions] = useState<SavedPositionsMap>({});
 
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
   const latestQuery = useQuery<Episode[]>({ queryKey: ["/api/episodes/latest"] });
   const allFeeds = feedsQuery.data || [];
   const allEpisodes = latestQuery.data || [];
+
+  useEffect(() => {
+    loadPositions().then(setPositions);
+  }, [queue]);
 
   const queueItems = useMemo(() => {
     return queue.map(item => {
@@ -122,6 +141,19 @@ export default function QueueScreen() {
               <View style={styles.itemInfo}>
                 <Text style={[styles.itemTitle, { color: colors.text }]} numberOfLines={1}>{item.episode.title}</Text>
                 <Text style={[styles.itemFeed, { color: colors.textSecondary }]} numberOfLines={1}>{item.feed.title}</Text>
+                {isPlayed(item.episodeId) ? (
+                  <View style={styles.statusRow}>
+                    <Ionicons name="checkmark-circle" size={12} color={colors.success} />
+                    <Text style={[styles.statusText, { color: colors.success }]}>Completed</Text>
+                  </View>
+                ) : positions[item.episodeId] ? (
+                  <View style={styles.statusRow}>
+                    <Ionicons name="time-outline" size={12} color={colors.accent} />
+                    <Text style={[styles.statusText, { color: colors.accent }]}>
+                      {formatRemainingTime(positions[item.episodeId].positionMs, positions[item.episodeId].durationMs)}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
             </Pressable>
             <View style={styles.queueActions}>
@@ -224,4 +256,14 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontSize: 20, fontWeight: "700" as const },
   emptySubtitle: { fontSize: 14, textAlign: "center" as const, lineHeight: 20 },
+  statusRow: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    gap: 4,
+    marginTop: 2,
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: "500" as const,
+  },
 });

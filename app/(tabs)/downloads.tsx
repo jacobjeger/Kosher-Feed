@@ -1,22 +1,43 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { View, Text, FlatList, Pressable, StyleSheet, Platform, Alert } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useDownloads } from "@/contexts/DownloadsContext";
-import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
+import { useAudioPlayer, loadPositions } from "@/contexts/AudioPlayerContext";
+import { usePlayedEpisodes } from "@/contexts/PlayedEpisodesContext";
 import Colors from "@/constants/colors";
 import type { DownloadedEpisode, Feed } from "@/lib/types";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
+function formatRemainingTime(positionMs: number, durationMs: number): string {
+  if (durationMs <= 0) return "";
+  const remainingMs = durationMs - positionMs;
+  const totalSeconds = Math.floor(remainingMs / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  if (hours > 0) return `${hours}h ${minutes}m left`;
+  return `${minutes} min left`;
+}
+
 function DownloadItem({ item }: { item: DownloadedEpisode }) {
   const { playEpisode, currentEpisode, playback, pause, resume } = useAudioPlayer();
   const { removeDownload } = useDownloads();
+  const { isPlayed } = usePlayedEpisodes();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
+  const [savedProgress, setSavedProgress] = useState<{ positionMs: number; durationMs: number } | null>(null);
+  const played = isPlayed(item.id);
+
+  useEffect(() => {
+    loadPositions().then(positions => {
+      const pos = positions[item.id];
+      if (pos && pos.durationMs > 0) setSavedProgress({ positionMs: pos.positionMs, durationMs: pos.durationMs });
+    });
+  }, [item.id]);
 
   const isCurrentlyPlaying = currentEpisode?.id === item.id;
 
@@ -86,9 +107,24 @@ function DownloadItem({ item }: { item: DownloadedEpisode }) {
         <Text style={[styles.itemTitle, { color: colors.text }]} numberOfLines={2}>
           {item.title}
         </Text>
-        <Text style={[styles.itemMeta, { color: colors.textSecondary }]}>
-          Downloaded {new Date(item.downloadedAt).toLocaleDateString()}
-        </Text>
+        <View style={styles.metaRow}>
+          <Text style={[styles.itemMeta, { color: colors.textSecondary }]}>
+            Downloaded {new Date(item.downloadedAt).toLocaleDateString()}
+          </Text>
+          {played ? (
+            <View style={styles.statusRow}>
+              <Ionicons name="checkmark-circle" size={12} color={colors.success} />
+              <Text style={[styles.statusText, { color: colors.success }]}>Completed</Text>
+            </View>
+          ) : savedProgress ? (
+            <View style={styles.statusRow}>
+              <Ionicons name="time-outline" size={12} color={colors.accent} />
+              <Text style={[styles.statusText, { color: colors.accent }]}>
+                {formatRemainingTime(savedProgress.positionMs, savedProgress.durationMs)}
+              </Text>
+            </View>
+          ) : null}
+        </View>
       </View>
 
       <Pressable onPress={handleRemove} hitSlop={10} style={styles.removeBtn}>
@@ -196,7 +232,19 @@ const styles = StyleSheet.create({
   },
   itemMeta: {
     fontSize: 12,
+  },
+  metaRow: {
+    gap: 3,
     marginTop: 2,
+  },
+  statusRow: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    gap: 4,
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: "500" as const,
   },
   removeBtn: {
     width: 36,
