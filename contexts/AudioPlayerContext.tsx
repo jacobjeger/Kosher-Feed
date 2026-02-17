@@ -103,6 +103,13 @@ export async function loadPositions(): Promise<Record<string, SavedPosition>> {
   }
 }
 
+type PositionChangeListener = () => void;
+const positionChangeListeners = new Set<PositionChangeListener>();
+export function onPositionsChanged(cb: PositionChangeListener) {
+  positionChangeListeners.add(cb);
+  return () => { positionChangeListeners.delete(cb); };
+}
+
 async function savePosition(episodeId: string, feedId: string, positionMs: number, durationMs: number) {
   try {
     const positions = await loadPositions();
@@ -128,6 +135,7 @@ async function savePosition(episodeId: string, feedId: string, positionMs: numbe
       }
     }
     await AsyncStorage.setItem(POSITIONS_KEY, JSON.stringify(positions));
+    positionChangeListeners.forEach(fn => fn());
     syncPositionToServer(episodeId, feedId, positionMs, durationMs).catch(() => {});
   } catch (e) {
     console.error("Failed to save position:", e);
@@ -571,6 +579,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
           const player = createAudioPlayerFn(episode.audioUrl, {
             updateInterval: 500,
+            showNowPlayingNotification: true,
           });
           nativePlayerRef.current = player;
           nativePlayerInstance = player;

@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { View, Text, Pressable, StyleSheet, Linking, Alert, Platform } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useAudioPlayer, loadPositions } from "@/contexts/AudioPlayerContext";
+import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { useDownloads } from "@/contexts/DownloadsContext";
 import { useFavorites } from "@/contexts/FavoritesContext";
 import { usePlayedEpisodes } from "@/contexts/PlayedEpisodesContext";
+import { usePositions } from "@/contexts/PositionsContext";
 import Colors from "@/constants/colors";
 import type { Episode, Feed } from "@/lib/types";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
@@ -57,11 +58,11 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
   const { downloadEpisode, isDownloaded, isDownloading, downloadProgress } = useDownloads();
   const { isFavorite, toggleFavorite } = useFavorites();
   const { isPlayed, togglePlayed, markAsPlayed, markAsUnplayed } = usePlayedEpisodes();
+  const { getPosition } = usePositions();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
-  const [expanded, setExpanded] = useState<boolean>(false);
-  const [savedProgress, setSavedProgress] = useState<{ positionMs: number; durationMs: number } | null>(null);
+  const [expanded, setExpanded] = React.useState<boolean>(false);
 
   const isCurrentlyPlaying = currentEpisode?.id === episode.id;
   const downloaded = isDownloaded(episode.id);
@@ -70,13 +71,8 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
   const isInQueue = queue.some((item) => item.episodeId === episode.id);
   const favorited = isFavorite(episode.id);
   const played = isPlayed(episode.id);
-
-  useEffect(() => {
-    loadPositions().then(positions => {
-      const pos = positions[episode.id];
-      if (pos && pos.durationMs > 0) setSavedProgress({ positionMs: pos.positionMs, durationMs: pos.durationMs });
-    });
-  }, [episode.id]);
+  const savedPos = getPosition(episode.id);
+  const savedProgress = savedPos && savedPos.durationMs > 0 ? { positionMs: savedPos.positionMs, durationMs: savedPos.durationMs } : null;
 
   const handlePlay = async () => {
     try {

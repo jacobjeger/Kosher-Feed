@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { View, Text, FlatList, Pressable, StyleSheet, Platform, Alert } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useDownloads } from "@/contexts/DownloadsContext";
-import { useAudioPlayer, loadPositions } from "@/contexts/AudioPlayerContext";
+import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { usePlayedEpisodes } from "@/contexts/PlayedEpisodesContext";
+import { usePositions } from "@/contexts/PositionsContext";
 import Colors from "@/constants/colors";
 import type { DownloadedEpisode, Feed } from "@/lib/types";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
@@ -26,18 +27,13 @@ function DownloadItem({ item }: { item: DownloadedEpisode }) {
   const { playEpisode, currentEpisode, playback, pause, resume } = useAudioPlayer();
   const { removeDownload } = useDownloads();
   const { isPlayed } = usePlayedEpisodes();
+  const { getPosition } = usePositions();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
-  const [savedProgress, setSavedProgress] = useState<{ positionMs: number; durationMs: number } | null>(null);
   const played = isPlayed(item.id);
-
-  useEffect(() => {
-    loadPositions().then(positions => {
-      const pos = positions[item.id];
-      if (pos && pos.durationMs > 0) setSavedProgress({ positionMs: pos.positionMs, durationMs: pos.durationMs });
-    });
-  }, [item.id]);
+  const savedPos = getPosition(item.id);
+  const savedProgress = savedPos && savedPos.durationMs > 0 ? { positionMs: savedPos.positionMs, durationMs: savedPos.durationMs } : null;
 
   const isCurrentlyPlaying = currentEpisode?.id === item.id;
 

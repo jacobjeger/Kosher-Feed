@@ -1,11 +1,12 @@
-import React, { useCallback, useMemo, useState, useEffect } from "react";
+import React, { useCallback, useMemo } from "react";
 import { View, Text, FlatList, Pressable, StyleSheet, Platform } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { useAudioPlayer, loadPositions } from "@/contexts/AudioPlayerContext";
+import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { usePlayedEpisodes } from "@/contexts/PlayedEpisodesContext";
+import { usePositions } from "@/contexts/PositionsContext";
 import { useQuery } from "@tanstack/react-query";
 import { safeGoBack } from "@/lib/safe-back";
 import Colors from "@/constants/colors";
@@ -23,8 +24,6 @@ function formatRemainingTime(positionMs: number, durationMs: number): string {
   return `${minutes} min left`;
 }
 
-type SavedPositionsMap = Record<string, { positionMs: number; durationMs: number }>;
-
 export default function QueueScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useAppColorScheme();
@@ -32,16 +31,12 @@ export default function QueueScreen() {
   const colors = isDark ? Colors.dark : Colors.light;
   const { currentEpisode, currentFeed, queue, removeFromQueue, clearQueue, playEpisode, refreshQueue } = useAudioPlayer();
   const { isPlayed } = usePlayedEpisodes();
-  const [positions, setPositions] = useState<SavedPositionsMap>({});
+  const { positions } = usePositions();
 
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
   const latestQuery = useQuery<Episode[]>({ queryKey: ["/api/episodes/latest"] });
   const allFeeds = feedsQuery.data || [];
   const allEpisodes = latestQuery.data || [];
-
-  useEffect(() => {
-    loadPositions().then(setPositions);
-  }, [queue]);
 
   const queueItems = useMemo(() => {
     return queue.map(item => {

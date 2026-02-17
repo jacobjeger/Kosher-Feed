@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef, memo, useEffect } from "react";
+import React, { useState, useMemo, useCallback, useRef, memo } from "react";
 import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Platform, Switch, Alert, TextInput, RefreshControl } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
@@ -16,7 +16,7 @@ import { mediumHaptic, lightHaptic } from "@/lib/haptics";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useDownloads } from "@/contexts/DownloadsContext";
 import { usePlayedEpisodes } from "@/contexts/PlayedEpisodesContext";
-import { loadPositions } from "@/contexts/AudioPlayerContext";
+import { usePositions } from "@/contexts/PositionsContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import OptionPickerModal from "@/components/OptionPickerModal";
 
@@ -59,13 +59,8 @@ function PodcastDetailScreenInner() {
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [showPreferences, setShowPreferences] = useState(false);
   const [episodeFilter, setEpisodeFilter] = useState<'all' | 'unplayed' | 'inprogress' | 'downloaded'>('all');
-  const [inProgressIds, setInProgressIds] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    loadPositions().then(positions => {
-      setInProgressIds(new Set(Object.keys(positions)));
-    });
-  }, []);
+  const { positions: positionsMap } = usePositions();
+  const inProgressIds = useMemo(() => new Set(Object.keys(positionsMap)), [positionsMap]);
 
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
   const feed = useMemo(() => feedsQuery.data?.find(f => f.id === id), [feedsQuery.data, id]);

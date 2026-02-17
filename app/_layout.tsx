@@ -11,6 +11,7 @@ import { DownloadsProvider } from "@/contexts/DownloadsContext";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 import { FavoritesProvider } from "@/contexts/FavoritesContext";
 import { PlayedEpisodesProvider } from "@/contexts/PlayedEpisodesContext";
+import { PositionsProvider } from "@/contexts/PositionsContext";
 import { BackgroundSync } from "@/components/BackgroundSync";
 import OfflineBanner from "@/components/OfflineBanner";
 import { setupNotificationChannel } from "@/lib/notifications";
@@ -72,14 +73,16 @@ export default function RootLayout() {
             <DownloadsProvider>
               <FavoritesProvider>
                 <PlayedEpisodesProvider>
-                <GestureHandlerRootView>
-                  <KeyboardProvider>
-                    <BackgroundSync />
-                    <OfflineBanner />
-                    <DeepLinkHandler />
-                    <RootLayoutNav />
-                  </KeyboardProvider>
-                </GestureHandlerRootView>
+                  <PositionsProvider>
+                    <GestureHandlerRootView>
+                      <KeyboardProvider>
+                        <BackgroundSync />
+                        <OfflineBanner />
+                        <DeepLinkHandler />
+                        <RootLayoutNav />
+                      </KeyboardProvider>
+                    </GestureHandlerRootView>
+                  </PositionsProvider>
                 </PlayedEpisodesProvider>
               </FavoritesProvider>
             </DownloadsProvider>
