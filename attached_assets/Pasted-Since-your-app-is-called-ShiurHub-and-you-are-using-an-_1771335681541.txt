@@ -1,0 +1,86 @@
+Since your app is called **ShiurHub** and you are using an in-app contact form for support, your legal documents need to be precise about how you handle user inquiries and how you relate to the Torah content creators in your directory.
+
+In 2026, regulators (and the App Store) require that your contact method be as accessible as the "Privacy" button itself.
+
+---
+
+### 1. Privacy Policy (Customized for ShiurHub)
+
+*This document focuses on the data collected through your **Contact Form** and the **RSS Aggregation** model.*
+
+**[Draft for ShiurHub Privacy Policy]**
+
+> **Effective Date:** February 17, 2026
+> **1. Data Collection via Contact Form:** When you use the in-app contact form, we collect your name, email address, and the content of your message. This data is used exclusively to provide support and resolve your inquiries. We do not sell or share this information with third-party marketers.
+> **2. App Activity & Syncing:** To provide a seamless experience, ShiurHub may track your playback progress and "Favorites." This data is stored locally on your device or linked to your account to allow you to resume Shiurim across different sessions.
+> **3. Third-Party RSS Content:** ShiurHub is a directory. Audio files are streamed directly from the original creators' RSS feeds. Your IP address may be visible to these external hosting providers (e.g., Podbean, SoundCloud) when you stream audio. We do not control their privacy practices.
+> **4. Data Deletion:** You may request the deletion of your support history and playback data at any time via the in-app contact form.
+
+---
+
+### 2. Terms of Service (The "ShiurHub" Shield)
+
+*This protects you from the content of the Shiurim and defines your role as a "Hub."*
+
+**[Draft for ShiurHub Terms of Service]**
+
+> **1. Role of ShiurHub:** ShiurHub is a technical platform that aggregates publicly available Torah RSS feeds. We are not a publisher and do not own the intellectual property of the Shiurim found within the app.
+> **2. Content Disclaimer:** All audio content is the property of the respective speakers and institutions. ShiurHub does not endorse, verify, or take responsibility for the accuracy or halachic rulings contained in the audio content.
+> **3. No Modification:** We provide a direct "bridge" to the original source. We do not edit the audio, remove ads, or alter the content in any way.
+> **4. Creator Requests:** If you are a creator and wish to have your feed removed from ShiurHub, please use our **in-app contact form**. We honor all valid takedown requests within 48 business hours.
+
+---
+
+### 3. Third-Party Disclaimer (For your "About" page)
+
+> **Disclaimer:** ShiurHub is a directory of third-party RSS feeds. All rights to the audio content and cover art belong to the original creators. ShiurHub is not affiliated with the speakers or organizations listed unless explicitly stated.
+
+---
+
+### 4. Implementation: The "Legal Screen" Code
+
+In 2026, the App Store requires these to be reachable in **two taps or less**. Here is how to build the "Legal" screen in React Native for your ShiurHub app:
+
+```javascript
+import React from 'react';
+import { ScrollView, Text, StyleSheet, View, Button } from 'react-native';
+
+const LegalScreen = ({ navigation }) => {
+  return (
+    <ScrollView style={styles.container}>
+      <Text style={styles.header}>Privacy Policy</Text>
+      <Text style={styles.body}>
+        ShiurHub collects your name and email via our contact form only to assist you...
+      </Text>
+
+      <Text style={styles.header}>Terms of Service</Text>
+      <Text style={styles.body}>
+        ShiurHub is an aggregator. We do not own the content in our directory...
+      </Text>
+
+      <View style={styles.contactBox}>
+        <Text style={styles.body}>Have a legal inquiry or a takedown request?</Text>
+        <Button 
+          title="Go to Contact Form" 
+          onPress={() => navigation.navigate('ContactForm')} 
+        />
+      </View>
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: { padding: 20, backgroundColor: '#fff' },
+  header: { fontSize: 22, fontWeight: 'bold', marginTop: 20, color: '#2c3e50' },
+  body: { fontSize: 16, lineHeight: 24, color: '#34495e', marginBottom: 10 },
+  contactBox: { marginTop: 40, padding: 20, backgroundColor: '#f9f9f9', borderRadius: 10 }
+});
+
+```
+
+### Why this is critical for you right now:
+
+* **The "Contact Form" Loop:** By mentioning the form in the legal docs, you fulfill the 2026 "Right to Contact" requirement.
+* **RSS Safety:** Explicitly stating you don't own the "Shiurim" prevents creators from claiming you are "stealing" their content.
+
+**Would you like me to show you how to host these files on GitHub so you have the "Privacy Policy URL" ready for your App Store submission?**
