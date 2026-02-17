@@ -81,8 +81,13 @@ async function backgroundSyncHandler() {
 
           let downloadCount = 0;
           const FileSystem = require("expo-file-system/legacy");
-          const { Paths: FSPaths } = require("expo-file-system");
+          const { Directory: FSDirectory, Paths: FSPaths } = require("expo-file-system");
 
+          const podcastsDir = new FSDirectory(FSPaths.document, 'podcasts');
+          if (!podcastsDir.exists) podcastsDir.create();
+          const podcastsDirUri = podcastsDir.uri;
+
+          const allToDownload: { ep: any; feed: any }[] = [];
           for (const feed of feeds) {
             const maxForFeed = feedSettings[feed.id]?.maxEpisodes ?? maxDefault;
             const existingForFeed = existingDownloads.filter((d: any) => d.feedId === feed.id);
@@ -93,33 +98,50 @@ async function backgroundSyncHandler() {
             const feedEpisodes = await epsRes.json();
 
             const toDownload = feedEpisodes
-              .filter((ep: any) => !downloadedIds.has(ep.id))
+              .filter((ep: any) => !downloadedIds.has(ep.id) && ep.audioUrl)
               .slice(0, maxForFeed - existingForFeed.length);
 
             for (const ep of toDownload) {
-              if (!ep.audioUrl) continue;
-              try {
-                const ext = ep.audioUrl.includes(".m4a") ? ".m4a" : ".mp3";
-                const fileName = `shiurpod_${ep.id}${ext}`;
-                const cacheDir = FSPaths.cache?.uri || FileSystem.cacheDirectory;
-                const fileUri = `${cacheDir}${fileName}`;
+              allToDownload.push({ ep, feed });
+            }
+          }
+
+          const BG_MAX_CONCURRENT = 3;
+          for (let i = 0; i < allToDownload.length; i += BG_MAX_CONCURRENT) {
+            const chunk = allToDownload.slice(i, i + BG_MAX_CONCURRENT);
+            const results = await Promise.allSettled(
+              chunk.map(async ({ ep, feed }) => {
+                const safeFilename = ep.id.replace(/[^a-zA-Z0-9]/g, "_") + ".mp3";
+                const fileUri = `${podcastsDirUri}/${safeFilename}`;
                 const result = await FileSystem.downloadAsync(ep.audioUrl, fileUri);
                 if (result.status === 200) {
-                  existingDownloads.push({
+                  return {
                     id: ep.id,
                     feedId: ep.feedId,
                     title: ep.title,
+                    description: ep.description,
                     audioUrl: ep.audioUrl,
+                    duration: ep.duration,
+                    publishedAt: ep.publishedAt,
+                    guid: ep.guid,
+                    imageUrl: ep.imageUrl,
                     localUri: result.uri,
                     downloadedAt: new Date().toISOString(),
                     feedTitle: feed.title,
                     feedImageUrl: feed.imageUrl,
-                  });
-                  downloadedIds.add(ep.id);
-                  downloadCount++;
+                  };
                 }
-              } catch (dlErr) {
-                addLog("warn", `Background download failed: ${ep.title} - ${(dlErr as any)?.message}`, undefined, "background-sync");
+                return null;
+              })
+            );
+
+            for (const r of results) {
+              if (r.status === "fulfilled" && r.value) {
+                existingDownloads.push(r.value);
+                downloadedIds.add(r.value.id);
+                downloadCount++;
+              } else if (r.status === "rejected") {
+                addLog("warn", `Background download failed: ${r.reason?.message}`, undefined, "background-sync");
               }
             }
           }
