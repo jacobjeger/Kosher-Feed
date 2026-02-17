@@ -1,7 +1,6 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import compression from "compression";
-import { createProxyMiddleware } from "http-proxy-middleware";
 import { registerRoutes } from "./routes";
 import { seedIfEmpty } from "./seed";
 import * as fs from "fs";
@@ -176,19 +175,37 @@ function configureExpoAndLanding(app: express.Application) {
 
   const expoDevTarget = "http://localhost:8081";
 
-  const expoProxy = createProxyMiddleware({
-    target: expoDevTarget,
-    changeOrigin: true,
-    ws: true,
-    on: {
-      error: (_err, _req, res) => {
-        if (res && 'writeHead' in res) {
-          (res as any).writeHead(502, { 'Content-Type': 'text/html' });
-          (res as any).end('<html><body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f172a;color:#94a3b8;"><div style="text-align:center;"><h2 style="color:#f8fafc;">Web App Loading...</h2><p>The Expo dev server is starting up. Please refresh in a few seconds.</p></div></body></html>');
-        }
+  const proxyToExpo = async (req: Request, res: Response) => {
+    try {
+      const url = `${expoDevTarget}${req.originalUrl}`;
+      const resp = await fetch(url);
+      if (!resp.ok) {
+        res.status(resp.status).send(await resp.text());
+        return;
+      }
+      const ct = resp.headers.get("content-type");
+      if (ct) res.setHeader("Content-Type", ct);
+      const cl = resp.headers.get("content-length");
+      if (cl) res.setHeader("Content-Length", cl);
+      const cc = resp.headers.get("cache-control");
+      if (cc) res.setHeader("Cache-Control", cc);
+
+      const reader = resp.body?.getReader();
+      if (!reader) { res.status(502).end(); return; }
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!res.writableEnded) res.write(Buffer.from(value));
+      }
+      res.end();
+    } catch {
+      if (!res.headersSent) {
+        res.status(502).send("Expo dev server not available");
       }
     }
-  });
+  };
+
+  const loadingHtml = '<html><body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f172a;color:#94a3b8;"><div style="text-align:center;"><h2 style="color:#f8fafc;">Web App Loading...</h2><p>The Expo dev server is starting up. Please refresh in a few seconds.</p></div></body></html>';
 
   app.get("/webapp", async (_req: Request, res: Response) => {
     try {
@@ -198,12 +215,12 @@ function configureExpoAndLanding(app: express.Application) {
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.send(html);
     } catch {
-      res.status(502).send('<html><body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f172a;color:#94a3b8;"><div style="text-align:center;"><h2 style="color:#f8fafc;">Web App Loading...</h2><p>The Expo dev server is starting up. Please refresh in a few seconds.</p></div></body></html>');
+      res.status(502).send(loadingHtml);
     }
   });
 
-  app.use("/node_modules", expoProxy);
-  app.use("/_expo", expoProxy);
+  app.use("/node_modules", proxyToExpo as any);
+  app.use("/_expo", proxyToExpo as any);
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (req.path.startsWith("/api") || req.path.startsWith("/share/")) {
@@ -243,7 +260,7 @@ function configureExpoAndLanding(app: express.Application) {
     if (fs.existsSync(localPath)) {
       return express.static(path.resolve(process.cwd(), "assets"))(req, res, next);
     }
-    return expoProxy(req, res, next);
+    return proxyToExpo(req, res);
   });
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
 
