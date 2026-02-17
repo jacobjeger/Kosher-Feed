@@ -9,7 +9,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import PodcastCard from "@/components/PodcastCard";
 import EpisodeItem from "@/components/EpisodeItem";
 import Colors from "@/constants/colors";
-import type { Feed, Episode, Category } from "@/lib/types";
+import type { Feed, Episode, Category, MaggidShiur } from "@/lib/types";
 import { queryClient, getApiUrl } from "@/lib/query-client";
 import { router } from "expo-router";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
@@ -173,6 +173,33 @@ const TrendingEpisodeCard = React.memo(function TrendingEpisodeCard({ episode, f
   );
 });
 
+const MaggidShiurCard = React.memo(function MaggidShiurCard({ author, feeds, colors }: { author: string; feeds: Feed[]; colors: any }) {
+  const firstImage = feeds.find(f => f.imageUrl)?.imageUrl;
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.maggidCard,
+        { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.95 : 1 },
+      ]}
+      onPress={() => { lightHaptic(); router.push({ pathname: "/maggid-shiur/[author]" as any, params: { author, feedIds: feeds.map(f => f.id).join(",") } }); }}
+    >
+      {firstImage ? (
+        <Image source={{ uri: firstImage }} style={styles.maggidAvatar} contentFit="cover" cachePolicy="memory-disk" transition={0} />
+      ) : (
+        <View style={[styles.maggidAvatar, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
+          <Ionicons name="person" size={22} color={colors.textSecondary} />
+        </View>
+      )}
+      <Text style={[styles.maggidName, { color: colors.text }]} numberOfLines={2}>
+        {author}
+      </Text>
+      <Text style={[styles.maggidCount, { color: colors.textSecondary }]}>
+        {feeds.length} {feeds.length === 1 ? "shiur" : "shiurim"}
+      </Text>
+    </Pressable>
+  );
+});
+
 const CategorySection = React.memo(function CategorySection({ category, feeds, colors }: { category: Category; feeds: Feed[]; colors: any }) {
   if (feeds.length === 0) return null;
   return (
@@ -286,6 +313,7 @@ function HomeScreenInner() {
   const latestQuery = useQuery<Episode[]>({ queryKey: ["/api/episodes/latest"] });
   const trendingQuery = useQuery<TrendingEpisode[]>({ queryKey: ["/api/episodes/trending"] });
   const featuredQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds/featured"] });
+  const maggidQuery = useQuery<{ author: string; feeds: Feed[] }[]>({ queryKey: ["/api/feeds/maggid-shiur"] });
 
   const isLoading = categoriesQuery.isLoading || feedsQuery.isLoading;
   const hasError = feedsQuery.isError || categoriesQuery.isError;
@@ -295,6 +323,7 @@ function HomeScreenInner() {
   const latestEpisodes = (latestQuery.data || []).slice(0, 20);
   const trendingEpisodes = trendingQuery.data || [];
   const featuredFeeds = featuredQuery.data || [];
+  const maggidShiurim = maggidQuery.data || [];
 
   const handleDismissContinue = useCallback(async (episodeId: string) => {
     lightHaptic();
@@ -614,8 +643,28 @@ function HomeScreenInner() {
         </View>
       )}
 
+      {!isSearching && maggidShiurim.length > 0 && (
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Maggidei Shiur</Text>
+          <FlatList
+            horizontal
+            data={maggidShiurim}
+            keyExtractor={(item) => item.author}
+            renderItem={({ item }) => <MaggidShiurCard author={item.author} feeds={item.feeds} colors={colors} />}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 20 }}
+            initialNumToRender={6}
+            maxToRenderPerBatch={5}
+            windowSize={3}
+            removeClippedSubviews={Platform.OS !== "web"}
+          />
+        </View>
+      )}
+
       {!isSearching && categories.map(cat => {
-        const catFeeds = allFeeds.filter(f => f.categoryId === cat.id);
+        const catFeeds = allFeeds.filter(f => 
+          (f.categoryIds && f.categoryIds.includes(cat.id)) || f.categoryId === cat.id
+        );
         return <CategorySection key={cat.id} category={cat} feeds={catFeeds} colors={colors} />;
       })}
 
@@ -1014,5 +1063,32 @@ const styles = StyleSheet.create({
   continueProgressFill: {
     height: "100%" as any,
     borderRadius: 2,
+  },
+  maggidCard: {
+    width: 110,
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: "hidden",
+    marginRight: 12,
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+  },
+  maggidAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    marginBottom: 8,
+  },
+  maggidName: {
+    fontSize: 13,
+    fontWeight: "600" as const,
+    textAlign: "center" as const,
+    lineHeight: 16,
+    marginBottom: 2,
+  },
+  maggidCount: {
+    fontSize: 11,
+    textAlign: "center" as const,
   },
 });
