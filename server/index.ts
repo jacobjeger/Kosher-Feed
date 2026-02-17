@@ -212,7 +212,34 @@ function configureExpoAndLanding(app: express.Application) {
   const webappBuildPath = path.join(staticBuildPath, "webapp");
   const webappIndexPath = path.join(webappBuildPath, "index.html");
 
+  const isProduction = process.env.NODE_ENV === "production";
+
+  const serveStaticWebApp = (res: Response) => {
+    const routerFix = `<script>if(window.location.pathname.startsWith('/webapp')){history.replaceState(null,'','/' + window.location.pathname.slice('/webapp'.length).replace(/^\\//, '') + window.location.search + window.location.hash);}</script>`;
+    if (fs.existsSync(webappIndexPath)) {
+      let html = fs.readFileSync(webappIndexPath, "utf-8");
+      html = html.replace('</head>', `${routerFix}</head>`);
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.send(html);
+      return true;
+    }
+    if (fs.existsSync(staticIndexPath)) {
+      let html = fs.readFileSync(staticIndexPath, "utf-8");
+      html = html.replace('</head>', `${routerFix}</head>`);
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.send(html);
+      return true;
+    }
+    return false;
+  };
+
   const serveExpoWebApp = async (_req: Request, res: Response) => {
+    if (isProduction) {
+      if (!serveStaticWebApp(res)) {
+        res.status(502).send(loadingHtml);
+      }
+      return;
+    }
     try {
       const resp = await fetch(expoDevTarget);
       if (!resp.ok) throw new Error("Expo dev server not ready");
@@ -222,19 +249,7 @@ function configureExpoAndLanding(app: express.Application) {
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.send(html);
     } catch {
-      if (fs.existsSync(webappIndexPath)) {
-        let html = fs.readFileSync(webappIndexPath, "utf-8");
-        const routerFix = `<script>if(window.location.pathname.startsWith('/webapp')){history.replaceState(null,'','/' + window.location.pathname.slice('/webapp'.length).replace(/^\\//, '') + window.location.search + window.location.hash);}</script>`;
-        html = html.replace('</head>', `${routerFix}</head>`);
-        res.setHeader("Content-Type", "text/html; charset=utf-8");
-        res.send(html);
-      } else if (fs.existsSync(staticIndexPath)) {
-        let html = fs.readFileSync(staticIndexPath, "utf-8");
-        const routerFix = `<script>if(window.location.pathname.startsWith('/webapp')){history.replaceState(null,'','/' + window.location.pathname.slice('/webapp'.length).replace(/^\\//, '') + window.location.search + window.location.hash);}</script>`;
-        html = html.replace('</head>', `${routerFix}</head>`);
-        res.setHeader("Content-Type", "text/html; charset=utf-8");
-        res.send(html);
-      } else {
+      if (!serveStaticWebApp(res)) {
         res.status(502).send(loadingHtml);
       }
     }
