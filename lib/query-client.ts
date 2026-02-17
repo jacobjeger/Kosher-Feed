@@ -23,7 +23,8 @@ export function getApiUrl(): string {
   }
 
   if (__DEV__ && host) {
-    return `https://${host}`;
+    const cleanHost = host.replace(/:5000$/, "").replace(/:443$/, "");
+    return `https://${cleanHost}`;
   }
 
   return PRODUCTION_API_URL;
