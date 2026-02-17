@@ -390,6 +390,48 @@ export async function getFeaturedFeeds(): Promise<Feed[]> {
   return db.select().from(feeds).where(and(eq(feeds.isFeatured, true), eq(feeds.isActive, true))).orderBy(feeds.title);
 }
 
+export async function getFeedCategoryIds(feedId: string): Promise<string[]> {
+  const rows = await db.select({ categoryId: feedCategories.categoryId }).from(feedCategories).where(eq(feedCategories.feedId, feedId));
+  return rows.map(r => r.categoryId);
+}
+
+export async function getAllFeedCategoryMappings(): Promise<{ feedId: string; categoryId: string }[]> {
+  return db.select({ feedId: feedCategories.feedId, categoryId: feedCategories.categoryId }).from(feedCategories);
+}
+
+export async function setFeedCategories(feedId: string, categoryIds: string[]): Promise<void> {
+  await db.delete(feedCategories).where(eq(feedCategories.feedId, feedId));
+  if (categoryIds.length > 0) {
+    await db.insert(feedCategories).values(categoryIds.map(categoryId => ({ feedId, categoryId })));
+  }
+}
+
+export async function getFeedsByCategories(categoryId: string): Promise<Feed[]> {
+  const rows = await db.select({ feedId: feedCategories.feedId }).from(feedCategories).where(eq(feedCategories.categoryId, categoryId));
+  if (rows.length === 0) return [];
+  const feedIds = rows.map(r => r.feedId);
+  return db.select().from(feeds).where(and(inArray(feeds.id, feedIds), eq(feeds.isActive, true))).orderBy(feeds.title);
+}
+
+export async function getActiveFeedsGroupedByAuthor(): Promise<{ author: string; feeds: Feed[] }[]> {
+  const allActive = await db.select().from(feeds).where(eq(feeds.isActive, true)).orderBy(feeds.author, feeds.title);
+  const grouped = new Map<string, Feed[]>();
+  for (const feed of allActive) {
+    const author = feed.author?.trim();
+    if (!author) continue;
+    if (!grouped.has(author)) grouped.set(author, []);
+    grouped.get(author)!.push(feed);
+  }
+  const result: { author: string; feeds: Feed[] }[] = [];
+  for (const [author, authorFeeds] of grouped) {
+    if (authorFeeds.length >= 1) {
+      result.push({ author, feeds: authorFeeds });
+    }
+  }
+  result.sort((a, b) => b.feeds.length - a.feeds.length || a.author.localeCompare(b.author));
+  return result;
+}
+
 export async function setFeedFeatured(feedId: string, featured: boolean): Promise<Feed> {
   const [feed] = await db.update(feeds).set({ isFeatured: featured }).where(eq(feeds.id, feedId)).returning();
   return feed;

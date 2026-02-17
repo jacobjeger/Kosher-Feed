@@ -104,8 +104,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/feeds", async (_req: Request, res: Response) => {
     try {
       const feedList = await storage.getActiveFeeds();
+      const mappings = await storage.getAllFeedCategoryMappings();
+      const feedsWithCategories = feedList.map(f => {
+        const catIds = mappings.filter(m => m.feedId === f.id).map(m => m.categoryId);
+        return { ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) };
+      });
       res.setHeader("Cache-Control", "public, max-age=60");
-      res.json(feedList);
+      res.json(feedsWithCategories);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -124,8 +129,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/feeds/category/:categoryId", async (req: Request, res: Response) => {
     try {
-      const feedList = await storage.getFeedsByCategory(req.params.categoryId);
-      res.json(feedList);
+      const legacyFeeds = await storage.getFeedsByCategory(req.params.categoryId);
+      const junctionFeeds = await storage.getFeedsByCategories(req.params.categoryId);
+      const allFeedsMap = new Map<string, any>();
+      for (const f of legacyFeeds) allFeedsMap.set(f.id, f);
+      for (const f of junctionFeeds) allFeedsMap.set(f.id, f);
+      res.json(Array.from(allFeedsMap.values()));
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Maggid Shiur - feeds grouped by author/speaker
+  app.get("/api/feeds/maggid-shiur", async (_req: Request, res: Response) => {
+    try {
+      const grouped = await storage.getActiveFeedsGroupedByAuthor();
+      res.setHeader("Cache-Control", "public, max-age=60");
+      res.json(grouped);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -176,7 +196,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/admin/feeds", adminAuth as any, async (_req: Request, res: Response) => {
     try {
       const feedList = await storage.getAllFeeds();
-      res.json(feedList);
+      const mappings = await storage.getAllFeedCategoryMappings();
+      const feedsWithCategories = feedList.map(f => {
+        const catIds = mappings.filter(m => m.feedId === f.id).map(m => m.categoryId);
+        return { ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) };
+      });
+      res.json(feedsWithCategories);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -184,7 +209,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/admin/feeds", adminAuth as any, async (req: Request, res: Response) => {
     try {
-      const { rssUrl, categoryId } = req.body;
+      const { rssUrl, categoryId, categoryIds } = req.body;
       if (!rssUrl) return res.status(400).json({ error: "rssUrl is required" });
 
       const parsed = await parseFeed("temp", rssUrl);
@@ -198,6 +223,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         categoryId: categoryId || null,
       });
 
+      if (categoryIds && Array.isArray(categoryIds) && categoryIds.length > 0) {
+        await storage.setFeedCategories(feed.id, categoryIds);
+      } else if (categoryId) {
+        await storage.setFeedCategories(feed.id, [categoryId]);
+      }
+
       const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
       await storage.upsertEpisodes(feed.id, episodeData);
 
@@ -209,7 +240,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put("/api/admin/feeds/:id", adminAuth as any, async (req: Request, res: Response) => {
     try {
-      const feed = await storage.updateFeed(req.params.id, req.body);
+      const { categoryIds, ...feedData } = req.body;
+      const feed = await storage.updateFeed(req.params.id, feedData);
+      if (categoryIds && Array.isArray(categoryIds)) {
+        await storage.setFeedCategories(req.params.id, categoryIds);
+      }
       res.json(feed);
     } catch (e: any) {
       res.status(400).json({ error: e.message });

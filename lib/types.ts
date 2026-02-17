@@ -6,11 +6,18 @@ export interface Feed {
   description: string | null;
   author: string | null;
   categoryId: string | null;
+  categoryIds?: string[];
   isActive: boolean;
   isFeatured: boolean;
   scheduledPublishAt: string | null;
   lastFetchedAt: string | null;
   createdAt: string;
+}
+
+export interface MaggidShiur {
+  author: string;
+  feeds: Feed[];
+  feedCount: number;
 }
 
 export interface Episode {
