@@ -1,5 +1,5 @@
-import React, { useMemo, useState, useCallback, useEffect, useRef } from "react";
-import { View, Text, FlatList, ScrollView, Pressable, StyleSheet, ActivityIndicator, RefreshControl, Platform, TextInput, Dimensions } from "react-native";
+import React, { useMemo, useState, useCallback, useEffect, useRef, forwardRef } from "react";
+import { View, Text, FlatList, ScrollView, Pressable, StyleSheet, ActivityIndicator, RefreshControl, Platform, TextInput, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
@@ -200,23 +200,129 @@ const MaggidShiurCard = React.memo(function MaggidShiurCard({ author, feeds, col
   );
 });
 
+const SCROLL_AMOUNT = 300;
+
+const WebScrollArrows = React.memo(function WebScrollArrows({ children, colors }: { children: React.ReactNode; colors: any }) {
+  if (Platform.OS !== "web") return <>{children}</>;
+
+  const scrollRef = useRef<FlatList>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
+  const scrollOffsetRef = useRef(0);
+  const contentWidthRef = useRef(0);
+  const containerWidthRef = useRef(0);
+
+  const updateArrows = useCallback(() => {
+    const offset = scrollOffsetRef.current;
+    const maxScroll = contentWidthRef.current - containerWidthRef.current;
+    setCanScrollLeft(offset > 5);
+    setCanScrollRight(offset < maxScroll - 5);
+  }, []);
+
+  const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    scrollOffsetRef.current = e.nativeEvent.contentOffset.x;
+    containerWidthRef.current = e.nativeEvent.layoutMeasurement.width;
+    contentWidthRef.current = e.nativeEvent.contentSize.width;
+    updateArrows();
+  }, [updateArrows]);
+
+  const scrollLeft = useCallback(() => {
+    const newOffset = Math.max(0, scrollOffsetRef.current - SCROLL_AMOUNT);
+    scrollRef.current?.scrollToOffset({ offset: newOffset, animated: true });
+  }, []);
+
+  const scrollRight = useCallback(() => {
+    const maxScroll = contentWidthRef.current - containerWidthRef.current;
+    const newOffset = Math.min(maxScroll, scrollOffsetRef.current + SCROLL_AMOUNT);
+    scrollRef.current?.scrollToOffset({ offset: newOffset, animated: true });
+  }, []);
+
+  const cloned = React.Children.map(children, (child) => {
+    if (React.isValidElement(child) && (child.type === FlatList || (child as any).type?.name === "FlatList")) {
+      return React.cloneElement(child as React.ReactElement<any>, {
+        ref: scrollRef,
+        onScroll: handleScroll,
+        scrollEventThrottle: 16,
+      });
+    }
+    return child;
+  });
+
+  return (
+    <View style={arrowStyles.wrapper}>
+      {cloned}
+      {canScrollLeft && (
+        <Pressable
+          onPress={scrollLeft}
+          style={({ pressed }) => [
+            arrowStyles.arrowBtn,
+            arrowStyles.arrowLeft,
+            { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.7 : 0.92 },
+          ]}
+        >
+          <Ionicons name="chevron-back" size={20} color={colors.text} />
+        </Pressable>
+      )}
+      {canScrollRight && (
+        <Pressable
+          onPress={scrollRight}
+          style={({ pressed }) => [
+            arrowStyles.arrowBtn,
+            arrowStyles.arrowRight,
+            { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.7 : 0.92 },
+          ]}
+        >
+          <Ionicons name="chevron-forward" size={20} color={colors.text} />
+        </Pressable>
+      )}
+    </View>
+  );
+});
+
+const arrowStyles = StyleSheet.create({
+  wrapper: {
+    position: "relative" as const,
+  },
+  arrowBtn: {
+    position: "absolute" as const,
+    top: "50%" as any,
+    marginTop: -18,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    borderWidth: 1,
+    zIndex: 10,
+    ...(Platform.OS === "web" ? { cursor: "pointer" as any, boxShadow: "0 2px 8px rgba(0,0,0,0.15)" as any } : {}),
+  },
+  arrowLeft: {
+    left: 4,
+  },
+  arrowRight: {
+    right: 4,
+  },
+});
+
 const CategorySection = React.memo(function CategorySection({ category, feeds, colors }: { category: Category; feeds: Feed[]; colors: any }) {
   if (feeds.length === 0) return null;
   return (
     <View style={styles.section}>
       <Text style={[styles.sectionTitle, { color: colors.text }]}>{category.name}</Text>
-      <FlatList
-        horizontal
-        data={feeds}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <PodcastCard feed={item} size="small" />}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 20 }}
-        initialNumToRender={5}
-        maxToRenderPerBatch={5}
-        windowSize={3}
-        removeClippedSubviews={Platform.OS !== "web"}
-      />
+      <WebScrollArrows colors={colors}>
+        <FlatList
+          horizontal
+          data={feeds}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => <PodcastCard feed={item} size="small" />}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 20 }}
+          initialNumToRender={5}
+          maxToRenderPerBatch={5}
+          windowSize={3}
+          removeClippedSubviews={Platform.OS !== "web"}
+        />
+      </WebScrollArrows>
     </View>
   );
 });
