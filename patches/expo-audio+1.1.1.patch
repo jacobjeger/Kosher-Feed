@@ -1,17 +1,14 @@
-diff --git a/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt b/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
-index 1234567..abcdefg 100644
---- a/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
-+++ b/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
-@@ -115,16 +115,57 @@
+--- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
+@@ -114,6 +114,7 @@
+ 
    private fun buildNotification(): Notification? {
      val session = mediaSession ?: return null
 +    val player = currentPlayer?.ref
  
      val builder = NotificationCompat.Builder(this, CHANNEL_ID)
        .setSmallIcon(androidx.media3.session.R.drawable.media3_icon_circular_play)
-       .setContentTitle(currentMetadata?.title ?: "\u200E")
-       .setContentText(currentMetadata?.artist)
-       .setSubText(currentMetadata?.albumTitle)
+@@ -123,11 +124,49 @@
        .setLargeIcon(currentArtwork)
        .setContentIntent(buildContentIntent())
        .setAutoCancel(false)
