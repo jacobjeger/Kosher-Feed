@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
-import { Platform } from "react-native";
+import { Platform, InteractionManager } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Episode, Feed } from "@/lib/types";
 import { addLog } from "@/lib/error-logger";
@@ -8,6 +8,25 @@ import { getDeviceId } from "@/lib/device-id";
 import { getQueue, addToQueue as addToQueueStorage, removeFromQueue as removeFromQueueStorage, clearQueue as clearQueueStorage, type QueueItem } from "@/lib/queue";
 import { addToHistory, updateHistoryPosition } from "@/lib/history";
 import { notifyEpisodePlayed } from "@/contexts/PlayedEpisodesContext";
+
+let TrackPlayer: any = null;
+let TPEvent: any = null;
+let TPState: any = null;
+let TPCapability: any = null;
+let TPRepeatMode: any = null;
+
+if (Platform.OS !== "web") {
+  try {
+    const tp = require("react-native-track-player");
+    TrackPlayer = tp.default;
+    TPEvent = tp.Event;
+    TPState = tp.State;
+    TPCapability = tp.Capability;
+    TPRepeatMode = tp.RepeatMode;
+  } catch (e) {
+    addLog("warn", `TrackPlayer not available: ${(e as any)?.message}`, undefined, "audio");
+  }
+}
 
 const POSITIONS_KEY = "@kosher_shiurim_positions";
 const RECENTLY_PLAYED_KEY = "@shiurpod_recently_played";
@@ -124,6 +143,7 @@ async function syncPositionToServer(episodeId: string, feedId: string, positionM
     const deviceId = await getDeviceId();
     await apiRequest("POST", "/api/playback-positions", {
       episodeId,
+      feedId,
       deviceId,
       positionMs: Math.round(positionMs),
       durationMs: Math.round(durationMs),
@@ -150,7 +170,6 @@ async function saveFeedSpeed(feedId: string, rate: number) {
   }
 }
 
-
 async function fetchEpisodeAndFeed(episodeId: string, feedId: string): Promise<{ episode: Episode; feed: Feed } | null> {
   try {
     const baseUrl = getApiUrl();
@@ -168,6 +187,49 @@ async function fetchEpisodeAndFeed(episodeId: string, feedId: string): Promise<{
     return { episode, feed };
   } catch {
     return null;
+  }
+}
+
+let trackPlayerInitialized = false;
+
+async function initTrackPlayer() {
+  if (!TrackPlayer || trackPlayerInitialized) return;
+  try {
+    await TrackPlayer.setupPlayer({
+      maxCacheSize: 1024 * 50,
+      autoHandleInterruptions: true,
+    });
+    await TrackPlayer.updateOptions({
+      capabilities: [
+        TPCapability.Play,
+        TPCapability.Pause,
+        TPCapability.Stop,
+        TPCapability.SeekTo,
+        TPCapability.SkipToNext,
+        TPCapability.SkipToPrevious,
+        TPCapability.JumpForward,
+        TPCapability.JumpBackward,
+      ],
+      compactCapabilities: [TPCapability.Play, TPCapability.Pause, TPCapability.Stop],
+      forwardJumpInterval: 30,
+      backwardJumpInterval: 15,
+      notificationCapabilities: [
+        TPCapability.Play,
+        TPCapability.Pause,
+        TPCapability.SeekTo,
+        TPCapability.SkipToNext,
+        TPCapability.SkipToPrevious,
+      ],
+    });
+    await TrackPlayer.setRepeatMode(TPRepeatMode.Off);
+    trackPlayerInitialized = true;
+    addLog("info", "TrackPlayer initialized successfully", undefined, "audio");
+  } catch (e: any) {
+    if (e?.message?.includes("already been initialized")) {
+      trackPlayerInitialized = true;
+    } else {
+      addLog("error", `TrackPlayer init failed: ${e?.message || e}`, e?.stack, "audio");
+    }
   }
 }
 
@@ -193,7 +255,6 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   const clearEpisodeCompleted = useCallback(() => setEpisodeCompleted(null), []);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const soundRef = useRef<any>(null);
   const intervalRef = useRef<any>(null);
   const isLoadingRef = useRef(false);
   const currentEpisodeRef = useRef<Episode | null>(null);
@@ -202,6 +263,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   const sleepTimerIntervalRef = useRef<any>(null);
   const sleepTimerRef = useRef<SleepTimerState>(sleepTimer);
   const queueRef = useRef<QueueItem[]>(queue);
+  const trackPlayerReadyRef = useRef(false);
 
   const positionRef = useRef<PositionState>({ positionMs: 0, durationMs: 0 });
   const positionListenersRef = useRef<Set<() => void>>(new Set());
@@ -233,6 +295,14 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     getQueue().then(setQueue).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== "web" && TrackPlayer) {
+      initTrackPlayer().then(() => {
+        trackPlayerReadyRef.current = true;
+      });
+    }
   }, []);
 
   const addRecentlyPlayed = useCallback(async (episodeId: string, feedId: string) => {
@@ -323,7 +393,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   const startPositionTracking = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     const trackingInterval = Platform.OS === "web" ? 500 : 2000;
-    intervalRef.current = setInterval(() => {
+    intervalRef.current = setInterval(async () => {
       if (Platform.OS === "web" && audioRef.current) {
         const newPos = (audioRef.current.currentTime || 0) * 1000;
         const newDur = (audioRef.current.duration || 0) * 1000;
@@ -337,12 +407,17 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           }
           return prev;
         });
-      } else if (soundRef.current) {
+      } else if (TrackPlayer && trackPlayerReadyRef.current) {
         try {
-          const player = soundRef.current;
-          const newPos = (player.currentTime || 0) * 1000;
-          const newDur = (player.duration || 0) * 1000;
-          const newIsPlaying = player.playing || false;
+          const [pos, dur, tpState] = await Promise.all([
+            TrackPlayer.getPosition(),
+            TrackPlayer.getDuration(),
+            TrackPlayer.getPlaybackState(),
+          ]);
+          const newPos = (pos || 0) * 1000;
+          const newDur = (dur || 0) * 1000;
+          const state = tpState?.state ?? tpState;
+          const newIsPlaying = state === TPState?.Playing;
           positionRef.current = { positionMs: newPos, durationMs: newDur };
           playbackRef.current = { ...playbackRef.current, positionMs: newPos, durationMs: newDur, isPlaying: newIsPlaying };
           notifyPositionListeners();
@@ -360,8 +435,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   const pause = useCallback(async () => {
     if (Platform.OS === "web") {
       audioRef.current?.pause();
-    } else if (soundRef.current) {
-      soundRef.current.pause();
+    } else if (TrackPlayer && trackPlayerReadyRef.current) {
+      await TrackPlayer.pause();
     }
     setPlayback(prev => ({ ...prev, isPlaying: false }));
     saveCurrentPosition();
@@ -416,6 +491,76 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     setSleepTimerState({ active: false, remainingMs: 0, mode: "time" });
   }, []);
 
+  const handleEpisodeEnd = useCallback((episode: Episode, feed: Feed) => {
+    setPlayback(prev => ({ ...prev, isPlaying: false }));
+    savePosition(episode.id, feed.id, 0, 0);
+    removeSavedPosition(episode.id).catch(() => {});
+    updateHistoryPosition(episode.id, 0, 0).catch(() => {});
+    notifyEpisodePlayed(episode.id);
+
+    if (sleepTimerRef.current.active && sleepTimerRef.current.mode === "endOfEpisode") {
+      cancelSleepTimer();
+    } else if (queueRef.current.length > 0) {
+      playNextRef.current();
+    } else {
+      AsyncStorage.getItem("@kosher_shiurim_settings").then(data => {
+        try {
+          const settings = data ? JSON.parse(data) : {};
+          if (settings.continuousPlayback !== false) {
+            const feedId = currentFeedRef.current?.id;
+            if (feedId) {
+              const baseUrl = getApiUrl();
+              fetch(new URL(`/api/feeds/${feedId}/episodes?sort=newest&limit=50`, baseUrl).toString())
+                .then(r => r.json())
+                .then((episodes: any[]) => {
+                  const currentIdx = episodes.findIndex((e: any) => e.id === episode.id);
+                  const nextEp = currentIdx >= 0 && currentIdx < episodes.length - 1 ? episodes[currentIdx + 1] : null;
+                  if (nextEp && currentFeedRef.current) {
+                    playEpisodeInternalRef.current(nextEp, currentFeedRef.current, false);
+                  } else {
+                    setEpisodeCompleted(episode.id);
+                    stopRef.current();
+                  }
+                }).catch(() => {
+                  setEpisodeCompleted(episode.id);
+                  stopRef.current();
+                });
+            } else {
+              setEpisodeCompleted(episode.id);
+              stopRef.current();
+            }
+          } else {
+            setEpisodeCompleted(episode.id);
+            stopRef.current();
+          }
+        } catch {
+          setEpisodeCompleted(episode.id);
+          stopRef.current();
+        }
+      }).catch(() => {
+        setEpisodeCompleted(episode.id);
+        stopRef.current();
+      });
+    }
+  }, [cancelSleepTimer, removeSavedPosition]);
+
+  const handleEpisodeEndRef = useRef(handleEpisodeEnd);
+  useEffect(() => { handleEpisodeEndRef.current = handleEpisodeEnd; }, [handleEpisodeEnd]);
+
+  useEffect(() => {
+    if (Platform.OS === "web" || !TrackPlayer || !TPEvent) return;
+
+    const sub = TrackPlayer.addEventListener(TPEvent.PlaybackQueueEnded, (data: any) => {
+      const ep = currentEpisodeRef.current;
+      const feed = currentFeedRef.current;
+      if (ep && feed && data?.track !== undefined) {
+        handleEpisodeEndRef.current(ep, feed);
+      }
+    });
+
+    return () => sub?.remove?.();
+  }, []);
+
   const playEpisodeInternal = useCallback(async (episode: Episode, feed: Feed, skipHistory?: boolean) => {
     if (isLoadingRef.current) return;
     isLoadingRef.current = true;
@@ -454,198 +599,43 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           startPositionTracking();
         };
         audio.onended = () => {
-          setPlayback(prev => ({ ...prev, isPlaying: false }));
-          savePosition(episode.id, feed.id, 0, 0);
-          removeSavedPosition(episode.id).catch(() => {});
-          updateHistoryPosition(episode.id, 0, 0).catch(() => {});
-          notifyEpisodePlayed(episode.id);
-          if (sleepTimerRef.current.active && sleepTimerRef.current.mode === "endOfEpisode") {
-            cancelSleepTimer();
-          } else if (queueRef.current.length > 0) {
-            playNextRef.current();
-          } else {
-            AsyncStorage.getItem("@kosher_shiurim_settings").then(data => {
-              try {
-                const settings = data ? JSON.parse(data) : {};
-                if (settings.continuousPlayback !== false) {
-                  const feedId = currentFeedRef.current?.id;
-                  if (feedId) {
-                    const baseUrl = getApiUrl();
-                    fetch(new URL(`/api/feeds/${feedId}/episodes?sort=newest&limit=50`, baseUrl).toString())
-                      .then(r => r.json())
-                      .then((episodes: any[]) => {
-                        const currentIdx = episodes.findIndex((e: any) => e.id === episode.id);
-                        const nextEp = currentIdx >= 0 && currentIdx < episodes.length - 1 ? episodes[currentIdx + 1] : null;
-                        if (nextEp && currentFeedRef.current) {
-                          playEpisodeInternalRef.current(nextEp, currentFeedRef.current, false);
-                        } else {
-                          setEpisodeCompleted(episode.id);
-                          stopRef.current();
-                        }
-                      }).catch(() => {
-                        setEpisodeCompleted(episode.id);
-                        stopRef.current();
-                      });
-                  } else {
-                    setEpisodeCompleted(episode.id);
-                    stopRef.current();
-                  }
-                } else {
-                  setEpisodeCompleted(episode.id);
-                  stopRef.current();
-                }
-              } catch {
-                setEpisodeCompleted(episode.id);
-                stopRef.current();
-              }
-            }).catch(() => {
-              setEpisodeCompleted(episode.id);
-              stopRef.current();
-            });
-          }
+          handleEpisodeEndRef.current(episode, feed);
         };
-        audio.onerror = () => {
-          const retryCount = (audio as any).__retryCount || 0;
-          if (retryCount < 2) {
-            (audio as any).__retryCount = retryCount + 1;
-            console.error(`Audio load failed, retrying (${retryCount + 1}/2)...`);
-            setTimeout(() => {
-              audio.load();
-            }, 1000 * (retryCount + 1));
-          } else {
-            console.error("Audio playback failed after retries");
-            setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: false }));
-          }
+        audio.onerror = (e) => {
+          addLog("error", `Web audio error: ${episode.title}`, undefined, "audio");
+          setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: false }));
         };
-      } else {
-        if (soundRef.current) {
-          try {
-            soundRef.current.remove?.();
-            soundRef.current.release?.();
-          } catch {}
-          soundRef.current = null;
-        }
-
+      } else if (TrackPlayer && trackPlayerReadyRef.current) {
         setCurrentEpisode(episode);
         setCurrentFeed(feed);
         setPlayback(prev => ({ ...prev, isLoading: true, isPlaying: false, positionMs: savedPos, durationMs: 0, playbackRate: feedSpeed }));
 
-        const { createAudioPlayer, setAudioModeAsync } = require("expo-audio");
-        await setAudioModeAsync({
-          playsInSilentMode: true,
-          shouldRouteThroughEarpiece: false,
-          shouldPlayInBackground: true,
-          interruptionMode: "doNotMix",
+        await TrackPlayer.reset();
+        await TrackPlayer.add({
+          id: episode.id,
+          url: episode.audioUrl,
+          title: episode.title || "Unknown",
+          artist: feed.title || "ShiurPod",
+          album: feed.title || "ShiurPod",
+          artwork: feed.imageUrl || undefined,
+          duration: episode.duration ? parseInt(String(episode.duration), 10) / 1000 : undefined,
         });
 
-        let retryCount = 0;
-        const maxRetries = 2;
-        let player: any = null;
-
-        while (retryCount <= maxRetries) {
-          try {
-            player = createAudioPlayer({ uri: episode.audioUrl });
-            try { player.rate = feedSpeed; } catch {}
-            break;
-          } catch (loadError: any) {
-            retryCount++;
-            addLog("warn", `Audio load failed (attempt ${retryCount}/${maxRetries + 1}): ${loadError?.message || loadError}`, undefined, "audio");
-            if (retryCount > maxRetries) {
-              throw loadError;
-            }
-            await new Promise(resolve => setTimeout(resolve, 1500 * retryCount));
-          }
+        if (feedSpeed !== 1.0) {
+          await TrackPlayer.setRate(feedSpeed);
         }
-
-        if (!player) {
-          throw new Error("Audio failed to load after retries");
-        }
-
-        soundRef.current = player;
-
-        const statusSub = player.addListener("playbackStatusUpdate", (status: any) => {
-          if (status?.didJustFinish || (status?.playing === false && player.currentTime > 0 && player.duration > 0 && player.currentTime >= player.duration - 0.5)) {
-            savePosition(episode.id, feed.id, 0, 0);
-            removeSavedPosition(episode.id).catch(() => {});
-            updateHistoryPosition(episode.id, 0, 0).catch(() => {});
-            notifyEpisodePlayed(episode.id);
-            if (sleepTimerRef.current.active && sleepTimerRef.current.mode === "endOfEpisode") {
-              cancelSleepTimer();
-            } else if (queueRef.current.length > 0) {
-              playNextRef.current();
-            } else {
-              AsyncStorage.getItem("@kosher_shiurim_settings").then(data => {
-                try {
-                  const settings = data ? JSON.parse(data) : {};
-                  if (settings.continuousPlayback !== false) {
-                    const feedId = currentFeedRef.current?.id;
-                    if (feedId) {
-                      const baseUrl = getApiUrl();
-                      fetch(new URL(`/api/feeds/${feedId}/episodes?sort=newest&limit=50`, baseUrl).toString())
-                        .then(r => r.json())
-                        .then((episodes: any[]) => {
-                          const currentIdx = episodes.findIndex((e: any) => e.id === episode.id);
-                          const nextEp = currentIdx >= 0 && currentIdx < episodes.length - 1 ? episodes[currentIdx + 1] : null;
-                          if (nextEp && currentFeedRef.current) {
-                            playEpisodeInternalRef.current(nextEp, currentFeedRef.current, false);
-                          } else {
-                            setEpisodeCompleted(episode.id);
-                            stopRef.current();
-                          }
-                        }).catch(() => {
-                          setEpisodeCompleted(episode.id);
-                          stopRef.current();
-                        });
-                    } else {
-                      setEpisodeCompleted(episode.id);
-                      stopRef.current();
-                    }
-                  } else {
-                    setEpisodeCompleted(episode.id);
-                    stopRef.current();
-                  }
-                } catch {
-                  setEpisodeCompleted(episode.id);
-                  stopRef.current();
-                }
-              }).catch(() => {
-                setEpisodeCompleted(episode.id);
-                stopRef.current();
-              });
-            }
-          }
-          if (status?.error) {
-            addLog("error", `Audio playback error: ${status.error}`, undefined, "audio");
-          }
-        });
-        (player as any).__statusSub = statusSub;
 
         if (savedPos > 0) {
-          player.seekTo(savedPos / 1000);
+          await TrackPlayer.seekTo(savedPos / 1000);
         }
-        player.play();
 
-        try {
-          player.setActiveForLockScreen?.(true);
-        } catch {}
-
-        const applyMetadata = () => {
-          try {
-            soundRef.current?.updateNowPlayingMetadata?.({
-              title: episode.title || "Unknown",
-              artist: feed.title || "ShiurPod",
-              album: feed.title || "ShiurPod",
-              artwork: feed.imageUrl || undefined,
-            });
-          } catch {}
-        };
-        applyMetadata();
-        setTimeout(applyMetadata, 500);
-        setTimeout(applyMetadata, 2000);
-
+        await TrackPlayer.play();
         setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true }));
-        addLog("info", `Playing: ${episode.title} (feed: ${feed.title})`, undefined, "audio");
+        addLog("info", `Playing (TrackPlayer): ${episode.title} (feed: ${feed.title})`, undefined, "audio");
         startPositionTracking();
+      } else {
+        addLog("error", "No audio player available", undefined, "audio");
+        setPlayback(prev => ({ ...prev, isLoading: false }));
       }
 
       if (!skipHistory) {
@@ -706,25 +696,13 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     try {
       if (Platform.OS === "web") {
         await audioRef.current?.play();
-      } else if (soundRef.current) {
-        soundRef.current.play();
-        try {
-          const ep = currentEpisodeRef.current;
-          const feed = currentFeedRef.current;
-          if (ep && feed) {
-            soundRef.current.updateNowPlayingMetadata?.({
-              title: ep.title || "Unknown",
-              artist: feed.title || "ShiurPod",
-              album: feed.title || "ShiurPod",
-              artwork: feed.imageUrl || undefined,
-            });
-          }
-        } catch {}
+      } else if (TrackPlayer && trackPlayerReadyRef.current) {
+        await TrackPlayer.play();
       } else {
         const ep = currentEpisodeRef.current;
         const feed = currentFeedRef.current;
         if (ep && feed) {
-          addLog("warn", "Audio player released, reloading episode...", undefined, "audio");
+          addLog("warn", "TrackPlayer not ready, reloading episode...", undefined, "audio");
           await playEpisodeInternal(ep, feed, true);
           return;
         }
@@ -740,8 +718,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     try {
       if (Platform.OS === "web" && audioRef.current) {
         audioRef.current.currentTime = positionMs / 1000;
-      } else if (soundRef.current) {
-        soundRef.current.seekTo(positionMs / 1000);
+      } else if (TrackPlayer && trackPlayerReadyRef.current) {
+        await TrackPlayer.seekTo(positionMs / 1000);
       }
       setPlayback(prev => ({ ...prev, positionMs }));
     } catch (e) {
@@ -759,8 +737,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     try {
       if (Platform.OS === "web" && audioRef.current) {
         audioRef.current.playbackRate = rate;
-      } else if (soundRef.current) {
-        try { soundRef.current.rate = rate; } catch {}
+      } else if (TrackPlayer && trackPlayerReadyRef.current) {
+        await TrackPlayer.setRate(rate);
       }
     } catch (e) {
       addLog("warn", `Set rate failed: ${(e as any)?.message || e}`, undefined, "audio");
@@ -787,16 +765,10 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         audioRef.current.src = "";
         audioRef.current = null;
       }
-    } else if (soundRef.current) {
+    } else if (TrackPlayer && trackPlayerReadyRef.current) {
       try {
-        soundRef.current.removeFromLockScreen?.();
+        await TrackPlayer.reset();
       } catch {}
-      try {
-        soundRef.current.pause();
-        soundRef.current.remove?.();
-        soundRef.current.release?.();
-      } catch {}
-      soundRef.current = null;
     }
     setCurrentEpisode(null);
     setCurrentFeed(null);
