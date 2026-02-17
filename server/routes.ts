@@ -4,6 +4,31 @@ import * as storage from "./storage";
 import { parseFeed } from "./rss";
 import { sendNewEpisodePushes } from "./push";
 import { insertFeedSchema, insertCategorySchema } from "@shared/schema";
+import multer from "multer";
+import path from "node:path";
+import fs from "node:fs";
+
+const uploadDir = path.join(process.cwd(), "uploads", "apk");
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+const apkStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadDir),
+  filename: (_req, file, cb) => {
+    const uniqueName = `shiurpod-${Date.now()}${path.extname(file.originalname)}`;
+    cb(null, uniqueName);
+  },
+});
+const apkUpload = multer({
+  storage: apkStorage,
+  limits: { fileSize: 200 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.originalname.toLowerCase().endsWith('.apk')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only .apk files are allowed'));
+    }
+  },
+});
 
 function requireAdmin(req: Request, res: Response): boolean {
   const authHeader = req.headers.authorization;
@@ -977,6 +1002,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const changed = await storage.changeAdminPassword("admin", currentPassword, newPassword);
       if (!changed) {
         return res.status(401).json({ error: "Current password is incorrect" });
+      }
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Public: get active APK info
+  app.get("/api/apk/latest", async (_req: Request, res: Response) => {
+    try {
+      const apk = await storage.getActiveApk();
+      if (!apk) return res.json({ available: false });
+      res.json({ available: true, version: apk.version, fileSize: apk.fileSize, uploadedAt: apk.createdAt });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Public: download the active APK
+  app.get("/api/apk/download", async (_req: Request, res: Response) => {
+    try {
+      const apk = await storage.getActiveApk();
+      if (!apk) return res.status(404).json({ error: "No APK available" });
+      const filePath = path.join(uploadDir, apk.filename);
+      if (!fs.existsSync(filePath)) return res.status(404).json({ error: "File not found" });
+      res.setHeader("Content-Disposition", `attachment; filename="${apk.originalName}"`);
+      res.setHeader("Content-Type", "application/vnd.android.package-archive");
+      res.sendFile(filePath);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: upload APK
+  app.post("/api/admin/apk/upload", adminAuth as any, apkUpload.single("apk"), async (req: Request, res: Response) => {
+    try {
+      const file = (req as any).file;
+      if (!file) return res.status(400).json({ error: "No APK file uploaded" });
+      const version = req.body.version || null;
+      const apk = await storage.createApkUpload({
+        filename: file.filename,
+        originalName: file.originalname,
+        version,
+        fileSize: file.size,
+      });
+      res.json({ ok: true, apk });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: list all APKs
+  app.get("/api/admin/apk", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const apks = await storage.getAllApkUploads();
+      res.json(apks);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: set active APK
+  app.put("/api/admin/apk/:id/activate", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      await storage.setActiveApk(req.params.id);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: delete APK
+  app.delete("/api/admin/apk/:id", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const filename = await storage.deleteApkUpload(req.params.id);
+      if (filename) {
+        const filePath = path.join(uploadDir, filename);
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
       }
       res.json({ ok: true });
     } catch (e: any) {

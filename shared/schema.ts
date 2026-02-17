@@ -141,6 +141,18 @@ export const contactMessages = pgTable("contact_messages", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const apkUploads = pgTable("apk_uploads", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  filename: text("filename").notNull(),
+  originalName: text("original_name").notNull(),
+  version: text("version"),
+  fileSize: integer("file_size").notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type ApkUpload = typeof apkUploads.$inferSelect;
+
 export const insertFeedSchema = createInsertSchema(feeds).pick({
   title: true,
   rssUrl: true,

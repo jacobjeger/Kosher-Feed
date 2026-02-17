@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages } from "@shared/schema";
-import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage } from "@shared/schema";
+import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads } from "@shared/schema";
+import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload } from "@shared/schema";
 import { eq, and, desc, asc, inArray, sql, count, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
@@ -599,4 +599,31 @@ export async function changeAdminPassword(username: string, oldPassword: string,
   const hash = await bcrypt.hash(newPassword, 10);
   await db.update(adminUsers).set({ passwordHash: hash }).where(eq(adminUsers.username, username));
   return true;
+}
+
+export async function createApkUpload(data: { filename: string; originalName: string; version?: string; fileSize: number }): Promise<ApkUpload> {
+  await db.update(apkUploads).set({ isActive: false }).where(eq(apkUploads.isActive, true));
+  const [upload] = await db.insert(apkUploads).values(data).returning();
+  return upload;
+}
+
+export async function getActiveApk(): Promise<ApkUpload | null> {
+  const [apk] = await db.select().from(apkUploads).where(eq(apkUploads.isActive, true)).orderBy(desc(apkUploads.createdAt)).limit(1);
+  return apk || null;
+}
+
+export async function getAllApkUploads(): Promise<ApkUpload[]> {
+  return db.select().from(apkUploads).orderBy(desc(apkUploads.createdAt));
+}
+
+export async function setActiveApk(id: string): Promise<void> {
+  await db.update(apkUploads).set({ isActive: false }).where(eq(apkUploads.isActive, true));
+  await db.update(apkUploads).set({ isActive: true }).where(eq(apkUploads.id, id));
+}
+
+export async function deleteApkUpload(id: string): Promise<string | null> {
+  const [apk] = await db.select().from(apkUploads).where(eq(apkUploads.id, id));
+  if (!apk) return null;
+  await db.delete(apkUploads).where(eq(apkUploads.id, id));
+  return apk.filename;
 }

@@ -174,6 +174,7 @@
       <button class="tab" onclick="switchTab('errors', this)">Error Reports</button>
       <button class="tab" onclick="switchTab('feedback', this)">Feedback</button>
       <button class="tab" onclick="switchTab('messages', this)">Messages</button>
+      <button class="tab" onclick="switchTab('apk', this)">APK</button>
       <button class="tab" onclick="switchTab('settings', this)">Settings</button>
     </div>
 
@@ -268,6 +269,35 @@
         </div>
         <div id="messagesList"></div>
         <div id="messagesPagination" style="display:flex;gap:8px;justify-content:center;margin-top:16px;"></div>
+      </div>
+    </div>
+
+    <div id="apkTab" class="hidden">
+      <div class="card">
+        <div class="card-header">
+          <h2>APK Management</h2>
+        </div>
+        <div style="margin-bottom:16px;padding:16px;background:#0f172a;border-radius:10px;">
+          <h3 style="font-size:14px;color:#f8fafc;margin-bottom:12px;">Upload New APK</h3>
+          <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+            <div class="form-group" style="flex:1;min-width:200px;margin-bottom:0;">
+              <label>APK File</label>
+              <input type="file" id="apkFile" accept=".apk" style="padding:8px;">
+            </div>
+            <div class="form-group" style="width:150px;margin-bottom:0;">
+              <label>Version (optional)</label>
+              <input type="text" id="apkVersion" placeholder="e.g., 1.0.3">
+            </div>
+            <button class="btn btn-primary" onclick="uploadApk()" id="uploadApkBtn">Upload</button>
+          </div>
+          <div id="apkUploadProgress" style="margin-top:8px;display:none;">
+            <div style="background:#1e293b;border-radius:4px;height:6px;overflow:hidden;">
+              <div id="apkProgressBar" style="background:#3b82f6;height:100%;width:0%;transition:width 0.3s;"></div>
+            </div>
+            <span id="apkProgressText" style="font-size:11px;color:#94a3b8;margin-top:4px;display:block;"></span>
+          </div>
+        </div>
+        <div id="apkList"></div>
       </div>
     </div>
 
@@ -1059,12 +1089,13 @@ async function saveFeedEdit(id) {
 function switchTab(tab, btn) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
-  ['analytics','feeds','categories','errors','feedback','messages','settings'].forEach(t => {
+  ['analytics','feeds','categories','errors','feedback','messages','apk','settings'].forEach(t => {
     document.getElementById(t + 'Tab').classList.toggle('hidden', tab !== t);
   });
   if (tab === 'errors') loadErrorReports();
   if (tab === 'feedback') loadFeedback();
   if (tab === 'messages') loadMessages();
+  if (tab === 'apk') loadApks();
 }
 
 function formatDate(dateStr) {
@@ -1341,6 +1372,116 @@ async function deleteMessage(id) {
     await api(`/api/admin/contact-messages/${id}`, { method: 'DELETE' });
     showAlert('Message deleted', 'success');
     loadMessages();
+  } catch(e) {
+    showAlert(e.message, 'error');
+  }
+}
+
+async function uploadApk() {
+  const fileInput = document.getElementById('apkFile');
+  const version = document.getElementById('apkVersion').value.trim();
+  const btn = document.getElementById('uploadApkBtn');
+  const file = fileInput.files[0];
+  if (!file) return showAlert('Please select an APK file', 'error');
+  if (!file.name.toLowerCase().endsWith('.apk')) return showAlert('Only .apk files are allowed', 'error');
+
+  btn.disabled = true;
+  btn.textContent = 'Uploading...';
+  document.getElementById('apkUploadProgress').style.display = 'block';
+
+  const formData = new FormData();
+  formData.append('apk', file);
+  if (version) formData.append('version', version);
+
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/admin/apk/upload');
+    xhr.setRequestHeader('Authorization', 'Basic ' + token);
+    xhr.upload.onprogress = function(e) {
+      if (e.lengthComputable) {
+        const pct = Math.round((e.loaded / e.total) * 100);
+        document.getElementById('apkProgressBar').style.width = pct + '%';
+        document.getElementById('apkProgressText').textContent = pct + '% uploaded (' + (e.loaded / 1024 / 1024).toFixed(1) + ' MB / ' + (e.total / 1024 / 1024).toFixed(1) + ' MB)';
+      }
+    };
+    xhr.onload = function() {
+      btn.disabled = false;
+      btn.textContent = 'Upload';
+      document.getElementById('apkUploadProgress').style.display = 'none';
+      if (xhr.status === 200) {
+        showAlert('APK uploaded successfully!');
+        fileInput.value = '';
+        document.getElementById('apkVersion').value = '';
+        loadApks();
+      } else {
+        const err = JSON.parse(xhr.responseText);
+        showAlert(err.error || 'Upload failed', 'error');
+      }
+    };
+    xhr.onerror = function() {
+      btn.disabled = false;
+      btn.textContent = 'Upload';
+      document.getElementById('apkUploadProgress').style.display = 'none';
+      showAlert('Upload failed', 'error');
+    };
+    xhr.send(formData);
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = 'Upload';
+    document.getElementById('apkUploadProgress').style.display = 'none';
+    showAlert(e.message, 'error');
+  }
+}
+
+async function loadApks() {
+  try {
+    const apks = await api('/api/admin/apk');
+    const list = document.getElementById('apkList');
+    if (!apks || apks.length === 0) {
+      list.innerHTML = '<p style="color:#64748b;text-align:center;padding:40px;">No APKs uploaded yet. Upload your first APK above.</p>';
+      return;
+    }
+    list.innerHTML = apks.map(a => {
+      const d = new Date(a.createdAt);
+      const dateStr = `${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
+      const sizeMB = (a.fileSize / 1024 / 1024).toFixed(1);
+      return `<div style="display:flex;align-items:center;gap:12px;padding:12px;background:#0f172a;border-radius:10px;margin-bottom:8px;${a.isActive ? 'border:1px solid #059669;' : ''}">
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <span style="font-weight:600;font-size:14px;color:#f8fafc;">${esc(a.originalName)}</span>
+            ${a.isActive ? '<span style="background:#065f46;color:#6ee7b7;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">ACTIVE</span>' : ''}
+          </div>
+          <div style="font-size:12px;color:#94a3b8;">
+            ${a.version ? 'v' + esc(a.version) + ' &bull; ' : ''}${sizeMB} MB &bull; ${dateStr}
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0;">
+          ${!a.isActive ? `<button class="btn btn-success btn-sm" onclick="activateApk('${a.id}')">Set Active</button>` : ''}
+          <button class="btn btn-danger btn-sm" onclick="deleteApk('${a.id}')">Delete</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    showAlert(e.message, 'error');
+  }
+}
+
+async function activateApk(id) {
+  try {
+    await api('/api/admin/apk/' + id + '/activate', { method: 'PUT' });
+    showAlert('APK set as active download');
+    loadApks();
+  } catch(e) {
+    showAlert(e.message, 'error');
+  }
+}
+
+async function deleteApk(id) {
+  if (!confirm('Delete this APK?')) return;
+  try {
+    await api('/api/admin/apk/' + id, { method: 'DELETE' });
+    showAlert('APK deleted');
+    loadApks();
   } catch(e) {
     showAlert(e.message, 'error');
   }
