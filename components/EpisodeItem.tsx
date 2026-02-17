@@ -42,6 +42,16 @@ function formatDate(dateStr: string | null): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+function formatRemainingTime(positionMs: number, durationMs: number): string {
+  if (durationMs <= 0) return "";
+  const remainingMs = durationMs - positionMs;
+  const totalSeconds = Math.floor(remainingMs / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  if (hours > 0) return `${hours}h ${minutes}m left`;
+  return `${minutes} min left`;
+}
+
 function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
   const { playEpisode, currentEpisode, playback, pause, resume, queue, addToQueue, removeFromQueue } = useAudioPlayer();
   const { downloadEpisode, isDownloaded, isDownloading, downloadProgress } = useDownloads();
@@ -51,7 +61,7 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const [expanded, setExpanded] = useState<boolean>(false);
-  const [savedProgress, setSavedProgress] = useState(0);
+  const [savedProgress, setSavedProgress] = useState<{ positionMs: number; durationMs: number } | null>(null);
 
   const isCurrentlyPlaying = currentEpisode?.id === episode.id;
   const downloaded = isDownloaded(episode.id);
@@ -64,7 +74,7 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
   useEffect(() => {
     loadPositions().then(positions => {
       const pos = positions[episode.id];
-      if (pos && pos.durationMs > 0) setSavedProgress(pos.positionMs / pos.durationMs);
+      if (pos && pos.durationMs > 0) setSavedProgress({ positionMs: pos.positionMs, durationMs: pos.durationMs });
     });
   }, [episode.id]);
 
@@ -282,14 +292,21 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
           )}
         </Pressable>
       </View>
-      {(savedProgress > 0 || played) && (
-        <View style={styles.progressBarContainer}>
-          <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
-            <View style={[styles.progressFill, {
-              width: `${played ? 100 : Math.min(savedProgress * 100, 100)}%`,
-              backgroundColor: played ? colors.success : colors.accent
-            }]} />
-          </View>
+      {(savedProgress || played) && (
+        <View style={styles.progressTextContainer}>
+          {played ? (
+            <View style={styles.progressTextRow}>
+              <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+              <Text style={[styles.progressTextLabel, { color: colors.success }]}>Completed</Text>
+            </View>
+          ) : savedProgress ? (
+            <View style={styles.progressTextRow}>
+              <Ionicons name="time-outline" size={14} color={colors.accent} />
+              <Text style={[styles.progressTextLabel, { color: colors.accent }]}>
+                {Math.round((savedProgress.positionMs / savedProgress.durationMs) * 100)}% listened · {formatRemainingTime(savedProgress.positionMs, savedProgress.durationMs)}
+              </Text>
+            </View>
+          ) : null}
         </View>
       )}
     </Pressable>
@@ -382,18 +399,18 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700" as const,
   },
-  progressBarContainer: {
+  progressTextContainer: {
     paddingHorizontal: 12,
     paddingBottom: 8,
   },
-  progressBar: {
-    height: 3,
-    borderRadius: 1.5,
-    overflow: "hidden" as const,
+  progressTextRow: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    gap: 6,
   },
-  progressFill: {
-    height: "100%" as any,
-    borderRadius: 1.5,
+  progressTextLabel: {
+    fontSize: 11,
+    fontWeight: "500" as const,
   },
 });
 

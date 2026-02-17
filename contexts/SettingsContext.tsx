@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, type ReactNode } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { scheduleDailyReminder, cancelDailyReminder } from "@/lib/notifications";
 
 const SETTINGS_KEY = "@kosher_shiurim_settings";
 const FEED_SETTINGS_KEY = "@kosher_shiurim_feed_settings";
@@ -94,6 +95,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       return next;
     });
   }, []);
+
+  // Handle daily reminder scheduling
+  useEffect(() => {
+    if (!isLoaded) return;
+
+    if (settings.dailyReminderEnabled) {
+      scheduleDailyReminder(settings.dailyReminderHour);
+    } else {
+      cancelDailyReminder();
+    }
+  }, [settings.dailyReminderEnabled, settings.dailyReminderHour, isLoaded]);
 
   const value = useMemo(() => ({
     settings,

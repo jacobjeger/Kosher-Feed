@@ -210,8 +210,75 @@ export async function setupNotificationChannel() {
         lightColor: "#FF231F7C",
         sound: "default",
       });
+      await Notifications.setNotificationChannelAsync("daily-reminders", {
+        name: "Daily Reminders",
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: "#FF231F7C",
+        sound: "default",
+      });
     } catch (e) {
       addLog("error", `Notification channel setup failed: ${(e as any)?.message || e}`, (e as any)?.stack, "notifications");
     }
+  }
+}
+
+const DAILY_REMINDER_NOTIFICATION_ID = "daily-reminder";
+
+export async function scheduleDailyReminder(hour: number) {
+  if (Platform.OS === "web") {
+    addLog("info", "Daily reminders not supported on web", undefined, "notifications");
+    return;
+  }
+
+  try {
+    await setupNotificationChannel();
+
+    // Cancel any existing daily reminder
+    await Notifications.cancelScheduledNotificationAsync(DAILY_REMINDER_NOTIFICATION_ID);
+
+    // Clean up any stale scheduled notifications
+    try {
+      const allScheduled = await Notifications.getAllScheduledNotificationsAsync();
+      const staleReminders = allScheduled.filter(
+        n => n.identifier === DAILY_REMINDER_NOTIFICATION_ID
+      );
+      for (const notif of staleReminders) {
+        await Notifications.cancelScheduledNotificationAsync(notif.identifier);
+      }
+    } catch {}
+
+    // Schedule the new daily reminder
+    await Notifications.scheduleNotificationAsync({
+      identifier: DAILY_REMINDER_NOTIFICATION_ID,
+      content: {
+        title: "Time to Learn",
+        body: "Start your daily shiur",
+        sound: "default",
+        ...(Platform.OS === "android" ? { channelId: "daily-reminders" } : {}),
+      } as any,
+      trigger: {
+        type: "daily" as any,
+        hour: hour,
+        minute: 0,
+      },
+    });
+
+    addLog("info", `Daily reminder scheduled for ${hour}:00`, undefined, "notifications");
+  } catch (e) {
+    addLog("error", `Failed to schedule daily reminder: ${(e as any)?.message || e}`, (e as any)?.stack, "notifications");
+  }
+}
+
+export async function cancelDailyReminder() {
+  if (Platform.OS === "web") {
+    return;
+  }
+
+  try {
+    await Notifications.cancelScheduledNotificationAsync(DAILY_REMINDER_NOTIFICATION_ID);
+    addLog("info", "Daily reminder cancelled", undefined, "notifications");
+  } catch (e) {
+    addLog("error", `Failed to cancel daily reminder: ${(e as any)?.message || e}`, (e as any)?.stack, "notifications");
   }
 }
