@@ -1,6 +1,7 @@
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import compression from "compression";
+import { createProxyMiddleware } from "http-proxy-middleware";
 import { registerRoutes } from "./routes";
 import { seedIfEmpty } from "./seed";
 import * as fs from "fs";
@@ -171,16 +172,38 @@ function configureExpoAndLanding(app: express.Application) {
   );
   const landingPageTemplate = fs.readFileSync(templatePath, "utf-8");
   const appName = getAppName();
-  const webDistPath = path.resolve(process.cwd(), "dist");
-  const hasWebBuild = fs.existsSync(webDistPath);
-
-  if (hasWebBuild) {
-    log("Web build found at dist/ — serving web app to browsers");
-  } else {
-    log("No web build found — serving landing page to browsers");
-  }
-
   log("Serving static Expo files with dynamic manifest routing");
+
+  const expoDevTarget = "http://localhost:8081";
+
+  const expoProxy = createProxyMiddleware({
+    target: expoDevTarget,
+    changeOrigin: true,
+    ws: true,
+    on: {
+      error: (_err, _req, res) => {
+        if (res && 'writeHead' in res) {
+          (res as any).writeHead(502, { 'Content-Type': 'text/html' });
+          (res as any).end('<html><body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f172a;color:#94a3b8;"><div style="text-align:center;"><h2 style="color:#f8fafc;">Web App Loading...</h2><p>The Expo dev server is starting up. Please refresh in a few seconds.</p></div></body></html>');
+        }
+      }
+    }
+  });
+
+  app.get("/webapp", async (_req: Request, res: Response) => {
+    try {
+      const resp = await fetch(expoDevTarget);
+      if (!resp.ok) throw new Error("Expo dev server not ready");
+      let html = await resp.text();
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.send(html);
+    } catch {
+      res.status(502).send('<html><body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f172a;color:#94a3b8;"><div style="text-align:center;"><h2 style="color:#f8fafc;">Web App Loading...</h2><p>The Expo dev server is starting up. Please refresh in a few seconds.</p></div></body></html>');
+    }
+  });
+
+  app.use("/node_modules", expoProxy);
+  app.use("/_expo", expoProxy);
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (req.path.startsWith("/api") || req.path.startsWith("/share/")) {
@@ -188,10 +211,6 @@ function configureExpoAndLanding(app: express.Application) {
     }
 
     if (req.path === "/admin") {
-      return next();
-    }
-
-    if (req.path.startsWith("/webapp")) {
       return next();
     }
 
@@ -211,10 +230,6 @@ function configureExpoAndLanding(app: express.Application) {
       });
     }
 
-    if (hasWebBuild) {
-      return next();
-    }
-
     next();
   });
 
@@ -223,38 +238,14 @@ function configureExpoAndLanding(app: express.Application) {
     res.sendFile(adminPath);
   });
 
-  app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
+  app.use("/assets", (req: Request, res: Response, next: NextFunction) => {
+    const localPath = path.resolve(process.cwd(), "assets", req.path);
+    if (fs.existsSync(localPath)) {
+      return express.static(path.resolve(process.cwd(), "assets"))(req, res, next);
+    }
+    return expoProxy(req, res, next);
+  });
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
-
-  if (hasWebBuild) {
-    app.use(express.static(webDistPath));
-
-    app.get("/webapp", (_req: Request, res: Response) => {
-      const indexPath = path.join(webDistPath, "index.html");
-      if (fs.existsSync(indexPath)) {
-        return res.sendFile(indexPath);
-      }
-      res.redirect("/");
-    });
-
-    app.use((req: Request, res: Response, next: NextFunction) => {
-      if (req.path.startsWith("/api") || req.path === "/admin" || req.path.startsWith("/share/")) {
-        return next();
-      }
-      const platform = req.header("expo-platform");
-      if (platform) {
-        return next();
-      }
-      if (req.path === "/") {
-        return next();
-      }
-      const indexPath = path.join(webDistPath, "index.html");
-      if (fs.existsSync(indexPath)) {
-        return res.sendFile(indexPath);
-      }
-      next();
-    });
-  }
 
   log("Expo routing: Checking expo-platform header on / and /manifest");
 }
