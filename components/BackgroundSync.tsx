@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AppState, type AppStateStatus } from "react-native";
+import { AppState, Platform, type AppStateStatus } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useDownloads } from "@/contexts/DownloadsContext";
@@ -12,6 +12,7 @@ import {
   checkNotificationPermission,
   setupNotificationChannel,
 } from "@/lib/notifications";
+import { registerBackgroundSync } from "@/lib/background-tasks";
 import type { Feed, Episode } from "@/lib/types";
 import { addLog } from "@/lib/error-logger";
 
@@ -25,6 +26,11 @@ export function BackgroundSync() {
   const [ready, setReady] = useState(false);
   useEffect(() => {
     setupNotificationChannel().catch(() => {});
+    if (Platform.OS !== "web") {
+      registerBackgroundSync().catch((e) => {
+        addLog("warn", `Background sync registration failed: ${(e as any)?.message || e}`, undefined, "background-sync");
+      });
+    }
     const timer = setTimeout(() => setReady(true), 30000);
     return () => clearTimeout(timer);
   }, []);

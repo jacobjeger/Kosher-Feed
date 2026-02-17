@@ -16,10 +16,12 @@ import { BackgroundSync } from "@/components/BackgroundSync";
 import OfflineBanner from "@/components/OfflineBanner";
 import { setupNotificationChannel } from "@/lib/notifications";
 import { initErrorLogger, setupGlobalErrorHandlers } from "@/lib/error-logger";
+import { defineBackgroundTasks } from "@/lib/background-tasks";
 
 SplashScreen.preventAutoHideAsync();
 initErrorLogger();
 setupGlobalErrorHandlers();
+defineBackgroundTasks();
 
 if (Platform.OS !== "web") {
   try {
