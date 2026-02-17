@@ -3,6 +3,9 @@ import type { Request, Response, NextFunction } from "express";
 import compression from "compression";
 import { registerRoutes } from "./routes";
 import { seedIfEmpty } from "./seed";
+import { parseFeed } from "./rss";
+import * as storage from "./storage";
+import { sendNewEpisodePushes } from "./push";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -336,6 +339,42 @@ function setupErrorHandler(app: express.Application) {
   });
 }
 
+const FEED_REFRESH_INTERVAL = 10 * 60 * 1000;
+
+async function autoRefreshFeeds() {
+  try {
+    const allFeeds = await storage.getActiveFeeds();
+    let totalNew = 0;
+    for (const feed of allFeeds) {
+      try {
+        const parsed = await parseFeed(feed.id, feed.rssUrl);
+        const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
+        const inserted = await storage.upsertEpisodes(feed.id, episodeData);
+        totalNew += inserted.length;
+        await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
+        if (inserted.length > 0) {
+          for (const ep of inserted.slice(0, 3)) {
+            sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }).catch(() => {});
+          }
+        }
+      } catch (e) {
+        console.error(`Auto-refresh failed for ${feed.title}:`, e);
+      }
+    }
+    if (totalNew > 0) {
+      log(`Auto-refresh: found ${totalNew} new episode(s) across ${allFeeds.length} feed(s)`);
+    }
+  } catch (e) {
+    console.error("Auto-refresh error:", e);
+  }
+}
+
+function startAutoRefresh() {
+  log(`Auto-refresh enabled: checking feeds every ${FEED_REFRESH_INTERVAL / 60000} minutes`);
+  setInterval(autoRefreshFeeds, FEED_REFRESH_INTERVAL);
+  setTimeout(autoRefreshFeeds, 30000);
+}
+
 (async () => {
   setupCors(app);
   app.use(compression());
@@ -358,6 +397,7 @@ function setupErrorHandler(app: express.Application) {
     () => {
       log(`express server serving on port ${port}`);
       seedIfEmpty().catch((e) => console.error("Seed error:", e));
+      startAutoRefresh();
     },
   );
 })();
