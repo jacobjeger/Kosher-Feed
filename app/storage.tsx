@@ -137,7 +137,7 @@ export default function StorageScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 67 : insets.top + 8 }]}>
+      <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 8 }]}>
         <Pressable onPress={() => safeGoBack()} hitSlop={12}>
           <Ionicons name="chevron-back" size={28} color={colors.text} />
         </Pressable>

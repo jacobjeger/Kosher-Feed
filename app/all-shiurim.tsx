@@ -63,7 +63,7 @@ export default function AllShiurimScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 67 : insets.top + 8 }]}>
+      <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 8 }]}>
         <Pressable onPress={() => safeGoBack()} hitSlop={10} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </Pressable>

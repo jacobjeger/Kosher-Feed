@@ -115,7 +115,7 @@ function FollowingScreenInner() {
   return (
     <FlatList
       style={[styles.container, { backgroundColor: colors.background }]}
-      contentContainerStyle={{ paddingBottom: 140, paddingHorizontal: 16 }}
+      contentContainerStyle={{ paddingBottom: 140, paddingHorizontal: 16, maxWidth: Platform.OS === "web" ? 1200 : undefined, marginHorizontal: Platform.OS === "web" ? "auto" as any : undefined, width: Platform.OS === "web" ? "100%" as any : undefined }}
       data={episodes}
       keyExtractor={(item) => item.id}
       initialNumToRender={10}
@@ -126,7 +126,7 @@ function FollowingScreenInner() {
         <RefreshControl refreshing={false} onRefresh={onRefresh} tintColor={colors.accent} />
       }
       ListHeaderComponent={() => (
-        <View style={{ paddingTop: Platform.OS === "web" ? 67 : insets.top + 8 }}>
+        <View style={{ paddingTop: Platform.OS === "web" ? 20 : insets.top + 8 }}>
           <Text style={[styles.headerTitle, { color: colors.text }]}>Following</Text>
 
           {subscribedFeeds.length > 0 && (

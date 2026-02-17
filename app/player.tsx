@@ -237,7 +237,7 @@ export default function PlayerScreen() {
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.background }]} contentContainerStyle={{ flexGrow: 1 }}>
-      <View style={[styles.header, { paddingTop: insets.top + (Platform.OS === "web" ? 67 : 8) }]}>
+      <View style={[styles.header, { paddingTop: insets.top + (Platform.OS === "web" ? 12 : 8) }]}>
         <Pressable onPress={() => safeGoBack()} hitSlop={12}>
           <Ionicons name="chevron-down" size={28} color={colors.text} />
         </Pressable>

@@ -439,16 +439,18 @@ function HomeScreenInner() {
         <RefreshControl refreshing={false} onRefresh={onRefresh} tintColor={colors.accent} />
       }
     >
-      <View style={{ paddingTop: Platform.OS === "web" ? 67 : insets.top + 8 }}>
-        <View style={styles.headerRow}>
-          <View>
-            <Text style={[styles.greeting, { color: colors.textSecondary }]}>Discover</Text>
-            <Text style={[styles.headerTitle, { color: colors.text }]}>ShiurPod</Text>
+      <View style={{ paddingTop: Platform.OS === "web" ? 20 : insets.top + 8, maxWidth: Platform.OS === "web" ? 1200 : undefined, marginHorizontal: Platform.OS === "web" ? "auto" as any : undefined, width: Platform.OS === "web" ? "100%" as any : undefined }}>
+        {Platform.OS !== "web" && (
+          <View style={styles.headerRow}>
+            <View>
+              <Text style={[styles.greeting, { color: colors.textSecondary }]}>Discover</Text>
+              <Text style={[styles.headerTitle, { color: colors.text }]}>ShiurPod</Text>
+            </View>
+            <View style={[styles.headerIcon, { backgroundColor: colors.surfaceAlt }]}>
+              <Ionicons name="headset" size={24} color={colors.accent} />
+            </View>
           </View>
-          <View style={[styles.headerIcon, { backgroundColor: colors.surfaceAlt }]}>
-            <Ionicons name="headset" size={24} color={colors.accent} />
-          </View>
-        </View>
+        )}
 
         <View style={[styles.searchContainer, { backgroundColor: colors.surfaceAlt, borderColor: isSearchFocused ? colors.accent : "transparent" }]}>
           <Ionicons name="search" size={18} color={colors.textSecondary} style={{ marginLeft: 14 }} />

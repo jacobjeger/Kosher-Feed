@@ -235,7 +235,7 @@ function PodcastDetailScreenInner() {
 
     return (
     <View>
-      <View style={[styles.header, { paddingTop: insets.top + (Platform.OS === "web" ? 67 : 8) }]}>
+      <View style={[styles.header, { paddingTop: insets.top + (Platform.OS === "web" ? 12 : 8) }]}>
         <Pressable onPress={() => safeGoBack()} hitSlop={12}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </Pressable>
@@ -440,7 +440,7 @@ function PodcastDetailScreenInner() {
       <FlatList
         data={filteredEpisodes}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingBottom: 120, paddingHorizontal: 16 }}
+        contentContainerStyle={{ paddingBottom: 120, paddingHorizontal: 16, maxWidth: Platform.OS === "web" ? 1200 : undefined, marginHorizontal: Platform.OS === "web" ? "auto" as any : undefined, width: Platform.OS === "web" ? "100%" as any : undefined }}
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
         initialNumToRender={15}

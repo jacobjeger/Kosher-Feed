@@ -149,7 +149,7 @@ export default function DebugLogsScreen() {
       <View
         style={[
           styles.header,
-          { paddingTop: Platform.OS === "web" ? 67 : insets.top + 8 },
+          { paddingTop: Platform.OS === "web" ? 12 : insets.top + 8 },
         ]}
       >
         <Pressable onPress={() => safeGoBack()} hitSlop={12}>

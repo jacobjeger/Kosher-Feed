@@ -277,7 +277,7 @@ function SettingsScreenInner() {
       style={[styles.container, { backgroundColor: colors.background }]}
       contentContainerStyle={{ paddingBottom: 120 }}
     >
-      <View style={{ paddingTop: Platform.OS === "web" ? 67 : insets.top + 8 }}>
+      <View style={{ paddingTop: Platform.OS === "web" ? 20 : insets.top + 8 }}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Settings</Text>
       </View>
 

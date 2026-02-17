@@ -39,7 +39,7 @@ function FavoritesScreenInner() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 67 : insets.top + 8 }]}>
+      <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 20 : insets.top + 8, maxWidth: Platform.OS === "web" ? 1200 : undefined, marginHorizontal: Platform.OS === "web" ? "auto" as any : undefined, width: Platform.OS === "web" ? "100%" as any : undefined }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Favorites</Text>
         <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
           {favoriteEpisodes.length} {favoriteEpisodes.length === 1 ? "episode" : "episodes"}
@@ -63,7 +63,7 @@ function FavoritesScreenInner() {
           renderItem={({ item }) => (
             <EpisodeItem episode={item.episode} feed={item.feed} showFeedTitle />
           )}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120, maxWidth: Platform.OS === "web" ? 1200 : undefined, marginHorizontal: Platform.OS === "web" ? "auto" as any : undefined, width: Platform.OS === "web" ? "100%" as any : undefined }}
           initialNumToRender={15}
           maxToRenderPerBatch={10}
           windowSize={5}

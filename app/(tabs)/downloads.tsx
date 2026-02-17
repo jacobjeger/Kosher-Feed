@@ -148,7 +148,7 @@ function DownloadsScreenInner() {
       windowSize={5}
       removeClippedSubviews={Platform.OS !== "web"}
       ListHeaderComponent={() => (
-        <View style={{ paddingTop: Platform.OS === "web" ? 67 : insets.top + 8 }}>
+        <View style={{ paddingTop: Platform.OS === "web" ? 20 : insets.top + 8 }}>
           <Text style={[styles.headerTitle, { color: colors.text }]}>Downloads</Text>
           {downloads.length > 0 && (
             <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
