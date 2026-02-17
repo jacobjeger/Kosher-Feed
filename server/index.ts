@@ -260,8 +260,15 @@ function configureExpoAndLanding(app: express.Application) {
 
   app.use("/webapp", express.static(webappBuildPath) as any);
 
-  app.use("/node_modules", proxyToExpo as any);
-  app.use("/_expo", proxyToExpo as any);
+  if (isProduction) {
+    const webappExpoPath = path.join(webappBuildPath, "_expo");
+    if (fs.existsSync(webappExpoPath)) {
+      app.use("/_expo", express.static(webappExpoPath) as any);
+    }
+  } else {
+    app.use("/node_modules", proxyToExpo as any);
+    app.use("/_expo", proxyToExpo as any);
+  }
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (req.path.startsWith("/api") || req.path.startsWith("/share/")) {
