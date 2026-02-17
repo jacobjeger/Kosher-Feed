@@ -55,15 +55,89 @@ async function backgroundSyncHandler() {
     const episodes = await episodesRes.json();
 
     const hasPermission = await checkNotificationPermission();
+    let hasNewData = false;
     if (hasPermission) {
       const newEps = await checkForNewEpisodes(feeds, episodes);
       if (newEps.length > 0) {
         await notifyNewEpisodes(newEps, feeds);
         addLog("info", `Background sync: notified ${newEps.length} new episodes`, undefined, "background-sync");
-        return BackgroundFetch?.BackgroundFetchResult?.NewData;
+        hasNewData = true;
       }
     }
 
+    try {
+      const settingsData = await AsyncStorage.getItem("@kosher_shiurim_settings");
+      const settings = settingsData ? JSON.parse(settingsData) : {};
+      if (settings.autoDownloadOnWifi) {
+        const { isOnWifi } = require("@/lib/network");
+        const onWifi = await isOnWifi();
+        if (onWifi) {
+          const feedSettingsData = await AsyncStorage.getItem("@kosher_shiurim_feed_settings");
+          const feedSettings = feedSettingsData ? JSON.parse(feedSettingsData) : {};
+          const maxDefault = settings.maxEpisodesPerFeed || 5;
+          const downloadsData = await AsyncStorage.getItem("@kosher_podcast_downloads");
+          const existingDownloads: any[] = downloadsData ? JSON.parse(downloadsData) : [];
+          const downloadedIds = new Set(existingDownloads.map((d: any) => d.id));
+
+          let downloadCount = 0;
+          const FileSystem = require("expo-file-system/legacy");
+          const { Paths: FSPaths } = require("expo-file-system");
+
+          for (const feed of feeds) {
+            const maxForFeed = feedSettings[feed.id]?.maxEpisodes ?? maxDefault;
+            const existingForFeed = existingDownloads.filter((d: any) => d.feedId === feed.id);
+            if (existingForFeed.length >= maxForFeed) continue;
+
+            const epsUrl = new URL(`/api/feeds/${feed.id}/episodes`, baseUrl);
+            const epsRes = await fetch(epsUrl.toString());
+            const feedEpisodes = await epsRes.json();
+
+            const toDownload = feedEpisodes
+              .filter((ep: any) => !downloadedIds.has(ep.id))
+              .slice(0, maxForFeed - existingForFeed.length);
+
+            for (const ep of toDownload) {
+              if (!ep.audioUrl) continue;
+              try {
+                const ext = ep.audioUrl.includes(".m4a") ? ".m4a" : ".mp3";
+                const fileName = `shiurpod_${ep.id}${ext}`;
+                const cacheDir = FSPaths.cache?.uri || FileSystem.cacheDirectory;
+                const fileUri = `${cacheDir}${fileName}`;
+                const result = await FileSystem.downloadAsync(ep.audioUrl, fileUri);
+                if (result.status === 200) {
+                  existingDownloads.push({
+                    id: ep.id,
+                    feedId: ep.feedId,
+                    title: ep.title,
+                    audioUrl: ep.audioUrl,
+                    localUri: result.uri,
+                    downloadedAt: new Date().toISOString(),
+                    feedTitle: feed.title,
+                    feedImageUrl: feed.imageUrl,
+                  });
+                  downloadedIds.add(ep.id);
+                  downloadCount++;
+                }
+              } catch (dlErr) {
+                addLog("warn", `Background download failed: ${ep.title} - ${(dlErr as any)?.message}`, undefined, "background-sync");
+              }
+            }
+          }
+
+          if (downloadCount > 0) {
+            await AsyncStorage.setItem("@kosher_podcast_downloads", JSON.stringify(existingDownloads));
+            addLog("info", `Background sync: downloaded ${downloadCount} episodes`, undefined, "background-sync");
+            hasNewData = true;
+          }
+        }
+      }
+    } catch (dlError) {
+      addLog("warn", `Background auto-download failed: ${(dlError as any)?.message}`, undefined, "background-sync");
+    }
+
+    if (hasNewData) {
+      return BackgroundFetch?.BackgroundFetchResult?.NewData;
+    }
     addLog("info", "Background sync completed (no new data)", undefined, "background-sync");
     return BackgroundFetch?.BackgroundFetchResult?.NoData;
   } catch (e) {
