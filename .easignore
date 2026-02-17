@@ -1,0 +1,14 @@
+node_modules/
+.git/
+server/
+shared/
+scripts/
+dist/
+*.log
+.replit
+replit.nix
+replit.md
+.local/
+drizzle.config.ts
+tsconfig.server.json
+esbuild.config.js
