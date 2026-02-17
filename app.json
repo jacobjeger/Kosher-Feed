@@ -38,12 +38,6 @@
       ],
       "expo-font",
       "expo-web-browser",
-      [
-        "react-native-track-player",
-        {
-          "capabilities": ["play", "pause", "stop", "seekTo", "skipToNext", "skipToPrevious", "setRate"]
-        }
-      ],
       "expo-background-fetch",
       "expo-task-manager"
     ],

@@ -71,6 +71,7 @@
     "react-native-web": "^0.21.0",
     "react-native-worklets": "0.5.1",
     "rss-parser": "^3.13.0",
+    "shaka-player": "^4.16.18",
     "tsx": "^4.20.6",
     "ws": "^8.18.0",
     "zod": "^3.24.2",
