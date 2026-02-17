@@ -2,14 +2,15 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { File, Directory, Paths } from "expo-file-system";
 import * as LegacyFS from "expo-file-system/legacy";
-import { Platform } from "react-native";
+import { Platform, InteractionManager } from "react-native";
 import type { Episode, Feed, DownloadedEpisode } from "@/lib/types";
 import { isOnWifi } from "@/lib/network";
 import { getApiUrl } from "@/lib/query-client";
 import { getDeviceId } from "@/lib/device-id";
 import { addLog } from "@/lib/error-logger";
 
-const PROGRESS_THROTTLE_MS = 500;
+const PROGRESS_THROTTLE_MS = 1000;
+const PROGRESS_UPDATE_MIN_CHANGE = 0.02;
 
 interface DownloadsContextValue {
   downloads: DownloadedEpisode[];
@@ -160,13 +161,18 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     setDownloadProgress(new Map(progressRef.current));
 
     try {
+      let lastReportedPct = 0;
       const downloadResumable = LegacyFS.createDownloadResumable(
         episode.audioUrl,
         fileUri,
         {},
         (progress) => {
+          if (progress.totalBytesExpectedToWrite <= 0) return;
           const pct = progress.totalBytesWritten / progress.totalBytesExpectedToWrite;
-          progressRef.current.set(episode.id, pct);
+          if (pct - lastReportedPct >= PROGRESS_UPDATE_MIN_CHANGE || pct >= 1) {
+            lastReportedPct = pct;
+            progressRef.current.set(episode.id, pct);
+          }
         }
       );
 
@@ -232,9 +238,18 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     const toDownload = episodes.filter(ep => !downloadsRef.current.some(d => d.id === ep.id));
     for (const episode of toDownload) {
       try {
-        await downloadEpisode(episode, feed);
+        await new Promise<void>((resolve) => {
+          InteractionManager.runAfterInteractions(async () => {
+            try {
+              await downloadEpisode(episode, feed);
+            } catch (e) {
+              addLog("error", `Batch download error: ${episode.id} - ${(e as any)?.message || e}`, undefined, "downloads");
+            }
+            resolve();
+          });
+        });
       } catch (e) {
-        console.error("Batch download error for episode:", episode.id, e);
+        addLog("error", `Batch download error: ${episode.id} - ${(e as any)?.message || e}`, undefined, "downloads");
       }
     }
   }, [downloadEpisode]);
