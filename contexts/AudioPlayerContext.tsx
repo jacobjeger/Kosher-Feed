@@ -392,7 +392,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
   const startPositionTracking = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
-    const trackingInterval = Platform.OS === "web" ? 500 : 2000;
+    const trackingInterval = Platform.OS === "web" ? 500 : 500;
     intervalRef.current = setInterval(async () => {
       if (Platform.OS === "web" && audioRef.current) {
         const newPos = (audioRef.current.currentTime || 0) * 1000;
