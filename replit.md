@@ -14,7 +14,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Frontend (Expo / React Native)
 - **Framework**: Expo SDK 54 with React Native 0.81, using expo-router for file-based routing
-- **Routing structure**: Tab-based navigation with 4 tabs (Home, Following, Downloads, Settings), a modal player screen, a queue screen, and a podcast detail screen at `podcast/[id]`
+- **Routing structure**: Tab-based navigation with 4 tabs (Home, Following, Downloads, Settings), a modal player screen, a queue screen, a podcast detail screen at `podcast/[id]`, and a Maggid Shiur (speaker) detail screen at `maggid-shiur/[author]`
 - **State management**: React Context for audio playback (`AudioPlayerContext`), downloads (`DownloadsContext`), user settings (`SettingsContext`), favorites (`FavoritesContext`), and played episodes (`PlayedEpisodesContext`); TanStack React Query for server state
 - **Played episodes tracking**: `PlayedEpisodesContext` stores played episode IDs in AsyncStorage (`@shiurpod_played_episodes`), auto-marks episodes when they finish, shows progress bars on episode cards (green=played, blue=in-progress)
 - **Continuous playback**: When enabled in settings, auto-plays next episode from same feed when current episode ends and queue is empty
@@ -38,8 +38,10 @@ Preferred communication style: Simple, everyday language.
 - **Server**: Express 5 running on port 5000 (configured in `server/index.ts`)
 - **API pattern**: RESTful JSON API under `/api/` prefix
 - **Key endpoints**:
-  - `GET /api/feeds` — list all feeds
+  - `GET /api/feeds` — list all feeds (includes `categoryIds[]` from junction table)
   - `GET /api/feeds/featured` — list featured feeds
+  - `GET /api/feeds/maggid-shiur` — feeds grouped by author/speaker
+  - `GET /api/feeds/category/:categoryId` — feeds by category (merges legacy + junction table)
   - `GET /api/feeds/:id/episodes` — episodes for a feed (supports sort=newest|oldest)
   - `GET /api/categories` — list categories
   - `POST/DELETE /api/subscriptions` — manage device subscriptions
@@ -64,6 +66,7 @@ Preferred communication style: Simple, everyday language.
 - **Schema** (defined in `shared/schema.ts`):
   - `categories` — podcast categories (id, name, slug)
   - `feeds` — podcast feeds (id, title, rssUrl, imageUrl, description, author, categoryId, isActive, isFeatured, lastFetchedAt)
+  - `feedCategories` — many-to-many junction table linking feeds to multiple categories (feedId, categoryId)
   - `episodes` — individual episodes (id, feedId, title, description, audioUrl, duration, publishedAt, guid, imageUrl, sourceSheetUrl, adminNotes) with unique index on (guid, feedId)
   - `subscriptions` — device-feed subscriptions with unique index on (deviceId, feedId)
   - `admin_users` — admin credentials for the management panel
