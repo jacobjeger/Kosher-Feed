@@ -94,3 +94,17 @@ export async function initPushNotifications(): Promise<void> {
   } catch (_e) {
   }
 }
+
+export function getNotificationData(response: Notifications.NotificationResponse): {
+  episodeId?: string;
+  feedId?: string;
+  type?: string;
+} {
+  const data = response.notification.request.content.data as Record<string, any> | undefined;
+  if (!data) return {};
+  return {
+    episodeId: data.episodeId as string | undefined,
+    feedId: data.feedId as string | undefined,
+    type: data.type as string | undefined,
+  };
+}
