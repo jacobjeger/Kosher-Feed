@@ -21,6 +21,11 @@ export async function getAllFeeds(): Promise<Feed[]> {
   return db.select().from(feeds).orderBy(desc(feeds.createdAt));
 }
 
+export async function getFeedById(feedId: string): Promise<Feed | undefined> {
+  const [feed] = await db.select().from(feeds).where(eq(feeds.id, feedId)).limit(1);
+  return feed;
+}
+
 export async function getActiveFeeds(): Promise<Feed[]> {
   return db.select().from(feeds).where(eq(feeds.isActive, true)).orderBy(feeds.title);
 }

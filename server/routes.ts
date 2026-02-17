@@ -571,8 +571,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!episode) return res.status(404).json({ error: "Episode not found" });
       if (!episode.audioUrl) return res.status(404).json({ error: "No audio URL" });
 
+      const feed = await storage.getFeedById(episode.feedId);
+      const author = feed?.author || feed?.title || "";
+      const safeAuthor = author.replace(/[^a-zA-Z0-9 _-]/g, "").replace(/\s+/g, "_").substring(0, 60);
       const safeTitle = (episode.title || "episode").replace(/[^a-zA-Z0-9 _-]/g, "").replace(/\s+/g, "_").substring(0, 100);
-      const filename = `${safeTitle}.mp3`;
+      const filename = safeAuthor ? `${safeAuthor}_-_${safeTitle}.mp3` : `${safeTitle}.mp3`;
 
       const audioResp = await fetch(episode.audioUrl, {
         headers: { "User-Agent": "ShiurPod/1.0" },
