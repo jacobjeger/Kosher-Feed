@@ -595,6 +595,14 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
             }
           });
 
+          player.setPlaybackRate(feedSpeed);
+
+          if (savedPos > 0) {
+            player.seekTo(savedPos / 1000);
+          }
+
+          player.play();
+
           try {
             player.setActiveForLockScreen(true, {
               title: episode.title || "Unknown",
@@ -608,13 +616,17 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
             addLog("warn", `Lock screen setup failed: ${lockErr?.message}`, undefined, "audio");
           }
 
-          player.setPlaybackRate(feedSpeed);
-
-          if (savedPos > 0) {
-            player.seekTo(savedPos / 1000);
-          }
-
-          player.play();
+          setTimeout(() => {
+            try {
+              if (nativePlayerRef.current === player) {
+                player.updateLockScreenMetadata({
+                  title: episode.title || "Unknown",
+                  artist: feed.title || "ShiurPod",
+                  artworkUrl: feed.imageUrl || undefined,
+                });
+              }
+            } catch {}
+          }, 500);
 
           setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true }));
           addLog("info", `Playing (expo-audio): ${episode.title} (feed: ${feed.title})`, undefined, "audio");

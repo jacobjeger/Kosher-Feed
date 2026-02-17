@@ -1,0 +1,66 @@
+diff --git a/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt b/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
+index 1234567..abcdefg 100644
+--- a/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
++++ b/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
+@@ -115,16 +115,57 @@
+   private fun buildNotification(): Notification? {
+     val session = mediaSession ?: return null
++    val player = currentPlayer?.ref
+ 
+     val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+       .setSmallIcon(androidx.media3.session.R.drawable.media3_icon_circular_play)
+       .setContentTitle(currentMetadata?.title ?: "\u200E")
+       .setContentText(currentMetadata?.artist)
+       .setSubText(currentMetadata?.albumTitle)
+       .setLargeIcon(currentArtwork)
+       .setContentIntent(buildContentIntent())
+       .setAutoCancel(false)
++      .setOngoing(true)
+       .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+ 
+-    // Using only session custom layout: do NOT call setShowActionsInCompactView.
+-    // The compact layout will follow the order of the custom layout provided to the session.
+-    builder.setStyle(MediaStyleNotificationHelper.MediaStyle(session))
++    val isPlaying = player?.isPlaying ?: false
++    val compactIndices = mutableListOf<Int>()
++    var actionIdx = 0
++
++    if (currentOptions?.showSeekBackward == true) {
++      val seekBackIntent = Intent(this, AudioControlsService::class.java).setAction(ACTION_SEEK_BACKWARD)
++      val seekBackPi = PendingIntent.getService(this, 100, seekBackIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
++      builder.addAction(NotificationCompat.Action.Builder(
++        androidx.media3.session.R.drawable.media3_icon_skip_back_15,
++        "Rewind",
++        seekBackPi
++      ).build())
++      compactIndices.add(actionIdx)
++      actionIdx++
++    }
++
++    val toggleIntent = Intent(this, AudioControlsService::class.java).setAction(ACTION_TOGGLE)
++    val togglePi = PendingIntent.getService(this, 101, toggleIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
++    builder.addAction(NotificationCompat.Action.Builder(
++      if (isPlaying) androidx.media3.session.R.drawable.media3_icon_pause else androidx.media3.session.R.drawable.media3_icon_play,
++      if (isPlaying) "Pause" else "Play",
++      togglePi
++    ).build())
++    compactIndices.add(actionIdx)
++    actionIdx++
++
++    if (currentOptions?.showSeekForward == true) {
++      val seekFwdIntent = Intent(this, AudioControlsService::class.java).setAction(ACTION_SEEK_FORWARD)
++      val seekFwdPi = PendingIntent.getService(this, 102, seekFwdIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
++      builder.addAction(NotificationCompat.Action.Builder(
++        androidx.media3.session.R.drawable.media3_icon_skip_forward_15,
++        "Forward",
++        seekFwdPi
++      ).build())
++      compactIndices.add(actionIdx)
++      actionIdx++
++    }
++
++    builder.setStyle(MediaStyleNotificationHelper.MediaStyle(session)
++      .setShowActionsInCompactView(*compactIndices.toIntArray()))
+ 
+     return builder.build()
+   }
