@@ -22,7 +22,9 @@ Preferred communication style: Simple, everyday language.
 - **Episode filtering**: Podcast detail screen has filter chips (All/Unplayed/Started/Saved) alongside sort options (Newest/Oldest)
 - **Long-press actions**: Context menu on episodes (native Alert) for quick access to queue, mark played, favorites, and download actions
 - **Pull-to-refresh**: Podcast detail screen supports pull-to-refresh to reload episodes and feed data
-- **Share with timestamp**: Player share includes current playback position when > 5 seconds
+- **Deep link sharing**: Player share generates a web share URL (`/share/episode/:id?t=timestamp`) with OG meta tags for social previews, an audio player fallback, and a deep link button to open directly in the app. `DeepLinkHandler` component in `_layout.tsx` handles incoming `shiurpod://episode/:id` links.
+- **Push notifications**: Expo push tokens registered on app start via `lib/push-notifications.ts`, stored in `push_tokens` table. Server sends push notifications via `expo-server-sdk` (`server/push.ts`) when new episodes are detected during RSS feed refresh. Android channel set to MAX importance for heads-up banners.
+- **Storage management**: Dedicated screen at `app/storage.tsx` accessible from Settings > Downloaded Episodes. Shows total download size, per-feed breakdowns with episode lists, and options to clear individual episodes, all episodes for a feed, or all downloads at once.
 - **Animated transitions**: MiniPlayer uses react-native-reanimated FadeInDown entrance animation (skipped on web)
 - **Audio playback**: Dual engine — `react-native-track-player` for native (Android/iOS) with background playback, lock-screen controls, and media session integration; HTML5 Audio for web. Unified context API (`AudioPlayerContext`) provides play/pause/seek/skip/rate controls. Saves playback position to AsyncStorage every 30 seconds and on pause/stop, resuming from saved position on replay. Server-side position sync for cross-device resume. TrackPlayer service registered at module level in `app/_layout.tsx`, service handler in `lib/track-player-service.ts`.
 - **Offline support**: Episode downloads managed via `expo-file-system` with progress tracking, persisted to AsyncStorage. Auto-download on WiFi for followed shiurim with configurable per-shiur episode storage limits. Batch download support for downloading multiple episodes at once.
@@ -47,6 +49,9 @@ Preferred communication style: Simple, everyday language.
   - `GET /api/stats/:deviceId` — listening statistics
   - `GET /api/episodes/search` — global episode search
   - `GET /api/episodes/trending` — popular/trending episodes
+  - `POST /api/push-token` — register Expo push token for device
+  - `GET /api/share/episode/:id` — get episode + feed data for sharing
+  - `GET /share/episode/:id` — web share page with OG tags, audio player, deep link
   - Admin CRUD endpoints for feeds/categories (Basic auth protected)
 - **RSS parsing**: `rss-parser` library fetches and parses podcast RSS feeds, extracting episode metadata
 - **Admin panel**: Server-rendered HTML admin interface at `/admin` for managing feeds and categories
@@ -65,6 +70,7 @@ Preferred communication style: Simple, everyday language.
   - `favorites` — favorite episodes per device with unique index on (episodeId, deviceId)
   - `playbackPositions` — server-synced playback positions per device/episode with upsert on (episodeId, deviceId)
   - `adminNotifications` — admin notification campaigns
+  - `push_tokens` — Expo push notification tokens per device
   - `episodeListens` — episode listen tracking for trending/analytics
 - **Migrations**: Managed via `drizzle-kit push` (schema push approach, not file-based migrations)
 - **Connection**: `pg` Pool with `DATABASE_URL` environment variable
