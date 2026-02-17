@@ -39,7 +39,27 @@
      pendingPlayer?.let { player ->
        setActivePlayerInternal(player, pendingMetadata, pendingOptions)
        pendingPlayer = null
-@@ -114,6 +139,7 @@
+@@ -91,13 +116,14 @@
+     val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+       if (notificationManager.getNotificationChannel(CHANNEL_ID) == null) {
+-        notificationManager.createNotificationChannel(
+-          NotificationChannel(
+-            CHANNEL_ID,
++        val channel = NotificationChannel(
+             CHANNEL_ID,
+-            NotificationManager.IMPORTANCE_LOW
++            "Audio Playback",
++            NotificationManager.IMPORTANCE_DEFAULT
+           )
+-        )
++        channel.setSound(null, null)
++        channel.enableVibration(false)
++        notificationManager.createNotificationChannel(channel)
+       }
+     }
+   }
+@@ -114,6 +140,7 @@
  
    private fun buildNotification(): Notification? {
      val session = mediaSession ?: return null
@@ -47,11 +67,14 @@
  
      val builder = NotificationCompat.Builder(this, CHANNEL_ID)
        .setSmallIcon(androidx.media3.session.R.drawable.media3_icon_circular_play)
-@@ -123,11 +149,49 @@
+@@ -123,11 +150,52 @@
        .setLargeIcon(currentArtwork)
        .setContentIntent(buildContentIntent())
        .setAutoCancel(false)
 +      .setOngoing(true)
++      .setSilent(true)
++      .setPriority(NotificationCompat.PRIORITY_MAX)
++      .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
        .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
  
 -    // Using only session custom layout: do NOT call setShowActionsInCompactView.
