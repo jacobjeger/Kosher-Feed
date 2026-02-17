@@ -13,6 +13,7 @@ import {
   setupNotificationChannel,
 } from "@/lib/notifications";
 import { registerBackgroundSync } from "@/lib/background-tasks";
+import { initPushNotifications } from "@/lib/push-notifications";
 import type { Feed, Episode } from "@/lib/types";
 import { addLog } from "@/lib/error-logger";
 

@@ -109,6 +109,15 @@ export const errorReports = pgTable("error_reports", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const pushTokens = pgTable("push_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  deviceId: text("device_id").notNull(),
+  token: text("token").notNull().unique(),
+  platform: text("platform"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 export const feedback = pgTable("feedback", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   deviceId: text("device_id"),
@@ -158,3 +167,4 @@ export type PlaybackPosition = typeof playbackPositions.$inferSelect;
 export type AdminNotification = typeof adminNotifications.$inferSelect;
 export type ErrorReport = typeof errorReports.$inferSelect;
 export type Feedback = typeof feedback.$inferSelect;
+export type PushToken = typeof pushTokens.$inferSelect;

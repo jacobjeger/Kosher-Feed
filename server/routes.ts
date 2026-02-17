@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
 import * as storage from "./storage";
 import { parseFeed } from "./rss";
+import { sendNewEpisodePushes } from "./push";
 import { insertFeedSchema, insertCategorySchema } from "@shared/schema";
 
 function requireAdmin(req: Request, res: Response): boolean {
@@ -217,6 +218,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         author: parsed.author || feed.author,
       });
 
+      if (inserted.length > 0) {
+        for (const ep of inserted.slice(0, 3)) {
+          sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }).catch(() => {});
+        }
+      }
+
       res.json({ newEpisodes: inserted.length });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -234,6 +241,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const inserted = await storage.upsertEpisodes(feed.id, episodeData);
           totalNew += inserted.length;
           await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
+          if (inserted.length > 0) {
+            for (const ep of inserted.slice(0, 3)) {
+              sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }).catch(() => {});
+            }
+          }
         } catch (e) {
           console.error(`Failed to refresh feed ${feed.title}:`, e);
         }
@@ -792,6 +804,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/admin/feedback/:id", adminAuth as any, async (req: Request, res: Response) => {
     try {
       await storage.deleteFeedback(req.params.id);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Push Token Registration
+  app.post("/api/push-token", async (req: Request, res: Response) => {
+    try {
+      const { deviceId, token, platform } = req.body;
+      if (!deviceId || !token) return res.status(400).json({ error: "deviceId and token required" });
+      const result = await storage.registerPushToken(deviceId, token, platform || "unknown");
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/push-token", async (req: Request, res: Response) => {
+    try {
+      const { token } = req.body;
+      if (!token) return res.status(400).json({ error: "token required" });
+      await storage.removePushToken(token);
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });

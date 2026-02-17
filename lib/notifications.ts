@@ -205,8 +205,9 @@ export async function setupNotificationChannel() {
     try {
       await Notifications.setNotificationChannelAsync("new-episodes", {
         name: "New Episodes",
-        importance: Notifications.AndroidImportance.HIGH,
+        importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
+        lightColor: "#FF231F7C",
         sound: "default",
       });
     } catch (e) {

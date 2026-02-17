@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback } from "@shared/schema";
-import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback } from "@shared/schema";
+import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens } from "@shared/schema";
+import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken } from "@shared/schema";
 import { eq, and, desc, asc, inArray, sql, count, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
@@ -536,4 +536,28 @@ export async function updateFeedbackStatus(id: string, status: string, adminNote
 
 export async function deleteFeedback(id: string): Promise<void> {
   await db.delete(feedback).where(eq(feedback.id, id));
+}
+
+export async function registerPushToken(deviceId: string, token: string, platform: string): Promise<PushToken> {
+  const [result] = await db.insert(pushTokens).values({ deviceId, token, platform }).onConflictDoUpdate({
+    target: [pushTokens.token],
+    set: { deviceId, platform, updatedAt: new Date() },
+  }).returning();
+  return result;
+}
+
+export async function getPushTokensForDevices(deviceIds: string[]): Promise<PushToken[]> {
+  if (deviceIds.length === 0) return [];
+  return db.select().from(pushTokens).where(inArray(pushTokens.deviceId, deviceIds));
+}
+
+export async function getSubscribersForFeed(feedId: string): Promise<PushToken[]> {
+  const subs = await db.select({ deviceId: subscriptions.deviceId }).from(subscriptions).where(eq(subscriptions.feedId, feedId));
+  if (subs.length === 0) return [];
+  const deviceIds = subs.map(s => s.deviceId);
+  return db.select().from(pushTokens).where(inArray(pushTokens.deviceId, deviceIds));
+}
+
+export async function removePushToken(token: string): Promise<void> {
+  await db.delete(pushTokens).where(eq(pushTokens.token, token));
 }
