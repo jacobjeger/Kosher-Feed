@@ -209,6 +209,8 @@ function configureExpoAndLanding(app: express.Application) {
 
   const staticBuildPath = path.resolve(process.cwd(), "static-build");
   const staticIndexPath = path.join(staticBuildPath, "index.html");
+  const webappBuildPath = path.join(staticBuildPath, "webapp");
+  const webappIndexPath = path.join(webappBuildPath, "index.html");
 
   const serveExpoWebApp = async (_req: Request, res: Response) => {
     try {
@@ -220,7 +222,13 @@ function configureExpoAndLanding(app: express.Application) {
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.send(html);
     } catch {
-      if (fs.existsSync(staticIndexPath)) {
+      if (fs.existsSync(webappIndexPath)) {
+        let html = fs.readFileSync(webappIndexPath, "utf-8");
+        const routerFix = `<script>if(window.location.pathname.startsWith('/webapp')){history.replaceState(null,'','/' + window.location.pathname.slice('/webapp'.length).replace(/^\\//, '') + window.location.search + window.location.hash);}</script>`;
+        html = html.replace('</head>', `${routerFix}</head>`);
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        res.send(html);
+      } else if (fs.existsSync(staticIndexPath)) {
         let html = fs.readFileSync(staticIndexPath, "utf-8");
         const routerFix = `<script>if(window.location.pathname.startsWith('/webapp')){history.replaceState(null,'','/' + window.location.pathname.slice('/webapp'.length).replace(/^\\//, '') + window.location.search + window.location.hash);}</script>`;
         html = html.replace('</head>', `${routerFix}</head>`);
@@ -234,6 +242,8 @@ function configureExpoAndLanding(app: express.Application) {
 
   app.get("/webapp", serveExpoWebApp as any);
   app.get("/webapp/*path", serveExpoWebApp as any);
+
+  app.use("/webapp", express.static(webappBuildPath) as any);
 
   app.use("/node_modules", proxyToExpo as any);
   app.use("/_expo", proxyToExpo as any);

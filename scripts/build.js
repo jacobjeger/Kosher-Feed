@@ -595,6 +595,14 @@ async function main() {
   }
   await buildWebExport(domain);
 
+  const distDir = path.resolve("dist");
+  const webappDir = path.join("static-build", "webapp");
+  if (fs.existsSync(distDir)) {
+    console.log("Copying web export to static-build/webapp...");
+    fs.cpSync(distDir, webappDir, { recursive: true });
+    console.log("Web export copied successfully");
+  }
+
   console.log("Build complete! Deploy to:", baseUrl);
   process.exit(0);
 }
