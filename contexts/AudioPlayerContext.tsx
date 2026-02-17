@@ -202,8 +202,7 @@ async function initNativeAudio() {
   try {
     await setAudioModeAsyncFn({
       playsInSilentMode: true,
-      interruptionMode: "doNotMix" as any,
-      shouldPlayInBackground: true,
+      interruptionMode: "doNotMix",
     });
     nativePlayerReady = true;
     addLog("info", "expo-audio initialized successfully", undefined, "audio");
@@ -579,7 +578,6 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
           const player = createAudioPlayerFn(episode.audioUrl, {
             updateInterval: 500,
-            showNowPlayingNotification: true,
           });
           nativePlayerRef.current = player;
           nativePlayerInstance = player;
@@ -597,6 +595,19 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
             }
           });
 
+          try {
+            player.setActiveForLockScreen(true, {
+              title: episode.title || "Unknown",
+              artist: feed.title || "ShiurPod",
+              artworkUrl: feed.imageUrl || undefined,
+            }, {
+              showSeekForward: true,
+              showSeekBackward: true,
+            });
+          } catch (lockErr: any) {
+            addLog("warn", `Lock screen setup failed: ${lockErr?.message}`, undefined, "audio");
+          }
+
           player.setPlaybackRate(feedSpeed);
 
           if (savedPos > 0) {
@@ -604,17 +615,6 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           }
 
           player.play();
-
-          try {
-            player.setActiveForLockScreen(true);
-            player.updateLockScreenMetadata({
-              title: episode.title || "Unknown",
-              artist: feed.title || "ShiurPod",
-              artworkUrl: feed.imageUrl || undefined,
-            });
-          } catch (lockErr: any) {
-            addLog("warn", `Lock screen setup failed: ${lockErr?.message}`, undefined, "audio");
-          }
 
           setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true }));
           addLog("info", `Playing (expo-audio): ${episode.title} (feed: ${feed.title})`, undefined, "audio");
