@@ -202,7 +202,9 @@ async function initNativeAudio() {
   try {
     await setAudioModeAsyncFn({
       playsInSilentMode: true,
+      shouldPlayInBackground: true,
       interruptionMode: "doNotMix",
+      interruptionModeAndroid: "doNotMix",
     });
     nativePlayerReady = true;
     addLog("info", "expo-audio initialized successfully", undefined, "audio");
@@ -603,18 +605,23 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
           player.play();
 
-          try {
-            player.setActiveForLockScreen(true, {
-              title: episode.title || "Unknown",
-              artist: feed.title || "ShiurPod",
-              artworkUrl: feed.imageUrl || undefined,
-            }, {
-              showSeekForward: true,
-              showSeekBackward: true,
-            });
-          } catch (lockErr: any) {
-            addLog("warn", `Lock screen setup failed: ${lockErr?.message}`, undefined, "audio");
-          }
+          setTimeout(() => {
+            try {
+              if (nativePlayerRef.current === player) {
+                player.setActiveForLockScreen(true, {
+                  title: episode.title || "Unknown",
+                  artist: feed.title || "ShiurPod",
+                  artworkUrl: feed.imageUrl || undefined,
+                }, {
+                  showSeekForward: true,
+                  showSeekBackward: true,
+                });
+                addLog("info", "Lock screen controls activated", undefined, "audio");
+              }
+            } catch (lockErr: any) {
+              addLog("warn", `Lock screen setup failed: ${lockErr?.message}`, undefined, "audio");
+            }
+          }, 800);
 
           setTimeout(() => {
             try {
@@ -626,7 +633,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
                 });
               }
             } catch {}
-          }, 500);
+          }, 1500);
 
           setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true }));
           addLog("info", `Playing (expo-audio): ${episode.title} (feed: ${feed.title})`, undefined, "audio");
@@ -704,7 +711,27 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       if (Platform.OS === "web") {
         await audioRef.current?.play();
       } else if (nativePlayerRef.current) {
-        nativePlayerRef.current.play();
+        const player = nativePlayerRef.current;
+        player.play();
+
+        const ep = currentEpisodeRef.current;
+        const fd = currentFeedRef.current;
+        if (ep && fd) {
+          setTimeout(() => {
+            try {
+              if (nativePlayerRef.current === player) {
+                player.setActiveForLockScreen(true, {
+                  title: ep.title || "Unknown",
+                  artist: fd.title || "ShiurPod",
+                  artworkUrl: fd.imageUrl || undefined,
+                }, {
+                  showSeekForward: true,
+                  showSeekBackward: true,
+                });
+              }
+            } catch {}
+          }, 300);
+        }
       } else {
         const ep = currentEpisodeRef.current;
         const feed = currentFeedRef.current;
