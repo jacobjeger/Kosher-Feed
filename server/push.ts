@@ -3,10 +3,16 @@ import * as storage from "./storage";
 
 const expo = new Expo();
 
-export async function sendNewEpisodePushes(feedId: string, episode: { title: string; id: string }) {
+export async function sendNewEpisodePushes(
+  feedId: string,
+  episode: { title: string; id: string },
+  feedTitle?: string
+) {
   try {
     const tokens = await storage.getSubscribersForFeed(feedId);
     if (tokens.length === 0) return;
+
+    const displayTitle = feedTitle ? `New from ${feedTitle}` : "New Episode Available";
 
     const messages: ExpoPushMessage[] = [];
     for (const t of tokens) {
@@ -18,9 +24,11 @@ export async function sendNewEpisodePushes(feedId: string, episode: { title: str
       messages.push({
         to: t.token,
         sound: "default",
-        title: "New Episode Available",
+        title: displayTitle,
         body: episode.title,
-        data: { episodeId: episode.id, feedId },
+        data: { episodeId: episode.id, feedId, type: "new_episode" },
+        priority: "high",
+        channelId: "new-episodes",
       });
     }
 

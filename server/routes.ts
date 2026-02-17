@@ -282,7 +282,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (inserted.length > 0) {
         for (const ep of inserted.slice(0, 3)) {
-          sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }).catch(() => {});
+          sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
         }
       }
 
@@ -305,7 +305,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
           if (inserted.length > 0) {
             for (const ep of inserted.slice(0, 3)) {
-              sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }).catch(() => {});
+              sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
             }
           }
         } catch (e) {
