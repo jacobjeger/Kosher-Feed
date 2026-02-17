@@ -440,7 +440,7 @@ function PodcastDetailScreenInner() {
       <FlatList
         data={filteredEpisodes}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingBottom: 120, paddingHorizontal: 16, maxWidth: Platform.OS === "web" ? 1200 : undefined, marginHorizontal: Platform.OS === "web" ? "auto" as any : undefined, width: Platform.OS === "web" ? "100%" as any : undefined }}
+        contentContainerStyle={{ paddingBottom: 120, paddingHorizontal: 16, ...(Platform.OS === "web" ? { maxWidth: 900, marginHorizontal: "auto" as any, width: "100%" as any } : {}) }}
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
         initialNumToRender={15}

@@ -86,7 +86,7 @@ const styles = StyleSheet.create({
     ...Platform.select({
       web: {
         boxShadow: "0 -2px 16px rgba(0,0,0,0.3)",
-        maxWidth: 1200,
+        maxWidth: 900,
         marginHorizontal: "auto" as any,
         width: "calc(100% - 24px)" as any,
       },

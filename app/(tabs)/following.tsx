@@ -115,7 +115,7 @@ function FollowingScreenInner() {
   return (
     <FlatList
       style={[styles.container, { backgroundColor: colors.background }]}
-      contentContainerStyle={{ paddingBottom: 140, paddingHorizontal: 16, maxWidth: Platform.OS === "web" ? 1200 : undefined, marginHorizontal: Platform.OS === "web" ? "auto" as any : undefined, width: Platform.OS === "web" ? "100%" as any : undefined }}
+      contentContainerStyle={{ paddingBottom: 140, paddingHorizontal: 16, ...(Platform.OS === "web" ? { maxWidth: 900, marginHorizontal: "auto" as any, width: "100%" as any } : {}) }}
       data={episodes}
       keyExtractor={(item) => item.id}
       initialNumToRender={10}

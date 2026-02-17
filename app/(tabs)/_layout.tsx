@@ -172,7 +172,7 @@ const webStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    maxWidth: 1200,
+    maxWidth: 900,
     marginHorizontal: "auto" as any,
     width: "100%" as any,
     height: 60,

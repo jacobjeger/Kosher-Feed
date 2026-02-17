@@ -29,7 +29,7 @@ interface TrendingEpisode extends Episode {
 }
 
 const screenWidth = Dimensions.get("window").width;
-const CAROUSEL_WIDTH = Platform.OS === "web" ? Math.min(screenWidth - 40, 1160) : screenWidth - 40;
+const CAROUSEL_WIDTH = Platform.OS === "web" ? Math.min(screenWidth - 40, 860) : screenWidth - 40;
 const CAROUSEL_HEIGHT = 180;
 const AUTO_SCROLL_INTERVAL = 5000;
 
@@ -432,16 +432,19 @@ function HomeScreenInner() {
 
   const hasContent = allFeeds.length > 0;
 
+  const isWeb = Platform.OS === "web";
+
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
-      contentContainerStyle={{ paddingBottom: 140, maxWidth: Platform.OS === "web" ? 1200 : undefined, marginHorizontal: Platform.OS === "web" ? "auto" as any : undefined, width: Platform.OS === "web" ? "100%" as any : undefined }}
+      contentContainerStyle={{ paddingBottom: 140 }}
       refreshControl={
         <RefreshControl refreshing={false} onRefresh={onRefresh} tintColor={colors.accent} />
       }
     >
-      <View style={{ paddingTop: Platform.OS === "web" ? 20 : insets.top + 8, maxWidth: Platform.OS === "web" ? 1200 : undefined, marginHorizontal: Platform.OS === "web" ? "auto" as any : undefined, width: Platform.OS === "web" ? "100%" as any : undefined }}>
-        {Platform.OS !== "web" && (
+     <View style={isWeb ? styles.webContentWrap : undefined}>
+      <View style={{ paddingTop: isWeb ? 20 : insets.top + 8 }}>
+        {!isWeb && (
           <View style={styles.headerRow}>
             <View>
               <Text style={[styles.greeting, { color: colors.textSecondary }]}>Discover</Text>
@@ -626,6 +629,7 @@ function HomeScreenInner() {
           </View>
         </View>
       )}
+     </View>
     </ScrollView>
   );
 }
@@ -641,6 +645,11 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  webContentWrap: {
+    maxWidth: 900,
+    marginHorizontal: "auto" as any,
+    width: "100%" as any,
   },
   headerRow: {
     flexDirection: "row",
