@@ -176,6 +176,7 @@
       <button class="tab" onclick="switchTab('feedback', this)">Feedback</button>
       <button class="tab" onclick="switchTab('messages', this)">Messages</button>
       <button class="tab" onclick="switchTab('apk', this)">APK</button>
+      <button class="tab" onclick="switchTab('sponsors', this)">Sponsors</button>
       <button class="tab" onclick="switchTab('settings', this)">Settings</button>
     </div>
 
@@ -325,6 +326,45 @@
           </div>
         </div>
         <div id="apkList"></div>
+      </div>
+    </div>
+
+    <div id="sponsorsTab" class="hidden">
+      <div class="card">
+        <div class="card-header">
+          <h2>Sponsor Management</h2>
+          <button class="btn btn-primary btn-sm" onclick="showSponsorModal()">+ Add Sponsor</button>
+        </div>
+        <p style="color:#94a3b8;font-size:13px;margin-bottom:16px;">Manage sponsors shown on the app loading screen. Only one sponsor can be active at a time.</p>
+        <div id="sponsorList"></div>
+      </div>
+    </div>
+
+    <div id="sponsorModal" class="modal-overlay" style="display:none;">
+      <div class="modal">
+        <h2 id="sponsorModalTitle" style="margin-bottom:16px;color:#f8fafc;">Add Sponsor</h2>
+        <div id="sponsorAlert"></div>
+        <input type="hidden" id="sponsorEditId">
+        <div class="form-group">
+          <label>Sponsor Name *</label>
+          <input type="text" id="sponsorName" placeholder="e.g., Torah Tech Inc.">
+        </div>
+        <div class="form-group">
+          <label>Sponsor Text (shown on loading screen)</label>
+          <textarea id="sponsorText" placeholder="e.g., Brought to you by Torah Tech Inc."></textarea>
+        </div>
+        <div class="form-group">
+          <label>Logo URL (optional)</label>
+          <input type="text" id="sponsorLogoUrl" placeholder="https://example.com/logo.png">
+        </div>
+        <div class="form-group">
+          <label>Link URL (optional)</label>
+          <input type="text" id="sponsorLinkUrl" placeholder="https://example.com">
+        </div>
+        <div style="display:flex;gap:8px;margin-top:16px;">
+          <button class="btn btn-primary" onclick="saveSponsor()">Save</button>
+          <button class="btn btn-secondary" onclick="closeSponsorModal()">Cancel</button>
+        </div>
       </div>
     </div>
 
@@ -1298,7 +1338,7 @@ async function deleteSpeaker(id) {
 function switchTab(tab, btn) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
-  ['analytics','feeds','categories','speakers','errors','feedback','messages','apk','settings'].forEach(t => {
+  ['analytics','feeds','categories','speakers','errors','feedback','messages','apk','sponsors','settings'].forEach(t => {
     document.getElementById(t + 'Tab').classList.toggle('hidden', tab !== t);
   });
   if (tab === 'speakers') loadSpeakers();
@@ -1306,6 +1346,7 @@ function switchTab(tab, btn) {
   if (tab === 'feedback') loadFeedback();
   if (tab === 'messages') loadMessages();
   if (tab === 'apk') loadApks();
+  if (tab === 'sponsors') loadSponsors();
 }
 
 function formatDate(dateStr) {
@@ -1725,6 +1766,116 @@ async function changePassword() {
     setTimeout(() => alertArea.innerHTML = '', 4000);
   } catch(e) {
     alertArea.innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
+  }
+}
+
+async function loadSponsors() {
+  const list = document.getElementById('sponsorList');
+  try {
+    const sponsors = await api('/api/admin/sponsors');
+    if (!sponsors || sponsors.length === 0) {
+      list.innerHTML = '<p style="color:#64748b;text-align:center;padding:32px;">No sponsors yet</p>';
+      return;
+    }
+    list.innerHTML = sponsors.map(s => {
+      const statusColor = s.isActive ? '#059669' : '#64748b';
+      const statusLabel = s.isActive ? 'Active' : 'Inactive';
+      return `<div class="feed-item">
+        ${s.logoUrl ? `<img src="${s.logoUrl}" class="feed-img" onerror="this.style.display='none'">` : '<div class="feed-img" style="display:flex;align-items:center;justify-content:center;font-size:20px;color:#94a3b8;">$</div>'}
+        <div class="feed-info">
+          <div class="feed-title">${s.name}</div>
+          <div class="feed-meta">${s.text || 'No display text'}</div>
+          <div class="feed-meta" style="margin-top:2px;">
+            <span style="color:${statusColor};font-weight:600;">${statusLabel}</span>
+            ${s.linkUrl ? ` &middot; <a href="${s.linkUrl}" target="_blank" style="color:#3b82f6;">Visit</a>` : ''}
+          </div>
+        </div>
+        <div class="feed-actions">
+          ${!s.isActive ? `<button class="btn btn-success btn-sm" onclick="toggleSponsor('${s.id}', true)">Activate</button>` : `<button class="btn btn-secondary btn-sm" onclick="toggleSponsor('${s.id}', false)">Deactivate</button>`}
+          <button class="btn btn-secondary btn-sm" onclick="editSponsor('${s.id}')">Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="removeSponsor('${s.id}')">Delete</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    list.innerHTML = '<p style="color:#ef4444;">Failed to load sponsors</p>';
+  }
+}
+
+let allSponsorsCache = [];
+
+function showSponsorModal(sponsor) {
+  document.getElementById('sponsorModal').style.display = 'flex';
+  document.getElementById('sponsorEditId').value = sponsor ? sponsor.id : '';
+  document.getElementById('sponsorModalTitle').textContent = sponsor ? 'Edit Sponsor' : 'Add Sponsor';
+  document.getElementById('sponsorName').value = sponsor ? sponsor.name : '';
+  document.getElementById('sponsorText').value = sponsor ? (sponsor.text || '') : '';
+  document.getElementById('sponsorLogoUrl').value = sponsor ? (sponsor.logoUrl || sponsor.logo_url || '') : '';
+  document.getElementById('sponsorLinkUrl').value = sponsor ? (sponsor.linkUrl || sponsor.link_url || '') : '';
+  document.getElementById('sponsorAlert').innerHTML = '';
+}
+
+function closeSponsorModal() {
+  document.getElementById('sponsorModal').style.display = 'none';
+}
+
+async function saveSponsor() {
+  const id = document.getElementById('sponsorEditId').value;
+  const name = document.getElementById('sponsorName').value.trim();
+  const text = document.getElementById('sponsorText').value.trim();
+  const logoUrl = document.getElementById('sponsorLogoUrl').value.trim();
+  const linkUrl = document.getElementById('sponsorLinkUrl').value.trim();
+
+  if (!name) {
+    document.getElementById('sponsorAlert').innerHTML = '<div style="background:#7f1d1d;color:#fca5a5;padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:13px;">Name is required</div>';
+    return;
+  }
+
+  const data = { name, text: text || undefined, logoUrl: logoUrl || undefined, linkUrl: linkUrl || undefined };
+
+  try {
+    if (id) {
+      await api('/api/admin/sponsors/' + id, { method: 'PUT', body: JSON.stringify(data) });
+      showAlert('Sponsor updated', 'success');
+    } else {
+      await api('/api/admin/sponsors', { method: 'POST', body: JSON.stringify(data) });
+      showAlert('Sponsor added', 'success');
+    }
+    closeSponsorModal();
+    loadSponsors();
+  } catch (e) {
+    document.getElementById('sponsorAlert').innerHTML = '<div style="background:#7f1d1d;color:#fca5a5;padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:13px;">Failed to save sponsor</div>';
+  }
+}
+
+async function editSponsor(id) {
+  try {
+    const sponsors = await api('/api/admin/sponsors');
+    const sponsor = sponsors.find(s => s.id === id);
+    if (sponsor) showSponsorModal(sponsor);
+  } catch (e) {
+    showAlert('Failed to load sponsor', 'error');
+  }
+}
+
+async function toggleSponsor(id, activate) {
+  try {
+    await api('/api/admin/sponsors/' + id, { method: 'PUT', body: JSON.stringify({ isActive: activate }) });
+    showAlert(activate ? 'Sponsor activated' : 'Sponsor deactivated', 'success');
+    loadSponsors();
+  } catch (e) {
+    showAlert('Failed to update sponsor', 'error');
+  }
+}
+
+async function removeSponsor(id) {
+  if (!confirm('Delete this sponsor?')) return;
+  try {
+    await api('/api/admin/sponsors/' + id, { method: 'DELETE' });
+    showAlert('Sponsor deleted', 'success');
+    loadSponsors();
+  } catch (e) {
+    showAlert('Failed to delete sponsor', 'error');
   }
 }
 

@@ -170,6 +170,18 @@ export const apkUploads = pgTable("apk_uploads", {
 
 export type ApkUpload = typeof apkUploads.$inferSelect;
 
+export const sponsors = pgTable("sponsors", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  text: text("text"),
+  logoUrl: text("logo_url"),
+  linkUrl: text("link_url"),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type Sponsor = typeof sponsors.$inferSelect;
+
 export const insertFeedSchema = createInsertSchema(feeds).pick({
   title: true,
   rssUrl: true,

@@ -409,6 +409,37 @@ const ContinueListeningCard = React.memo(function ContinueListeningCard({ episod
   );
 });
 
+function SponsorBanner({ colors }: { colors: any }) {
+  const sponsorQuery = useQuery<{ name: string; text?: string; logoUrl?: string; linkUrl?: string } | null>({
+    queryKey: ["/api/sponsor"],
+    staleTime: 60000,
+  });
+
+  const sponsor = sponsorQuery.data;
+  if (!sponsor) return null;
+
+  return (
+    <View style={{ marginTop: 32, alignItems: "center", paddingHorizontal: 32 }}>
+      {sponsor.logoUrl ? (
+        <Image
+          source={{ uri: sponsor.logoUrl }}
+          style={{ width: 120, height: 60, marginBottom: 12 }}
+          contentFit="contain"
+        />
+      ) : null}
+      {sponsor.text ? (
+        <Text style={{ color: colors.textSecondary, fontSize: 13, textAlign: "center", lineHeight: 18 }}>
+          {sponsor.text}
+        </Text>
+      ) : (
+        <Text style={{ color: colors.textSecondary, fontSize: 13, textAlign: "center" }}>
+          Sponsored by {sponsor.name}
+        </Text>
+      )}
+    </View>
+  );
+}
+
 function HomeScreenInner() {
   const insets = useSafeAreaInsets();
   const colorScheme = useAppColorScheme();
@@ -546,8 +577,9 @@ function HomeScreenInner() {
 
   if (isLoading) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.accent} style={{ marginTop: 100 }} />
+      <View style={[styles.container, { backgroundColor: colors.background, justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator size="large" color={colors.accent} />
+        <SponsorBanner colors={colors} />
       </View>
     );
   }

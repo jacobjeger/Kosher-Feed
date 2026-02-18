@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim } from "@shared/schema";
-import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur } from "@shared/schema";
+import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors } from "@shared/schema";
+import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor } from "@shared/schema";
 import { eq, and, desc, asc, inArray, sql, count, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
@@ -713,4 +713,27 @@ export async function deleteApkUpload(id: string): Promise<string | null> {
   if (!apk) return null;
   await db.delete(apkUploads).where(eq(apkUploads.id, id));
   return apk.filename;
+}
+
+export async function getActiveSponsor(): Promise<Sponsor | undefined> {
+  const [sponsor] = await db.select().from(sponsors).where(eq(sponsors.isActive, true)).orderBy(desc(sponsors.createdAt)).limit(1);
+  return sponsor;
+}
+
+export async function getAllSponsors(): Promise<Sponsor[]> {
+  return db.select().from(sponsors).orderBy(desc(sponsors.createdAt));
+}
+
+export async function createSponsor(data: { name: string; text?: string; logoUrl?: string; linkUrl?: string }): Promise<Sponsor> {
+  const [sponsor] = await db.insert(sponsors).values(data).returning();
+  return sponsor;
+}
+
+export async function updateSponsor(id: string, data: Partial<{ name: string; text: string; logoUrl: string; linkUrl: string; isActive: boolean }>): Promise<Sponsor> {
+  const [sponsor] = await db.update(sponsors).set(data).where(eq(sponsors.id, id)).returning();
+  return sponsor;
+}
+
+export async function deleteSponsor(id: string): Promise<void> {
+  await db.delete(sponsors).where(eq(sponsors.id, id));
 }

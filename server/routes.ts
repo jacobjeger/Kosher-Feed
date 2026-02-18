@@ -1219,6 +1219,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Public: get active sponsor
+  app.get("/api/sponsor", async (_req: Request, res: Response) => {
+    try {
+      const sponsor = await storage.getActiveSponsor();
+      res.setHeader("Cache-Control", "public, max-age=60");
+      res.json(sponsor || null);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: list all sponsors
+  app.get("/api/admin/sponsors", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const allSponsors = await storage.getAllSponsors();
+      res.json(allSponsors);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: create sponsor
+  app.post("/api/admin/sponsors", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { name, text, logoUrl, linkUrl } = req.body;
+      if (!name) return res.status(400).json({ error: "Name is required" });
+      const sponsor = await storage.createSponsor({ name, text, logoUrl, linkUrl });
+      res.json(sponsor);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: update sponsor
+  app.put("/api/admin/sponsors/:id", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const sponsor = await storage.updateSponsor(req.params.id, req.body);
+      res.json(sponsor);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: delete sponsor
+  app.delete("/api/admin/sponsors/:id", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteSponsor(req.params.id);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
