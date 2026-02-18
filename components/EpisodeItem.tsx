@@ -281,7 +281,7 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
       {expanded && (
         <View style={styles.expandedSection}>
           {episode.description && (
-            <Text style={[styles.episodeDescription, { color: colors.textSecondary }]} numberOfLines={4}>
+            <Text style={[styles.episodeDescription, { color: colors.textSecondary }]}>
               {episode.description}
             </Text>
           )}
