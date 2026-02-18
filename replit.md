@@ -54,7 +54,8 @@ Preferred communication style: Simple, everyday language.
   - `POST /api/push-token` — register Expo push token for device
   - `GET /api/share/episode/:id` — get episode + feed data for sharing
   - `GET /share/episode/:id` — web share page with OG tags, audio player, deep link
-  - Admin CRUD endpoints for feeds/categories (Basic auth protected)
+  - `GET /api/sponsor` — get active sponsor for loading screen
+  - Admin CRUD endpoints for feeds/categories/sponsors (Basic auth protected)
 - **RSS parsing**: `rss-parser` library fetches and parses podcast RSS feeds, extracting episode metadata
 - **Admin panel**: Server-rendered HTML admin interface at `/admin` for managing feeds, categories, and speaker (Maggid Shiur) profiles
 - **Admin auth**: Simple Basic auth with bcrypt-hashed passwords, default credentials `admin/admin123`
@@ -76,6 +77,7 @@ Preferred communication style: Simple, everyday language.
   - `push_tokens` — Expo push notification tokens per device
   - `episodeListens` — episode listen tracking for trending/analytics
   - `maggid_shiurim` — customizable speaker profiles (id, name, imageUrl, bio) linked to feeds by author name
+  - `sponsors` — loading screen sponsors (id, name, text, logoUrl, linkUrl, isActive)
 - **Migrations**: Managed via `drizzle-kit push` (schema push approach, not file-based migrations)
 - **Connection**: `pg` Pool with `DATABASE_URL` environment variable
 
