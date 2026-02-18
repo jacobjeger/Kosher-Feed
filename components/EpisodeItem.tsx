@@ -175,7 +175,7 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
         { backgroundColor: colors.surface, borderColor: colors.cardBorder },
       ]}
     >
-      <View style={styles.row}>
+      <View style={styles.topSection}>
         <Pressable onPress={handlePlay} style={[styles.playIcon, { backgroundColor: isCurrentlyPlaying ? colors.accent : colors.accentLight }]}>
           <Ionicons
             name={isCurrentlyPlaying && playback.isPlaying ? "pause" : "play"}
@@ -200,24 +200,92 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
               style={styles.expandIcon}
             />
           </View>
-          <View style={styles.meta}>
-            {episode.publishedAt && (
-              <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-                {formatDate(episode.publishedAt)}
-              </Text>
+        </Pressable>
+      </View>
+      <View style={styles.bottomRow}>
+        <View style={styles.metaSection}>
+          {episode.publishedAt && (
+            <Text style={[styles.metaText, { color: colors.textSecondary }]}>
+              {formatDate(episode.publishedAt)}
+            </Text>
+          )}
+          {episode.duration && (
+            <Text style={[styles.metaText, { color: colors.textSecondary }]}>
+              {formatDuration(episode.duration)}
+            </Text>
+          )}
+        </View>
+        <View style={styles.actionsRow}>
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation();
+              handleToggleFavorite();
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+            style={styles.actionBtn}
+          >
+            <Ionicons
+              name={favorited ? "star" : "star-outline"}
+              size={20}
+              color={favorited ? colors.accent : colors.textSecondary}
+            />
+          </Pressable>
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation();
+              handleAddToQueue();
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+            style={styles.actionBtn}
+          >
+            {isInQueue ? (
+              <Ionicons name="list-circle" size={20} color={colors.accent} />
+            ) : (
+              <Ionicons name="add-circle-outline" size={20} color={colors.textSecondary} />
             )}
-            {episode.duration && (
-              <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-                {formatDuration(episode.duration)}
-              </Text>
+          </Pressable>
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation();
+              if (Platform.OS === "web") {
+                if (episode.id) {
+                  const downloadUrl = `${getApiUrl()}/api/episodes/${episode.id}/download`;
+                  const link = document.createElement("a");
+                  link.href = downloadUrl;
+                  link.style.display = "none";
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                }
+              } else {
+                handleDownload();
+              }
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+            style={styles.actionBtn}
+          >
+            {Platform.OS !== "web" && downloading ? (
+              <View style={styles.downloadingIndicator}>
+                <Text style={[styles.progressText, { color: colors.accent }]}>
+                  {Math.round(progress * 100)}%
+                </Text>
+              </View>
+            ) : Platform.OS !== "web" && downloaded ? (
+              <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+            ) : (
+              <Feather name="download" size={18} color={colors.textSecondary} />
             )}
-          </View>
-          {expanded && episode.description && (
+          </Pressable>
+        </View>
+      </View>
+      {expanded && (
+        <View style={styles.expandedSection}>
+          {episode.description && (
             <Text style={[styles.episodeDescription, { color: colors.textSecondary }]} numberOfLines={4}>
               {episode.description}
             </Text>
           )}
-          {expanded && episode.sourceSheetUrl && (
+          {episode.sourceSheetUrl && (
             <Pressable
               onPress={handleOpenSourceSheet}
               style={[styles.sourceSheetLink, { borderTopColor: colors.cardBorder }]}
@@ -228,79 +296,17 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
               </Text>
             </Pressable>
           )}
-          {expanded && (
-            <Pressable
-              onPress={() => { lightHaptic(); togglePlayed(episode.id); }}
-              style={[styles.sourceSheetLink, { borderTopColor: colors.cardBorder }]}
-            >
-              <Ionicons name={played ? "checkmark-circle" : "checkmark-circle-outline"} size={14} color={played ? colors.success : colors.accent} />
-              <Text style={[styles.sourceSheetText, { color: played ? colors.success : colors.accent }]}>
-                {played ? "Mark as Unplayed" : "Mark as Played"}
-              </Text>
-            </Pressable>
-          )}
-        </Pressable>
-        <Pressable
-          onPress={(e) => {
-            e.stopPropagation();
-            handleToggleFavorite();
-          }}
-          hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
-          style={styles.actionBtn}
-        >
-          <Ionicons
-            name={favorited ? "star" : "star-outline"}
-            size={22}
-            color={favorited ? colors.accent : colors.textSecondary}
-          />
-        </Pressable>
-        <Pressable
-          onPress={(e) => {
-            e.stopPropagation();
-            handleAddToQueue();
-          }}
-          hitSlop={10}
-          style={styles.actionBtn}
-        >
-          {isInQueue ? (
-            <Ionicons name="list-circle" size={22} color={colors.accent} />
-          ) : (
-            <Ionicons name="add-circle-outline" size={22} color={colors.textSecondary} />
-          )}
-        </Pressable>
-        <Pressable
-          onPress={(e) => {
-            e.stopPropagation();
-            if (Platform.OS === "web") {
-              if (episode.id) {
-                const downloadUrl = `${getApiUrl()}/api/episodes/${episode.id}/download`;
-                const link = document.createElement("a");
-                link.href = downloadUrl;
-                link.style.display = "none";
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-              }
-            } else {
-              handleDownload();
-            }
-          }}
-          hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
-          style={styles.actionBtn}
-        >
-          {Platform.OS !== "web" && downloading ? (
-            <View style={styles.downloadingIndicator}>
-              <Text style={[styles.progressText, { color: colors.accent }]}>
-                {Math.round(progress * 100)}%
-              </Text>
-            </View>
-          ) : Platform.OS !== "web" && downloaded ? (
-            <Ionicons name="checkmark-circle" size={22} color={colors.success} />
-          ) : (
-            <Feather name="download" size={20} color={colors.textSecondary} />
-          )}
-        </Pressable>
-      </View>
+          <Pressable
+            onPress={() => { lightHaptic(); togglePlayed(episode.id); }}
+            style={[styles.sourceSheetLink, { borderTopColor: colors.cardBorder }]}
+          >
+            <Ionicons name={played ? "checkmark-circle" : "checkmark-circle-outline"} size={14} color={played ? colors.success : colors.accent} />
+            <Text style={[styles.sourceSheetText, { color: played ? colors.success : colors.accent }]}>
+              {played ? "Mark as Unplayed" : "Mark as Played"}
+            </Text>
+          </Pressable>
+        </View>
+      )}
       {(savedProgress || played) && (
         <View style={styles.progressTextContainer}>
           {played ? (
@@ -329,10 +335,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     overflow: "hidden",
   },
-  row: {
+  topSection: {
     flexDirection: "row",
     alignItems: "flex-start",
-    padding: 12,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 4,
     gap: 10,
   },
   playIcon: {
@@ -367,18 +375,36 @@ const styles = StyleSheet.create({
   expandIcon: {
     marginTop: 2,
   },
-  meta: {
+  bottomRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingBottom: 10,
+    paddingLeft: 58,
+  },
+  metaSection: {
     flexDirection: "row" as const,
     gap: 10,
-    marginTop: 2,
+    flex: 1,
   },
   metaText: {
     fontSize: 12,
   },
+  actionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+  },
+  expandedSection: {
+    paddingHorizontal: 12,
+    paddingBottom: 10,
+    paddingLeft: 58,
+  },
   episodeDescription: {
     fontSize: 12,
     lineHeight: 17,
-    marginTop: 6,
+    marginBottom: 4,
   },
   sourceSheetLink: {
     flexDirection: "row" as const,
@@ -393,12 +419,11 @@ const styles = StyleSheet.create({
     fontWeight: "600" as const,
   },
   actionBtn: {
-    width: 38,
-    height: 44,
+    width: 34,
+    height: 34,
     alignItems: "center" as const,
     justifyContent: "center" as const,
     flexShrink: 0,
-    marginTop: 0,
   },
   downloadingIndicator: {
     alignItems: "center" as const,
@@ -411,6 +436,7 @@ const styles = StyleSheet.create({
   progressTextContainer: {
     paddingHorizontal: 12,
     paddingBottom: 8,
+    paddingLeft: 58,
   },
   progressTextRow: {
     flexDirection: "row" as const,
