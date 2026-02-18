@@ -125,6 +125,7 @@ function PodcastDetailScreenInner() {
   const feedSettings = id ? getFeedSettings(id) : { notificationsEnabled: false, maxEpisodes: 5 };
   const [episodeLimitPickerVisible, setEpisodeLimitPickerVisible] = useState(false);
   const [filterPickerVisible, setFilterPickerVisible] = useState(false);
+  const [downloadCountPickerVisible, setDownloadCountPickerVisible] = useState(false);
 
   const followMutation = useMutation({
     mutationFn: async () => {
@@ -336,25 +337,12 @@ function PodcastDetailScreenInner() {
                     onPress={() => {
                       lightHaptic();
                       if (!feed) return;
-                      const epsToDownload = allEpisodes.slice(0, 5);
-                      const count = epsToDownload.length;
-                      if (Platform.OS === "web") {
-                        batchDownloadRef.current(epsToDownload, feed);
-                        return;
-                      }
-                      Alert.alert(
-                        "Download Episodes",
-                        `Download the latest ${count} episode${count !== 1 ? 's' : ''}?`,
-                        [
-                          { text: "Cancel", style: "cancel" },
-                          { text: "Download", onPress: () => batchDownloadRef.current(epsToDownload, feed) },
-                        ]
-                      );
+                      setDownloadCountPickerVisible(true);
                     }}
                   >
                     <View style={styles.feedSettingLeft}>
                       <Ionicons name="cloud-download-outline" size={18} color={colors.accent} />
-                      <Text style={[styles.feedSettingLabel, { color: colors.text }]}>Download Latest 5 Episodes</Text>
+                      <Text style={[styles.feedSettingLabel, { color: colors.text }]}>Download Latest Episodes</Text>
                     </View>
                     <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
                   </Pressable>
@@ -489,6 +477,22 @@ function PodcastDetailScreenInner() {
           { label: "Downloaded", onPress: () => setEpisodeFilter('downloaded'), selected: episodeFilter === 'downloaded' },
         ]}
         onClose={() => setFilterPickerVisible(false)}
+      />
+      <OptionPickerModal
+        visible={downloadCountPickerVisible}
+        title="Download Episodes"
+        subtitle="How many of the latest episodes would you like to download?"
+        options={[5, 10, 15, 20].map(n => ({
+          label: `${n} episodes`,
+          onPress: () => {
+            if (feed) {
+              const eps = allEpisodes.slice(0, n);
+              batchDownloadRef.current(eps, feed);
+            }
+          },
+          selected: false,
+        }))}
+        onClose={() => setDownloadCountPickerVisible(false)}
       />
     </View>
   );

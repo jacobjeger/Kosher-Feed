@@ -175,7 +175,7 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
         { backgroundColor: colors.surface, borderColor: colors.cardBorder },
       ]}
     >
-      <View style={styles.topSection}>
+      <View style={styles.mainRow}>
         <Pressable onPress={handlePlay} style={[styles.playIcon, { backgroundColor: isCurrentlyPlaying ? colors.accent : colors.accentLight }]}>
           <Ionicons
             name={isCurrentlyPlaying && playback.isPlaying ? "pause" : "play"}
@@ -189,32 +189,22 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
               {feed.title}
             </Text>
           )}
-          <View style={styles.titleRow}>
-            <Text style={[styles.title, { color: colors.text, flex: 1, opacity: played ? 0.6 : 1 }]} numberOfLines={expanded ? undefined : 2}>
-              {episode.title}
-            </Text>
-            <Ionicons
-              name={expanded ? "chevron-up" : "chevron-down"}
-              size={16}
-              color={colors.textSecondary}
-              style={styles.expandIcon}
-            />
+          <Text style={[styles.title, { color: colors.text, opacity: played ? 0.6 : 1 }]} numberOfLines={expanded ? undefined : 2}>
+            {episode.title}
+          </Text>
+          <View style={styles.metaRow}>
+            {episode.publishedAt && (
+              <Text style={[styles.metaText, { color: colors.textSecondary }]}>
+                {formatDate(episode.publishedAt)}
+              </Text>
+            )}
+            {episode.duration && (
+              <Text style={[styles.metaText, { color: colors.textSecondary }]}>
+                {formatDuration(episode.duration)}
+              </Text>
+            )}
           </View>
         </Pressable>
-      </View>
-      <View style={styles.bottomRow}>
-        <View style={styles.metaSection}>
-          {episode.publishedAt && (
-            <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-              {formatDate(episode.publishedAt)}
-            </Text>
-          )}
-          {episode.duration && (
-            <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-              {formatDuration(episode.duration)}
-            </Text>
-          )}
-        </View>
         <View style={styles.actionsRow}>
           <Pressable
             onPress={(e) => {
@@ -335,12 +325,11 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     overflow: "hidden",
   },
-  topSection: {
+  mainRow: {
     flexDirection: "row",
     alignItems: "flex-start",
     paddingHorizontal: 10,
-    paddingTop: 8,
-    paddingBottom: 2,
+    paddingVertical: 8,
     gap: 8,
   },
   playIcon: {
@@ -354,7 +343,7 @@ const styles = StyleSheet.create({
   },
   info: {
     flex: 1,
-    gap: 2,
+    gap: 1,
   },
   feedTitle: {
     fontSize: 11,
@@ -362,31 +351,15 @@ const styles = StyleSheet.create({
     textTransform: "uppercase" as const,
     letterSpacing: 0.5,
   },
-  titleRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 4,
-  },
   title: {
     fontSize: 14,
     fontWeight: "600" as const,
-    lineHeight: 19,
+    lineHeight: 18,
   },
-  expandIcon: {
-    marginTop: 2,
-  },
-  bottomRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 10,
-    paddingBottom: 8,
-    paddingLeft: 50,
-  },
-  metaSection: {
+  metaRow: {
     flexDirection: "row" as const,
     gap: 8,
-    flex: 1,
+    marginTop: 2,
   },
   metaText: {
     fontSize: 11,
@@ -395,6 +368,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 0,
+    flexShrink: 0,
   },
   expandedSection: {
     paddingHorizontal: 10,
@@ -443,6 +417,7 @@ const styles = StyleSheet.create({
   progressTextContainer: {
     paddingHorizontal: 10,
     paddingBottom: 6,
+    paddingTop: 0,
     paddingLeft: 50,
   },
   progressTextRow: {
