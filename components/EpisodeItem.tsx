@@ -261,8 +261,8 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
                 handleDownload();
               }
             }}
-            hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-            style={styles.actionBtn}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={styles.downloadBtn}
           >
             {Platform.OS !== "web" && downloading ? (
               <View style={styles.downloadingIndicator}>
@@ -271,9 +271,9 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
                 </Text>
               </View>
             ) : Platform.OS !== "web" && downloaded ? (
-              <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+              <Ionicons name="checkmark-circle" size={22} color={colors.success} />
             ) : (
-              <Feather name="download" size={18} color={colors.textSecondary} />
+              <Feather name="download" size={20} color={colors.textSecondary} />
             )}
           </Pressable>
         </View>
@@ -421,6 +421,13 @@ const styles = StyleSheet.create({
   actionBtn: {
     width: 34,
     height: 34,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    flexShrink: 0,
+  },
+  downloadBtn: {
+    width: 42,
+    height: 42,
     alignItems: "center" as const,
     justifyContent: "center" as const,
     flexShrink: 0,
