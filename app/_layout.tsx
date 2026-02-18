@@ -64,6 +64,12 @@ function RootLayoutNav() {
           headerShown: false,
         }}
       />
+      <Stack.Screen
+        name="maggid-shiur/[author]"
+        options={{
+          headerShown: false,
+        }}
+      />
     </Stack>
   );
 }
