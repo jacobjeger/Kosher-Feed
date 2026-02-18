@@ -15,7 +15,7 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.myapp",
+      "bundleIdentifier": "com.shiurpod.app",
       "infoPlist": {
         "UIBackgroundModes": [
           "audio"
@@ -23,7 +23,8 @@
       }
     },
     "android": {
-      "package": "com.myapp",
+      "package": "com.shiurpod.app",
+      "versionCode": 1,
       "permissions": [
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_MEDIA_PLAYBACK"
