@@ -278,7 +278,7 @@ function configureExpoAndLanding(app: express.Application) {
       return next();
     }
 
-    if (req.path === "/admin") {
+    if (req.path === "/admin" || req.path === "/privacy" || req.path === "/terms" || req.path === "/support") {
       return next();
     }
 
@@ -304,6 +304,18 @@ function configureExpoAndLanding(app: express.Application) {
   app.get("/admin", (_req: Request, res: Response) => {
     const adminPath = path.resolve(process.cwd(), "server", "templates", "admin.html");
     res.sendFile(adminPath);
+  });
+
+  app.get("/privacy", (_req: Request, res: Response) => {
+    res.sendFile(path.resolve(process.cwd(), "server", "templates", "privacy.html"));
+  });
+
+  app.get("/terms", (_req: Request, res: Response) => {
+    res.sendFile(path.resolve(process.cwd(), "server", "templates", "terms.html"));
+  });
+
+  app.get("/support", (_req: Request, res: Response) => {
+    res.sendFile(path.resolve(process.cwd(), "server", "templates", "support.html"));
   });
 
   app.use("/assets", (req: Request, res: Response, next: NextFunction) => {
