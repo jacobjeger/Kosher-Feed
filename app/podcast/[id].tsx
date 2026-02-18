@@ -124,6 +124,7 @@ function PodcastDetailScreenInner() {
   const isFollowing = subsQuery.data?.some(s => s.feedId === id) || false;
   const feedSettings = id ? getFeedSettings(id) : { notificationsEnabled: false, maxEpisodes: 5 };
   const [episodeLimitPickerVisible, setEpisodeLimitPickerVisible] = useState(false);
+  const [filterPickerVisible, setFilterPickerVisible] = useState(false);
 
   const followMutation = useMutation({
     mutationFn: async () => {
@@ -364,20 +365,16 @@ function PodcastDetailScreenInner() {
             {sortOrder === 'newest' ? 'Newest' : 'Oldest'}
           </Text>
         </Pressable>
-        {(['all', 'unplayed', 'inprogress', 'downloaded'] as const).map(filter => (
-          <Pressable
-            key={filter}
-            onPress={() => { lightHaptic(); setEpisodeFilter(filter); }}
-            style={[
-              styles.sortBtn,
-              { backgroundColor: episodeFilter === filter ? colors.accent : colors.surfaceAlt },
-            ]}
-          >
-            <Text style={[styles.sortBtnText, { color: episodeFilter === filter ? '#fff' : colors.text }]}>
-              {filter === 'all' ? 'All' : filter === 'unplayed' ? 'Unplayed' : filter === 'inprogress' ? 'Started' : 'Saved'}
-            </Text>
-          </Pressable>
-        ))}
+        <Pressable
+          onPress={() => { lightHaptic(); setFilterPickerVisible(true); }}
+          style={[styles.sortBtn, { backgroundColor: episodeFilter !== 'all' ? colors.accent : colors.surfaceAlt }]}
+        >
+          <Ionicons name="filter" size={14} color={episodeFilter !== 'all' ? '#fff' : colors.accent} />
+          <Text style={[styles.sortBtnText, { color: episodeFilter !== 'all' ? '#fff' : colors.text }]}>
+            {episodeFilter === 'all' ? 'Filter' : episodeFilter === 'unplayed' ? 'Unplayed' : episodeFilter === 'inprogress' ? 'Started' : 'Downloaded'}
+          </Text>
+          <Ionicons name="chevron-down" size={12} color={episodeFilter !== 'all' ? '#fff' : colors.textSecondary} />
+        </Pressable>
       </View>
 
       <View style={[styles.episodeSearchContainer, { backgroundColor: colors.surfaceAlt, borderColor: isEpisodeSearchFocused ? colors.accent : "transparent" }]}>
@@ -400,7 +397,7 @@ function PodcastDetailScreenInner() {
       </View>
     </View>
   );
-  }, [feed, feedError, feedErrorMsg, colors, insets.top, isFollowing, showFullDescription, showPreferences, feedSettings, allEpisodes.length, totalCount, sortOrder, episodeSearch, isEpisodeSearchFocused, handleFollow, handleToggleNotifications, handleChangeEpisodeLimit, episodeFilter, inProgressIds, id]);
+  }, [feed, feedError, feedErrorMsg, colors, insets.top, isFollowing, showFullDescription, showPreferences, feedSettings, allEpisodes.length, totalCount, sortOrder, episodeSearch, isEpisodeSearchFocused, handleFollow, handleToggleNotifications, handleChangeEpisodeLimit, episodeFilter, id]);
 
   const footerElement = useMemo(() => {
     if (episodesInfiniteQuery.isFetchingNextPage) {
@@ -466,6 +463,18 @@ function PodcastDetailScreenInner() {
           selected: feedSettings.maxEpisodes === n,
         }))}
         onClose={() => setEpisodeLimitPickerVisible(false)}
+      />
+      <OptionPickerModal
+        visible={filterPickerVisible}
+        title="Filter Episodes"
+        subtitle="Show only episodes that match your selection."
+        options={[
+          { label: "All Episodes", onPress: () => setEpisodeFilter('all'), selected: episodeFilter === 'all' },
+          { label: "Unplayed", onPress: () => setEpisodeFilter('unplayed'), selected: episodeFilter === 'unplayed' },
+          { label: "Started", onPress: () => setEpisodeFilter('inprogress'), selected: episodeFilter === 'inprogress' },
+          { label: "Downloaded", onPress: () => setEpisodeFilter('downloaded'), selected: episodeFilter === 'downloaded' },
+        ]}
+        onClose={() => setFilterPickerVisible(false)}
       />
     </View>
   );
