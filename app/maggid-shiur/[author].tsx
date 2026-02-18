@@ -12,6 +12,10 @@ import Colors from "@/constants/colors";
 import type { Feed } from "@/lib/types";
 import { lightHaptic } from "@/lib/haptics";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+}
 import PodcastCard from "@/components/PodcastCard";
 
 function MaggidShiurDetailInner() {
@@ -66,7 +70,7 @@ function MaggidShiurDetailInner() {
               </Text>
               {item.description ? (
                 <Text style={[styles.feedDesc, { color: colors.textSecondary }]} numberOfLines={2}>
-                  {item.description}
+                  {stripHtml(item.description)}
                 </Text>
               ) : null}
             </View>

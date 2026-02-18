@@ -18,6 +18,10 @@ import { useDownloads } from "@/contexts/DownloadsContext";
 import { usePlayedEpisodes } from "@/contexts/PlayedEpisodesContext";
 import { usePositions } from "@/contexts/PositionsContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+}
 import OptionPickerModal from "@/components/OptionPickerModal";
 
 const StableArtwork = memo(function StableArtwork({ imageUrl, fallbackColor, iconColor }: { imageUrl?: string | null; fallbackColor: string; iconColor: string }) {
@@ -281,7 +285,7 @@ function PodcastDetailScreenInner() {
             style={[styles.description, { color: colors.textSecondary }]}
             numberOfLines={showFullDescription ? undefined : 3}
           >
-            {feed.description}
+            {stripHtml(feed.description)}
           </Text>
           <Pressable onPress={() => setShowFullDescription(prev => !prev)}>
             <Text style={[styles.seeMoreText, { color: colors.accent }]}>
