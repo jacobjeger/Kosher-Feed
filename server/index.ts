@@ -344,6 +344,8 @@ const FEED_REFRESH_INTERVAL = 10 * 60 * 1000;
 async function autoRefreshFeeds() {
   try {
     const allFeeds = await storage.getActiveFeeds();
+    const now = new Date().toLocaleTimeString();
+    log(`Auto-refresh [${now}]: checking ${allFeeds.length} feed(s)...`);
     let totalNew = 0;
     for (const feed of allFeeds) {
       try {
@@ -361,9 +363,7 @@ async function autoRefreshFeeds() {
         console.error(`Auto-refresh failed for ${feed.title}:`, e);
       }
     }
-    if (totalNew > 0) {
-      log(`Auto-refresh: found ${totalNew} new episode(s) across ${allFeeds.length} feed(s)`);
-    }
+    log(`Auto-refresh [${now}] complete: ${totalNew} new episode(s) found across ${allFeeds.length} feed(s)`);
   } catch (e) {
     console.error("Auto-refresh error:", e);
   }
