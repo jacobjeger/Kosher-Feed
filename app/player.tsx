@@ -162,27 +162,27 @@ export default function PlayerScreen() {
     return opts;
   }, [sleepTimer, setSleepTimer, cancelSleepTimer]);
 
-  const getSkipBackwardIcon = (): string => {
+  const getSkipBackwardIcon = () => {
     switch (settings.skipBackwardSeconds) {
       case 10:
-        return "replay-10";
+        return "replay-10" as const;
       case 5:
-        return "replay-5";
+        return "replay-5" as const;
       case 30:
       default:
-        return "replay-30";
+        return "replay-30" as const;
     }
   };
 
-  const getSkipForwardIcon = (): string => {
+  const getSkipForwardIcon = () => {
     switch (settings.skipForwardSeconds) {
       case 10:
-        return "forward-10";
+        return "forward-10" as const;
       case 5:
-        return "forward-5";
+        return "forward-5" as const;
       case 30:
       default:
-        return "forward-30";
+        return "forward-30" as const;
     }
   };
 
@@ -236,7 +236,10 @@ export default function PlayerScreen() {
     : null;
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: colors.background }]} contentContainerStyle={{ flexGrow: 1 }}>
+    <ScrollView 
+      style={[styles.container, { backgroundColor: colors.background }]} 
+      contentContainerStyle={[styles.scrollContent, Platform.OS === "web" && styles.scrollContentWeb]}
+    >
       <View style={[styles.header, { paddingTop: insets.top + (Platform.OS === "web" ? 12 : 8) }]}>
         <Pressable onPress={() => safeGoBack()} hitSlop={12}>
           <Ionicons name="chevron-down" size={28} color={colors.text} />
@@ -466,6 +469,15 @@ export default function PlayerScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: "space-between" as const,
+  },
+  scrollContentWeb: {
+    maxWidth: 500,
+    marginHorizontal: "auto" as any,
+    width: "100%" as any,
   },
   header: {
     flexDirection: "row",
