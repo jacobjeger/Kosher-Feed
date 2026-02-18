@@ -335,12 +335,26 @@ function PodcastDetailScreenInner() {
                     style={styles.feedSettingRow}
                     onPress={() => {
                       lightHaptic();
-                      if (feed) batchDownloadRef.current(allEpisodes.slice(0, 20), feed);
+                      if (!feed) return;
+                      const epsToDownload = allEpisodes.slice(0, 5);
+                      const count = epsToDownload.length;
+                      if (Platform.OS === "web") {
+                        batchDownloadRef.current(epsToDownload, feed);
+                        return;
+                      }
+                      Alert.alert(
+                        "Download Episodes",
+                        `Download the latest ${count} episode${count !== 1 ? 's' : ''}?`,
+                        [
+                          { text: "Cancel", style: "cancel" },
+                          { text: "Download", onPress: () => batchDownloadRef.current(epsToDownload, feed) },
+                        ]
+                      );
                     }}
                   >
                     <View style={styles.feedSettingLeft}>
                       <Ionicons name="cloud-download-outline" size={18} color={colors.accent} />
-                      <Text style={[styles.feedSettingLabel, { color: colors.text }]}>Download Latest Episodes</Text>
+                      <Text style={[styles.feedSettingLabel, { color: colors.text }]}>Download Latest 5 Episodes</Text>
                     </View>
                     <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
                   </Pressable>
