@@ -268,6 +268,10 @@ function configureExpoAndLanding(app: express.Application) {
     if (fs.existsSync(webappExpoPath)) {
       app.use("/_expo", express.static(webappExpoPath) as any);
     }
+    const webappAssetsPath = path.join(webappBuildPath, "assets");
+    if (fs.existsSync(webappAssetsPath)) {
+      app.use("/assets", express.static(webappAssetsPath) as any);
+    }
   } else {
     app.use("/node_modules", proxyToExpo as any);
     app.use("/_expo", proxyToExpo as any);
