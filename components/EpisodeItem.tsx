@@ -104,13 +104,13 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
     }
   };
 
-  const handleAddToQueue = async () => {
+  const handleToggleQueue = async () => {
     try {
-      if (isInQueue) return;
       lightHaptic();
-      await addToQueue(episode.id, feed.id);
-      if (Platform.OS !== "web") {
-        Alert.alert("Added to Queue", episode.title);
+      if (isInQueue) {
+        await removeFromQueue(episode.id);
+      } else {
+        await addToQueue(episode.id, feed.id);
       }
     } catch (e) {
       console.error(e);
@@ -145,7 +145,7 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
     }
     const actions: { text: string; onPress: () => void; style?: "destructive" | "cancel" }[] = [];
     if (!isInQueue) {
-      actions.push({ text: "Add to Queue", onPress: handleAddToQueue });
+      actions.push({ text: "Add to Queue", onPress: handleToggleQueue });
     } else {
       actions.push({ text: "Remove from Queue", onPress: async () => { lightHaptic(); await removeFromQueue(episode.id); } });
     }
@@ -233,7 +233,7 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
           <Pressable
             onPress={(e) => {
               e.stopPropagation();
-              handleAddToQueue();
+              handleToggleQueue();
             }}
             hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
             style={styles.actionBtn}
