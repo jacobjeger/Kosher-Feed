@@ -134,7 +134,7 @@ const styles = StyleSheet.create({
   },
   feedImage: {
     width: "100%" as any,
-    height: 120,
+    aspectRatio: 1,
   },
   feedInfo: {
     padding: 10,
