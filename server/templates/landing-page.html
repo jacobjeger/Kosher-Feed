@@ -535,6 +535,37 @@
         }
       }
 
+      .live-stats {
+        background: linear-gradient(135deg, #1a2a3a 0%, #0f1923 100%);
+        border-top: 1px solid rgba(255,255,255,0.08);
+        padding: 32px 24px;
+      }
+      .live-stats-inner {
+        max-width: 960px;
+        margin: 0 auto;
+        display: flex;
+        justify-content: center;
+        gap: 48px;
+        flex-wrap: wrap;
+      }
+      .stat-item {
+        text-align: center;
+        min-width: 120px;
+      }
+      .stat-number {
+        font-size: 36px;
+        font-weight: 700;
+        color: #c4a96a;
+        line-height: 1.2;
+      }
+      .stat-label {
+        font-size: 14px;
+        color: rgba(255,255,255,0.6);
+        margin-top: 4px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+
       /* Loading state for mobile redirect */
       .loading {
         display: none;
@@ -605,6 +636,19 @@
             <div class="qr-code" id="qr-code"></div>
             <span class="qr-label">Scan with your phone camera</span>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="live-stats">
+      <div class="live-stats-inner">
+        <div class="stat-item">
+          <div class="stat-number" id="stat-shiurim">--</div>
+          <div class="stat-label">Active Shiurim</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-number" id="stat-episodes">--</div>
+          <div class="stat-label">Episodes Available</div>
         </div>
       </div>
     </section>
@@ -730,6 +774,15 @@
           qrOptions: { errorCorrectionLevel: "H" }
         });
         qrCode.append(document.getElementById("qr-code"));
+
+        fetch("/api/public-stats").then(function(r) { return r.json(); }).then(function(data) {
+          if (data.shiurimCount !== undefined) {
+            document.getElementById("stat-shiurim").textContent = data.shiurimCount.toLocaleString();
+          }
+          if (data.episodeCount !== undefined) {
+            document.getElementById("stat-episodes").textContent = data.episodeCount.toLocaleString();
+          }
+        }).catch(function() {});
 
         fetch("/api/apk/latest").then(function(r) { return r.json(); }).then(function(data) {
           if (data.available) {

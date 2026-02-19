@@ -205,6 +205,29 @@
           <div id="feedPerformance" style="max-height:400px;overflow-y:auto;"></div>
         </div>
       </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;">
+        <div class="card" style="grid-column:1/3;">
+          <div class="card-header">
+            <h2>Listening Activity by Hour</h2>
+          </div>
+          <div id="hourlyChart" class="chart-container"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2>Listener Retention</h2>
+          </div>
+          <div id="retentionStats"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2>Top Listeners by Time</h2>
+          </div>
+          <div id="topDevicesArea" style="max-height:400px;overflow-y:auto;"></div>
+        </div>
+      </div>
     </div>
 
     <div id="feedsTab" class="hidden">
@@ -484,9 +507,94 @@ async function loadAnalytics() {
     renderTopEpisodes();
     renderFeedPerformance();
     if (enhanced) renderEnhancedStats();
+    loadListenerAnalytics();
   } catch(e) {
     console.error('Analytics error:', e);
   }
+}
+
+async function loadListenerAnalytics() {
+  try {
+    const data = await api('/api/admin/analytics/listeners');
+    renderHourlyChart(data.hourlyListens);
+    renderRetentionStats(data);
+    renderTopDevices(data.topDevices);
+  } catch(e) {
+    console.error('Listener analytics error:', e);
+  }
+}
+
+function renderHourlyChart(hourlyData) {
+  const container = document.getElementById('hourlyChart');
+  if (!hourlyData || hourlyData.length === 0) {
+    container.innerHTML = '<p style="color:#64748b;text-align:center;padding:40px;">No listening data yet.</p>';
+    return;
+  }
+  const full = Array.from({length: 24}, (_, i) => {
+    const found = hourlyData.find(h => h.hour === i);
+    return { hour: i, count: found ? found.count : 0 };
+  });
+  const maxCount = Math.max(...full.map(d => d.count), 1);
+  const bars = full.map(d => {
+    const height = Math.max((d.count / maxCount) * 100, 2);
+    const label = d.hour === 0 ? '12am' : d.hour < 12 ? d.hour + 'am' : d.hour === 12 ? '12pm' : (d.hour-12) + 'pm';
+    return '<div class="chart-bar" style="height:' + height + '%" data-tooltip="' + d.count + ' listens at ' + label + '"></div>';
+  }).join('');
+  const labels = [0,6,12,18,23].map(h => {
+    const label = h === 0 ? '12am' : h < 12 ? h + 'am' : h === 12 ? '12pm' : (h-12) + 'pm';
+    return '<span class="chart-label">' + label + '</span>';
+  }).join('');
+  container.innerHTML = '<div class="chart-bar-container">' + bars + '</div><div style="display:flex;justify-content:space-between;padding:0 4px;">' + labels + '</div>';
+}
+
+function renderRetentionStats(data) {
+  const container = document.getElementById('retentionStats');
+  const cr = data.completionRate;
+  container.innerHTML =
+    '<div style="padding:16px;">' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">' +
+        '<div style="background:#1e293b;border-radius:8px;padding:14px;text-align:center;">' +
+          '<div style="font-size:24px;font-weight:700;color:#3b82f6;">' + data.totalDevicesEver + '</div>' +
+          '<div style="font-size:11px;color:#94a3b8;margin-top:2px;">All-Time Devices</div>' +
+        '</div>' +
+        '<div style="background:#1e293b;border-radius:8px;padding:14px;text-align:center;">' +
+          '<div style="font-size:24px;font-weight:700;color:#10b981;">' + data.activeDevices30d + '</div>' +
+          '<div style="font-size:11px;color:#94a3b8;margin-top:2px;">Active (30 days)</div>' +
+        '</div>' +
+        '<div style="background:#1e293b;border-radius:8px;padding:14px;text-align:center;">' +
+          '<div style="font-size:24px;font-weight:700;color:#8b5cf6;">' + data.newListeners + '</div>' +
+          '<div style="font-size:11px;color:#94a3b8;margin-top:2px;">New This Week</div>' +
+        '</div>' +
+        '<div style="background:#1e293b;border-radius:8px;padding:14px;text-align:center;">' +
+          '<div style="font-size:24px;font-weight:700;color:#f59e0b;">' + data.returningListeners + '</div>' +
+          '<div style="font-size:11px;color:#94a3b8;margin-top:2px;">Returning This Week</div>' +
+        '</div>' +
+      '</div>' +
+      '<div style="background:#1e293b;border-radius:8px;padding:16px;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+          '<span style="font-size:13px;color:#e2e8f0;">Episode Completion Rate</span>' +
+          '<span style="font-size:18px;font-weight:700;color:#10b981;">' + cr.rate + '%</span>' +
+        '</div>' +
+        '<div style="background:#334155;border-radius:4px;height:8px;overflow:hidden;">' +
+          '<div style="background:linear-gradient(90deg,#10b981,#059669);height:100%;width:' + cr.rate + '%;border-radius:4px;"></div>' +
+        '</div>' +
+        '<div style="font-size:11px;color:#64748b;margin-top:6px;">' + cr.completed + ' completed out of ' + cr.total + ' started</div>' +
+      '</div>' +
+    '</div>';
+}
+
+function renderTopDevices(devices) {
+  const container = document.getElementById('topDevicesArea');
+  if (!devices || devices.length === 0) {
+    container.innerHTML = '<p style="color:#64748b;text-align:center;padding:20px;">No listener data yet.</p>';
+    return;
+  }
+  container.innerHTML = '<table class="feed-table" style="margin-bottom:0;"><thead><tr><th>Device</th><th style="text-align:right;">Listens</th><th style="text-align:right;">Total Time</th></tr></thead><tbody>' +
+    devices.map(function(d) {
+      var time = d.totalMinutes >= 60 ? Math.floor(d.totalMinutes / 60) + 'h ' + (d.totalMinutes % 60) + 'm' : d.totalMinutes + 'm';
+      return '<tr><td style="font-family:monospace;font-size:12px;color:#94a3b8;">' + esc(d.deviceId.substring(0,12)) + '...</td><td style="text-align:right;font-weight:600;color:#3b82f6;">' + d.listenCount + '</td><td style="text-align:right;color:#10b981;">' + time + '</td></tr>';
+    }).join('') +
+    '</tbody></table>';
 }
 
 function renderStats() {

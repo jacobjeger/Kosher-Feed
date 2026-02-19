@@ -573,6 +573,75 @@ export async function getEnhancedAnalytics() {
   };
 }
 
+export async function getListenerAnalytics() {
+  const hourlyListens = await db
+    .select({
+      hour: sql<number>`EXTRACT(HOUR FROM ${episodeListens.listenedAt})::int`,
+      count: count(),
+    })
+    .from(episodeListens)
+    .groupBy(sql`EXTRACT(HOUR FROM ${episodeListens.listenedAt})`)
+    .orderBy(sql`EXTRACT(HOUR FROM ${episodeListens.listenedAt})`);
+
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  const [newListenersThisWeek] = await db
+    .select({ count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})` })
+    .from(episodeListens)
+    .where(sql`${episodeListens.listenedAt} > ${sevenDaysAgo} AND ${episodeListens.deviceId} NOT IN (SELECT DISTINCT ${episodeListens.deviceId} FROM ${episodeListens} WHERE ${episodeListens.listenedAt} <= ${sevenDaysAgo})`);
+
+  const [returningListenersThisWeek] = await db
+    .select({ count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})` })
+    .from(episodeListens)
+    .where(sql`${episodeListens.listenedAt} > ${sevenDaysAgo} AND ${episodeListens.deviceId} IN (SELECT DISTINCT ${episodeListens.deviceId} FROM ${episodeListens} WHERE ${episodeListens.listenedAt} <= ${sevenDaysAgo})`);
+
+  const [totalDevicesEver] = await db
+    .select({ count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})` })
+    .from(episodeListens);
+
+  const [activeDevices30d] = await db
+    .select({ count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})` })
+    .from(episodeListens)
+    .where(sql`${episodeListens.listenedAt} > ${thirtyDaysAgo}`);
+
+  const completionRate = await db
+    .select({
+      total: count(),
+      completed: sql<number>`COUNT(CASE WHEN ${playbackPositions.completed} = true THEN 1 END)`,
+    })
+    .from(playbackPositions);
+
+  const topDevices = await db
+    .select({
+      deviceId: episodeListens.deviceId,
+      listenCount: count(episodeListens.id),
+      totalMs: sql<string>`COALESCE(SUM(${episodeListens.durationListenedMs}), 0)`,
+    })
+    .from(episodeListens)
+    .groupBy(episodeListens.deviceId)
+    .orderBy(desc(sql`COALESCE(SUM(${episodeListens.durationListenedMs}), 0)`))
+    .limit(15);
+
+  return {
+    hourlyListens: hourlyListens.map(h => ({ hour: Number(h.hour), count: Number(h.count) })),
+    newListeners: Number(newListenersThisWeek.count),
+    returningListeners: Number(returningListenersThisWeek.count),
+    totalDevicesEver: Number(totalDevicesEver.count),
+    activeDevices30d: Number(activeDevices30d.count),
+    completionRate: completionRate[0] ? {
+      total: Number(completionRate[0].total),
+      completed: Number(completionRate[0].completed),
+      rate: completionRate[0].total > 0 ? Math.round((Number(completionRate[0].completed) / Number(completionRate[0].total)) * 100) : 0,
+    } : { total: 0, completed: 0, rate: 0 },
+    topDevices: topDevices.map(d => ({
+      deviceId: d.deviceId,
+      listenCount: Number(d.listenCount),
+      totalMinutes: Math.round(Number(d.totalMs) / 60000),
+    })),
+  };
+}
+
 // Error Reports
 export async function createErrorReport(data: {
   deviceId: string | null;

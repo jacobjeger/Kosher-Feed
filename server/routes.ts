@@ -589,6 +589,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/public-stats", async (_req: Request, res: Response) => {
+    try {
+      const allFeeds = await storage.getAllFeeds();
+      const activeFeeds = allFeeds.filter(f => f.isActive);
+      const analytics = await storage.getAnalytics();
+      res.setHeader("Cache-Control", "public, max-age=60");
+      res.json({
+        shiurimCount: activeFeeds.length,
+        episodeCount: analytics.totalEpisodes,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Global Episode Search
   app.get("/api/episodes/search", async (req: Request, res: Response) => {
     try {
@@ -798,6 +813,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/admin/analytics/enhanced", adminAuth as any, async (_req: Request, res: Response) => {
     try {
       const analytics = await storage.getEnhancedAnalytics();
+      res.json(analytics);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/admin/analytics/listeners", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const analytics = await storage.getListenerAnalytics();
       res.json(analytics);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
