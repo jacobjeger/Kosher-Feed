@@ -470,6 +470,25 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     updateHistoryPosition(episode.id, 0, 0).catch(() => {});
     notifyEpisodePlayed(episode.id);
 
+    try {
+      Promise.all([
+        AsyncStorage.getItem("@kosher_shiurim_settings"),
+        getDeviceId(),
+      ]).then(async ([settingsData, devId]) => {
+        const s = settingsData ? JSON.parse(settingsData) : {};
+        if (s.autoDeleteAfterListen === false) return;
+        try {
+          const baseUrl = getApiUrl();
+          const favRes = await fetch(new URL(`/api/favorites/${devId}`, baseUrl).toString());
+          const favs: any[] = await favRes.json();
+          const isFav = favs.some((f: any) => f.episodeId === episode.id);
+          if (isFav) return;
+          const { autoDeleteDownloadedEpisode } = require("@/lib/auto-delete-download");
+          autoDeleteDownloadedEpisode(episode.id);
+        } catch {}
+      }).catch(() => {});
+    } catch {}
+
     if (sleepTimerRef.current.active && sleepTimerRef.current.mode === "endOfEpisode") {
       cancelSleepTimer();
     } else if (queueRef.current.length > 0) {

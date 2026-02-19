@@ -349,9 +349,22 @@ function SettingsScreenInner() {
             onPress={handleChangeEpisodeLimit}
           />
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingRow
+            icon={<Ionicons name="trash-bin" size={20} color={colors.accent} />}
+            label="Auto-Delete After Listening"
+            rightElement={
+              <Switch
+                value={settings.autoDeleteAfterListen}
+                onValueChange={(value: boolean) => { lightHaptic(); updateSettings({ autoDeleteAfterListen: value }); }}
+                trackColor={{ false: colors.border, true: colors.accent }}
+                thumbColor="#fff"
+              />
+            }
+          />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <View style={styles.settingDescription}>
             <Text style={[styles.descriptionText, { color: colors.textSecondary }]}>
-              Automatically download new episodes from followed shiurim when connected to WiFi. Older episodes beyond the limit are removed automatically.
+              Auto-download on WiFi grabs new episodes from followed shiurim. Auto-delete removes finished downloads (favorites are kept). Older episodes beyond the limit are removed automatically.
             </Text>
           </View>
         </View>
