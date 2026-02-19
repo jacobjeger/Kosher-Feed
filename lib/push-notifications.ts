@@ -10,13 +10,44 @@ const PUSH_TOKEN_KEY = "@shiurpod_push_token";
 const PUSH_PROVIDER_KEY = "@shiurpod_push_provider";
 const TOKEN_FETCH_TIMEOUT_MS = 10000;
 
+let notificationReceivedListener: Notifications.EventSubscription | null = null;
+
 export function setupForegroundNotificationHandler() {
   if (Platform.OS === "web") return;
   addLog("info", "Setting up foreground notification handler", undefined, "push");
   Notifications.setNotificationHandler({
     handleNotification: async (notification) => {
       const title = notification.request.content.title || "(no title)";
-      addLog("info", `Foreground notification received: "${title}"`, undefined, "push");
+      const trigger = notification.request.trigger;
+      const isRemote = trigger && ("type" in trigger ? trigger.type === "push" : "remoteMessage" in trigger);
+      addLog("info", `Foreground notification received: "${title}" (remote=${!!isRemote}, trigger=${JSON.stringify(trigger)?.substring(0, 100)})`, undefined, "push");
+
+      if (isRemote && Platform.OS === "android") {
+        addLog("info", `Re-scheduling remote notification as local for Android Go compatibility: "${title}"`, undefined, "push");
+        try {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: notification.request.content.title || "ShiurPod",
+              body: notification.request.content.body || "",
+              data: notification.request.content.data || {},
+              sound: "default",
+              ...(Platform.OS === "android" ? { channelId: "default" } : {}),
+            } as any,
+            trigger: null,
+          });
+          addLog("info", `Local notification scheduled successfully for: "${title}"`, undefined, "push");
+        } catch (e) {
+          addLog("error", `Failed to schedule local notification: ${(e as any)?.message || e}`, (e as any)?.stack, "push");
+        }
+        return {
+          shouldShowAlert: false,
+          shouldPlaySound: false,
+          shouldSetBadge: false,
+          shouldShowBanner: false,
+          shouldShowList: false,
+        };
+      }
+
       return {
         shouldShowAlert: true,
         shouldPlaySound: true,
@@ -31,6 +62,15 @@ export function setupForegroundNotificationHandler() {
     handleError: (notificationId, error) => {
       addLog("error", `Notification display failed: ${notificationId} — ${error.message}`, error.stack, "push");
     },
+  });
+
+  if (notificationReceivedListener) {
+    notificationReceivedListener.remove();
+  }
+  notificationReceivedListener = Notifications.addNotificationReceivedListener((notification) => {
+    const title = notification.request.content.title || "(no title)";
+    const body = notification.request.content.body || "";
+    addLog("info", `Notification received listener fired: "${title}" — "${body}"`, undefined, "push");
   });
 }
 
