@@ -52,9 +52,11 @@ export default function MiniPlayer() {
             <Text style={[styles.title, { color: colors.playerText }]} numberOfLines={1}>
               {currentEpisode.title}
             </Text>
-            <Text style={[styles.subtitle, { color: "rgba(255,255,255,0.6)" }]} numberOfLines={1}>
-              {currentFeed?.title}
-            </Text>
+            <Pressable onPress={(e) => { e.stopPropagation(); if (currentFeed) router.push(`/podcast/${currentFeed.id}`); }} hitSlop={4}>
+              <Text style={[styles.subtitle, { color: "rgba(255,255,255,0.6)", textDecorationLine: "underline" }]} numberOfLines={1}>
+                {currentFeed?.title}
+              </Text>
+            </Pressable>
           </View>
 
           <Pressable

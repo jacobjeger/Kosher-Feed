@@ -274,9 +274,11 @@ export default function PlayerScreen() {
         <Text style={[styles.episodeTitle, { color: colors.text }, isSmallScreen && styles.episodeTitleSmall]} numberOfLines={2}>
           {currentEpisode.title}
         </Text>
-        <Text style={[styles.feedName, { color: colors.accent }]} numberOfLines={1}>
-          {currentFeed.title}
-        </Text>
+        <Pressable onPress={() => { router.back(); router.push(`/podcast/${currentFeed.id}`); }}>
+          <Text style={[styles.feedName, { color: colors.accent, textDecorationLine: "underline" }]} numberOfLines={1}>
+            {currentFeed.title}
+          </Text>
+        </Pressable>
       </View>
 
       <View style={[styles.sliderSection, isSmallScreen && styles.sliderSectionSmall]}>
