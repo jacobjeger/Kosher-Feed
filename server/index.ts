@@ -374,8 +374,15 @@ function setupErrorHandler(app: express.Application) {
 const FEED_REFRESH_INTERVAL = 10 * 60 * 1000;
 const KEEP_ALIVE_INTERVAL = 4 * 60 * 1000;
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`Timeout: ${label} after ${ms}ms`)), ms)),
+  ]);
+}
+
 async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string }): Promise<number> {
-  const parsed = await parseFeed(feed.id, feed.rssUrl);
+  const parsed = await withTimeout(parseFeed(feed.id, feed.rssUrl), 20000, feed.title);
   const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
   const inserted = await storage.upsertEpisodes(feed.id, episodeData);
   await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
@@ -400,18 +407,27 @@ async function autoRefreshFeeds() {
     log(`Auto-refresh [${now}]: checking ${allFeeds.length} feed(s) (${staleFeeds.length} stale)...`);
     let totalNew = 0;
     let failures = 0;
-    const BATCH_SIZE = 10;
+    const BATCH_SIZE = 5;
     for (let i = 0; i < sortedFeeds.length; i += BATCH_SIZE) {
       const batch = sortedFeeds.slice(i, i + BATCH_SIZE);
+      const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+      const totalBatches = Math.ceil(sortedFeeds.length / BATCH_SIZE);
       const results = await Promise.allSettled(
-        batch.map(feed => refreshOneFeed(feed))
+        batch.map(feed => withTimeout(refreshOneFeed(feed), 30000, feed.title))
       );
+      let batchNew = 0;
+      let batchFail = 0;
       for (const r of results) {
         if (r.status === "fulfilled") {
           totalNew += r.value;
+          batchNew += r.value;
         } else {
           failures++;
+          batchFail++;
         }
+      }
+      if (batchFail > 0 || batchNew > 0) {
+        log(`  Batch ${batchNum}/${totalBatches}: +${batchNew} new, ${batchFail} failed`);
       }
     }
     log(`Auto-refresh [${now}] complete: ${totalNew} new episode(s), ${failures} failures, across ${allFeeds.length} feed(s)`);

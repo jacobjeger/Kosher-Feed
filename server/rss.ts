@@ -2,7 +2,7 @@ import Parser from "rss-parser";
 import type { Episode } from "@shared/schema";
 
 const parser = new Parser({
-  timeout: 15000,
+  timeout: 10000,
   headers: {
     'User-Agent': 'KosherPodcastApp/1.0',
   },
