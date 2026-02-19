@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
 import * as storage from "./storage";
 import { parseFeed } from "./rss";
-import { sendNewEpisodePushes } from "./push";
+import { sendNewEpisodePushes, sendCustomPush } from "./push";
 import { insertFeedSchema, insertCategorySchema } from "@shared/schema";
 import multer from "multer";
 import path from "node:path";
@@ -1323,6 +1323,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       await storage.removePushTokenById(req.params.id);
       res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/admin/send-push", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { title, body, deviceId } = req.body;
+      if (!title || !body) {
+        res.status(400).json({ error: "Title and body are required" });
+        return;
+      }
+      const result = await sendCustomPush(title, body, deviceId || undefined);
+      res.json(result);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

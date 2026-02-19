@@ -39,6 +39,100 @@ async function sendPushyNotification(tokens: string[], title: string, body: stri
   }
 }
 
+export async function sendCustomPush(
+  title: string,
+  body: string,
+  targetDeviceId?: string
+): Promise<{ sent: number; failed: number; details: string[] }> {
+  const details: string[] = [];
+  let sent = 0;
+  let failed = 0;
+
+  try {
+    const allTokens = await storage.getAllPushTokens();
+    const tokens = targetDeviceId
+      ? allTokens.filter((t: any) => (t.device_id || t.deviceId) === targetDeviceId)
+      : allTokens;
+
+    if (tokens.length === 0) {
+      details.push("No devices found");
+      return { sent: 0, failed: 0, details };
+    }
+
+    const expoMessages: ExpoPushMessage[] = [];
+    const pushyTokenList: string[] = [];
+
+    for (const t of tokens) {
+      if (t.provider === "pushy") {
+        pushyTokenList.push(t.token);
+        continue;
+      }
+      if (!Expo.isExpoPushToken(t.token)) {
+        details.push(`Invalid Expo token: ${t.token.substring(0, 20)}...`);
+        failed++;
+        continue;
+      }
+      expoMessages.push({
+        to: t.token,
+        sound: "default",
+        title,
+        body,
+        data: { type: "custom" },
+        priority: "high",
+        channelId: "new-episodes",
+      });
+    }
+
+    if (expoMessages.length > 0) {
+      const chunks = expo.chunkPushNotifications(expoMessages);
+      for (const chunk of chunks) {
+        try {
+          const ticketChunk: ExpoPushTicket[] = await expo.sendPushNotificationsAsync(chunk);
+          for (let i = 0; i < ticketChunk.length; i++) {
+            const ticket = ticketChunk[i];
+            if (ticket.status === "ok") {
+              sent++;
+              details.push(`Expo push sent (ticket: ${ticket.id})`);
+            } else {
+              failed++;
+              details.push(`Expo push error: ${ticket.message}`);
+              if (ticket.details?.error === "DeviceNotRegistered") {
+                const msg = chunk[i];
+                const tokenStr = typeof msg.to === "string" ? msg.to : msg.to[0];
+                await storage.removePushToken(tokenStr);
+                details.push(`Removed invalid token: ${tokenStr.substring(0, 20)}...`);
+              }
+            }
+          }
+        } catch (e: any) {
+          failed += chunk.length;
+          details.push(`Expo chunk error: ${e.message}`);
+        }
+      }
+    }
+
+    if (pushyTokenList.length > 0) {
+      if (!PUSHY_API_KEY) {
+        details.push(`Skipped ${pushyTokenList.length} Pushy device(s) — no API key`);
+        failed += pushyTokenList.length;
+      } else {
+        try {
+          await sendPushyNotification(pushyTokenList, title, body, { type: "custom" });
+          sent += pushyTokenList.length;
+          details.push(`Pushy push sent to ${pushyTokenList.length} device(s)`);
+        } catch (e: any) {
+          failed += pushyTokenList.length;
+          details.push(`Pushy error: ${e.message}`);
+        }
+      }
+    }
+  } catch (e: any) {
+    details.push(`Error: ${e.message}`);
+  }
+
+  return { sent, failed, details };
+}
+
 export async function sendNewEpisodePushes(
   feedId: string,
   episode: { title: string; id: string },
