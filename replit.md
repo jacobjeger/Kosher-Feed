@@ -14,6 +14,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Frontend (Expo / React Native)
 - **Framework**: Expo SDK 54 with React Native 0.81, using expo-router for file-based routing
+- **Onboarding**: First-launch onboarding flow at `app/onboarding.tsx` with 4 swipeable pages (Welcome, Follow, Offline, Resume) + a final step to follow shiurim. Completion stored in AsyncStorage (`@shiurpod_onboarding_complete`). Root layout checks this key to determine initial route (`onboarding` vs `(tabs)`).
 - **Routing structure**: Tab-based navigation with 4 tabs (Home, Following, Downloads, Settings), a modal player screen, a queue screen, a podcast detail screen at `podcast/[id]`, and a Maggid Shiur (speaker) detail screen at `maggid-shiur/[author]`
 - **State management**: React Context for audio playback (`AudioPlayerContext`), downloads (`DownloadsContext`), user settings (`SettingsContext`), favorites (`FavoritesContext`), and played episodes (`PlayedEpisodesContext`); TanStack React Query for server state
 - **Played episodes tracking**: `PlayedEpisodesContext` stores played episode IDs in AsyncStorage (`@shiurpod_played_episodes`), auto-marks episodes when they finish, shows progress bars on episode cards (green=played, blue=in-progress)
