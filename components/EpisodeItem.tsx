@@ -239,13 +239,8 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
               e.stopPropagation();
               if (Platform.OS === "web") {
                 if (episode.id) {
-                  const downloadUrl = `${getApiUrl()}/api/episodes/${episode.id}/download`;
-                  const link = document.createElement("a");
-                  link.href = downloadUrl;
-                  link.style.display = "none";
-                  document.body.appendChild(link);
-                  link.click();
-                  document.body.removeChild(link);
+                  const downloadUrl = `${window.location.origin}/api/episodes/${episode.id}/download`;
+                  window.open(downloadUrl, "_blank");
                 }
               } else {
                 handleDownload();

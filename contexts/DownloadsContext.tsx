@@ -192,14 +192,9 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
 
     if (Platform.OS === "web") {
       try {
-        const apiUrl = getApiUrl();
-        const downloadUrl = new URL(`/api/episodes/${episode.id}/download`, apiUrl).toString();
-        const link = document.createElement("a");
-        link.href = downloadUrl;
-        link.download = "";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        const origin = typeof window !== "undefined" ? window.location.origin : getApiUrl();
+        const downloadUrl = `${origin}/api/episodes/${episode.id}/download`;
+        window.open(downloadUrl, "_blank");
       } catch (e) {
         console.error("Web download failed:", e);
       }
