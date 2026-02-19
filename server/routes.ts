@@ -42,6 +42,10 @@ function requireAdmin(req: Request, res: Response): boolean {
 export async function registerRoutes(app: Express): Promise<Server> {
   await storage.resetAllAdmins("akivajeger", "1340ne174TH").catch(() => {});
 
+  app.get("/api/health", (_req: Request, res: Response) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
   app.post("/api/admin/login", async (req: Request, res: Response) => {
     try {
       const { username, password } = req.body;

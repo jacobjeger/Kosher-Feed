@@ -372,14 +372,21 @@ function setupErrorHandler(app: express.Application) {
 }
 
 const FEED_REFRESH_INTERVAL = 10 * 60 * 1000;
+const KEEP_ALIVE_INTERVAL = 4 * 60 * 1000;
 
 async function autoRefreshFeeds() {
   try {
     const allFeeds = await storage.getActiveFeeds();
     const now = new Date().toLocaleTimeString();
-    log(`Auto-refresh [${now}]: checking ${allFeeds.length} feed(s)...`);
+
+    const staleCutoff = new Date(Date.now() - FEED_REFRESH_INTERVAL);
+    const staleFeeds = allFeeds.filter(f => !f.lastFetchedAt || new Date(f.lastFetchedAt) < staleCutoff);
+    const freshFeeds = allFeeds.filter(f => f.lastFetchedAt && new Date(f.lastFetchedAt) >= staleCutoff);
+    const sortedFeeds = [...staleFeeds, ...freshFeeds];
+
+    log(`Auto-refresh [${now}]: checking ${allFeeds.length} feed(s) (${staleFeeds.length} stale)...`);
     let totalNew = 0;
-    for (const feed of allFeeds) {
+    for (const feed of sortedFeeds) {
       try {
         const parsed = await parseFeed(feed.id, feed.rssUrl);
         const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
@@ -401,10 +408,29 @@ async function autoRefreshFeeds() {
   }
 }
 
+function startKeepAlive() {
+  const appUrl = process.env.REPLIT_DEPLOYMENT_URL || process.env.REPLIT_DEV_DOMAIN;
+  if (!appUrl) {
+    log("Keep-alive: no deployment URL found, skipping");
+    return;
+  }
+  const pingUrl = `https://${appUrl}/api/health`;
+  log(`Keep-alive: pinging ${pingUrl} every ${KEEP_ALIVE_INTERVAL / 60000} minutes to prevent sleep`);
+  setInterval(async () => {
+    try {
+      const res = await fetch(pingUrl);
+      log(`Keep-alive ping: ${res.status}`);
+    } catch (e) {
+      log(`Keep-alive ping failed: ${(e as Error).message}`);
+    }
+  }, KEEP_ALIVE_INTERVAL);
+}
+
 function startAutoRefresh() {
   log(`Auto-refresh enabled: checking feeds every ${FEED_REFRESH_INTERVAL / 60000} minutes`);
   setInterval(autoRefreshFeeds, FEED_REFRESH_INTERVAL);
-  setTimeout(autoRefreshFeeds, 30000);
+  setTimeout(autoRefreshFeeds, 5000);
+  startKeepAlive();
 }
 
 (async () => {
