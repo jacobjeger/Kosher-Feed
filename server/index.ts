@@ -374,6 +374,19 @@ function setupErrorHandler(app: express.Application) {
 const FEED_REFRESH_INTERVAL = 10 * 60 * 1000;
 const KEEP_ALIVE_INTERVAL = 4 * 60 * 1000;
 
+async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string }): Promise<number> {
+  const parsed = await parseFeed(feed.id, feed.rssUrl);
+  const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
+  const inserted = await storage.upsertEpisodes(feed.id, episodeData);
+  await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
+  if (inserted.length > 0) {
+    for (const ep of inserted.slice(0, 3)) {
+      sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
+    }
+  }
+  return inserted.length;
+}
+
 async function autoRefreshFeeds() {
   try {
     const allFeeds = await storage.getActiveFeeds();
@@ -386,39 +399,34 @@ async function autoRefreshFeeds() {
 
     log(`Auto-refresh [${now}]: checking ${allFeeds.length} feed(s) (${staleFeeds.length} stale)...`);
     let totalNew = 0;
-    for (const feed of sortedFeeds) {
-      try {
-        const parsed = await parseFeed(feed.id, feed.rssUrl);
-        const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
-        const inserted = await storage.upsertEpisodes(feed.id, episodeData);
-        totalNew += inserted.length;
-        await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
-        if (inserted.length > 0) {
-          for (const ep of inserted.slice(0, 3)) {
-            sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
-          }
+    let failures = 0;
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < sortedFeeds.length; i += BATCH_SIZE) {
+      const batch = sortedFeeds.slice(i, i + BATCH_SIZE);
+      const results = await Promise.allSettled(
+        batch.map(feed => refreshOneFeed(feed))
+      );
+      for (const r of results) {
+        if (r.status === "fulfilled") {
+          totalNew += r.value;
+        } else {
+          failures++;
         }
-      } catch (e) {
-        console.error(`Auto-refresh failed for ${feed.title}:`, e);
       }
     }
-    log(`Auto-refresh [${now}] complete: ${totalNew} new episode(s) found across ${allFeeds.length} feed(s)`);
+    log(`Auto-refresh [${now}] complete: ${totalNew} new episode(s), ${failures} failures, across ${allFeeds.length} feed(s)`);
   } catch (e) {
     console.error("Auto-refresh error:", e);
   }
 }
 
+let serverPort = 5000;
+
 function startKeepAlive() {
-  const appUrl = process.env.REPLIT_DEPLOYMENT_URL || process.env.REPLIT_DEV_DOMAIN;
-  if (!appUrl) {
-    log("Keep-alive: no deployment URL found, skipping");
-    return;
-  }
-  const pingUrl = `https://${appUrl}/api/health`;
-  log(`Keep-alive: pinging ${pingUrl} every ${KEEP_ALIVE_INTERVAL / 60000} minutes to prevent sleep`);
+  log(`Keep-alive: pinging localhost:${serverPort}/api/health every ${KEEP_ALIVE_INTERVAL / 60000} minutes to prevent sleep`);
   setInterval(async () => {
     try {
-      const res = await fetch(pingUrl);
+      const res = await fetch(`http://127.0.0.1:${serverPort}/api/health`);
       log(`Keep-alive ping: ${res.status}`);
     } catch (e) {
       log(`Keep-alive ping failed: ${(e as Error).message}`);
@@ -427,7 +435,7 @@ function startKeepAlive() {
 }
 
 function startAutoRefresh() {
-  log(`Auto-refresh enabled: checking feeds every ${FEED_REFRESH_INTERVAL / 60000} minutes`);
+  log(`Auto-refresh enabled: checking feeds every ${FEED_REFRESH_INTERVAL / 60000} minutes (batch size: 10)`);
   setInterval(autoRefreshFeeds, FEED_REFRESH_INTERVAL);
   setTimeout(autoRefreshFeeds, 5000);
   startKeepAlive();
@@ -445,15 +453,15 @@ function startAutoRefresh() {
 
   setupErrorHandler(app);
 
-  const port = parseInt(process.env.PORT || "5000", 10);
+  serverPort = parseInt(process.env.PORT || "5000", 10);
   server.listen(
     {
-      port,
+      port: serverPort,
       host: "0.0.0.0",
       reusePort: true,
     },
     () => {
-      log(`express server serving on port ${port}`);
+      log(`express server serving on port ${serverPort}`);
       seedIfEmpty().catch((e) => console.error("Seed error:", e));
       startAutoRefresh();
     },
