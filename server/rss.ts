@@ -1,12 +1,7 @@
 import Parser from "rss-parser";
 import type { Episode } from "@shared/schema";
 
-const parser = new Parser({
-  timeout: 20000,
-  headers: {
-    'User-Agent': 'Mozilla/5.0 (compatible; ShiurPodBot/1.0)',
-  },
-});
+const parser = new Parser();
 
 interface ParsedFeedData {
   title: string;
@@ -17,7 +12,38 @@ interface ParsedFeedData {
 }
 
 export async function parseFeed(feedId: string, rssUrl: string): Promise<ParsedFeedData> {
-  const feed = await parser.parseURL(rssUrl);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+  let response: Response;
+  try {
+    response = await fetch(rssUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; ShiurPodBot/1.0)',
+        'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+      },
+      signal: controller.signal,
+      redirect: 'follow',
+    });
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      throw new Error(`Feed fetch timed out after 20s: ${rssUrl}`);
+    }
+    throw new Error(`Feed fetch failed: ${err.message} (${rssUrl})`);
+  }
+  clearTimeout(timeoutId);
+
+  if (!response.ok) {
+    throw new Error(`Feed returned HTTP ${response.status}: ${rssUrl}`);
+  }
+
+  const xml = await response.text();
+  if (!xml || xml.length < 50) {
+    throw new Error(`Feed returned empty/invalid response (${xml.length} bytes): ${rssUrl}`);
+  }
+
+  const feed = await parser.parseString(xml);
 
   const feedEpisodes: Omit<Episode, "id" | "createdAt">[] = [];
 

@@ -382,7 +382,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string }): Promise<number> {
-  const parsed = await withTimeout(parseFeed(feed.id, feed.rssUrl), 25000, feed.title);
+  const parsed = await parseFeed(feed.id, feed.rssUrl);
   const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
   const inserted = await storage.upsertEpisodes(feed.id, episodeData);
   await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
