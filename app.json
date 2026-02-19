@@ -57,7 +57,14 @@
       "expo-font",
       "expo-web-browser",
       "expo-background-task",
-      "expo-task-manager"
+      "expo-task-manager",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#1a73e8"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
