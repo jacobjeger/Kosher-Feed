@@ -8,6 +8,40 @@ import multer from "multer";
 import path from "node:path";
 import fs from "node:fs";
 
+const ON_DEMAND_STALE_MS = 5 * 60 * 1000;
+const refreshingFeeds = new Set<string>();
+
+async function onDemandRefreshFeed(feedId: string): Promise<void> {
+  if (refreshingFeeds.has(feedId)) return;
+  
+  try {
+    const feed = await storage.getFeedById(feedId);
+    if (!feed || !feed.isActive || !feed.rssUrl) return;
+    
+    const lastFetched = feed.lastFetchedAt ? new Date(feed.lastFetchedAt).getTime() : 0;
+    if (Date.now() - lastFetched < ON_DEMAND_STALE_MS) return;
+    
+    refreshingFeeds.add(feedId);
+    console.log(`On-demand refresh: ${feed.title} (last fetched ${feed.lastFetchedAt ? Math.round((Date.now() - lastFetched) / 60000) + 'm ago' : 'never'})`);
+    
+    const parsed = await parseFeed(feed.id, feed.rssUrl);
+    const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
+    const inserted = await storage.upsertEpisodes(feed.id, episodeData);
+    await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
+    
+    if (inserted.length > 0) {
+      console.log(`On-demand refresh: ${feed.title} found ${inserted.length} new episode(s)`);
+      for (const ep of inserted.slice(0, 3)) {
+        sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
+      }
+    }
+  } catch (e: any) {
+    console.log(`On-demand refresh failed for ${feedId}: ${e.message?.slice(0, 100)}`);
+  } finally {
+    refreshingFeeds.delete(feedId);
+  }
+}
+
 const uploadDir = path.join(process.cwd(), "uploads", "apk");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
@@ -161,12 +195,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/feeds/:id/episodes", async (req: Request, res: Response) => {
     try {
+      const feedId = req.params.id;
+      const refresh = req.query.refresh === "1";
+
+      if (refresh) {
+        await onDemandRefreshFeed(feedId);
+      } else {
+        onDemandRefreshFeed(feedId).catch(() => {});
+      }
+
       const page = parseInt(req.query.page as string) || 1;
       const limit = Math.min(parseInt(req.query.limit as string) || 30, 100);
       const paginated = req.query.paginated === "1";
       const slim = req.query.slim === "1";
       const sort = (req.query.sort as string) || 'newest';
-      const eps = await storage.getEpisodesByFeedPaginated(req.params.id, page, limit, sort);
+      const eps = await storage.getEpisodesByFeedPaginated(feedId, page, limit, sort);
       res.setHeader("Cache-Control", "public, max-age=30");
 
       const mapEpisode = (ep: any) => slim ? ({

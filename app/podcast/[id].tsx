@@ -185,10 +185,17 @@ function PodcastDetailScreenInner() {
     setEpisodeLimitPickerVisible(true);
   }, [id, feedSettings.maxEpisodes, updateFeedSettings]);
 
-  const handleRefresh = useCallback(() => {
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      const baseUrl = getApiUrl();
+      await fetch(`${baseUrl}/api/feeds/${id}/episodes?refresh=1&paginated=1&page=1&limit=1`);
+    } catch {}
     queryClient.invalidateQueries({ queryKey: [`/api/feeds/${id}/episodes`, "paginated"] });
     queryClient.invalidateQueries({ queryKey: ["/api/feeds"] });
     queryClient.invalidateQueries({ queryKey: ["/api/subscriptions"] });
+    setIsRefreshing(false);
   }, [id]);
 
   const handleLoadMore = useCallback(() => {
@@ -455,7 +462,7 @@ function PodcastDetailScreenInner() {
         ListFooterComponent={footerElement}
         ListEmptyComponent={emptyElement}
         refreshControl={
-          <RefreshControl refreshing={false} onRefresh={handleRefresh} tintColor={colors.accent} />
+          <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor={colors.accent} />
         }
       />
 
