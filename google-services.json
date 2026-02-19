@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "340713549904",
+    "project_id": "shiurpod",
+    "storage_bucket": "shiurpod.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:340713549904:android:f82c1cd56ff34290e0a155",
+        "android_client_info": {
+          "package_name": "com.shiurpod.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDE7xYYnfF-zqAIS2rVdlo6lRF0WUFjsaM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
