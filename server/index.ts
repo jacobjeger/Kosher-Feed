@@ -382,7 +382,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string }): Promise<number> {
-  const parsed = await withTimeout(parseFeed(feed.id, feed.rssUrl), 20000, feed.title);
+  const parsed = await withTimeout(parseFeed(feed.id, feed.rssUrl), 25000, feed.title);
   const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
   const inserted = await storage.upsertEpisodes(feed.id, episodeData);
   await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
@@ -413,21 +413,29 @@ async function autoRefreshFeeds() {
       const batchNum = Math.floor(i / BATCH_SIZE) + 1;
       const totalBatches = Math.ceil(sortedFeeds.length / BATCH_SIZE);
       const results = await Promise.allSettled(
-        batch.map(feed => withTimeout(refreshOneFeed(feed), 30000, feed.title))
+        batch.map(feed => withTimeout(refreshOneFeed(feed), 35000, feed.title))
       );
       let batchNew = 0;
       let batchFail = 0;
-      for (const r of results) {
+      const failedNames: string[] = [];
+      for (let j = 0; j < results.length; j++) {
+        const r = results[j];
         if (r.status === "fulfilled") {
           totalNew += r.value;
           batchNew += r.value;
         } else {
           failures++;
           batchFail++;
+          const feedName = batch[j]?.title || 'unknown';
+          const errMsg = (r.reason as Error)?.message || String(r.reason);
+          failedNames.push(`${feedName}: ${errMsg.slice(0, 80)}`);
         }
       }
       if (batchFail > 0 || batchNew > 0) {
         log(`  Batch ${batchNum}/${totalBatches}: +${batchNew} new, ${batchFail} failed`);
+        if (failedNames.length > 0) {
+          log(`    Failures: ${failedNames.join(' | ')}`);
+        }
       }
     }
     log(`Auto-refresh [${now}] complete: ${totalNew} new episode(s), ${failures} failures, across ${allFeeds.length} feed(s)`);
