@@ -331,6 +331,22 @@ function configureExpoAndLanding(app: express.Application) {
   });
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
 
+  const clientRoutes = ["/podcast", "/maggid-shiur", "/player", "/queue", "/storage", "/stats", "/debug-logs", "/legal", "/onboarding", "/settings"];
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.method !== "GET") return next();
+    if (req.path.startsWith("/api") || req.path.startsWith("/share/") || req.path.startsWith("/admin")) return next();
+    const isClientRoute = clientRoutes.some(r => req.path.startsWith(r)) || req.path === "/(tabs)";
+    if (!isClientRoute) return next();
+
+    if (isProduction) {
+      if (!serveStaticWebApp(res)) {
+        return next();
+      }
+    } else {
+      proxyToExpo(req, res);
+    }
+  });
+
   log("Expo routing: Checking expo-platform header on / and /manifest");
 }
 
