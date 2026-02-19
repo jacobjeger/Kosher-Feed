@@ -205,6 +205,7 @@ async function initNativeAudio() {
       shouldPlayInBackground: true,
       interruptionMode: "doNotMix",
       interruptionModeAndroid: "doNotMix",
+      shouldDuckAndroid: false,
     });
     nativePlayerReady = true;
     addLog("info", "expo-audio initialized successfully", undefined, "audio");
