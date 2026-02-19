@@ -5,9 +5,9 @@ import {
   StyleSheet,
   Pressable,
   FlatList,
-  Dimensions,
   Platform,
   ActivityIndicator,
+  useWindowDimensions,
 } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -23,44 +23,48 @@ import { getApiUrl } from "@/lib/query-client";
 import type { Feed } from "@/lib/types";
 
 const ONBOARDING_KEY = "@shiurpod_onboarding_complete";
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const CONTENT_WIDTH = Platform.OS === "web" ? Math.min(SCREEN_WIDTH, 480) : SCREEN_WIDTH;
+const SMALL_HEIGHT = 640;
 
-interface OnboardingPage {
+interface PageData {
   id: string;
-  icon: React.ReactNode;
+  iconName: string;
+  iconSet: "material" | "ionicons";
   title: string;
   subtitle: string;
   gradient: [string, string];
 }
 
-const PAGES: OnboardingPage[] = [
+const PAGE_DATA: PageData[] = [
   {
     id: "welcome",
-    icon: <MaterialCommunityIcons name="book-open-page-variant" size={64} color="#fff" />,
+    iconName: "book-open-page-variant",
+    iconSet: "material",
     title: "Welcome to ShiurPod",
     subtitle: "Your personal Torah learning companion. Browse curated shiurim from top speakers and learn on your schedule.",
     gradient: ["#1e3a5f", "#0f1923"],
   },
   {
     id: "follow",
-    icon: <Ionicons name="heart" size={64} color="#fff" />,
+    iconName: "heart",
+    iconSet: "ionicons",
     title: "Follow Your Favorites",
-    subtitle: "Follow the shiurim and speakers you love. Get notified when new episodes are available so you never miss a shiur.",
+    subtitle: "Follow the shiurim and speakers you love. Get notified when new episodes are available.",
     gradient: ["#1a3a2a", "#0f2318"],
   },
   {
     id: "offline",
-    icon: <Ionicons name="cloud-download" size={64} color="#fff" />,
+    iconName: "cloud-download",
+    iconSet: "ionicons",
     title: "Listen Anywhere",
-    subtitle: "Download episodes for offline listening. Auto-download on WiFi keeps your library fresh without using your data.",
+    subtitle: "Download episodes for offline listening. Auto-download on WiFi keeps your library fresh.",
     gradient: ["#3a1a3a", "#230f23"],
   },
   {
     id: "resume",
-    icon: <Ionicons name="play-circle" size={64} color="#fff" />,
+    iconName: "play-circle",
+    iconSet: "ionicons",
     title: "Pick Up Where You Left Off",
-    subtitle: "Your playback position is saved automatically. Start a shiur on one device and continue on another.",
+    subtitle: "Your playback position is saved automatically across sessions and devices.",
     gradient: ["#3a2a1a", "#231c0f"],
   },
 ];
@@ -70,6 +74,8 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
+  const isSmall = height < SMALL_HEIGHT;
   const [followedIds, setFollowedIds] = useState<Set<string>>(new Set());
   const [deviceId, setDeviceId] = useState<string | null>(null);
 
@@ -119,15 +125,19 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
       <View
         style={[
           styles.followHeader,
-          { paddingTop: Platform.OS === "web" ? 67 : insets.top + 16 },
+          {
+            paddingTop: Platform.OS === "web" ? 67 : insets.top + (isSmall ? 8 : 16),
+            paddingBottom: isSmall ? 10 : 20,
+            paddingHorizontal: isSmall ? 20 : 32,
+          },
         ]}
       >
-        <MaterialCommunityIcons name="playlist-check" size={40} color={colors.accent} />
-        <Text style={[styles.followTitle, { color: colors.text }]}>
+        <MaterialCommunityIcons name="playlist-check" size={isSmall ? 28 : 40} color={colors.accent} />
+        <Text style={[styles.followTitle, { color: colors.text, fontSize: isSmall ? 19 : 24, marginTop: isSmall ? 6 : 12 }]}>
           Follow Some Shiurim
         </Text>
-        <Text style={[styles.followSubtitle, { color: colors.textSecondary }]}>
-          Choose shiurim to follow and stay updated with new episodes. You can always change this later.
+        <Text style={[styles.followSubtitle, { color: colors.textSecondary, fontSize: isSmall ? 12 : 14 }]}>
+          Choose shiurim to follow. You can always change this later.
         </Text>
       </View>
 
@@ -137,7 +147,7 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
         <FlatList
           data={activeFeeds}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.feedList}
+          contentContainerStyle={[styles.feedList, { paddingBottom: isSmall ? 80 : 100, gap: isSmall ? 6 : 10 }]}
           showsVerticalScrollIndicator={false}
           renderItem={({ item }) => {
             const isFollowed = followedIds.has(item.id);
@@ -147,6 +157,9 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
                 style={[
                   styles.feedItem,
                   {
+                    padding: isSmall ? 8 : 12,
+                    borderRadius: isSmall ? 10 : 14,
+                    gap: isSmall ? 8 : 12,
                     backgroundColor: isFollowed
                       ? isDark
                         ? colors.accentLight
@@ -158,18 +171,18 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
               >
                 <Image
                   source={{ uri: item.imageUrl || undefined }}
-                  style={styles.feedImage}
+                  style={[styles.feedImage, isSmall ? { width: 40, height: 40, borderRadius: 8 } : {}]}
                   contentFit="cover"
                 />
                 <View style={styles.feedInfo}>
                   <Text
-                    style={[styles.feedTitle, { color: colors.text }]}
+                    style={[styles.feedTitle, { color: colors.text, fontSize: isSmall ? 13 : 15 }]}
                     numberOfLines={1}
                   >
                     {item.title}
                   </Text>
                   <Text
-                    style={[styles.feedAuthor, { color: colors.textSecondary }]}
+                    style={[styles.feedAuthor, { color: colors.textSecondary, fontSize: isSmall ? 11 : 13 }]}
                     numberOfLines={1}
                   >
                     {item.author || "Unknown Speaker"}
@@ -178,6 +191,7 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
                 <View
                   style={[
                     styles.followBadge,
+                    isSmall ? { width: 26, height: 26, borderRadius: 13 } : {},
                     {
                       backgroundColor: isFollowed ? colors.accent : "transparent",
                       borderColor: isFollowed ? colors.accent : colors.border,
@@ -185,9 +199,9 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
                   ]}
                 >
                   {isFollowed ? (
-                    <Ionicons name="checkmark" size={18} color="#fff" />
+                    <Ionicons name="checkmark" size={isSmall ? 14 : 18} color="#fff" />
                   ) : (
-                    <Ionicons name="add" size={18} color={colors.textSecondary} />
+                    <Ionicons name="add" size={isSmall ? 14 : 18} color={colors.textSecondary} />
                   )}
                 </View>
               </Pressable>
@@ -201,35 +215,28 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
           styles.followFooter,
           {
             backgroundColor: colors.background,
-            paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + 16,
+            paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + (isSmall ? 8 : 16),
+            paddingHorizontal: isSmall ? 12 : 20,
           },
         ]}
       >
         <Pressable
           onPress={onComplete}
-          style={[styles.getStartedBtn, { backgroundColor: colors.accent }]}
+          style={[styles.getStartedBtn, { backgroundColor: colors.accent, paddingVertical: isSmall ? 12 : 16 }]}
         >
-          <Text style={styles.getStartedText}>
+          <Text style={[styles.getStartedText, { fontSize: isSmall ? 14 : 17 }]}>
             {followedIds.size > 0
               ? `Get Started (${followedIds.size} following)`
               : "Skip & Get Started"}
           </Text>
-          <Ionicons name="arrow-forward" size={20} color="#fff" />
+          <Ionicons name="arrow-forward" size={isSmall ? 16 : 20} color="#fff" />
         </Pressable>
       </View>
     </View>
   );
 }
 
-function PageIndicator({
-  total,
-  current,
-  color,
-}: {
-  total: number;
-  current: number;
-  color: string;
-}) {
+function PageIndicator({ total, current }: { total: number; current: number }) {
   return (
     <View style={styles.indicators}>
       {Array.from({ length: total }).map((_, i) => (
@@ -248,8 +255,49 @@ function PageIndicator({
   );
 }
 
+function OnboardingPage({ item, width, isSmall, topPadding }: { item: PageData; width: number; isSmall: boolean; topPadding: number }) {
+  const iconSize = isSmall ? 40 : 64;
+  const containerSize = isSmall ? 80 : 120;
+
+  return (
+    <LinearGradient
+      colors={item.gradient}
+      style={[styles.page, { width }]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+    >
+      <View
+        style={[
+          styles.pageContent,
+          {
+            paddingTop: topPadding,
+            paddingHorizontal: isSmall ? 24 : 40,
+          },
+        ]}
+      >
+        <View style={[styles.iconContainer, { width: containerSize, height: containerSize, borderRadius: containerSize / 2, marginBottom: isSmall ? 20 : 36 }]}>
+          {item.iconSet === "material" ? (
+            <MaterialCommunityIcons name={item.iconName as any} size={iconSize} color="#fff" />
+          ) : (
+            <Ionicons name={item.iconName as any} size={iconSize} color="#fff" />
+          )}
+        </View>
+        <Text style={[styles.pageTitle, { fontSize: isSmall ? 22 : 28, marginBottom: isSmall ? 10 : 16 }]}>
+          {item.title}
+        </Text>
+        <Text style={[styles.pageSubtitle, { fontSize: isSmall ? 14 : 16, lineHeight: isSmall ? 20 : 24, maxWidth: isSmall ? 280 : 340 }]}>
+          {item.subtitle}
+        </Text>
+      </View>
+    </LinearGradient>
+  );
+}
+
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const isSmall = height < SMALL_HEIGHT;
+  const contentWidth = Platform.OS === "web" ? Math.min(width, 480) : width;
   const [currentPage, setCurrentPage] = useState(0);
   const [showFollowStep, setShowFollowStep] = useState(false);
   const flatListRef = useRef<FlatList>(null);
@@ -261,7 +309,7 @@ export default function OnboardingScreen() {
 
   const goToNext = useCallback(() => {
     lightHaptic();
-    if (currentPage < PAGES.length - 1) {
+    if (currentPage < PAGE_DATA.length - 1) {
       const next = currentPage + 1;
       setCurrentPage(next);
       flatListRef.current?.scrollToIndex({ index: next, animated: true });
@@ -271,54 +319,39 @@ export default function OnboardingScreen() {
   }, [currentPage]);
 
   const handleScroll = useCallback((e: any) => {
-    const idx = Math.round(e.nativeEvent.contentOffset.x / CONTENT_WIDTH);
-    if (idx >= 0 && idx < PAGES.length) {
+    const idx = Math.round(e.nativeEvent.contentOffset.x / contentWidth);
+    if (idx >= 0 && idx < PAGE_DATA.length) {
       setCurrentPage(idx);
     }
-  }, []);
+  }, [contentWidth]);
 
   if (showFollowStep) {
     return <FollowStep onComplete={completeOnboarding} />;
   }
 
-  const page = PAGES[currentPage];
+  const page = PAGE_DATA[currentPage];
+  const topPadding = Platform.OS === "web" ? 67 : insets.top + (isSmall ? 16 : 40);
 
   return (
     <View style={styles.container}>
       <FlatList
         ref={flatListRef}
-        data={PAGES}
+        data={PAGE_DATA}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={handleScroll}
         keyExtractor={(item) => item.id}
         getItemLayout={(_, index) => ({
-          length: CONTENT_WIDTH,
-          offset: CONTENT_WIDTH * index,
+          length: contentWidth,
+          offset: contentWidth * index,
           index,
         })}
-        snapToInterval={CONTENT_WIDTH}
+        snapToInterval={contentWidth}
         decelerationRate="fast"
         style={{ flex: 1 }}
         renderItem={({ item }) => (
-          <LinearGradient
-            colors={item.gradient}
-            style={[styles.page, { width: CONTENT_WIDTH }]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            <View
-              style={[
-                styles.pageContent,
-                { paddingTop: Platform.OS === "web" ? 67 : insets.top + 40 },
-              ]}
-            >
-              <View style={styles.iconContainer}>{item.icon}</View>
-              <Text style={styles.pageTitle}>{item.title}</Text>
-              <Text style={styles.pageSubtitle}>{item.subtitle}</Text>
-            </View>
-          </LinearGradient>
+          <OnboardingPage item={item} width={contentWidth} isSmall={isSmall} topPadding={topPadding} />
         )}
       />
 
@@ -326,23 +359,26 @@ export default function OnboardingScreen() {
         colors={page.gradient}
         style={[
           styles.bottomBar,
-          { paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + 20 },
+          {
+            paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + (isSmall ? 10 : 20),
+            paddingTop: isSmall ? 12 : 20,
+          },
         ]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       >
-        <PageIndicator total={PAGES.length} current={currentPage} color="#fff" />
+        <PageIndicator total={PAGE_DATA.length} current={currentPage} />
 
         <View style={styles.bottomActions}>
           <Pressable onPress={completeOnboarding} style={styles.skipBtn}>
-            <Text style={styles.skipText}>Skip</Text>
+            <Text style={[styles.skipText, { fontSize: isSmall ? 13 : 15 }]}>Skip</Text>
           </Pressable>
 
-          <Pressable onPress={goToNext} style={styles.nextBtn}>
-            <Text style={styles.nextText}>
-              {currentPage === PAGES.length - 1 ? "Choose Shiurim" : "Next"}
+          <Pressable onPress={goToNext} style={[styles.nextBtn, isSmall ? { paddingVertical: 10, paddingHorizontal: 20 } : {}]}>
+            <Text style={[styles.nextText, { fontSize: isSmall ? 14 : 16 }]}>
+              {currentPage === PAGE_DATA.length - 1 ? "Choose Shiurim" : "Next"}
             </Text>
-            <Ionicons name="arrow-forward" size={18} color="#fff" />
+            <Ionicons name="arrow-forward" size={isSmall ? 16 : 18} color="#fff" />
           </Pressable>
         </View>
       </LinearGradient>
@@ -364,35 +400,24 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 40,
     maxWidth: 480,
   },
   iconContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
     backgroundColor: "rgba(255,255,255,0.1)",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 36,
   },
   pageTitle: {
-    fontSize: 28,
     fontWeight: "800" as const,
     color: "#fff",
     textAlign: "center",
-    marginBottom: 16,
     letterSpacing: -0.5,
   },
   pageSubtitle: {
-    fontSize: 16,
     color: "rgba(255,255,255,0.7)",
     textAlign: "center",
-    lineHeight: 24,
-    maxWidth: 340,
   },
   bottomBar: {
-    paddingTop: 20,
     paddingHorizontal: 24,
   },
   indicators: {
@@ -400,7 +425,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     gap: 8,
-    marginBottom: 24,
+    marginBottom: 16,
   },
   dot: {
     height: 8,
@@ -416,7 +441,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   skipText: {
-    fontSize: 15,
     color: "rgba(255,255,255,0.5)",
     fontWeight: "500" as const,
   },
@@ -432,7 +456,6 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.2)",
   },
   nextText: {
-    fontSize: 16,
     fontWeight: "600" as const,
     color: "#fff",
   },
@@ -441,34 +464,24 @@ const styles = StyleSheet.create({
   },
   followHeader: {
     alignItems: "center",
-    paddingHorizontal: 32,
-    paddingBottom: 20,
   },
   followTitle: {
-    fontSize: 24,
     fontWeight: "700" as const,
-    marginTop: 12,
     textAlign: "center",
   },
   followSubtitle: {
-    fontSize: 14,
     textAlign: "center",
-    marginTop: 8,
-    lineHeight: 20,
-    maxWidth: 320,
+    marginTop: 6,
+    lineHeight: 18,
+    maxWidth: 300,
   },
   feedList: {
-    paddingHorizontal: 20,
-    paddingBottom: 100,
-    gap: 10,
+    paddingHorizontal: 16,
   },
   feedItem: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 12,
-    borderRadius: 14,
     borderWidth: 1.5,
-    gap: 12,
   },
   feedImage: {
     width: 52,
@@ -480,11 +493,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   feedTitle: {
-    fontSize: 15,
     fontWeight: "600" as const,
   },
   feedAuthor: {
-    fontSize: 13,
     marginTop: 2,
   },
   followBadge: {
@@ -500,8 +511,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    paddingTop: 12,
-    paddingHorizontal: 20,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: "rgba(0,0,0,0.05)",
   },
@@ -510,11 +520,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    paddingVertical: 16,
     borderRadius: 14,
   },
   getStartedText: {
-    fontSize: 17,
     fontWeight: "700" as const,
     color: "#fff",
   },
