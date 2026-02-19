@@ -177,6 +177,7 @@
       <button class="tab" onclick="switchTab('messages', this)">Messages</button>
       <button class="tab" onclick="switchTab('apk', this)">APK</button>
       <button class="tab" onclick="switchTab('sponsors', this)">Sponsors</button>
+      <button class="tab" onclick="switchTab('pushtracker', this)">Push Tracker</button>
       <button class="tab" onclick="switchTab('settings', this)">Settings</button>
     </div>
 
@@ -388,6 +389,17 @@
           <button class="btn btn-primary" onclick="saveSponsor()">Save</button>
           <button class="btn btn-secondary" onclick="closeSponsorModal()">Cancel</button>
         </div>
+      </div>
+    </div>
+
+    <div id="pushtrackerTab" class="hidden">
+      <div class="stats" id="pushStatsArea"></div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Registered Push Devices</h2>
+          <button class="btn btn-secondary btn-sm" onclick="loadPushTokens()">Refresh</button>
+        </div>
+        <div id="pushTokensList"></div>
       </div>
     </div>
 
@@ -1446,7 +1458,7 @@ async function deleteSpeaker(id) {
 function switchTab(tab, btn) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
-  ['analytics','feeds','categories','speakers','errors','feedback','messages','apk','sponsors','settings'].forEach(t => {
+  ['analytics','feeds','categories','speakers','errors','feedback','messages','apk','sponsors','pushtracker','settings'].forEach(t => {
     document.getElementById(t + 'Tab').classList.toggle('hidden', tab !== t);
   });
   if (tab === 'speakers') loadSpeakers();
@@ -1455,6 +1467,7 @@ function switchTab(tab, btn) {
   if (tab === 'messages') loadMessages();
   if (tab === 'apk') loadApks();
   if (tab === 'sponsors') loadSponsors();
+  if (tab === 'pushtracker') loadPushTokens();
 }
 
 function formatDate(dateStr) {
@@ -1984,6 +1997,85 @@ async function removeSponsor(id) {
     loadSponsors();
   } catch (e) {
     showAlert('Failed to delete sponsor', 'error');
+  }
+}
+
+async function loadPushTokens() {
+  const list = document.getElementById('pushTokensList');
+  const statsArea = document.getElementById('pushStatsArea');
+  list.innerHTML = '<p style="color:#94a3b8;">Loading...</p>';
+  try {
+    const tokens = await api('/api/admin/push-tokens');
+    const total = tokens.length;
+    const expoCount = tokens.filter(t => !t.provider || t.provider === 'expo').length;
+    const pushyCount = tokens.filter(t => t.provider === 'pushy').length;
+    const androidCount = tokens.filter(t => t.platform === 'android').length;
+    const iosCount = tokens.filter(t => t.platform === 'ios').length;
+
+    statsArea.innerHTML = `
+      <div class="stat-card"><div class="stat-value">${total}</div><div class="stat-label">Total Devices</div></div>
+      <div class="stat-card"><div class="stat-value">${expoCount}</div><div class="stat-label">FCM (Expo)</div><div class="stat-sub">Google Play Services</div></div>
+      <div class="stat-card"><div class="stat-value">${pushyCount}</div><div class="stat-label">Pushy</div><div class="stat-sub">Backup Provider</div></div>
+      <div class="stat-card"><div class="stat-value">${androidCount}</div><div class="stat-label">Android</div></div>
+      <div class="stat-card"><div class="stat-value">${iosCount}</div><div class="stat-label">iOS</div></div>
+    `;
+
+    if (tokens.length === 0) {
+      list.innerHTML = '<p style="color:#94a3b8;padding:16px;">No push tokens registered yet</p>';
+      return;
+    }
+
+    list.innerHTML = tokens.map(t => {
+      const providerLabel = t.provider === 'pushy' ? 'Pushy' : 'FCM (Expo)';
+      const providerColor = t.provider === 'pushy' ? '#f59e0b' : '#3b82f6';
+      const platformIcon = t.platform === 'android' ? '🤖' : t.platform === 'ios' ? '🍎' : '🌐';
+      const shortToken = t.token.length > 30 ? t.token.substring(0, 15) + '...' + t.token.substring(t.token.length - 10) : t.token;
+      const updated = t.updated_at || t.updatedAt;
+      const timeAgo = updated ? getTimeAgo(new Date(updated)) : 'unknown';
+      return `<div class="feed-item">
+        <div style="font-size:24px;">${platformIcon}</div>
+        <div class="feed-info">
+          <div class="feed-title" style="font-family:monospace;font-size:12px;" title="${t.token}">${shortToken}</div>
+          <div class="feed-meta">
+            Device: <span style="font-family:monospace;font-size:11px;">${t.device_id || t.deviceId || 'unknown'}</span>
+          </div>
+          <div class="feed-stats-inline">
+            <span class="feed-stat"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${providerColor};margin-right:4px;"></span>${providerLabel}</span>
+            <span class="feed-stat">Platform: <strong>${t.platform || 'unknown'}</strong></span>
+            <span class="feed-stat">Updated: <strong>${timeAgo}</strong></span>
+          </div>
+        </div>
+        <div class="feed-actions">
+          <button class="btn btn-danger btn-sm" onclick="removePushDevice('${t.id}')">Remove</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    list.innerHTML = '<p style="color:#ef4444;">Failed to load push tokens</p>';
+  }
+}
+
+function getTimeAgo(date) {
+  const now = new Date();
+  const diff = now - date;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return hours + 'h ago';
+  const days = Math.floor(hours / 24);
+  if (days < 30) return days + 'd ago';
+  return Math.floor(days / 30) + 'mo ago';
+}
+
+async function removePushDevice(id) {
+  if (!confirm('Remove this device from push notifications?')) return;
+  try {
+    await api('/api/admin/push-tokens/' + id, { method: 'DELETE' });
+    showAlert('Device removed', 'success');
+    loadPushTokens();
+  } catch (e) {
+    showAlert('Failed to remove device', 'error');
   }
 }
 
