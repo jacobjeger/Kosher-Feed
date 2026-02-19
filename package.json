@@ -61,6 +61,7 @@
     "http-proxy-middleware": "^3.0.5",
     "multer": "^2.0.2",
     "pg": "^8.16.3",
+    "pushy-react-native": "^1.0.61",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
