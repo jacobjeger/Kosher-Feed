@@ -415,9 +415,25 @@
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
           <button class="btn btn-primary" onclick="sendCustomPush()" id="sendPushBtn">Send Notification</button>
+          <button class="btn btn-secondary" onclick="checkLastReceipts()" id="checkReceiptBtn" style="display:none;">Check Delivery Receipt</button>
           <span id="pushSendStatus" style="font-size:13px;color:#64748b;"></span>
         </div>
         <div id="pushResultDetails" class="hidden" style="margin-top:12px;padding:12px;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0;font-size:13px;font-family:monospace;max-height:200px;overflow-y:auto;white-space:pre-wrap;"></div>
+        <div id="pushReceiptResult" class="hidden" style="margin-top:12px;padding:12px;background:#f0fdf4;border-radius:6px;border:1px solid #bbf7d0;font-size:13px;font-family:monospace;max-height:200px;overflow-y:auto;white-space:pre-wrap;"></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Check Receipt by Ticket ID</h2>
+        </div>
+        <div class="form-group">
+          <label>Ticket ID</label>
+          <input type="text" id="manualTicketId" placeholder="e.g. 019c78f0-19cd-74d6-a30b-6699bd518b4c">
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn btn-secondary" onclick="checkManualReceipt()">Check Receipt</button>
+          <span id="manualReceiptStatus" style="font-size:13px;color:#64748b;"></span>
+        </div>
+        <div id="manualReceiptResult" class="hidden" style="margin-top:12px;padding:12px;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0;font-size:13px;font-family:monospace;max-height:200px;overflow-y:auto;white-space:pre-wrap;"></div>
       </div>
       <div class="card">
         <div class="card-header">
@@ -2102,13 +2118,17 @@ function getTimeAgo(date) {
   return Math.floor(days / 30) + 'mo ago';
 }
 
+let lastTicketIds = [];
+
 async function sendCustomPush() {
   const title = document.getElementById('pushTitle').value.trim();
   const body = document.getElementById('pushBody').value.trim();
   const deviceId = document.getElementById('pushTarget').value;
   const btn = document.getElementById('sendPushBtn');
+  const receiptBtn = document.getElementById('checkReceiptBtn');
   const status = document.getElementById('pushSendStatus');
   const details = document.getElementById('pushResultDetails');
+  const receiptResult = document.getElementById('pushReceiptResult');
 
   if (!title || !body) {
     showAlert('Please enter both a title and message', 'error');
@@ -2119,6 +2139,9 @@ async function sendCustomPush() {
   btn.textContent = 'Sending...';
   status.textContent = '';
   details.classList.add('hidden');
+  receiptResult.classList.add('hidden');
+  receiptBtn.style.display = 'none';
+  lastTicketIds = [];
 
   try {
     const payload = { title, body };
@@ -2129,9 +2152,14 @@ async function sendCustomPush() {
     if (result.details && result.details.length > 0) {
       details.textContent = result.details.join('\n');
       details.classList.remove('hidden');
+      const ticketMatches = result.details.join('\n').match(/ticket: ([a-f0-9-]+)/g);
+      if (ticketMatches) {
+        lastTicketIds = ticketMatches.map(m => m.replace('ticket: ', ''));
+        receiptBtn.style.display = 'inline-block';
+      }
     }
     if (result.sent > 0) {
-      showAlert(`Notification sent to ${result.sent} device(s)`, 'success');
+      showAlert(`Notification sent to ${result.sent} device(s). Click "Check Delivery Receipt" after ~15 seconds to verify delivery.`, 'success');
     } else {
       showAlert('No notifications were delivered', 'error');
     }
@@ -2141,6 +2169,82 @@ async function sendCustomPush() {
   } finally {
     btn.disabled = false;
     btn.textContent = 'Send Notification';
+  }
+}
+
+async function checkLastReceipts() {
+  if (lastTicketIds.length === 0) return;
+  const btn = document.getElementById('checkReceiptBtn');
+  const receiptResult = document.getElementById('pushReceiptResult');
+  btn.disabled = true;
+  btn.textContent = 'Checking...';
+  try {
+    const result = await api('/api/admin/push-receipts', { method: 'POST', body: JSON.stringify({ ticketIds: lastTicketIds }) });
+    let output = '';
+    for (const [id, receipt] of Object.entries(result.receipts)) {
+      const statusColor = receipt.status === 'ok' ? '#22c55e' : '#ef4444';
+      output += `Ticket ${id}:\n  Status: ${receipt.status}\n`;
+      if (receipt.message) output += `  Message: ${receipt.message}\n`;
+      if (receipt.details) output += `  Details: ${JSON.stringify(receipt.details)}\n`;
+      output += '\n';
+    }
+    if (Object.keys(result.receipts).length === 0) {
+      output = 'No receipts available yet. Expo may take up to 30 minutes to generate receipts. Try again later.';
+      receiptResult.style.background = '#fffbeb';
+      receiptResult.style.borderColor = '#fde68a';
+    } else {
+      const allOk = Object.values(result.receipts).every(r => r.status === 'ok');
+      receiptResult.style.background = allOk ? '#f0fdf4' : '#fef2f2';
+      receiptResult.style.borderColor = allOk ? '#bbf7d0' : '#fecaca';
+    }
+    if (result.errors.length > 0) {
+      output += 'Errors:\n' + result.errors.join('\n');
+    }
+    receiptResult.textContent = output;
+    receiptResult.classList.remove('hidden');
+  } catch (e) {
+    showAlert('Failed to check receipts: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Check Delivery Receipt';
+  }
+}
+
+async function checkManualReceipt() {
+  const ticketId = document.getElementById('manualTicketId').value.trim();
+  const status = document.getElementById('manualReceiptStatus');
+  const result = document.getElementById('manualReceiptResult');
+  if (!ticketId) {
+    showAlert('Please enter a ticket ID', 'error');
+    return;
+  }
+  status.textContent = 'Checking...';
+  result.classList.add('hidden');
+  try {
+    const data = await api('/api/admin/push-receipts', { method: 'POST', body: JSON.stringify({ ticketIds: [ticketId] }) });
+    let output = '';
+    if (Object.keys(data.receipts).length === 0) {
+      output = 'No receipt found for this ticket ID.\nReceipts may take up to 30 minutes to be available after sending.';
+      result.style.background = '#fffbeb';
+      result.style.borderColor = '#fde68a';
+    } else {
+      for (const [id, receipt] of Object.entries(data.receipts)) {
+        output += `Ticket: ${id}\nStatus: ${receipt.status}\n`;
+        if (receipt.message) output += `Message: ${receipt.message}\n`;
+        if (receipt.details) output += `Details: ${JSON.stringify(receipt.details)}\n`;
+      }
+      const allOk = Object.values(data.receipts).every(r => r.status === 'ok');
+      result.style.background = allOk ? '#f0fdf4' : '#fef2f2';
+      result.style.borderColor = allOk ? '#bbf7d0' : '#fecaca';
+    }
+    if (data.errors.length > 0) {
+      output += '\nErrors: ' + data.errors.join('\n');
+    }
+    result.textContent = output;
+    result.classList.remove('hidden');
+    status.textContent = '';
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
   }
 }
 

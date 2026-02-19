@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
 import * as storage from "./storage";
 import { parseFeed } from "./rss";
-import { sendNewEpisodePushes, sendCustomPush } from "./push";
+import { sendNewEpisodePushes, sendCustomPush, checkPushReceipts } from "./push";
 import { insertFeedSchema, insertCategorySchema } from "@shared/schema";
 import multer from "multer";
 import path from "node:path";
@@ -1336,6 +1336,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return;
       }
       const result = await sendCustomPush(title, body, deviceId || undefined);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/admin/push-receipts", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { ticketIds } = req.body;
+      if (!ticketIds || !Array.isArray(ticketIds) || ticketIds.length === 0) {
+        res.status(400).json({ error: "ticketIds array is required" });
+        return;
+      }
+      const result = await checkPushReceipts(ticketIds);
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ error: e.message });

@@ -1,7 +1,34 @@
-import { Expo, type ExpoPushMessage, type ExpoPushTicket } from "expo-server-sdk";
+import { Expo, type ExpoPushMessage, type ExpoPushTicket, type ExpoPushReceipt } from "expo-server-sdk";
 import * as storage from "./storage";
 
 const expo = new Expo();
+
+export async function checkPushReceipts(ticketIds: string[]): Promise<{ receipts: Record<string, any>; errors: string[] }> {
+  const errors: string[] = [];
+  const receipts: Record<string, any> = {};
+
+  try {
+    const receiptIdChunks = expo.chunkPushNotificationReceiptIds(ticketIds);
+    for (const chunk of receiptIdChunks) {
+      try {
+        const receiptChunk = await expo.getPushNotificationReceiptsAsync(chunk);
+        for (const [id, receipt] of Object.entries(receiptChunk)) {
+          receipts[id] = receipt;
+          if ((receipt as any).status === "error") {
+            const r = receipt as any;
+            errors.push(`Ticket ${id}: ${r.message || "unknown error"} (${r.details?.error || "no details"})`);
+          }
+        }
+      } catch (e: any) {
+        errors.push(`Receipt fetch error: ${e.message}`);
+      }
+    }
+  } catch (e: any) {
+    errors.push(`Receipt check failed: ${e.message}`);
+  }
+
+  return { receipts, errors };
+}
 
 const PUSHY_API_KEY = process.env.PUSHY_API_KEY || "";
 
