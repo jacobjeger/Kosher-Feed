@@ -1,3 +1,6 @@
+import dns from "dns";
+dns.setDefaultResultOrder('ipv4first');
+
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import compression from "compression";
@@ -407,63 +410,45 @@ async function autoRefreshFeeds() {
       return;
     }
 
-    log(`Auto-refresh [${now}]: refreshing ${staleFeeds.length} stale feed(s) out of ${allFeeds.length} total...`);
+    log(`Auto-refresh [${now}]: refreshing ${staleFeeds.length} stale feed(s) out of ${allFeeds.length} total (sequential)...`);
     let totalNew = 0;
     let failures = 0;
-    const BATCH_SIZE = 3;
-    const retryQueue: typeof staleFeeds = [];
-    for (let i = 0; i < staleFeeds.length; i += BATCH_SIZE) {
-      const batch = staleFeeds.slice(i, i + BATCH_SIZE);
-      const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-      const totalBatches = Math.ceil(staleFeeds.length / BATCH_SIZE);
-      const results = await Promise.allSettled(
-        batch.map(feed => withTimeout(refreshOneFeed(feed), 60000, feed.title))
-      );
-      let batchNew = 0;
-      let batchFail = 0;
-      const failedNames: string[] = [];
-      for (let j = 0; j < results.length; j++) {
-        const r = results[j];
-        if (r.status === "fulfilled") {
-          totalNew += r.value;
-          batchNew += r.value;
-        } else {
-          batchFail++;
-          const feedName = batch[j]?.title || 'unknown';
-          const errMsg = (r.reason as Error)?.message || String(r.reason);
-          const isTimeout = errMsg.includes('Timeout') || errMsg.includes('timed out');
-          if (isTimeout) {
-            retryQueue.push(batch[j]);
-          } else {
+    let successes = 0;
+
+    for (let i = 0; i < staleFeeds.length; i++) {
+      const feed = staleFeeds[i];
+      try {
+        const count = await withTimeout(refreshOneFeed(feed), 60000, feed.title);
+        totalNew += count;
+        successes++;
+        if (count > 0) log(`  [${i + 1}/${staleFeeds.length}] ${feed.title}: +${count} new`);
+      } catch (e) {
+        const errMsg = (e as Error)?.message || String(e);
+        const isTimeout = errMsg.includes('Timeout') || errMsg.includes('timed out');
+        if (isTimeout) {
+          log(`  [${i + 1}/${staleFeeds.length}] ${feed.title}: timeout, retrying...`);
+          await new Promise(r => setTimeout(r, 2000));
+          try {
+            const count = await withTimeout(refreshOneFeed(feed), 60000, feed.title);
+            totalNew += count;
+            successes++;
+            if (count > 0) log(`  [${i + 1}/${staleFeeds.length}] ${feed.title}: retry OK +${count}`);
+          } catch (e2) {
             failures++;
-            failedNames.push(`${feedName}: ${errMsg.slice(0, 80)}`);
+            const retryMsg = (e2 as Error)?.message || String(e2);
+            log(`  [${i + 1}/${staleFeeds.length}] ${feed.title}: retry FAIL — ${retryMsg.slice(0, 80)}`);
           }
-        }
-      }
-      if (batchFail > 0 || batchNew > 0) {
-        log(`  Batch ${batchNum}/${totalBatches}: +${batchNew} new, ${batchFail} failed`);
-        if (failedNames.length > 0) {
-          log(`    Failures: ${failedNames.join(' | ')}`);
-        }
-      }
-    }
-
-    if (retryQueue.length > 0) {
-      log(`  Retrying ${retryQueue.length} timed-out feed(s) one at a time...`);
-      for (const feed of retryQueue) {
-        try {
-          const count = await withTimeout(refreshOneFeed(feed), 60000, feed.title);
-          totalNew += count;
-          if (count > 0) log(`    Retry OK: ${feed.title} (+${count})`);
-        } catch (e) {
+        } else {
           failures++;
-          const errMsg = (e as Error)?.message || String(e);
-          log(`    Retry FAIL: ${feed.title}: ${errMsg.slice(0, 80)}`);
+          log(`  [${i + 1}/${staleFeeds.length}] ${feed.title}: FAIL — ${errMsg.slice(0, 80)}`);
         }
+      }
+      if (i < staleFeeds.length - 1) {
+        await new Promise(r => setTimeout(r, 1000));
       }
     }
 
-    log(`Auto-refresh [${now}] complete: ${totalNew} new episode(s), ${failures} failures, across ${staleFeeds.length} stale feed(s)`);
+    log(`Auto-refresh [${now}] complete: ${successes} ok, ${failures} failed, ${totalNew} new episode(s), across ${staleFeeds.length} stale feed(s)`);
   } catch (e) {
     console.error("Auto-refresh error:", e);
   }
@@ -483,10 +468,45 @@ function startKeepAlive() {
   }, KEEP_ALIVE_INTERVAL);
 }
 
+async function networkSanityCheck() {
+  log(`Network sanity check: testing outbound connectivity...`);
+  try {
+    const start = Date.now();
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch('https://www.google.com', { signal: controller.signal });
+    clearTimeout(tid);
+    log(`  Google.com: ${res.status} in ${Date.now() - start}ms — outbound OK`);
+  } catch (e: any) {
+    log(`  Google.com: FAILED in — ${e.name === 'AbortError' ? 'timed out after 5s' : e.message}`);
+  }
+
+  try {
+    const start = Date.now();
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch('https://anchor.fm/s/561de0ec/podcast/rss', { signal: controller.signal, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ShiurPodBot/1.0)' } });
+    clearTimeout(tid);
+    log(`  anchor.fm RSS: ${res.status} in ${Date.now() - start}ms`);
+  } catch (e: any) {
+    log(`  anchor.fm RSS: FAILED — ${e.name === 'AbortError' ? 'timed out after 5s' : e.message}`);
+  }
+
+  try {
+    const { address, family } = await dns.promises.lookup('anchor.fm');
+    log(`  DNS anchor.fm: ${address} (IPv${family})`);
+  } catch (e: any) {
+    log(`  DNS anchor.fm: FAILED — ${e.code || e.message}`);
+  }
+}
+
 function startAutoRefresh() {
-  log(`Auto-refresh enabled: checking feeds every ${FEED_REFRESH_INTERVAL / 60000} minutes (batch size: 3, retry on timeout)`);
+  log(`Auto-refresh enabled: checking feeds every ${FEED_REFRESH_INTERVAL / 60000} minutes (sequential, retry on timeout)`);
   setInterval(autoRefreshFeeds, FEED_REFRESH_INTERVAL);
-  setTimeout(autoRefreshFeeds, 5000);
+  setTimeout(async () => {
+    await networkSanityCheck();
+    autoRefreshFeeds();
+  }, 5000);
   startKeepAlive();
 }
 
