@@ -3,11 +3,12 @@ import { Stack, router } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
 import { Ionicons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import * as Notifications from "expo-notifications";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { queryClient } from "@/lib/query-client";
 import { AudioPlayerProvider } from "@/contexts/AudioPlayerContext";
@@ -25,15 +26,18 @@ import { DeepLinkHandler } from "@/components/DeepLinkHandler";
 import { getNotificationData } from "@/lib/push-notifications";
 import { addLog } from "@/lib/error-logger";
 
+const ONBOARDING_KEY = "@shiurpod_onboarding_complete";
+
 SplashScreen.preventAutoHideAsync();
 initErrorLogger();
 setupGlobalErrorHandlers();
 defineBackgroundTasks();
 
 
-function RootLayoutNav() {
+function RootLayoutNav({ initialRoute }: { initialRoute: string }) {
   return (
-    <Stack screenOptions={{ headerBackTitle: "Back" }}>
+    <Stack screenOptions={{ headerBackTitle: "Back" }} initialRouteName={initialRoute}>
+      <Stack.Screen name="onboarding" options={{ headerShown: false, animation: "none" }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen
         name="player"
@@ -96,9 +100,22 @@ export default function RootLayout() {
     ...Feather.font,
     ...MaterialCommunityIcons.font,
   });
+  const [onboardingChecked, setOnboardingChecked] = useState(false);
+  const [initialRoute, setInitialRoute] = useState("(tabs)");
 
   useEffect(() => {
-    if (!fontsLoaded) return;
+    AsyncStorage.getItem(ONBOARDING_KEY).then((value) => {
+      if (value !== "true") {
+        setInitialRoute("onboarding");
+      }
+      setOnboardingChecked(true);
+    }).catch(() => {
+      setOnboardingChecked(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!fontsLoaded || !onboardingChecked) return;
     SplashScreen.hideAsync();
     setupNotificationChannel();
 
@@ -116,9 +133,9 @@ export default function RootLayout() {
     return () => {
       notificationResponseListener.current?.remove();
     };
-  }, [fontsLoaded]);
+  }, [fontsLoaded, onboardingChecked]);
 
-  if (!fontsLoaded) return null;
+  if (!fontsLoaded || !onboardingChecked) return null;
 
   return (
     <ErrorBoundary>
@@ -134,7 +151,7 @@ export default function RootLayout() {
                         <BackgroundSync />
                         <OfflineBanner />
                         <DeepLinkHandler />
-                        <RootLayoutNav />
+                        <RootLayoutNav initialRoute={initialRoute} />
                       </KeyboardProvider>
                     </GestureHandlerRootView>
                   </PositionsProvider>
