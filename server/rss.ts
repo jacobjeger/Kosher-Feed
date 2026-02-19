@@ -13,7 +13,7 @@ interface ParsedFeedData {
 
 export async function parseFeed(feedId: string, rssUrl: string): Promise<ParsedFeedData> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 20000);
+  const timeoutId = setTimeout(() => controller.abort(), 45000);
 
   let response: Response;
   try {
@@ -28,7 +28,7 @@ export async function parseFeed(feedId: string, rssUrl: string): Promise<ParsedF
   } catch (err: any) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
-      throw new Error(`Feed fetch timed out after 20s: ${rssUrl}`);
+      throw new Error(`Feed fetch timed out after 45s: ${rssUrl}`);
     }
     throw new Error(`Feed fetch failed: ${err.message} (${rssUrl})`);
   }

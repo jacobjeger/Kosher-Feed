@@ -401,19 +401,23 @@ async function autoRefreshFeeds() {
 
     const staleCutoff = new Date(Date.now() - FEED_REFRESH_INTERVAL);
     const staleFeeds = allFeeds.filter(f => !f.lastFetchedAt || new Date(f.lastFetchedAt) < staleCutoff);
-    const freshFeeds = allFeeds.filter(f => f.lastFetchedAt && new Date(f.lastFetchedAt) >= staleCutoff);
-    const sortedFeeds = [...staleFeeds, ...freshFeeds];
 
-    log(`Auto-refresh [${now}]: checking ${allFeeds.length} feed(s) (${staleFeeds.length} stale)...`);
+    if (staleFeeds.length === 0) {
+      log(`Auto-refresh [${now}]: all ${allFeeds.length} feed(s) are fresh, skipping`);
+      return;
+    }
+
+    log(`Auto-refresh [${now}]: refreshing ${staleFeeds.length} stale feed(s) out of ${allFeeds.length} total...`);
     let totalNew = 0;
     let failures = 0;
-    const BATCH_SIZE = 5;
-    for (let i = 0; i < sortedFeeds.length; i += BATCH_SIZE) {
-      const batch = sortedFeeds.slice(i, i + BATCH_SIZE);
+    const BATCH_SIZE = 3;
+    const retryQueue: typeof staleFeeds = [];
+    for (let i = 0; i < staleFeeds.length; i += BATCH_SIZE) {
+      const batch = staleFeeds.slice(i, i + BATCH_SIZE);
       const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-      const totalBatches = Math.ceil(sortedFeeds.length / BATCH_SIZE);
+      const totalBatches = Math.ceil(staleFeeds.length / BATCH_SIZE);
       const results = await Promise.allSettled(
-        batch.map(feed => withTimeout(refreshOneFeed(feed), 35000, feed.title))
+        batch.map(feed => withTimeout(refreshOneFeed(feed), 60000, feed.title))
       );
       let batchNew = 0;
       let batchFail = 0;
@@ -424,11 +428,16 @@ async function autoRefreshFeeds() {
           totalNew += r.value;
           batchNew += r.value;
         } else {
-          failures++;
           batchFail++;
           const feedName = batch[j]?.title || 'unknown';
           const errMsg = (r.reason as Error)?.message || String(r.reason);
-          failedNames.push(`${feedName}: ${errMsg.slice(0, 80)}`);
+          const isTimeout = errMsg.includes('Timeout') || errMsg.includes('timed out');
+          if (isTimeout) {
+            retryQueue.push(batch[j]);
+          } else {
+            failures++;
+            failedNames.push(`${feedName}: ${errMsg.slice(0, 80)}`);
+          }
         }
       }
       if (batchFail > 0 || batchNew > 0) {
@@ -438,7 +447,23 @@ async function autoRefreshFeeds() {
         }
       }
     }
-    log(`Auto-refresh [${now}] complete: ${totalNew} new episode(s), ${failures} failures, across ${allFeeds.length} feed(s)`);
+
+    if (retryQueue.length > 0) {
+      log(`  Retrying ${retryQueue.length} timed-out feed(s) one at a time...`);
+      for (const feed of retryQueue) {
+        try {
+          const count = await withTimeout(refreshOneFeed(feed), 60000, feed.title);
+          totalNew += count;
+          if (count > 0) log(`    Retry OK: ${feed.title} (+${count})`);
+        } catch (e) {
+          failures++;
+          const errMsg = (e as Error)?.message || String(e);
+          log(`    Retry FAIL: ${feed.title}: ${errMsg.slice(0, 80)}`);
+        }
+      }
+    }
+
+    log(`Auto-refresh [${now}] complete: ${totalNew} new episode(s), ${failures} failures, across ${staleFeeds.length} stale feed(s)`);
   } catch (e) {
     console.error("Auto-refresh error:", e);
   }
@@ -459,7 +484,7 @@ function startKeepAlive() {
 }
 
 function startAutoRefresh() {
-  log(`Auto-refresh enabled: checking feeds every ${FEED_REFRESH_INTERVAL / 60000} minutes (batch size: ${5})`);
+  log(`Auto-refresh enabled: checking feeds every ${FEED_REFRESH_INTERVAL / 60000} minutes (batch size: 3, retry on timeout)`);
   setInterval(autoRefreshFeeds, FEED_REFRESH_INTERVAL);
   setTimeout(autoRefreshFeeds, 5000);
   startKeepAlive();
