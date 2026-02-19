@@ -317,30 +317,75 @@ export async function getCompletedEpisodes(deviceId: string): Promise<PlaybackPo
 }
 
 export async function getListeningStats(deviceId: string) {
-  const [totalResult] = await db.select({ count: count() }).from(episodeListens).where(eq(episodeListens.deviceId, deviceId));
-  const totalListens = Number(totalResult.count);
+  const positions = await db.select().from(playbackPositions).where(eq(playbackPositions.deviceId, deviceId));
 
-  const uniqueResult = await db.selectDistinct({ episodeId: episodeListens.episodeId }).from(episodeListens).where(eq(episodeListens.deviceId, deviceId));
-  const uniqueEpisodes = uniqueResult.length;
+  const totalListeningTimeMs = positions.reduce((sum, p) => sum + (p.positionMs || 0), 0);
+  const totalListeningTime = Math.floor(totalListeningTimeMs / 1000);
+  const episodesPlayed = positions.length;
 
-  const topFeeds = await db
-    .select({
-      feedId: episodes.feedId,
-      title: feeds.title,
-      count: count(episodeListens.id),
-    })
-    .from(episodeListens)
-    .innerJoin(episodes, eq(episodeListens.episodeId, episodes.id))
-    .innerJoin(feeds, eq(episodes.feedId, feeds.id))
-    .where(eq(episodeListens.deviceId, deviceId))
-    .groupBy(episodes.feedId, feeds.title)
-    .orderBy(desc(count(episodeListens.id)))
-    .limit(10);
+  const listenDays = new Set<string>();
+  for (const p of positions) {
+    if (p.updatedAt) {
+      listenDays.add(new Date(p.updatedAt).toISOString().split("T")[0]);
+    }
+  }
+  const sortedDays = [...listenDays].sort().reverse();
+  let currentStreak = 0;
+  let longestStreak = 0;
+  let streak = 0;
+  const today = new Date().toISOString().split("T")[0];
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
+  let checkDate = sortedDays[0] === today || sortedDays[0] === yesterday ? sortedDays[0] : null;
+
+  if (checkDate) {
+    for (const day of sortedDays) {
+      if (day === checkDate) {
+        streak++;
+        const prev = new Date(new Date(checkDate).getTime() - 86400000).toISOString().split("T")[0];
+        checkDate = prev;
+      } else {
+        break;
+      }
+    }
+    currentStreak = streak;
+  }
+  streak = 0;
+  let prevDay: string | null = null;
+  for (const day of [...listenDays].sort()) {
+    if (!prevDay || new Date(day).getTime() - new Date(prevDay).getTime() === 86400000) {
+      streak++;
+    } else {
+      streak = 1;
+    }
+    if (streak > longestStreak) longestStreak = streak;
+    prevDay = day;
+  }
+
+  const feedTimeMap = new Map<string, { feedId: string; time: number }>();
+  for (const p of positions) {
+    const ep = await db.select({ feedId: episodes.feedId }).from(episodes).where(eq(episodes.id, p.episodeId)).limit(1);
+    if (ep.length > 0) {
+      const fid = ep[0].feedId;
+      const existing = feedTimeMap.get(fid) || { feedId: fid, time: 0 };
+      existing.time += (p.positionMs || 0) / 1000;
+      feedTimeMap.set(fid, existing);
+    }
+  }
+  const topFeedIds = [...feedTimeMap.values()].sort((a, b) => b.time - a.time).slice(0, 10);
+  const topFeeds = [];
+  for (const f of topFeedIds) {
+    const [feed] = await db.select({ title: feeds.title }).from(feeds).where(eq(feeds.id, f.feedId)).limit(1);
+    if (feed) {
+      topFeeds.push({ feedId: f.feedId, title: feed.title, listenTime: Math.floor(f.time) });
+    }
+  }
 
   return {
-    totalListens,
-    uniqueEpisodes,
-    topFeeds: topFeeds.map(f => ({ feedId: f.feedId, title: f.title, count: Number(f.count) })),
+    totalListeningTime,
+    episodesPlayed,
+    currentStreak,
+    longestStreak,
+    topFeeds,
   };
 }
 
