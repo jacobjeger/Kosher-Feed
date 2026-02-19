@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import * as Notifications from "expo-notifications";
+import Constants from "expo-constants";
 import { getDeviceId } from "@/lib/device-id";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { addLog } from "@/lib/error-logger";
@@ -38,8 +39,9 @@ export async function registerPushToken(): Promise<string | null> {
     let token: string | null = null;
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
+        const projectId = Constants.expoConfig?.extra?.eas?.projectId;
         const tokenData = await withTimeout(
-          Notifications.getExpoPushTokenAsync(),
+          Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined),
           TOKEN_FETCH_TIMEOUT_MS,
           "getExpoPushTokenAsync"
         );
