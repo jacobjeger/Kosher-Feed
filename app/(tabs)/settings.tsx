@@ -10,6 +10,7 @@ import { getApiUrl, apiRequest } from "@/lib/query-client";
 import { useDownloads } from "@/contexts/DownloadsContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { requestNotificationPermissions, checkNotificationPermission, setupNotificationChannel } from "@/lib/notifications";
+import { registerPushToken } from "@/lib/push-notifications";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { getLogsSnapshot } from "@/lib/error-logger";
@@ -263,6 +264,26 @@ function SettingsScreenInner() {
       Alert.alert("Scheduled", "A test notification will arrive in 60 seconds. You can close the app to test background delivery.");
     } catch (e) {
       Alert.alert("Error", "Failed to schedule test notification: " + ((e as any)?.message || e));
+    }
+  };
+
+  const [pushTestStatus, setPushTestStatus] = useState<"idle" | "testing">("idle");
+
+  const handleTestPushRegistration = async () => {
+    lightHaptic();
+    setPushTestStatus("testing");
+    try {
+      const result = await registerPushToken(true);
+      setPushTestStatus("idle");
+      const summary = result.steps.join("\n");
+      if (result.token) {
+        Alert.alert("Push Registration Success", `Token: ${result.token.substring(0, 30)}...\n\nSteps:\n${summary}`);
+      } else {
+        Alert.alert("Push Registration Failed", `Could not get push token.\n\nSteps:\n${summary}`);
+      }
+    } catch (e) {
+      setPushTestStatus("idle");
+      Alert.alert("Error", "Push test failed: " + ((e as any)?.message || e));
     }
   };
 
@@ -538,6 +559,19 @@ function SettingsScreenInner() {
             icon={<Ionicons name="notifications-outline" size={20} color={colors.accent} />}
             label="Test Notification"
             onPress={handleTestNotification}
+          />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingRow
+            icon={
+              pushTestStatus === "testing" ? (
+                <ActivityIndicator size="small" color="#f59e0b" />
+              ) : (
+                <Ionicons name="push" size={20} color="#f59e0b" />
+              )
+            }
+            label="Test Push Registration"
+            value={pushTestStatus === "testing" ? "Testing..." : undefined}
+            onPress={pushTestStatus === "idle" ? handleTestPushRegistration : undefined}
           />
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <SettingRow

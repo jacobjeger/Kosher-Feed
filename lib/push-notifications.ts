@@ -21,70 +21,101 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
-export async function registerPushToken(): Promise<string | null> {
-  if (Platform.OS === "web") return null;
+export async function registerPushToken(verbose = false): Promise<{ token: string | null; steps: string[] }> {
+  const steps: string[] = [];
+  const log = (level: "info" | "warn" | "error", msg: string, stack?: string) => {
+    steps.push(`[${level.toUpperCase()}] ${msg}`);
+    addLog(level, msg, stack, "push");
+  };
+
+  if (Platform.OS === "web") {
+    log("info", "Push notifications not supported on web");
+    return { token: null, steps };
+  }
 
   try {
+    log("info", `Platform: ${Platform.OS}, Version: ${Platform.Version}`);
+
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+    log("info", `EAS Project ID: ${projectId || "NOT FOUND"}`);
+    log("info", `App ID: ${Constants.expoConfig?.ios?.bundleIdentifier || Constants.expoConfig?.android?.package || "unknown"}`);
+
+    log("info", "Checking notification permissions...");
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    log("info", `Current permission status: ${existingStatus}`);
+
     let finalStatus = existingStatus;
     if (existingStatus !== "granted") {
+      log("info", "Requesting notification permissions...");
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
+      log("info", `Permission after request: ${finalStatus}`);
     }
+
     if (finalStatus !== "granted") {
-      addLog("info", "Push notification permission not granted", undefined, "push");
-      return null;
+      log("warn", `Push notification permission denied (status: ${finalStatus})`);
+      return { token: null, steps };
     }
+
+    log("info", "Permission granted, fetching Expo push token...");
 
     let token: string | null = null;
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+        log("info", `Token fetch attempt ${attempt}/2 (projectId: ${projectId || "none"})...`);
         const tokenData = await withTimeout(
           Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined),
           TOKEN_FETCH_TIMEOUT_MS,
           "getExpoPushTokenAsync"
         );
         token = tokenData.data;
+        log("info", `Got push token: ${token}`);
         break;
       } catch (e) {
         const msg = (e as any)?.message || String(e);
-        addLog("warn", `Push token attempt ${attempt}/2 failed: ${msg}`, undefined, "push");
+        const stack = (e as any)?.stack;
+        log("error", `Push token attempt ${attempt}/2 failed: ${msg}`, stack);
         if (attempt < 2) {
+          log("info", "Waiting 3 seconds before retry...");
           await new Promise(r => setTimeout(r, 3000));
         }
       }
     }
 
     if (!token) {
-      addLog("warn", "Could not obtain push token after retries, will try again later", undefined, "push");
-      return null;
+      log("error", "Could not obtain push token after all retries");
+      return { token: null, steps };
     }
 
     const deviceId = await getDeviceId();
-    const platform = Platform.OS;
+    log("info", `Device ID: ${deviceId}`);
 
     const previousToken = await AsyncStorage.getItem(PUSH_TOKEN_KEY);
-    if (previousToken === token) {
-      addLog("info", "Push token unchanged, skipping re-registration", undefined, "push");
-      return token;
+    if (previousToken === token && !verbose) {
+      log("info", "Push token unchanged, skipping re-registration");
+      return { token, steps };
     }
 
     try {
+      const apiUrl = getApiUrl();
+      log("info", `Registering token with server at ${apiUrl}/api/push-token...`);
       await withTimeout(
-        apiRequest("POST", "/api/push-token", { deviceId, token, platform }),
+        apiRequest("POST", "/api/push-token", { deviceId, token, platform: Platform.OS }),
         8000,
         "push-token-register"
       );
       await AsyncStorage.setItem(PUSH_TOKEN_KEY, token);
-      addLog("info", `Push token registered: ${token.substring(0, 20)}...`, undefined, "push");
+      log("info", "Push token successfully registered with server");
     } catch (e) {
-      addLog("warn", `Push token server registration failed (will retry later): ${(e as any)?.message || e}`, undefined, "push");
+      const msg = (e as any)?.message || String(e);
+      log("error", `Server registration failed: ${msg}`, (e as any)?.stack);
     }
-    return token;
+
+    return { token, steps };
   } catch (e) {
-    addLog("error", `Push token registration failed: ${(e as any)?.message || e}`, (e as any)?.stack, "push");
-    return null;
+    const msg = (e as any)?.message || String(e);
+    log("error", `Push registration failed: ${msg}`, (e as any)?.stack);
+    return { token: null, steps };
   }
 }
 
