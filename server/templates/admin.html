@@ -396,6 +396,31 @@
       <div class="stats" id="pushStatsArea"></div>
       <div class="card">
         <div class="card-header">
+          <h2>Send Custom Notification</h2>
+        </div>
+        <div id="pushSendAlert"></div>
+        <div class="form-group">
+          <label>Title</label>
+          <input type="text" id="pushTitle" placeholder="Notification title...">
+        </div>
+        <div class="form-group">
+          <label>Message</label>
+          <textarea id="pushBody" rows="3" placeholder="Notification message..." style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;resize:vertical;"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Send To</label>
+          <select id="pushTarget" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;">
+            <option value="">All Devices</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn btn-primary" onclick="sendCustomPush()" id="sendPushBtn">Send Notification</button>
+          <span id="pushSendStatus" style="font-size:13px;color:#64748b;"></span>
+        </div>
+        <div id="pushResultDetails" class="hidden" style="margin-top:12px;padding:12px;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0;font-size:13px;font-family:monospace;max-height:200px;overflow-y:auto;white-space:pre-wrap;"></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
           <h2>Registered Push Devices</h2>
           <button class="btn btn-secondary btn-sm" onclick="loadPushTokens()">Refresh</button>
         </div>
@@ -2020,6 +2045,15 @@ async function loadPushTokens() {
       <div class="stat-card"><div class="stat-value">${iosCount}</div><div class="stat-label">iOS</div></div>
     `;
 
+    const targetSelect = document.getElementById('pushTarget');
+    targetSelect.innerHTML = '<option value="">All Devices (' + total + ')</option>';
+    tokens.forEach(t => {
+      const did = t.device_id || t.deviceId || 'unknown';
+      const shortDid = did.length > 20 ? did.substring(0, 10) + '...' + did.substring(did.length - 6) : did;
+      const prov = t.provider === 'pushy' ? 'Pushy' : 'FCM';
+      targetSelect.innerHTML += `<option value="${did}">${shortDid} (${t.platform || '?'} / ${prov})</option>`;
+    });
+
     if (tokens.length === 0) {
       list.innerHTML = '<p style="color:#94a3b8;padding:16px;">No push tokens registered yet</p>';
       return;
@@ -2066,6 +2100,48 @@ function getTimeAgo(date) {
   const days = Math.floor(hours / 24);
   if (days < 30) return days + 'd ago';
   return Math.floor(days / 30) + 'mo ago';
+}
+
+async function sendCustomPush() {
+  const title = document.getElementById('pushTitle').value.trim();
+  const body = document.getElementById('pushBody').value.trim();
+  const deviceId = document.getElementById('pushTarget').value;
+  const btn = document.getElementById('sendPushBtn');
+  const status = document.getElementById('pushSendStatus');
+  const details = document.getElementById('pushResultDetails');
+
+  if (!title || !body) {
+    showAlert('Please enter both a title and message', 'error');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+  status.textContent = '';
+  details.classList.add('hidden');
+
+  try {
+    const payload = { title, body };
+    if (deviceId) payload.deviceId = deviceId;
+    const result = await api('/api/admin/send-push', { method: 'POST', body: JSON.stringify(payload) });
+    status.innerHTML = `<span style="color:#22c55e;">Sent: ${result.sent}</span>` +
+      (result.failed > 0 ? ` | <span style="color:#ef4444;">Failed: ${result.failed}</span>` : '');
+    if (result.details && result.details.length > 0) {
+      details.textContent = result.details.join('\n');
+      details.classList.remove('hidden');
+    }
+    if (result.sent > 0) {
+      showAlert(`Notification sent to ${result.sent} device(s)`, 'success');
+    } else {
+      showAlert('No notifications were delivered', 'error');
+    }
+  } catch (e) {
+    showAlert('Failed to send notification: ' + e.message, 'error');
+    status.textContent = '';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Send Notification';
+  }
 }
 
 async function removePushDevice(id) {
