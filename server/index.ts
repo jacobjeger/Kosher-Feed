@@ -371,7 +371,7 @@ function setupErrorHandler(app: express.Application) {
   });
 }
 
-const FEED_REFRESH_INTERVAL = 10 * 60 * 1000;
+const FEED_REFRESH_INTERVAL = 30 * 60 * 1000;
 const KEEP_ALIVE_INTERVAL = 4 * 60 * 1000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -381,7 +381,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   ]);
 }
 
-async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string }): Promise<number> {
+export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string }): Promise<number> {
   const parsed = await parseFeed(feed.id, feed.rssUrl);
   const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
   const inserted = await storage.upsertEpisodes(feed.id, episodeData);
@@ -459,7 +459,7 @@ function startKeepAlive() {
 }
 
 function startAutoRefresh() {
-  log(`Auto-refresh enabled: checking feeds every ${FEED_REFRESH_INTERVAL / 60000} minutes (batch size: 10)`);
+  log(`Auto-refresh enabled: checking feeds every ${FEED_REFRESH_INTERVAL / 60000} minutes (batch size: ${5})`);
   setInterval(autoRefreshFeeds, FEED_REFRESH_INTERVAL);
   setTimeout(autoRefreshFeeds, 5000);
   startKeepAlive();
