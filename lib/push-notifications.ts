@@ -10,6 +10,62 @@ const PUSH_TOKEN_KEY = "@shiurpod_push_token";
 const PUSH_PROVIDER_KEY = "@shiurpod_push_provider";
 const TOKEN_FETCH_TIMEOUT_MS = 10000;
 
+export function setupForegroundNotificationHandler() {
+  if (Platform.OS === "web") return;
+  addLog("info", "Setting up foreground notification handler", undefined, "push");
+  Notifications.setNotificationHandler({
+    handleNotification: async (notification) => {
+      const title = notification.request.content.title || "(no title)";
+      addLog("info", `Foreground notification received: "${title}"`, undefined, "push");
+      return {
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+        shouldShowBanner: true,
+        shouldShowList: true,
+      };
+    },
+    handleSuccess: (notificationId) => {
+      addLog("info", `Notification displayed successfully: ${notificationId}`, undefined, "push");
+    },
+    handleError: (notificationId, error) => {
+      addLog("error", `Notification display failed: ${notificationId} — ${error.message}`, error.stack, "push");
+    },
+  });
+}
+
+export async function setupPushNotificationChannels() {
+  if (Platform.OS !== "android") return;
+  try {
+    await Notifications.setNotificationChannelAsync("default", {
+      name: "Default",
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: "#1a73e8",
+      sound: "default",
+      enableVibrate: true,
+      showBadge: true,
+    });
+    addLog("info", "Android notification channel 'default' created (MAX importance)", undefined, "push");
+
+    await Notifications.setNotificationChannelAsync("new-episodes", {
+      name: "New Episodes",
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: "#1a73e8",
+      sound: "default",
+      enableVibrate: true,
+      showBadge: true,
+    });
+    addLog("info", "Android notification channel 'new-episodes' created (MAX importance)", undefined, "push");
+
+    const channels = await Notifications.getNotificationChannelsAsync();
+    addLog("info", `Active notification channels: ${channels.map(c => `${c.id}(importance=${c.importance})`).join(", ")}`, undefined, "push");
+  } catch (e) {
+    addLog("error", `Push channel setup failed: ${(e as any)?.message || e}`, (e as any)?.stack, "push");
+  }
+}
+
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -156,8 +212,11 @@ export async function initPushNotifications(): Promise<void> {
   if (Platform.OS === "web") return;
 
   try {
+    setupForegroundNotificationHandler();
+    await setupPushNotificationChannels();
     await registerPushToken();
-  } catch (_e) {
+  } catch (e) {
+    addLog("error", `initPushNotifications failed: ${(e as any)?.message || e}`, (e as any)?.stack, "push");
   }
 }
 

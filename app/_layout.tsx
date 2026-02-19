@@ -23,7 +23,7 @@ import { setupNotificationChannel } from "@/lib/notifications";
 import { initErrorLogger, setupGlobalErrorHandlers } from "@/lib/error-logger";
 import { defineBackgroundTasks } from "@/lib/background-tasks";
 import { DeepLinkHandler } from "@/components/DeepLinkHandler";
-import { getNotificationData } from "@/lib/push-notifications";
+import { getNotificationData, setupForegroundNotificationHandler, setupPushNotificationChannels } from "@/lib/push-notifications";
 import { addLog } from "@/lib/error-logger";
 
 const ONBOARDING_KEY = "@shiurpod_onboarding_complete";
@@ -32,6 +32,8 @@ SplashScreen.preventAutoHideAsync();
 initErrorLogger();
 setupGlobalErrorHandlers();
 defineBackgroundTasks();
+setupForegroundNotificationHandler();
+setupPushNotificationChannels();
 
 
 function RootLayoutNav({ initialRoute }: { initialRoute: string }) {

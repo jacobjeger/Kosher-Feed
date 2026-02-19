@@ -62,7 +62,9 @@
         "expo-notifications",
         {
           "icon": "./assets/images/icon.png",
-          "color": "#1a73e8"
+          "color": "#1a73e8",
+          "defaultChannel": "default",
+          "enableBackgroundRemoteNotifications": true
         }
       ]
     ],

@@ -79,7 +79,7 @@ export async function sendCustomPush(
         body,
         data: { type: "custom" },
         priority: "high",
-        channelId: "new-episodes",
+        channelId: "default",
       });
     }
 
