@@ -746,12 +746,16 @@ export async function deleteFeedback(id: string): Promise<void> {
   await db.delete(feedback).where(eq(feedback.id, id));
 }
 
-export async function registerPushToken(deviceId: string, token: string, platform: string): Promise<PushToken> {
-  const [result] = await db.insert(pushTokens).values({ deviceId, token, platform }).onConflictDoUpdate({
+export async function registerPushToken(deviceId: string, token: string, platform: string, provider: string = "expo"): Promise<PushToken> {
+  const [result] = await db.insert(pushTokens).values({ deviceId, token, platform, provider }).onConflictDoUpdate({
     target: [pushTokens.token],
-    set: { deviceId, platform, updatedAt: new Date() },
+    set: { deviceId, platform, provider, updatedAt: new Date() },
   }).returning();
   return result;
+}
+
+export async function getAllPushTokens(): Promise<PushToken[]> {
+  return db.select().from(pushTokens).orderBy(desc(pushTokens.updatedAt));
 }
 
 export async function getPushTokensForDevices(deviceIds: string[]): Promise<PushToken[]> {
@@ -768,6 +772,10 @@ export async function getSubscribersForFeed(feedId: string): Promise<PushToken[]
 
 export async function removePushToken(token: string): Promise<void> {
   await db.delete(pushTokens).where(eq(pushTokens.token, token));
+}
+
+export async function removePushTokenById(id: string): Promise<void> {
+  await db.delete(pushTokens).where(eq(pushTokens.id, id));
 }
 
 export async function createContactMessage(name: string, email: string | null, message: string): Promise<ContactMessage> {

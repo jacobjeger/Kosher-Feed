@@ -114,6 +114,7 @@ export const pushTokens = pgTable("push_tokens", {
   deviceId: text("device_id").notNull(),
   token: text("token").notNull().unique(),
   platform: text("platform"),
+  provider: text("provider").default("expo"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

@@ -994,9 +994,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Push Token Registration
   app.post("/api/push-token", async (req: Request, res: Response) => {
     try {
-      const { deviceId, token, platform } = req.body;
+      const { deviceId, token, platform, provider } = req.body;
       if (!deviceId || !token) return res.status(400).json({ error: "deviceId and token required" });
-      const result = await storage.registerPushToken(deviceId, token, platform || "unknown");
+      const result = await storage.registerPushToken(deviceId, token, platform || "unknown", provider || "expo");
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -1304,6 +1304,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/admin/sponsors/:id", adminAuth as any, async (req: Request, res: Response) => {
     try {
       await storage.deleteSponsor(req.params.id);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/admin/push-tokens", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const tokens = await storage.getAllPushTokens();
+      res.json(tokens);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/admin/push-tokens/:id", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      await storage.removePushTokenById(req.params.id);
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });

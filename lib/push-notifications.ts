@@ -7,6 +7,7 @@ import { addLog } from "@/lib/error-logger";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const PUSH_TOKEN_KEY = "@shiurpod_push_token";
+const PUSH_PROVIDER_KEY = "@shiurpod_push_provider";
 const TOKEN_FETCH_TIMEOUT_MS = 10000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -19,6 +20,26 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
       (err) => { clearTimeout(timer); reject(err); }
     );
   });
+}
+
+async function tryGetPushyToken(): Promise<string | null> {
+  try {
+    const Pushy = require("pushy-react-native");
+    Pushy.listen();
+    const token = await withTimeout(
+      new Promise<string>((resolve, reject) => {
+        Pushy.register()
+          .then((deviceToken: string) => resolve(deviceToken))
+          .catch((err: any) => reject(err));
+      }),
+      TOKEN_FETCH_TIMEOUT_MS,
+      "Pushy.register"
+    );
+    return token;
+  } catch (e) {
+    addLog("warn", `Pushy registration failed: ${(e as any)?.message || e}`, (e as any)?.stack, "push");
+    return null;
+  }
 }
 
 export async function registerPushToken(verbose = false): Promise<{ token: string | null; steps: string[] }> {
@@ -57,24 +78,26 @@ export async function registerPushToken(verbose = false): Promise<{ token: strin
       return { token: null, steps };
     }
 
-    log("info", "Permission granted, fetching Expo push token...");
-
     let token: string | null = null;
+    let provider: string = "expo";
+
+    log("info", "Permission granted, trying FCM (Expo push token) first...");
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        log("info", `Token fetch attempt ${attempt}/2 (projectId: ${projectId || "none"})...`);
+        log("info", `FCM token fetch attempt ${attempt}/2 (projectId: ${projectId || "none"})...`);
         const tokenData = await withTimeout(
           Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined),
           TOKEN_FETCH_TIMEOUT_MS,
           "getExpoPushTokenAsync"
         );
         token = tokenData.data;
-        log("info", `Got push token: ${token}`);
+        provider = "expo";
+        log("info", `Got FCM/Expo push token: ${token}`);
         break;
       } catch (e) {
         const msg = (e as any)?.message || String(e);
         const stack = (e as any)?.stack;
-        log("error", `Push token attempt ${attempt}/2 failed: ${msg}`, stack);
+        log("error", `FCM token attempt ${attempt}/2 failed: ${msg}`, stack);
         if (attempt < 2) {
           log("info", "Waiting 3 seconds before retry...");
           await new Promise(r => setTimeout(r, 3000));
@@ -83,29 +106,39 @@ export async function registerPushToken(verbose = false): Promise<{ token: strin
     }
 
     if (!token) {
-      log("error", "Could not obtain push token after all retries");
-      return { token: null, steps };
+      log("info", "FCM failed, trying Pushy as backup...");
+      const pushyToken = await tryGetPushyToken();
+      if (pushyToken) {
+        token = pushyToken;
+        provider = "pushy";
+        log("info", `Got Pushy token: ${token}`);
+      } else {
+        log("error", "Both FCM and Pushy failed — no push token available");
+        return { token: null, steps };
+      }
     }
 
     const deviceId = await getDeviceId();
-    log("info", `Device ID: ${deviceId}`);
+    log("info", `Device ID: ${deviceId}, Provider: ${provider}`);
 
     const previousToken = await AsyncStorage.getItem(PUSH_TOKEN_KEY);
-    if (previousToken === token && !verbose) {
+    const previousProvider = await AsyncStorage.getItem(PUSH_PROVIDER_KEY);
+    if (previousToken === token && previousProvider === provider && !verbose) {
       log("info", "Push token unchanged, skipping re-registration");
       return { token, steps };
     }
 
     try {
       const apiUrl = getApiUrl();
-      log("info", `Registering token with server at ${apiUrl}/api/push-token...`);
+      log("info", `Registering ${provider} token with server at ${apiUrl}/api/push-token...`);
       await withTimeout(
-        apiRequest("POST", "/api/push-token", { deviceId, token, platform: Platform.OS }),
+        apiRequest("POST", "/api/push-token", { deviceId, token, platform: Platform.OS, provider }),
         8000,
         "push-token-register"
       );
       await AsyncStorage.setItem(PUSH_TOKEN_KEY, token);
-      log("info", "Push token successfully registered with server");
+      await AsyncStorage.setItem(PUSH_PROVIDER_KEY, provider);
+      log("info", `Push token (${provider}) successfully registered with server`);
     } catch (e) {
       const msg = (e as any)?.message || String(e);
       log("error", `Server registration failed: ${msg}`, (e as any)?.stack);
