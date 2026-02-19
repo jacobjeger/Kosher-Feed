@@ -472,21 +472,11 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     notifyEpisodePlayed(episode.id);
 
     try {
-      Promise.all([
-        AsyncStorage.getItem("@kosher_shiurim_settings"),
-        getDeviceId(),
-      ]).then(async ([settingsData, devId]) => {
-        const s = settingsData ? JSON.parse(settingsData) : {};
+      AsyncStorage.getItem("@kosher_shiurim_settings").then(data => {
+        const s = data ? JSON.parse(data) : {};
         if (s.autoDeleteAfterListen === false) return;
-        try {
-          const baseUrl = getApiUrl();
-          const favRes = await fetch(new URL(`/api/favorites/${devId}`, baseUrl).toString());
-          const favs: any[] = await favRes.json();
-          const isFav = favs.some((f: any) => f.episodeId === episode.id);
-          if (isFav) return;
-          const { autoDeleteDownloadedEpisode } = require("@/lib/auto-delete-download");
-          autoDeleteDownloadedEpisode(episode.id);
-        } catch {}
+        const { markDownloadCompleted } = require("@/lib/auto-delete-download");
+        markDownloadCompleted(episode.id);
       }).catch(() => {});
     } catch {}
 

@@ -14,6 +14,7 @@ import {
 } from "@/lib/notifications";
 import { registerBackgroundSync } from "@/lib/background-tasks";
 import { initPushNotifications } from "@/lib/push-notifications";
+import { cleanupExpiredDownloads } from "@/lib/auto-delete-download";
 import type { Feed, Episode } from "@/lib/types";
 import { addLog } from "@/lib/error-logger";
 
@@ -116,6 +117,19 @@ export function BackgroundSync() {
             await autoDownloadNewEpisodes(feeds, settings.maxEpisodesPerFeed);
           } catch (e) {
             addLog("error", `BackgroundSync: auto-download failed: ${(e as any)?.message || e}`, (e as any)?.stack, "background-sync");
+          }
+        }
+
+        if (settings.autoDeleteAfterListen !== false) {
+          try {
+            const deviceId = await getDeviceId();
+            const baseUrl = getApiUrl();
+            const favRes = await fetch(new URL(`/api/favorites/${deviceId}`, baseUrl).toString());
+            const favs: any[] = await favRes.json();
+            const favIds = favs.map((f: any) => f.episodeId);
+            await cleanupExpiredDownloads(favIds);
+          } catch (e) {
+            addLog("warn", `BackgroundSync: auto-delete cleanup failed: ${(e as any)?.message || e}`, undefined, "background-sync");
           }
         }
       } catch (e) {
