@@ -804,7 +804,7 @@ export async function changeAdminPassword(username: string, oldPassword: string,
   return true;
 }
 
-export async function createApkUpload(data: { filename: string; originalName: string; version?: string; fileSize: number }): Promise<ApkUpload> {
+export async function createApkUpload(data: { filename: string; originalName: string; version?: string; fileSize: number; fileData?: string }): Promise<ApkUpload> {
   await db.update(apkUploads).set({ isActive: false }).where(eq(apkUploads.isActive, true));
   const [upload] = await db.insert(apkUploads).values(data).returning();
   return upload;
@@ -815,8 +815,16 @@ export async function getActiveApk(): Promise<ApkUpload | null> {
   return apk || null;
 }
 
-export async function getAllApkUploads(): Promise<ApkUpload[]> {
-  return db.select().from(apkUploads).orderBy(desc(apkUploads.createdAt));
+export async function getAllApkUploads() {
+  return db.select({
+    id: apkUploads.id,
+    filename: apkUploads.filename,
+    originalName: apkUploads.originalName,
+    version: apkUploads.version,
+    fileSize: apkUploads.fileSize,
+    isActive: apkUploads.isActive,
+    createdAt: apkUploads.createdAt,
+  }).from(apkUploads).orderBy(desc(apkUploads.createdAt));
 }
 
 export async function setActiveApk(id: string): Promise<void> {

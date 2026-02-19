@@ -1181,6 +1181,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const apk = await storage.getActiveApk();
       if (!apk) return res.status(404).json({ error: "No APK available" });
+
+      if (apk.fileData) {
+        const buffer = Buffer.from(apk.fileData, "base64");
+        res.setHeader("Content-Disposition", `attachment; filename="${apk.originalName}"`);
+        res.setHeader("Content-Type", "application/vnd.android.package-archive");
+        res.setHeader("Content-Length", buffer.length.toString());
+        return res.send(buffer);
+      }
+
       const filePath = path.join(uploadDir, apk.filename);
       if (!fs.existsSync(filePath)) return res.status(404).json({ error: "File not found" });
       res.setHeader("Content-Disposition", `attachment; filename="${apk.originalName}"`);
@@ -1197,12 +1206,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const file = (req as any).file;
       if (!file) return res.status(400).json({ error: "No APK file uploaded" });
       const version = req.body.version || null;
+
+      const filePath = path.join(uploadDir, file.filename);
+      const fileBuffer = fs.readFileSync(filePath);
+      const fileData = fileBuffer.toString("base64");
+
       const apk = await storage.createApkUpload({
         filename: file.filename,
         originalName: file.originalname,
         version,
         fileSize: file.size,
+        fileData,
       });
+
+      try { fs.unlinkSync(filePath); } catch (_) {}
+
       res.json({ ok: true, apk });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -1232,11 +1250,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Admin: delete APK
   app.delete("/api/admin/apk/:id", adminAuth as any, async (req: Request, res: Response) => {
     try {
-      const filename = await storage.deleteApkUpload(req.params.id);
-      if (filename) {
-        const filePath = path.join(uploadDir, filename);
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-      }
+      await storage.deleteApkUpload(req.params.id);
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });

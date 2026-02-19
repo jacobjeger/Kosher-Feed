@@ -164,6 +164,7 @@ export const apkUploads = pgTable("apk_uploads", {
   originalName: text("original_name").notNull(),
   version: text("version"),
   fileSize: integer("file_size").notNull(),
+  fileData: text("file_data"),
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
