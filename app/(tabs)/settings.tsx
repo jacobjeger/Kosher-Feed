@@ -67,6 +67,8 @@ function SettingsScreenInner() {
   const [deviceId, setDeviceId] = useState("");
   const [connectionStatus, setConnectionStatus] = useState<"idle" | "testing" | "ok" | "error">("idle");
   const [connectionError, setConnectionError] = useState("");
+  const [devModeUnlocked, setDevModeUnlocked] = useState(false);
+  const [devTapCount, setDevTapCount] = useState(0);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackType, setFeedbackType] = useState<"shiur_request" | "technical_issue">("shiur_request");
   const [feedbackSubject, setFeedbackSubject] = useState("");
@@ -200,6 +202,18 @@ function SettingsScreenInner() {
       return;
     }
     setActivePicker("skipBackward");
+  };
+
+  const handleVersionTap = () => {
+    const newCount = devTapCount + 1;
+    setDevTapCount(newCount);
+    if (newCount >= 5 && !devModeUnlocked) {
+      setDevModeUnlocked(true);
+      mediumHaptic();
+      Alert.alert("Developer Options", "Developer options are now visible.");
+    } else if (newCount < 5) {
+      lightHaptic();
+    }
   };
 
   const handleToggleAudioBoost = (value: boolean) => {
@@ -504,29 +518,14 @@ function SettingsScreenInner() {
           <SettingRow
             icon={<Ionicons name="headset" size={20} color={colors.accent} />}
             label="App Version"
-            value="1.0.0"
+            value={devModeUnlocked ? "1.0.0 (dev)" : "1.0.0"}
+            onPress={handleVersionTap}
           />
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <SettingRow
-            icon={<Feather name="smartphone" size={20} color={colors.accent} />}
-            label="Device ID"
-            value={deviceId.slice(0, 8) + "..."}
-          />
-        </View>
-      </View>
-
-      <View style={[styles.section, { borderColor: colors.cardBorder }]}>
-        <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>INFO</Text>
-        <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
           <SettingRow
             icon={<Ionicons name="shield-checkmark" size={20} color={colors.success} />}
             label="Content Policy"
             value="Curated Only"
-          />
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <SettingRow
-            icon={<Ionicons name="information-circle" size={20} color={colors.accent} />}
-            label="All content is reviewed and approved"
           />
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <SettingRow
@@ -537,63 +536,68 @@ function SettingsScreenInner() {
         </View>
       </View>
 
-      <View style={[styles.section, { borderColor: colors.cardBorder }]}>
-        <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>CONNECTION</Text>
-        <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
-          <SettingRow
-            icon={<Ionicons name="server" size={20} color={colors.accent} />}
-            label="Server"
-            value={getApiUrl().replace("https://", "")}
-          />
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <SettingRow
-            icon={
-              connectionStatus === "testing" ? (
-                <ActivityIndicator size="small" color={colors.accent} />
-              ) : connectionStatus === "ok" ? (
-                <Ionicons name="checkmark-circle" size={20} color={colors.success} />
-              ) : connectionStatus === "error" ? (
-                <Ionicons name="alert-circle" size={20} color="#ef4444" />
-              ) : (
-                <Ionicons name="pulse" size={20} color={colors.accent} />
-              )
-            }
-            label="Test Connection"
-            value={connectionError || undefined}
-            onPress={testConnection}
-          />
-        </View>
-      </View>
-
-      <View style={[styles.section, { borderColor: colors.cardBorder }]}>
-        <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>DEVELOPER</Text>
-        <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
-          <SettingRow
-            icon={<Ionicons name="notifications-outline" size={20} color={colors.accent} />}
-            label="Test Notification"
-            onPress={handleTestNotification}
-          />
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <SettingRow
-            icon={
-              pushTestStatus === "testing" ? (
-                <ActivityIndicator size="small" color="#f59e0b" />
-              ) : (
-                <Ionicons name="push" size={20} color="#f59e0b" />
-              )
-            }
-            label="Test Push Registration"
-            value={pushTestStatus === "testing" ? "Testing..." : undefined}
-            onPress={pushTestStatus === "idle" ? handleTestPushRegistration : undefined}
-          />
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <SettingRow
-            icon={<Ionicons name="bug" size={20} color="#ef4444" />}
-            label="Debug Logs"
-            onPress={() => router.push("/debug-logs")}
-          />
-        </View>
-      </View>
+      {devModeUnlocked && (
+        <>
+          <View style={[styles.section, { borderColor: colors.cardBorder }]}>
+            <Text style={[styles.sectionHeader, { color: "#f59e0b" }]}>DEVELOPER</Text>
+            <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+              <SettingRow
+                icon={<Feather name="smartphone" size={20} color={colors.accent} />}
+                label="Device ID"
+                value={deviceId.slice(0, 8) + "..."}
+              />
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
+              <SettingRow
+                icon={<Ionicons name="server" size={20} color={colors.accent} />}
+                label="Server"
+                value={getApiUrl().replace("https://", "")}
+              />
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
+              <SettingRow
+                icon={
+                  connectionStatus === "testing" ? (
+                    <ActivityIndicator size="small" color={colors.accent} />
+                  ) : connectionStatus === "ok" ? (
+                    <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+                  ) : connectionStatus === "error" ? (
+                    <Ionicons name="alert-circle" size={20} color="#ef4444" />
+                  ) : (
+                    <Ionicons name="pulse" size={20} color={colors.accent} />
+                  )
+                }
+                label="Test Connection"
+                value={connectionError || undefined}
+                onPress={testConnection}
+              />
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
+              <SettingRow
+                icon={<Ionicons name="notifications-outline" size={20} color={colors.accent} />}
+                label="Test Notification"
+                onPress={handleTestNotification}
+              />
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
+              <SettingRow
+                icon={
+                  pushTestStatus === "testing" ? (
+                    <ActivityIndicator size="small" color="#f59e0b" />
+                  ) : (
+                    <Ionicons name="push" size={20} color="#f59e0b" />
+                  )
+                }
+                label="Test Push Registration"
+                value={pushTestStatus === "testing" ? "Testing..." : undefined}
+                onPress={pushTestStatus === "idle" ? handleTestPushRegistration : undefined}
+              />
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
+              <SettingRow
+                icon={<Ionicons name="bug" size={20} color="#ef4444" />}
+                label="Debug Logs"
+                onPress={() => router.push("/debug-logs")}
+              />
+            </View>
+          </View>
+        </>
+      )}
 
       <Text style={[styles.footer, { color: colors.textSecondary }]}>
         ShiurPod{"\n"}A curated listening experience
