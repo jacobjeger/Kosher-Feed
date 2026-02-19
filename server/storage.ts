@@ -153,6 +153,7 @@ export async function recordListen(episodeId: string, deviceId: string): Promise
 }
 
 export async function getTrendingEpisodes(limit: number = 20): Promise<(Episode & { listenCount: number })[]> {
+  const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
   const result = await db
     .select({
       id: episodes.id,
@@ -170,7 +171,8 @@ export async function getTrendingEpisodes(limit: number = 20): Promise<(Episode 
       listenCount: count(episodeListens.id),
     })
     .from(episodes)
-    .leftJoin(episodeListens, eq(episodes.id, episodeListens.episodeId))
+    .innerJoin(episodeListens, eq(episodes.id, episodeListens.episodeId))
+    .where(sql`${episodeListens.listenedAt} > ${fortyEightHoursAgo}`)
     .groupBy(episodes.id)
     .orderBy(desc(count(episodeListens.id)), desc(episodes.publishedAt))
     .limit(limit);
