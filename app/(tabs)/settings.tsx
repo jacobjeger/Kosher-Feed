@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView, Platform, Switch, Alert, ActivityIndicator, TextInput, Modal, KeyboardAvoidingView } from "react-native";
+import { View, Text, Pressable, StyleSheet, ScrollView, Platform, Switch, Alert, ActivityIndicator, TextInput, Modal, KeyboardAvoidingView, Dimensions } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
@@ -617,69 +617,74 @@ function SettingsScreenInner() {
             style={feedbackStyles.overlay}
             onPress={() => setShowFeedbackModal(false)}
           >
-            <Pressable
+            <View
               style={[feedbackStyles.modal, { backgroundColor: colors.surface }]}
-              onPress={() => {}}
             >
               <View style={feedbackStyles.modalHeader}>
                 <Text style={[feedbackStyles.modalTitle, { color: colors.text }]}>
                   {feedbackType === "shiur_request" ? "Request a Shiur" : "Report a Problem"}
                 </Text>
-                <Pressable onPress={() => setShowFeedbackModal(false)}>
+                <Pressable onPress={() => setShowFeedbackModal(false)} hitSlop={8}>
                   <Ionicons name="close" size={24} color={colors.textSecondary} />
                 </Pressable>
               </View>
 
-              <Text style={[feedbackStyles.label, { color: colors.textSecondary }]}>
-                {feedbackType === "shiur_request" ? "Shiur / Speaker Name" : "What went wrong?"}
-              </Text>
-              <TextInput
-                style={[feedbackStyles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
-                placeholder={feedbackType === "shiur_request" ? "e.g. Rabbi Ploni - Gemara Shiur" : "e.g. Audio stops playing"}
-                placeholderTextColor={colors.textSecondary}
-                value={feedbackSubject}
-                onChangeText={setFeedbackSubject}
-                maxLength={200}
-              />
-
-              <Text style={[feedbackStyles.label, { color: colors.textSecondary }]}>Details</Text>
-              <TextInput
-                style={[feedbackStyles.input, feedbackStyles.textArea, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
-                placeholder={feedbackType === "shiur_request"
-                  ? "Any details about where to find this shiur, RSS feed link, etc."
-                  : "Please describe the issue in detail. What were you doing when it happened?"}
-                placeholderTextColor={colors.textSecondary}
-                value={feedbackMessage}
-                onChangeText={setFeedbackMessage}
-                multiline
-                numberOfLines={4}
-                textAlignVertical="top"
-                maxLength={5000}
-              />
-
-              <Text style={[feedbackStyles.label, { color: colors.textSecondary }]}>Contact Info (optional)</Text>
-              <TextInput
-                style={[feedbackStyles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
-                placeholder="Email or phone if you'd like a response"
-                placeholderTextColor={colors.textSecondary}
-                value={feedbackContact}
-                onChangeText={setFeedbackContact}
-                maxLength={200}
-                autoCapitalize="none"
-              />
-
-              <Pressable
-                style={[feedbackStyles.submitBtn, { backgroundColor: colors.accent, opacity: feedbackSending ? 0.6 : 1 }]}
-                onPress={handleSubmitFeedback}
-                disabled={feedbackSending}
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                bounces={false}
               >
-                {feedbackSending ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={feedbackStyles.submitBtnText}>Submit</Text>
-                )}
-              </Pressable>
-            </Pressable>
+                <Text style={[feedbackStyles.label, { color: colors.textSecondary, marginTop: 0 }]}>
+                  {feedbackType === "shiur_request" ? "Shiur / Speaker Name" : "What went wrong?"}
+                </Text>
+                <TextInput
+                  style={[feedbackStyles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                  placeholder={feedbackType === "shiur_request" ? "e.g. Rabbi Ploni - Gemara Shiur" : "e.g. Audio stops playing"}
+                  placeholderTextColor={colors.textSecondary}
+                  value={feedbackSubject}
+                  onChangeText={setFeedbackSubject}
+                  maxLength={200}
+                />
+
+                <Text style={[feedbackStyles.label, { color: colors.textSecondary }]}>Details</Text>
+                <TextInput
+                  style={[feedbackStyles.input, feedbackStyles.textArea, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                  placeholder={feedbackType === "shiur_request"
+                    ? "Any details about where to find this shiur, RSS feed link, etc."
+                    : "Please describe the issue in detail. What were you doing when it happened?"}
+                  placeholderTextColor={colors.textSecondary}
+                  value={feedbackMessage}
+                  onChangeText={setFeedbackMessage}
+                  multiline
+                  numberOfLines={3}
+                  textAlignVertical="top"
+                  maxLength={5000}
+                />
+
+                <Text style={[feedbackStyles.label, { color: colors.textSecondary }]}>Contact Info (optional)</Text>
+                <TextInput
+                  style={[feedbackStyles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                  placeholder="Email or phone if you'd like a response"
+                  placeholderTextColor={colors.textSecondary}
+                  value={feedbackContact}
+                  onChangeText={setFeedbackContact}
+                  maxLength={200}
+                  autoCapitalize="none"
+                />
+
+                <Pressable
+                  style={[feedbackStyles.submitBtn, { backgroundColor: colors.accent, opacity: feedbackSending ? 0.6 : 1 }]}
+                  onPress={handleSubmitFeedback}
+                  disabled={feedbackSending}
+                >
+                  {feedbackSending ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={feedbackStyles.submitBtnText}>Submit</Text>
+                  )}
+                </Pressable>
+              </ScrollView>
+            </View>
           </Pressable>
         </KeyboardAvoidingView>
       </Modal>
@@ -833,7 +838,7 @@ const feedbackStyles = StyleSheet.create({
     borderTopRightRadius: 20,
     padding: 20,
     paddingBottom: Platform.OS === "web" ? 34 : 40,
-    maxHeight: "85%",
+    maxHeight: "80%",
   },
   modalHeader: {
     flexDirection: "row",
@@ -858,7 +863,7 @@ const feedbackStyles = StyleSheet.create({
     fontSize: 15,
   },
   textArea: {
-    minHeight: 100,
+    minHeight: 80,
   },
   submitBtn: {
     marginTop: 20,
