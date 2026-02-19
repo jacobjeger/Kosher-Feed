@@ -1,9 +1,11 @@
 node_modules/
 .git/
+.expo/
 server/
 shared/
 scripts/
 dist/
+uploads/
 *.log
 .replit
 replit.nix
@@ -12,3 +14,12 @@ replit.md
 drizzle.config.ts
 tsconfig.server.json
 esbuild.config.js
+.cache/
+tmp/
+.npm/
+coverage/
+__tests__/
+*.tgz
+*.tar.gz
+.env
+.env.*
