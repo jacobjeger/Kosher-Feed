@@ -386,7 +386,15 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   ]);
 }
 
-export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string; etag?: string | null; lastModifiedHeader?: string | null }): Promise<number> {
+export interface RefreshResult {
+  newEpisodes: number;
+  method: 'stream' | 'proxy' | 'cached';
+  durationMs: number;
+  episodesFound: number;
+}
+
+export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string; etag?: string | null; lastModifiedHeader?: string | null }): Promise<RefreshResult> {
+  const start = Date.now();
   const parsed = await parseFeed(feed.id, feed.rssUrl, {
     etag: feed.etag,
     lastModified: feed.lastModifiedHeader,
@@ -394,7 +402,7 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
 
   if (parsed === null) {
     await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
-    return 0;
+    return { newEpisodes: 0, method: 'cached', durationMs: Date.now() - start, episodesFound: 0 };
   }
 
   const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
@@ -414,7 +422,13 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
       sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
     }
   }
-  return inserted.length;
+
+  return {
+    newEpisodes: inserted.length,
+    method: parsed.fetchMethod || 'stream',
+    durationMs: parsed.fetchDurationMs || (Date.now() - start),
+    episodesFound: parsed.episodes.length,
+  };
 }
 
 let isAutoRefreshing = false;
@@ -447,19 +461,33 @@ async function autoRefreshFeeds() {
     let skipped304 = 0;
     let completed = 0;
 
+    startRefreshCycle(staleFeeds.length);
     const limit = pLimit(3);
 
     const tasks = staleFeeds.map((feed) =>
       limit(async () => {
+        const feedStart = Date.now();
         try {
           await new Promise(r => setTimeout(r, Math.random() * 300));
-          const count = await withTimeout(refreshOneFeed(feed), 120000, feed.title);
-          totalNew += count;
+          const result = await withTimeout(refreshOneFeed(feed), 120000, feed.title);
+          totalNew += result.newEpisodes;
           successes++;
           completed++;
-          if (count > 0) {
-            log(`  [${completed}/${staleFeeds.length}] ${feed.title}: +${count} new`);
-          } else if (count === 0) {
+
+          recordFeedResult({
+            feedId: feed.id,
+            feedTitle: feed.title,
+            method: result.method,
+            success: true,
+            durationMs: result.durationMs,
+            episodesFound: result.episodesFound,
+            newEpisodes: result.newEpisodes,
+            timestamp: Date.now(),
+          });
+
+          if (result.newEpisodes > 0) {
+            log(`  [${completed}/${staleFeeds.length}] ${feed.title}: +${result.newEpisodes} new (${result.method}, ${result.durationMs}ms)`);
+          } else if (result.method === 'cached') {
             skipped304++;
           }
         } catch (e) {
@@ -467,11 +495,24 @@ async function autoRefreshFeeds() {
           completed++;
           const errMsg = (e as Error)?.message || String(e);
           log(`  [${completed}/${staleFeeds.length}] ${feed.title}: FAIL — ${errMsg.slice(0, 120)}`);
+
+          recordFeedResult({
+            feedId: feed.id,
+            feedTitle: feed.title,
+            method: 'stream',
+            success: false,
+            durationMs: Date.now() - feedStart,
+            episodesFound: 0,
+            newEpisodes: 0,
+            error: errMsg.slice(0, 200),
+            timestamp: Date.now(),
+          });
         }
       })
     );
 
     await Promise.all(tasks);
+    endRefreshCycle();
 
     log(`Auto-refresh [${now}] complete: ${successes} ok (${skipped304} cached/304), ${failures} failed, ${totalNew} new episode(s), across ${staleFeeds.length} stale feed(s)`);
   } catch (e) {

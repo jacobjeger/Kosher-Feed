@@ -68,6 +68,7 @@
   .alert-success { background: #064e3b; color: #6ee7b7; border: 1px solid #065f46; }
   .alert-error { background: #7f1d1d; color: #fca5a5; border: 1px solid #991b1b; }
   .hidden { display: none !important; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
 
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
   .stat-card { background: #151c2c; border: 1px solid #1e293b; border-radius: 12px; padding: 16px; }
@@ -178,6 +179,7 @@
       <button class="tab" onclick="switchTab('apk', this)">APK</button>
       <button class="tab" onclick="switchTab('sponsors', this)">Sponsors</button>
       <button class="tab" onclick="switchTab('pushtracker', this)">Push Tracker</button>
+      <button class="tab" onclick="switchTab('vitals', this)">Feed Vitals</button>
       <button class="tab" onclick="switchTab('settings', this)">Settings</button>
     </div>
 
@@ -441,6 +443,40 @@
           <button class="btn btn-secondary btn-sm" onclick="loadPushTokens()">Refresh</button>
         </div>
         <div id="pushTokensList"></div>
+      </div>
+    </div>
+
+    <div id="vitalsTab" class="hidden">
+      <div class="stats" id="vitalsStatsArea"></div>
+
+      <div class="card" id="vitalsCurrentCycleCard" style="display:none;">
+        <div class="card-header">
+          <h2>Live Refresh Cycle</h2>
+          <span id="vitalsLiveIndicator" style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#22c55e;"><span style="width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;animation:pulse 1.5s infinite;"></span> In Progress</span>
+        </div>
+        <div id="vitalsCurrentCycleContent"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>Feed Audit Table</h2>
+          <button class="btn btn-primary btn-sm" onclick="loadVitals()">Refresh</button>
+        </div>
+        <div id="vitalsAuditTable"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>Recent Refresh Cycles</h2>
+        </div>
+        <div id="vitalsCyclesTable"></div>
+      </div>
+
+      <div class="card" id="vitalsFailingCard" style="display:none;">
+        <div class="card-header">
+          <h2>Failing Feeds</h2>
+        </div>
+        <div id="vitalsFailingTable"></div>
       </div>
     </div>
 
@@ -1499,7 +1535,7 @@ async function deleteSpeaker(id) {
 function switchTab(tab, btn) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
-  ['analytics','feeds','categories','speakers','errors','feedback','messages','apk','sponsors','pushtracker','settings'].forEach(t => {
+  ['analytics','feeds','categories','speakers','errors','feedback','messages','apk','sponsors','pushtracker','vitals','settings'].forEach(t => {
     document.getElementById(t + 'Tab').classList.toggle('hidden', tab !== t);
   });
   if (tab === 'speakers') loadSpeakers();
@@ -1509,6 +1545,7 @@ function switchTab(tab, btn) {
   if (tab === 'apk') loadApks();
   if (tab === 'sponsors') loadSponsors();
   if (tab === 'pushtracker') loadPushTokens();
+  if (tab === 'vitals') loadVitals();
 }
 
 function formatDate(dateStr) {
@@ -2256,6 +2293,211 @@ async function removePushDevice(id) {
     loadPushTokens();
   } catch (e) {
     showAlert('Failed to remove device', 'error');
+  }
+}
+
+let vitalsAutoRefresh = null;
+
+async function loadVitals() {
+  try {
+    const data = await api('/api/admin/feed-vitals');
+    renderVitalsStats(data.summary);
+    renderVitalsCycles(data.recentCycles);
+    renderVitalsCurrentCycle(data.currentCycle);
+    renderVitalsFailingFeeds(data.failingFeeds);
+    await renderVitalsAuditTable();
+  } catch (e) {
+    showAlert('Failed to load vitals: ' + e.message, 'error');
+  }
+}
+
+function renderVitalsStats(s) {
+  const healthColor = s.successRate >= 95 ? '#22c55e' : s.successRate >= 80 ? '#eab308' : '#ef4444';
+  const healthIcon = s.successRate >= 95 ? '🟢' : s.successRate >= 80 ? '🟡' : '🔴';
+  const healthLabel = s.successRate >= 95 ? 'Healthy' : s.successRate >= 80 ? 'Degraded' : 'Critical';
+
+  document.getElementById('vitalsStatsArea').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-value" style="color:${healthColor}">${healthIcon} ${s.successRate}%</div>
+      <div class="stat-label">Health Score</div>
+      <div class="stat-sub">${healthLabel}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${s.avgDurationMs}<span style="font-size:14px;color:#64748b;">ms</span></div>
+      <div class="stat-label">Avg Fetch Duration</div>
+      <div class="stat-sub">${s.totalAttempts} total attempts</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${s.streamSuccesses}</div>
+      <div class="stat-label">Stream Wins</div>
+      <div class="stat-sub" style="color:#22c55e;">Direct SAX parsing</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${s.proxySuccesses}</div>
+      <div class="stat-label">Proxy Fallbacks</div>
+      <div class="stat-sub" style="color:#eab308;">rss2json.com</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${s.cached304}</div>
+      <div class="stat-label">304 Cache Hits</div>
+      <div class="stat-sub">${s.cacheHitRate}% hit rate</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color:${s.failures > 0 ? '#ef4444' : '#22c55e'}">${s.failures}</div>
+      <div class="stat-label">Failures</div>
+      <div class="stat-sub">${s.totalAttempts - s.failures} succeeded</div>
+    </div>
+  `;
+}
+
+function renderVitalsCycles(cycles) {
+  if (!cycles || cycles.length === 0) {
+    document.getElementById('vitalsCyclesTable').innerHTML = '<div style="color:#64748b;font-size:13px;padding:12px;">No refresh cycles recorded yet. Wait for the next auto-refresh or use Force Sync on a feed.</div>';
+    return;
+  }
+
+  let html = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
+  html += '<thead><tr style="border-bottom:1px solid #1e293b;color:#94a3b8;text-align:left;">';
+  html += '<th style="padding:8px;">Time</th><th style="padding:8px;">Feeds</th><th style="padding:8px;">OK</th><th style="padding:8px;">304</th><th style="padding:8px;">Fail</th><th style="padding:8px;">New Eps</th><th style="padding:8px;">Duration</th>';
+  html += '</tr></thead><tbody>';
+
+  cycles.forEach(c => {
+    const time = new Date(c.startedAt).toLocaleTimeString();
+    const durStr = c.durationSec !== null ? c.durationSec + 's' : '...';
+    const failStyle = c.failures > 0 ? 'color:#ef4444;font-weight:600;' : '';
+    html += `<tr style="border-bottom:1px solid #1e293b;">`;
+    html += `<td style="padding:8px;color:#94a3b8;">${time}</td>`;
+    html += `<td style="padding:8px;">${c.totalFeeds}</td>`;
+    html += `<td style="padding:8px;color:#22c55e;">${c.successes}</td>`;
+    html += `<td style="padding:8px;color:#3b82f6;">${c.cached304}</td>`;
+    html += `<td style="padding:8px;${failStyle}">${c.failures}</td>`;
+    html += `<td style="padding:8px;${c.newEpisodes > 0 ? 'color:#22c55e;font-weight:600;' : ''}">${c.newEpisodes}</td>`;
+    html += `<td style="padding:8px;color:#94a3b8;">${durStr}</td>`;
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  document.getElementById('vitalsCyclesTable').innerHTML = html;
+}
+
+function renderVitalsCurrentCycle(cycle) {
+  const card = document.getElementById('vitalsCurrentCycleCard');
+  if (!cycle) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = '';
+  const pct = cycle.totalFeeds > 0 ? Math.round((cycle.completed / cycle.totalFeeds) * 100) : 0;
+  document.getElementById('vitalsCurrentCycleContent').innerHTML = `
+    <div style="display:flex;gap:24px;flex-wrap:wrap;font-size:13px;">
+      <div><span style="color:#64748b;">Progress:</span> <strong>${cycle.completed}/${cycle.totalFeeds}</strong> (${pct}%)</div>
+      <div><span style="color:#64748b;">OK:</span> <strong style="color:#22c55e;">${cycle.successes}</strong></div>
+      <div><span style="color:#64748b;">Failed:</span> <strong style="color:${cycle.failures > 0 ? '#ef4444' : '#22c55e'};">${cycle.failures}</strong></div>
+      <div><span style="color:#64748b;">Elapsed:</span> <strong>${cycle.elapsedSec}s</strong></div>
+    </div>
+    <div style="margin-top:12px;height:6px;background:#1e293b;border-radius:3px;overflow:hidden;">
+      <div style="height:100%;width:${pct}%;background:#3b82f6;border-radius:3px;transition:width 0.3s;"></div>
+    </div>
+  `;
+}
+
+function renderVitalsFailingFeeds(feeds) {
+  const card = document.getElementById('vitalsFailingCard');
+  if (!feeds || feeds.length === 0) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = '';
+  let html = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
+  html += '<thead><tr style="border-bottom:1px solid #1e293b;color:#94a3b8;text-align:left;">';
+  html += '<th style="padding:8px;">Feed</th><th style="padding:8px;">Fails</th><th style="padding:8px;">Last Error</th>';
+  html += '</tr></thead><tbody>';
+
+  feeds.forEach(f => {
+    html += `<tr style="border-bottom:1px solid #1e293b;">`;
+    html += `<td style="padding:8px;color:#f8fafc;">${esc(f.feedTitle)}</td>`;
+    html += `<td style="padding:8px;color:#ef4444;font-weight:600;">${f.failCount}</td>`;
+    html += `<td style="padding:8px;color:#94a3b8;font-size:11px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.lastError)}</td>`;
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  document.getElementById('vitalsFailingTable').innerHTML = html;
+}
+
+async function renderVitalsAuditTable() {
+  try {
+    const feeds = await api('/api/feeds');
+    if (!feeds || feeds.length === 0) {
+      document.getElementById('vitalsAuditTable').innerHTML = '<div style="color:#64748b;font-size:13px;padding:12px;">No feeds found.</div>';
+      return;
+    }
+
+    let html = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="border-bottom:1px solid #1e293b;color:#94a3b8;text-align:left;">';
+    html += '<th style="padding:8px;">Feed</th><th style="padding:8px;">Host</th><th style="padding:8px;">Status</th><th style="padding:8px;">Last Fetched</th><th style="padding:8px;">Cache Headers</th><th style="padding:8px;">Actions</th>';
+    html += '</tr></thead><tbody>';
+
+    feeds.forEach(f => {
+      let host = '';
+      try { host = new URL(f.rssUrl).hostname; } catch {}
+
+      const hasEtag = f.etag ? '✓' : '✗';
+      const hasLM = f.lastModifiedHeader ? '✓' : '✗';
+      const etagColor = f.etag ? '#22c55e' : '#64748b';
+      const lmColor = f.lastModifiedHeader ? '#22c55e' : '#64748b';
+
+      const lastFetched = f.lastFetchedAt ? timeAgo(new Date(f.lastFetchedAt)) : 'Never';
+      const statusColor = f.isActive ? '#22c55e' : '#ef4444';
+      const statusIcon = f.isActive ? '🟢' : '🔴';
+
+      html += `<tr style="border-bottom:1px solid #1e293b;" id="vitals-row-${f.id}">`;
+      html += `<td style="padding:8px;color:#f8fafc;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.title)}</td>`;
+      html += `<td style="padding:8px;color:#94a3b8;font-size:11px;">${esc(host)}</td>`;
+      html += `<td style="padding:8px;">${statusIcon}</td>`;
+      html += `<td style="padding:8px;color:#94a3b8;font-size:12px;">${lastFetched}</td>`;
+      html += `<td style="padding:8px;font-size:11px;"><span style="color:${etagColor};">ETag ${hasEtag}</span> <span style="color:${lmColor};">LM ${hasLM}</span></td>`;
+      html += `<td style="padding:8px;"><button class="btn btn-secondary btn-sm" onclick="forceSync('${f.id}', this)" style="font-size:11px;padding:4px 10px;">Force Sync</button> <span id="vitals-result-${f.id}" style="font-size:11px;margin-left:4px;"></span></td>`;
+      html += '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+    document.getElementById('vitalsAuditTable').innerHTML = html;
+  } catch (e) {
+    document.getElementById('vitalsAuditTable').innerHTML = '<div class="alert alert-error">Failed to load feeds: ' + esc(e.message) + '</div>';
+  }
+}
+
+function timeAgo(date) {
+  const secs = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (secs < 60) return secs + 's ago';
+  if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+  if (secs < 86400) return Math.floor(secs / 3600) + 'h ago';
+  return Math.floor(secs / 86400) + 'd ago';
+}
+
+async function forceSync(feedId, btn) {
+  const resultSpan = document.getElementById('vitals-result-' + feedId);
+  btn.disabled = true;
+  btn.textContent = 'Syncing...';
+  resultSpan.innerHTML = '';
+
+  try {
+    const res = await api('/api/admin/force-sync/' + feedId, { method: 'POST' });
+
+    if (res.status === '304') {
+      resultSpan.innerHTML = '<span style="color:#3b82f6;">🟡 304 Not Modified (' + res.durationMs + 'ms)</span>';
+    } else if (res.status === 'ok') {
+      const methodLabel = res.method === 'stream' ? '🟢 Stream' : '🟡 Proxy';
+      resultSpan.innerHTML = '<span style="color:#22c55e;">' + methodLabel + ' — ' + res.episodesFound + ' eps, +' + res.newEpisodes + ' new (' + res.durationMs + 'ms)</span>';
+    } else if (res.status === 'error') {
+      resultSpan.innerHTML = '<span style="color:#ef4444;">🔴 ' + esc(res.error || 'Failed') + ' (' + res.durationMs + 'ms)</span>';
+    }
+  } catch (e) {
+    resultSpan.innerHTML = '<span style="color:#ef4444;">🔴 ' + esc(e.message) + '</span>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Force Sync';
   }
 }
 

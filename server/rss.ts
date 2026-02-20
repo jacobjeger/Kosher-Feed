@@ -58,6 +58,8 @@ export interface ParsedFeedData {
   author?: string;
   episodes: Omit<Episode, "id" | "createdAt">[];
   responseHeaders?: { etag?: string; lastModified?: string };
+  fetchMethod?: 'stream' | 'proxy' | 'cached';
+  fetchDurationMs?: number;
 }
 
 interface FetchResult {
@@ -416,6 +418,8 @@ export async function parseFeed(
       author: streamResult.data.feedAuthor || undefined,
       episodes: streamResult.data.episodes,
       responseHeaders: streamResult.data.responseHeaders,
+      fetchMethod: 'stream',
+      fetchDurationMs: streamResult.result.durationMs,
     };
   }
 
@@ -462,6 +466,8 @@ export async function parseFeed(
       imageUrl: proxyResult.feed.image || undefined,
       author: proxyResult.feed.author || undefined,
       episodes: feedEpisodes,
+      fetchMethod: 'proxy',
+      fetchDurationMs: proxyResult.result.durationMs,
     };
   }
 

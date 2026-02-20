@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import * as storage from "./storage";
 import { parseFeed } from "./rss";
 import { sendNewEpisodePushes, sendCustomPush, checkPushReceipts } from "./push";
+import { getVitals, recordFeedResult } from "./feed-vitals";
 import { insertFeedSchema, insertCategorySchema } from "@shared/schema";
 import multer from "multer";
 import path from "node:path";
@@ -1407,6 +1408,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const result = await checkPushReceipts(ticketIds);
       res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/admin/feed-vitals", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const vitals = getVitals();
+      res.json(vitals);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/admin/force-sync/:feedId", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const feedId = req.params.feedId as string;
+      const feed = await storage.getFeedById(feedId);
+      if (!feed || !feed.rssUrl) {
+        res.status(404).json({ error: "Feed not found" });
+        return;
+      }
+
+      const start = Date.now();
+      try {
+        const parsed = await parseFeed(feed.id, feed.rssUrl, {
+          etag: feed.etag,
+          lastModified: feed.lastModifiedHeader,
+        });
+
+        if (parsed === null) {
+          await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
+          recordFeedResult({
+            feedId: feed.id,
+            feedTitle: feed.title,
+            method: 'cached',
+            success: true,
+            durationMs: Date.now() - start,
+            episodesFound: 0,
+            newEpisodes: 0,
+            timestamp: Date.now(),
+          });
+          res.json({ status: "304", message: "Not Modified", durationMs: Date.now() - start });
+          return;
+        }
+
+        const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
+        const inserted = await storage.upsertEpisodes(feed.id, episodeData);
+
+        const updateData: any = { lastFetchedAt: new Date() };
+        if (parsed.responseHeaders?.etag) updateData.etag = parsed.responseHeaders.etag;
+        if (parsed.responseHeaders?.lastModified) updateData.lastModifiedHeader = parsed.responseHeaders.lastModified;
+        await storage.updateFeed(feed.id, updateData);
+
+        const durationMs = Date.now() - start;
+        recordFeedResult({
+          feedId: feed.id,
+          feedTitle: feed.title,
+          method: parsed.fetchMethod || 'stream',
+          success: true,
+          durationMs,
+          episodesFound: parsed.episodes.length,
+          newEpisodes: inserted.length,
+          timestamp: Date.now(),
+        });
+
+        res.json({
+          status: "ok",
+          method: parsed.fetchMethod,
+          durationMs,
+          episodesFound: parsed.episodes.length,
+          newEpisodes: inserted.length,
+        });
+      } catch (syncErr: any) {
+        recordFeedResult({
+          feedId: feed.id,
+          feedTitle: feed.title,
+          method: 'stream',
+          success: false,
+          durationMs: Date.now() - start,
+          episodesFound: 0,
+          newEpisodes: 0,
+          error: syncErr.message?.slice(0, 200),
+          timestamp: Date.now(),
+        });
+        res.json({ status: "error", error: syncErr.message?.slice(0, 200), durationMs: Date.now() - start });
+      }
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
