@@ -428,7 +428,7 @@ async function autoRefreshFeeds() {
     for (let i = 0; i < staleFeeds.length; i++) {
       const feed = staleFeeds[i];
       try {
-        const count = await withTimeout(refreshOneFeed(feed), 30000, feed.title);
+        const count = await withTimeout(refreshOneFeed(feed), 20000, feed.title);
         totalNew += count;
         successes++;
         if (count > 0) log(`  [${i + 1}/${staleFeeds.length}] ${feed.title}: +${count} new`);
@@ -439,7 +439,7 @@ async function autoRefreshFeeds() {
           log(`  [${i + 1}/${staleFeeds.length}] ${feed.title}: timeout, retrying...`);
           await new Promise(r => setTimeout(r, 2000));
           try {
-            const count = await withTimeout(refreshOneFeed(feed), 30000, feed.title);
+            const count = await withTimeout(refreshOneFeed(feed), 20000, feed.title);
             totalNew += count;
             successes++;
             if (count > 0) log(`  [${i + 1}/${staleFeeds.length}] ${feed.title}: retry OK +${count}`);
@@ -481,27 +481,25 @@ function startKeepAlive() {
 }
 
 async function networkSanityCheck() {
+  const axios = (await import("axios")).default;
   log(`Network sanity check: testing outbound connectivity...`);
   try {
     const start = Date.now();
-    const controller = new AbortController();
-    const tid = setTimeout(() => controller.abort(), 5000);
-    const res = await fetch('https://www.google.com', { signal: controller.signal });
-    clearTimeout(tid);
+    const res = await axios.get('https://www.google.com', { timeout: 10000 });
     log(`  Google.com: ${res.status} in ${Date.now() - start}ms — outbound OK`);
   } catch (e: any) {
-    log(`  Google.com: FAILED in — ${e.name === 'AbortError' ? 'timed out after 5s' : e.message}`);
+    log(`  Google.com: FAILED — ${e.code || e.message}`);
   }
 
   try {
     const start = Date.now();
-    const controller = new AbortController();
-    const tid = setTimeout(() => controller.abort(), 5000);
-    const res = await fetch('https://anchor.fm/s/561de0ec/podcast/rss', { signal: controller.signal, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ShiurPodBot/1.0)' } });
-    clearTimeout(tid);
-    log(`  anchor.fm RSS: ${res.status} in ${Date.now() - start}ms`);
+    const res = await axios.get('https://anchor.fm/s/561de0ec/podcast/rss', {
+      timeout: 10000,
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ShiurPodBot/1.0)' },
+    });
+    log(`  anchor.fm RSS: ${res.status} in ${Date.now() - start}ms — ${(res.data as string).length} bytes`);
   } catch (e: any) {
-    log(`  anchor.fm RSS: FAILED — ${e.name === 'AbortError' ? 'timed out after 5s' : e.message}`);
+    log(`  anchor.fm RSS: FAILED — ${e.code || e.message}`);
   }
 
   try {

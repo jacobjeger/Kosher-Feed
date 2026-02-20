@@ -1,4 +1,7 @@
 import Parser from "rss-parser";
+import axios from "axios";
+import https from "https";
+import http from "http";
 import dns from "dns/promises";
 import dns_sync from "dns";
 import type { Episode } from "@shared/schema";
@@ -14,16 +17,46 @@ const parser = new Parser();
 const DNS_CACHE_TTL = 15 * 60 * 1000;
 const dnsCache = new Map<string, { address: string; family: number; ts: number }>();
 
-async function cachedDnsLookup(hostname: string): Promise<{ address: string; family: number }> {
+function cachedLookup(hostname: string, _options: any, callback: (err: Error | null, address: string, family: number) => void) {
   const cached = dnsCache.get(hostname);
   if (cached && Date.now() - cached.ts < DNS_CACHE_TTL) {
-    return { address: cached.address, family: cached.family };
+    return callback(null, cached.address, cached.family);
   }
-
-  const { address, family } = await dns.lookup(hostname, { family: 4 });
-  dnsCache.set(hostname, { address, family, ts: Date.now() });
-  return { address, family };
+  dns.lookup(hostname, { family: 4 }).then(
+    ({ address, family }) => {
+      dnsCache.set(hostname, { address, family, ts: Date.now() });
+      callback(null, address, family);
+    },
+    (err) => callback(err, '', 0)
+  );
 }
+
+const httpsAgent = new https.Agent({
+  lookup: cachedLookup as any,
+  keepAlive: true,
+  timeout: 15000,
+  maxSockets: 10,
+});
+
+const httpAgent = new http.Agent({
+  lookup: cachedLookup as any,
+  keepAlive: true,
+  timeout: 15000,
+  maxSockets: 10,
+});
+
+const rssClient = axios.create({
+  timeout: 15000,
+  maxRedirects: 5,
+  httpAgent,
+  httpsAgent,
+  headers: {
+    'User-Agent': 'Mozilla/5.0 (compatible; ShiurPodBot/1.0)',
+    'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+  },
+  responseType: 'text',
+  decompress: true,
+});
 
 export async function preResolveHostnames(urls: string[]): Promise<void> {
   const hostnames = new Set<string>();
@@ -65,7 +98,6 @@ interface ParsedFeedData {
 
 export async function parseFeed(feedId: string, rssUrl: string): Promise<ParsedFeedData> {
   const startTime = Date.now();
-  let stage = 'init';
 
   let hostname: string;
   try {
@@ -74,52 +106,29 @@ export async function parseFeed(feedId: string, rssUrl: string): Promise<ParsedF
     throw new Error(`Invalid RSS URL: ${rssUrl}`);
   }
 
-  stage = 'dns';
+  let xml: string;
   try {
-    const { address, family } = await cachedDnsLookup(hostname);
-    const dnsMs = Date.now() - startTime;
-    if (dnsMs > 3000) {
-      console.log(`  DNS slow: ${hostname} → ${address} (IPv${family}) took ${dnsMs}ms`);
-    }
-  } catch (dnsErr: any) {
-    throw new Error(`DNS lookup failed for ${hostname}: ${dnsErr.code || dnsErr.message} (${rssUrl})`);
-  }
-
-  stage = 'fetch';
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-  let response: Response;
-  try {
-    response = await fetch(rssUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; ShiurPodBot/1.0)',
-        'Accept': 'application/rss+xml, application/xml, text/xml, */*',
-      },
-      signal: controller.signal,
-      redirect: 'follow',
-    });
-  } catch (err: any) {
-    clearTimeout(timeoutId);
+    const response = await rssClient.get(rssUrl);
+    xml = response.data;
     const elapsed = Date.now() - startTime;
-    if (err.name === 'AbortError') {
-      throw new Error(`Feed timed out at stage=${stage} after ${elapsed}ms: ${rssUrl}`);
+    if (elapsed > 5000) {
+      console.log(`  Slow fetch: ${hostname} took ${elapsed}ms`);
     }
-    throw new Error(`Feed fetch failed at stage=${stage} after ${elapsed}ms: ${err.message} (${rssUrl})`);
+  } catch (err: any) {
+    const elapsed = Date.now() - startTime;
+    if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+      throw new Error(`Feed timed out after ${elapsed}ms: ${rssUrl}`);
+    }
+    if (err.response) {
+      throw new Error(`Feed returned HTTP ${err.response.status}: ${rssUrl}`);
+    }
+    throw new Error(`Feed fetch failed after ${elapsed}ms: ${err.code || err.message} (${rssUrl})`);
   }
-  clearTimeout(timeoutId);
 
-  if (!response.ok) {
-    throw new Error(`Feed returned HTTP ${response.status}: ${rssUrl}`);
-  }
-
-  stage = 'body';
-  const xml = await response.text();
   if (!xml || xml.length < 50) {
-    throw new Error(`Feed returned empty/invalid response (${xml.length} bytes): ${rssUrl}`);
+    throw new Error(`Feed returned empty/invalid response (${xml?.length || 0} bytes): ${rssUrl}`);
   }
 
-  stage = 'parse';
   const feed = await parser.parseString(xml);
 
   const feedEpisodes: Omit<Episode, "id" | "createdAt">[] = [];
@@ -137,6 +146,8 @@ export async function parseFeed(feedId: string, rssUrl: string): Promise<ParsedF
       publishedAt: item.pubDate ? new Date(item.pubDate) : null,
       guid: item.guid || item.link || audioUrl,
       imageUrl: item.itunes?.image || null,
+      adminNotes: null,
+      sourceSheetUrl: null,
     });
   }
 
