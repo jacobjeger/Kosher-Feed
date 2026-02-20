@@ -56,6 +56,8 @@ Preferred communication style: Simple, everyday language.
   - `GET /api/share/episode/:id` — get episode + feed data for sharing
   - `GET /share/episode/:id` — web share page with OG tags, audio player, deep link
   - `GET /api/sponsor` — get active sponsor for loading screen
+  - `GET /api/admin/feed-vitals` — feed health metrics, refresh cycle history, failing feeds
+  - `POST /api/admin/force-sync/:feedId` — manually trigger a single feed sync with results
   - Admin CRUD endpoints for feeds/categories/sponsors (Basic auth protected)
 - **RSS parsing**: SAX streaming parser (`sax`) for direct RSS fetches — streams XML and aborts after 50 episodes, solving large feed timeouts (e.g., 6000+ episode feeds parse in ~160ms). Falls back to `rss-parser` proxy (rss2json.com) if streaming fails. Conditional GET (ETag/Last-Modified) headers stored in feeds table; 304 Not Modified responses skip parsing entirely (~35ms). Bounded concurrency via `p-limit` (3 feeds at a time) replaces sequential refresh. DNS caching with Cloudflare/Google resolvers (1.1.1.1/8.8.8.8), IPv4-first. Pre-resolves all hostnames before batch refresh. Running lock prevents overlapping refresh cycles.
 - **Admin panel**: Server-rendered HTML admin interface at `/admin` for managing feeds, categories, and speaker (Maggid Shiur) profiles
