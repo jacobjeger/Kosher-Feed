@@ -186,7 +186,7 @@ function PodcastDetailScreenInner() {
   }, [id, feedSettings.maxEpisodes, updateFeedSettings]);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [showRefreshHint, setShowRefreshHint] = useState(false);
+  const [showRefreshHint, setShowRefreshHint] = useState(true);
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     try {
@@ -205,7 +205,6 @@ function PodcastDetailScreenInner() {
     const staleMs = 30 * 60 * 1000;
     const lastFetched = new Date(feed.lastFetchedAt).getTime();
     if (Date.now() - lastFetched > staleMs) {
-      setShowRefreshHint(true);
       const baseUrl = getApiUrl();
       fetch(`${baseUrl}/api/feeds/${id}/episodes?refresh=1&paginated=1&page=1&limit=1`).then(() => {
         queryClient.invalidateQueries({ queryKey: [`/api/feeds/${id}/episodes`, "paginated"] });
@@ -213,6 +212,13 @@ function PodcastDetailScreenInner() {
       }).catch(() => {});
     }
   }, [feed?.lastFetchedAt, id]);
+
+  useEffect(() => {
+    if (showRefreshHint) {
+      const timer = setTimeout(() => setShowRefreshHint(false), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [showRefreshHint]);
 
   const handleLoadMore = useCallback(() => {
     if (episodesInfiniteQuery.hasNextPage && !episodesInfiniteQuery.isFetchingNextPage && !episodeSearch.trim()) {
