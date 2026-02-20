@@ -1,7 +1,5 @@
 import Parser from "rss-parser";
 import axios from "axios";
-import https from "https";
-import http from "http";
 import dns from "dns/promises";
 import dns_sync from "dns";
 import type { Episode } from "@shared/schema";
@@ -14,42 +12,9 @@ try {
 
 const parser = new Parser();
 
-const DNS_CACHE_TTL = 15 * 60 * 1000;
-const dnsCache = new Map<string, { address: string; family: number; ts: number }>();
-
-function cachedLookup(hostname: string, _options: any, callback: (err: Error | null, address: string, family: number) => void) {
-  const cached = dnsCache.get(hostname);
-  if (cached && Date.now() - cached.ts < DNS_CACHE_TTL) {
-    return callback(null, cached.address, cached.family);
-  }
-  dns.lookup(hostname, { family: 4 }).then(
-    ({ address, family }) => {
-      dnsCache.set(hostname, { address, family, ts: Date.now() });
-      callback(null, address, family);
-    },
-    (err) => callback(err, '', 0)
-  );
-}
-
-const httpsAgent = new https.Agent({
-  lookup: cachedLookup as any,
-  keepAlive: true,
-  timeout: 15000,
-  maxSockets: 10,
-});
-
-const httpAgent = new http.Agent({
-  lookup: cachedLookup as any,
-  keepAlive: true,
-  timeout: 15000,
-  maxSockets: 10,
-});
-
 const rssClient = axios.create({
   timeout: 15000,
   maxRedirects: 5,
-  httpAgent,
-  httpsAgent,
   headers: {
     'User-Agent': 'Mozilla/5.0 (compatible; ShiurPodBot/1.0)',
     'Accept': 'application/rss+xml, application/xml, text/xml, */*',
@@ -66,21 +31,16 @@ export async function preResolveHostnames(urls: string[]): Promise<void> {
     } catch {}
   }
 
-  const unique = [...hostnames].filter(h => {
-    const cached = dnsCache.get(h);
-    return !cached || Date.now() - cached.ts >= DNS_CACHE_TTL;
-  });
-
+  const unique = [...hostnames];
   if (unique.length === 0) return;
 
   console.log(`Pre-resolving ${unique.length} hostname(s)...`);
   const results = await Promise.allSettled(
     unique.map(async (h) => {
       const start = Date.now();
-      const { address, family } = await dns.lookup(h, { family: 4 });
-      dnsCache.set(h, { address, family, ts: Date.now() });
+      await dns.lookup(h, { family: 4 });
       const ms = Date.now() - start;
-      if (ms > 2000) console.log(`  DNS slow: ${h} → ${address} took ${ms}ms`);
+      if (ms > 2000) console.log(`  DNS slow: ${h} took ${ms}ms`);
     })
   );
   const ok = results.filter(r => r.status === 'fulfilled').length;
