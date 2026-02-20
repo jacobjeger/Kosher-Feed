@@ -33,7 +33,7 @@ Preferred communication style: Simple, everyday language.
 - **Background sync**: `BackgroundSync` component polls for new episodes every 5 minutes in foreground. On native, `expo-background-task` + `expo-task-manager` run a background task (`lib/background-tasks.ts`) every 15 minutes for notification checks even when the app is closed. Download progress throttled to 1s intervals with 2% minimum change to prevent UI freezing on low-end devices.
 - **Device identification**: Anonymous device IDs generated with `expo-crypto` and stored in AsyncStorage — no user accounts required for subscriptions
 - **Styling**: Plain React Native StyleSheet with a custom color system supporting light/dark themes (defined in `constants/colors.ts`)
-- **Haptics**: Optional haptic feedback on iOS/Android via `expo-haptics`, gracefully skipped on web
+- **Haptics**: Optional haptic feedback on iOS/Android via `expo-haptics`, gated behind `hapticFeedbackEnabled` setting (off by default), gracefully skipped on web. Cache invalidation via `invalidateHapticCache()` when setting changes.
 
 ### Backend (Express.js)
 - **Server**: Express 5 running on port 5000 (configured in `server/index.ts`)
@@ -57,11 +57,11 @@ Preferred communication style: Simple, everyday language.
   - `GET /share/episode/:id` — web share page with OG tags, audio player, deep link
   - `GET /api/sponsor` — get active sponsor for loading screen
   - Admin CRUD endpoints for feeds/categories/sponsors (Basic auth protected)
-- **RSS parsing**: `rss-parser` library fetches and parses podcast RSS feeds, extracting episode metadata
+- **RSS parsing**: `rss-parser` library fetches and parses podcast RSS feeds, extracting episode metadata. DNS caching (15-min TTL) with Cloudflare/Google DNS resolvers (1.1.1.1/8.8.8.8). Pre-resolves all hostnames before batch refresh. Running lock prevents overlapping refresh cycles.
 - **Admin panel**: Server-rendered HTML admin interface at `/admin` for managing feeds, categories, and speaker (Maggid Shiur) profiles
 - **Admin auth**: Simple Basic auth with bcrypt-hashed passwords, default credentials `admin/admin123`
 - **CORS**: Dynamic origin allowlist based on Replit environment variables, plus localhost support for dev
-- **Performance**: gzip compression via `compression` middleware; Cache-Control headers on read endpoints (feeds/categories 60s, episodes 30s)
+- **Performance**: gzip compression via `compression` middleware; Cache-Control headers on read endpoints (feeds/categories 60s, episodes 30s); React Query staleTime 5min, gcTime 30min; auto-refresh interval 60min with 30s per-feed timeout
 
 ### Database (PostgreSQL + Drizzle ORM)
 - **ORM**: Drizzle ORM with PostgreSQL dialect
