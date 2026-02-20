@@ -215,7 +215,7 @@ function PodcastDetailScreenInner() {
 
   useEffect(() => {
     if (showRefreshHint) {
-      const timer = setTimeout(() => setShowRefreshHint(false), 5000);
+      const timer = setTimeout(() => setShowRefreshHint(false), 30000);
       return () => clearTimeout(timer);
     }
   }, [showRefreshHint]);
