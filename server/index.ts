@@ -9,6 +9,7 @@ import { seedIfEmpty } from "./seed";
 import { parseFeed, preResolveHostnames } from "./rss";
 import * as storage from "./storage";
 import { sendNewEpisodePushes } from "./push";
+import { startRefreshCycle, recordFeedResult, endRefreshCycle } from "./feed-vitals";
 import * as fs from "fs";
 import * as path from "path";
 import pLimit from "p-limit";

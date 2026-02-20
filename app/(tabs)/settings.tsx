@@ -26,11 +26,12 @@ interface SettingRowProps {
   icon: React.ReactNode;
   label: string;
   value?: string;
+  subtitle?: string;
   onPress?: () => void;
   rightElement?: React.ReactNode;
 }
 
-function SettingRow({ icon, label, value, onPress, rightElement }: SettingRowProps) {
+function SettingRow({ icon, label, value, subtitle, onPress, rightElement }: SettingRowProps) {
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
@@ -46,7 +47,10 @@ function SettingRow({ icon, label, value, onPress, rightElement }: SettingRowPro
     >
       <View style={styles.settingLeft}>
         {icon}
-        <Text style={[styles.settingLabel, { color: colors.text }]}>{label}</Text>
+        <View>
+          <Text style={[styles.settingLabel, { color: colors.text }]}>{label}</Text>
+          {subtitle ? <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 1 }}>{subtitle}</Text> : null}
+        </View>
       </View>
       {rightElement ? rightElement : value ? (
         <Text style={[styles.settingValue, { color: colors.textSecondary }]}>{value}</Text>
@@ -438,26 +442,24 @@ function SettingsScreenInner() {
             value={THEME_LABELS[settings.darkModeOverride]}
             onPress={handleChangeTheme}
           />
-          {Platform.OS !== "web" && (
-            <>
-              <View style={[styles.divider, { backgroundColor: colors.border }]} />
-              <SettingRow
-                icon={<Ionicons name="phone-portrait-outline" size={20} color={colors.accent} />}
-                label="Haptic Feedback"
-                rightElement={
-                  <Switch
-                    value={settings.hapticFeedbackEnabled}
-                    onValueChange={(value: boolean) => {
-                      updateSettings({ hapticFeedbackEnabled: value });
-                      invalidateHapticCache();
-                    }}
-                    trackColor={{ false: colors.border, true: colors.accent }}
-                    thumbColor="#fff"
-                  />
-                }
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingRow
+            icon={<Ionicons name="phone-portrait-outline" size={20} color={colors.accent} />}
+            label="Haptic Feedback"
+            subtitle={Platform.OS === "web" ? "Available on mobile devices only" : undefined}
+            rightElement={
+              <Switch
+                value={settings.hapticFeedbackEnabled}
+                onValueChange={(value: boolean) => {
+                  updateSettings({ hapticFeedbackEnabled: value });
+                  invalidateHapticCache();
+                }}
+                trackColor={{ false: colors.border, true: colors.accent }}
+                thumbColor="#fff"
+                disabled={Platform.OS === "web"}
               />
-            </>
-          )}
+            }
+          />
         </View>
       </View>
 
