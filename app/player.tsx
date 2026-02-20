@@ -330,11 +330,12 @@ export default function PlayerScreen() {
             mediumHaptic();
             playback.isPlaying ? pause() : resume();
           }}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           style={[styles.playBtn, isSmallScreen && styles.playBtnSmall, { backgroundColor: colors.accent }]}
         >
           <Ionicons
             name={playback.isPlaying ? "pause" : "play"}
-            size={isSmallScreen ? 28 : 32}
+            size={isSmallScreen ? 32 : 36}
             color="#fff"
             style={playback.isPlaying ? undefined : { marginLeft: 3 }}
           />
@@ -581,16 +582,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   playBtn: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     alignItems: "center",
     justifyContent: "center",
   },
   playBtnSmall: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
   },
   secondaryControls: {
     flexDirection: "row",

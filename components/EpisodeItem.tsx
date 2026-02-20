@@ -176,11 +176,16 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
       ]}
     >
       <View style={styles.mainRow}>
-        <Pressable onPress={handlePlay} style={[styles.playIcon, { backgroundColor: isCurrentlyPlaying ? colors.accent : colors.accentLight }]}>
+        <Pressable
+          onPress={handlePlay}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={[styles.playBtn, { backgroundColor: isCurrentlyPlaying ? colors.accent : colors.accentLight }]}
+        >
           <Ionicons
             name={isCurrentlyPlaying && playback.isPlaying ? "pause" : "play"}
-            size={16}
+            size={18}
             color={isCurrentlyPlaying ? "#fff" : colors.accent}
+            style={isCurrentlyPlaying && playback.isPlaying ? undefined : { marginLeft: 2 }}
           />
         </Pressable>
         <Pressable onPress={handleToggleExpand} style={styles.info}>
@@ -327,12 +332,12 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     gap: 8,
   },
-  playIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
+  playBtn: {
+    width: 44,
+    height: 36,
+    borderRadius: 10,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
     flexShrink: 0,
     marginTop: 1,
   },
