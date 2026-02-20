@@ -23,6 +23,8 @@ export const feeds = pgTable("feeds", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   isFeatured: boolean("is_featured").default(false).notNull(),
   scheduledPublishAt: timestamp("scheduled_publish_at"),
+  etag: text("etag"),
+  lastModifiedHeader: text("last_modified_header"),
 });
 
 export const episodes = pgTable("episodes", {

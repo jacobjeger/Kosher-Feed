@@ -100,6 +100,7 @@ export async function seedIfEmpty() {
         });
 
         const parsed = await parseFeed(feed.id, feed.rssUrl);
+        if (!parsed) continue;
         const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
         await storage.upsertEpisodes(feed.id, episodeData);
 

@@ -39,7 +39,7 @@ export async function createFeed(data: InsertFeed): Promise<Feed> {
   return feed;
 }
 
-export async function updateFeed(id: string, data: Partial<InsertFeed & { isActive: boolean; lastFetchedAt: Date }>): Promise<Feed> {
+export async function updateFeed(id: string, data: Partial<InsertFeed & { isActive: boolean; lastFetchedAt: Date; etag: string | null; lastModifiedHeader: string | null }>): Promise<Feed> {
   const [feed] = await db.update(feeds).set(data).where(eq(feeds.id, id)).returning();
   return feed;
 }

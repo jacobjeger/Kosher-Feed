@@ -25,6 +25,10 @@ async function onDemandRefreshFeed(feedId: string): Promise<void> {
     console.log(`On-demand refresh: ${feed.title} (last fetched ${feed.lastFetchedAt ? Math.round((Date.now() - lastFetched) / 60000) + 'm ago' : 'never'})`);
     
     const parsed = await parseFeed(feed.id, feed.rssUrl);
+    if (!parsed) {
+      await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
+      return;
+    }
     const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
     const inserted = await storage.upsertEpisodes(feed.id, episodeData);
     await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
@@ -260,6 +264,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!rssUrl) return res.status(400).json({ error: "rssUrl is required" });
 
       const parsed = await parseFeed("temp", rssUrl);
+      if (!parsed) return res.status(500).json({ error: "Could not parse feed" });
 
       const effectiveCategoryId = categoryId || (categoryIds && categoryIds.length > 0 ? categoryIds[0] : null);
       const feed = await storage.createFeed({
@@ -316,6 +321,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!feed) return res.status(404).json({ error: "Feed not found" });
 
       const parsed = await parseFeed(feed.id, feed.rssUrl);
+      if (!parsed) return res.json({ newEpisodes: 0 });
       const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
       const inserted = await storage.upsertEpisodes(feed.id, episodeData);
 
@@ -346,6 +352,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const feed of allFeeds) {
         try {
           const parsed = await parseFeed(feed.id, feed.rssUrl);
+          if (!parsed) { await storage.updateFeed(feed.id, { lastFetchedAt: new Date() }); continue; }
           const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
           const inserted = await storage.upsertEpisodes(feed.id, episodeData);
           totalNew += inserted.length;
@@ -473,6 +480,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { rssUrl } = req.body;
       if (!rssUrl) return res.status(400).json({ error: "rssUrl is required" });
       const parsed = await parseFeed("preview", rssUrl);
+      if (!parsed) return res.status(500).json({ error: "Could not parse feed" });
       res.json({
         title: parsed.title,
         description: parsed.description,
@@ -785,6 +793,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           res.write(`data: ${JSON.stringify({ type: "progress", index: i, total: feedUrls.length, url: rssUrl, status: "parsing" })}\n\n`);
           const parsed = await parseFeed("temp", rssUrl);
+          if (!parsed) { res.write(`data: ${JSON.stringify({ type: "error", index: i, url: rssUrl, error: "Could not parse feed" })}\n\n`); continue; }
           res.write(`data: ${JSON.stringify({ type: "progress", index: i, total: feedUrls.length, url: rssUrl, status: "saving", title: parsed.title })}\n\n`);
           const feed = await storage.createFeed({
             title: parsed.title,

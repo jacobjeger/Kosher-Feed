@@ -11,6 +11,7 @@ import * as storage from "./storage";
 import { sendNewEpisodePushes } from "./push";
 import * as fs from "fs";
 import * as path from "path";
+import pLimit from "p-limit";
 
 const app = express();
 const log = console.log;
@@ -384,11 +385,29 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   ]);
 }
 
-export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string }): Promise<number> {
-  const parsed = await parseFeed(feed.id, feed.rssUrl);
+export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string; etag?: string | null; lastModifiedHeader?: string | null }): Promise<number> {
+  const parsed = await parseFeed(feed.id, feed.rssUrl, {
+    etag: feed.etag,
+    lastModified: feed.lastModifiedHeader,
+  });
+
+  if (parsed === null) {
+    await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
+    return 0;
+  }
+
   const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
   const inserted = await storage.upsertEpisodes(feed.id, episodeData);
-  await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
+
+  const updateData: any = { lastFetchedAt: new Date() };
+  if (parsed.responseHeaders?.etag) {
+    updateData.etag = parsed.responseHeaders.etag;
+  }
+  if (parsed.responseHeaders?.lastModified) {
+    updateData.lastModifiedHeader = parsed.responseHeaders.lastModified;
+  }
+  await storage.updateFeed(feed.id, updateData);
+
   if (inserted.length > 0) {
     for (const ep of inserted.slice(0, 3)) {
       sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
@@ -420,29 +439,40 @@ async function autoRefreshFeeds() {
 
     await preResolveHostnames(staleFeeds.map(f => f.rssUrl));
 
-    log(`Auto-refresh [${now}]: refreshing ${staleFeeds.length} stale feed(s) out of ${allFeeds.length} total (sequential)...`);
+    log(`Auto-refresh [${now}]: refreshing ${staleFeeds.length} stale feed(s) out of ${allFeeds.length} total (3 concurrent)...`);
     let totalNew = 0;
     let failures = 0;
     let successes = 0;
+    let skipped304 = 0;
+    let completed = 0;
 
-    for (let i = 0; i < staleFeeds.length; i++) {
-      const feed = staleFeeds[i];
-      try {
-        const count = await withTimeout(refreshOneFeed(feed), 120000, feed.title);
-        totalNew += count;
-        successes++;
-        if (count > 0) log(`  [${i + 1}/${staleFeeds.length}] ${feed.title}: +${count} new`);
-      } catch (e) {
-        failures++;
-        const errMsg = (e as Error)?.message || String(e);
-        log(`  [${i + 1}/${staleFeeds.length}] ${feed.title}: FAIL — ${errMsg.slice(0, 120)}`);
-      }
-      if (i < staleFeeds.length - 1) {
-        await new Promise(r => setTimeout(r, Math.random() * 1000 + 500));
-      }
-    }
+    const limit = pLimit(3);
 
-    log(`Auto-refresh [${now}] complete: ${successes} ok, ${failures} failed, ${totalNew} new episode(s), across ${staleFeeds.length} stale feed(s)`);
+    const tasks = staleFeeds.map((feed) =>
+      limit(async () => {
+        try {
+          await new Promise(r => setTimeout(r, Math.random() * 300));
+          const count = await withTimeout(refreshOneFeed(feed), 120000, feed.title);
+          totalNew += count;
+          successes++;
+          completed++;
+          if (count > 0) {
+            log(`  [${completed}/${staleFeeds.length}] ${feed.title}: +${count} new`);
+          } else if (count === 0) {
+            skipped304++;
+          }
+        } catch (e) {
+          failures++;
+          completed++;
+          const errMsg = (e as Error)?.message || String(e);
+          log(`  [${completed}/${staleFeeds.length}] ${feed.title}: FAIL — ${errMsg.slice(0, 120)}`);
+        }
+      })
+    );
+
+    await Promise.all(tasks);
+
+    log(`Auto-refresh [${now}] complete: ${successes} ok (${skipped304} cached/304), ${failures} failed, ${totalNew} new episode(s), across ${staleFeeds.length} stale feed(s)`);
   } catch (e) {
     console.error("Auto-refresh error:", e);
   } finally {
