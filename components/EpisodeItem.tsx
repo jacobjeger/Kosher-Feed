@@ -167,9 +167,7 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
   };
 
   return (
-    <Pressable
-      onLongPress={handleLongPress}
-      delayLongPress={400}
+    <View
       style={[
         styles.container,
         { backgroundColor: colors.surface, borderColor: colors.cardBorder },
@@ -178,7 +176,7 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
       <View style={styles.mainRow}>
         <Pressable
           onPress={handlePlay}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           style={[styles.playBtn, { backgroundColor: isCurrentlyPlaying ? colors.accent : colors.accentLight }]}
         >
           <Ionicons
@@ -188,7 +186,7 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
             style={isCurrentlyPlaying && playback.isPlaying ? undefined : { marginLeft: 2 }}
           />
         </Pressable>
-        <Pressable onPress={handleToggleExpand} style={styles.info}>
+        <Pressable onPress={handleToggleExpand} onLongPress={handleLongPress} delayLongPress={400} style={styles.info}>
           {showFeedTitle && (
             <Text style={[styles.feedTitle, { color: colors.accent }]} numberOfLines={1}>
               {feed.title}
@@ -314,7 +312,7 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
           ) : null}
         </View>
       )}
-    </Pressable>
+    </View>
   );
 }
 
