@@ -12,15 +12,27 @@ try {
 
 const parser = new Parser();
 
-const rssClient = axios.create({
-  timeout: 90000,
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
+
+const directClient = axios.create({
+  timeout: 60000,
   maxRedirects: 5,
   headers: {
-    'User-Agent': 'Mozilla/5.0 (compatible; ShiurPodBot/1.0)',
+    'User-Agent': BROWSER_UA,
     'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+    'Accept-Language': 'en-US,en;q=0.9',
   },
   responseType: 'text',
   decompress: true,
+});
+
+const proxyClient = axios.create({
+  timeout: 30000,
+  maxRedirects: 5,
+  headers: {
+    'User-Agent': BROWSER_UA,
+    'Accept': 'application/json',
+  },
 });
 
 export async function preResolveHostnames(urls: string[]): Promise<void> {
@@ -56,9 +68,94 @@ interface ParsedFeedData {
   episodes: Omit<Episode, "id" | "createdAt">[];
 }
 
-export async function parseFeed(feedId: string, rssUrl: string): Promise<ParsedFeedData> {
-  const startTime = Date.now();
+interface FetchResult {
+  method: 'proxy' | 'direct';
+  durationMs: number;
+  success: boolean;
+  error?: string;
+}
 
+async function fetchViaProxy(rssUrl: string): Promise<{ xml: string | null; items: any[] | null; feed: any | null; result: FetchResult }> {
+  const start = Date.now();
+  try {
+    const encodedUrl = encodeURIComponent(rssUrl);
+    const cacheBust = Date.now();
+    const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodedUrl}&_t=${cacheBust}`;
+
+    const response = await proxyClient.get(proxyUrl);
+    const durationMs = Date.now() - start;
+
+    if (response.data?.status === 'ok' && response.data?.items) {
+      return {
+        xml: null,
+        items: response.data.items,
+        feed: response.data.feed,
+        result: { method: 'proxy', durationMs, success: true },
+      };
+    }
+
+    return {
+      xml: null,
+      items: null,
+      feed: null,
+      result: { method: 'proxy', durationMs, success: false, error: `Proxy returned status: ${response.data?.status || 'unknown'}` },
+    };
+  } catch (err: any) {
+    const durationMs = Date.now() - start;
+    const errMsg = err.response?.status
+      ? `HTTP ${err.response.status}`
+      : (err.code || err.message || 'Unknown error');
+    return {
+      xml: null,
+      items: null,
+      feed: null,
+      result: { method: 'proxy', durationMs, success: false, error: errMsg },
+    };
+  }
+}
+
+async function fetchDirect(rssUrl: string): Promise<{ xml: string; result: FetchResult }> {
+  const start = Date.now();
+  try {
+    const response = await directClient.get(rssUrl);
+    const durationMs = Date.now() - start;
+    const xml = response.data;
+
+    if (!xml || xml.length < 50) {
+      return {
+        xml: '',
+        result: { method: 'direct', durationMs, success: false, error: `Empty response (${xml?.length || 0} bytes)` },
+      };
+    }
+
+    return {
+      xml,
+      result: { method: 'direct', durationMs, success: true },
+    };
+  } catch (err: any) {
+    const durationMs = Date.now() - start;
+    let errMsg: string;
+    if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+      errMsg = `Timeout after ${durationMs}ms`;
+    } else if (err.response) {
+      errMsg = `HTTP ${err.response.status}`;
+    } else {
+      errMsg = err.code || err.message || 'Unknown error';
+    }
+    return {
+      xml: '',
+      result: { method: 'direct', durationMs, success: false, error: errMsg },
+    };
+  }
+}
+
+function logHop(feedTitle: string, result: FetchResult) {
+  const status = result.success ? 'OK' : 'FAIL';
+  const detail = result.error ? ` — ${result.error}` : '';
+  console.log(`  [${result.method.toUpperCase()}] ${feedTitle}: ${status} in ${result.durationMs}ms${detail}`);
+}
+
+export async function parseFeed(feedId: string, rssUrl: string): Promise<ParsedFeedData> {
   let hostname: string;
   try {
     hostname = new URL(rssUrl).hostname;
@@ -66,30 +163,47 @@ export async function parseFeed(feedId: string, rssUrl: string): Promise<ParsedF
     throw new Error(`Invalid RSS URL: ${rssUrl}`);
   }
 
-  let xml: string;
-  try {
-    const response = await rssClient.get(rssUrl);
-    xml = response.data;
-    const elapsed = Date.now() - startTime;
-    if (elapsed > 5000) {
-      console.log(`  Slow fetch: ${hostname} took ${elapsed}ms`);
+  const proxyResult = await fetchViaProxy(rssUrl);
+  logHop(hostname, proxyResult.result);
+
+  if (proxyResult.result.success && proxyResult.items && proxyResult.feed) {
+    const feedEpisodes: Omit<Episode, "id" | "createdAt">[] = [];
+
+    for (const item of proxyResult.items) {
+      const audioUrl = item.enclosure?.link || item.enclosure?.url;
+      if (!audioUrl) continue;
+
+      feedEpisodes.push({
+        feedId,
+        title: item.title || "Untitled Episode",
+        description: stripHtml(item.description || item.content || ""),
+        audioUrl,
+        duration: item.enclosure?.duration || null,
+        publishedAt: item.pubDate ? new Date(item.pubDate) : null,
+        guid: item.guid || item.link || audioUrl,
+        imageUrl: item.thumbnail || null,
+        adminNotes: null,
+        sourceSheetUrl: null,
+      });
     }
-  } catch (err: any) {
-    const elapsed = Date.now() - startTime;
-    if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
-      throw new Error(`Feed timed out after ${elapsed}ms: ${rssUrl}`);
-    }
-    if (err.response) {
-      throw new Error(`Feed returned HTTP ${err.response.status}: ${rssUrl}`);
-    }
-    throw new Error(`Feed fetch failed after ${elapsed}ms: ${err.code || err.message} (${rssUrl})`);
+
+    return {
+      title: proxyResult.feed.title || "Unknown Podcast",
+      description: proxyResult.feed.description || "",
+      imageUrl: proxyResult.feed.image || undefined,
+      author: proxyResult.feed.author || undefined,
+      episodes: feedEpisodes,
+    };
   }
 
-  if (!xml || xml.length < 50) {
-    throw new Error(`Feed returned empty/invalid response (${xml?.length || 0} bytes): ${rssUrl}`);
+  const directResult = await fetchDirect(rssUrl);
+  logHop(hostname, directResult.result);
+
+  if (!directResult.result.success) {
+    throw new Error(`All fetch methods failed for ${rssUrl}: proxy(${proxyResult.result.error}), direct(${directResult.result.error})`);
   }
 
-  const feed = await parser.parseString(xml);
+  const feed = await parser.parseString(directResult.xml);
 
   const feedEpisodes: Omit<Episode, "id" | "createdAt">[] = [];
 
