@@ -173,12 +173,25 @@ export async function parseFeed(feedId: string, rssUrl: string): Promise<ParsedF
       const audioUrl = item.enclosure?.link || item.enclosure?.url;
       if (!audioUrl) continue;
 
+      let duration: string | null = null;
+      if (item.enclosure?.duration) {
+        const secs = Number(item.enclosure.duration);
+        if (!isNaN(secs) && secs > 0) {
+          const h = Math.floor(secs / 3600);
+          const m = Math.floor((secs % 3600) / 60);
+          const s = Math.floor(secs % 60);
+          duration = h > 0
+            ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+            : `${m}:${String(s).padStart(2, '0')}`;
+        }
+      }
+
       feedEpisodes.push({
         feedId,
         title: item.title || "Untitled Episode",
         description: stripHtml(item.description || item.content || ""),
         audioUrl,
-        duration: item.enclosure?.duration || null,
+        duration,
         publishedAt: item.pubDate ? new Date(item.pubDate) : null,
         guid: item.guid || item.link || audioUrl,
         imageUrl: item.thumbnail || null,

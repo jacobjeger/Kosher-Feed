@@ -435,7 +435,10 @@ async function autoRefreshFeeds() {
       } catch (e) {
         failures++;
         const errMsg = (e as Error)?.message || String(e);
-        log(`  [${i + 1}/${staleFeeds.length}] ${feed.title}: FAIL — ${errMsg.slice(0, 80)}`);
+        log(`  [${i + 1}/${staleFeeds.length}] ${feed.title}: FAIL — ${errMsg.slice(0, 120)}`);
+      }
+      if (i < staleFeeds.length - 1) {
+        await new Promise(r => setTimeout(r, Math.random() * 1000 + 500));
       }
     }
 
