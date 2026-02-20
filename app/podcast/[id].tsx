@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef, memo } from "react";
+import React, { useState, useMemo, useCallback, useRef, useEffect, memo } from "react";
 import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Platform, Switch, Alert, TextInput, RefreshControl } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
@@ -186,6 +186,7 @@ function PodcastDetailScreenInner() {
   }, [id, feedSettings.maxEpisodes, updateFeedSettings]);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showRefreshHint, setShowRefreshHint] = useState(false);
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     try {
@@ -196,7 +197,22 @@ function PodcastDetailScreenInner() {
     queryClient.invalidateQueries({ queryKey: ["/api/feeds"] });
     queryClient.invalidateQueries({ queryKey: ["/api/subscriptions"] });
     setIsRefreshing(false);
+    setShowRefreshHint(false);
   }, [id]);
+
+  useEffect(() => {
+    if (!feed?.lastFetchedAt) return;
+    const staleMs = 30 * 60 * 1000;
+    const lastFetched = new Date(feed.lastFetchedAt).getTime();
+    if (Date.now() - lastFetched > staleMs) {
+      setShowRefreshHint(true);
+      const baseUrl = getApiUrl();
+      fetch(`${baseUrl}/api/feeds/${id}/episodes?refresh=1&paginated=1&page=1&limit=1`).then(() => {
+        queryClient.invalidateQueries({ queryKey: [`/api/feeds/${id}/episodes`, "paginated"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/feeds"] });
+      }).catch(() => {});
+    }
+  }, [feed?.lastFetchedAt, id]);
 
   const handleLoadMore = useCallback(() => {
     if (episodesInfiniteQuery.hasNextPage && !episodesInfiniteQuery.isFetchingNextPage && !episodeSearch.trim()) {
@@ -361,6 +377,13 @@ function PodcastDetailScreenInner() {
               )}
             </View>
           )}
+        </View>
+      )}
+
+      {showRefreshHint && (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8, backgroundColor: colors.surfaceAlt, marginBottom: 10 }}>
+          <Ionicons name="arrow-down" size={14} color={colors.textSecondary} />
+          <Text style={{ fontSize: 12, color: colors.textSecondary }}>Pull down to check for new episodes</Text>
         </View>
       )}
 

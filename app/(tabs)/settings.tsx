@@ -11,7 +11,7 @@ import { useDownloads } from "@/contexts/DownloadsContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { requestNotificationPermissions, checkNotificationPermission, setupNotificationChannel } from "@/lib/notifications";
 import { registerPushToken } from "@/lib/push-notifications";
-import { lightHaptic, mediumHaptic } from "@/lib/haptics";
+import { lightHaptic, mediumHaptic, invalidateHapticCache } from "@/lib/haptics";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { getLogsSnapshot } from "@/lib/error-logger";
 import OptionPickerModal, { type PickerOption } from "@/components/OptionPickerModal";
@@ -430,7 +430,7 @@ function SettingsScreenInner() {
       </View>
 
       <View style={[styles.section, { borderColor: colors.cardBorder }]}>
-        <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>APPEARANCE</Text>
+        <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>APPEARANCE & FEEDBACK</Text>
         <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
           <SettingRow
             icon={<Ionicons name="color-palette" size={20} color={colors.accent} />}
@@ -438,6 +438,26 @@ function SettingsScreenInner() {
             value={THEME_LABELS[settings.darkModeOverride]}
             onPress={handleChangeTheme}
           />
+          {Platform.OS !== "web" && (
+            <>
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
+              <SettingRow
+                icon={<Ionicons name="phone-portrait-outline" size={20} color={colors.accent} />}
+                label="Haptic Feedback"
+                rightElement={
+                  <Switch
+                    value={settings.hapticFeedbackEnabled}
+                    onValueChange={(value: boolean) => {
+                      updateSettings({ hapticFeedbackEnabled: value });
+                      invalidateHapticCache();
+                    }}
+                    trackColor={{ false: colors.border, true: colors.accent }}
+                    thumbColor="#fff"
+                  />
+                }
+              />
+            </>
+          )}
         </View>
       </View>
 

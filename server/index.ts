@@ -6,7 +6,7 @@ import type { Request, Response, NextFunction } from "express";
 import compression from "compression";
 import { registerRoutes } from "./routes";
 import { seedIfEmpty } from "./seed";
-import { parseFeed } from "./rss";
+import { parseFeed, preResolveHostnames } from "./rss";
 import * as storage from "./storage";
 import { sendNewEpisodePushes } from "./push";
 import * as fs from "fs";
@@ -374,7 +374,7 @@ function setupErrorHandler(app: express.Application) {
   });
 }
 
-const FEED_REFRESH_INTERVAL = 30 * 60 * 1000;
+const FEED_REFRESH_INTERVAL = 60 * 60 * 1000;
 const KEEP_ALIVE_INTERVAL = 4 * 60 * 1000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -397,7 +397,14 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
   return inserted.length;
 }
 
+let isAutoRefreshing = false;
+
 async function autoRefreshFeeds() {
+  if (isAutoRefreshing) {
+    log(`Auto-refresh: skipping — previous cycle still running`);
+    return;
+  }
+  isAutoRefreshing = true;
   try {
     const allFeeds = await storage.getActiveFeeds();
     const now = new Date().toLocaleTimeString();
@@ -407,8 +414,11 @@ async function autoRefreshFeeds() {
 
     if (staleFeeds.length === 0) {
       log(`Auto-refresh [${now}]: all ${allFeeds.length} feed(s) are fresh, skipping`);
+      isAutoRefreshing = false;
       return;
     }
+
+    await preResolveHostnames(staleFeeds.map(f => f.rssUrl));
 
     log(`Auto-refresh [${now}]: refreshing ${staleFeeds.length} stale feed(s) out of ${allFeeds.length} total (sequential)...`);
     let totalNew = 0;
@@ -418,7 +428,7 @@ async function autoRefreshFeeds() {
     for (let i = 0; i < staleFeeds.length; i++) {
       const feed = staleFeeds[i];
       try {
-        const count = await withTimeout(refreshOneFeed(feed), 60000, feed.title);
+        const count = await withTimeout(refreshOneFeed(feed), 30000, feed.title);
         totalNew += count;
         successes++;
         if (count > 0) log(`  [${i + 1}/${staleFeeds.length}] ${feed.title}: +${count} new`);
@@ -429,7 +439,7 @@ async function autoRefreshFeeds() {
           log(`  [${i + 1}/${staleFeeds.length}] ${feed.title}: timeout, retrying...`);
           await new Promise(r => setTimeout(r, 2000));
           try {
-            const count = await withTimeout(refreshOneFeed(feed), 60000, feed.title);
+            const count = await withTimeout(refreshOneFeed(feed), 30000, feed.title);
             totalNew += count;
             successes++;
             if (count > 0) log(`  [${i + 1}/${staleFeeds.length}] ${feed.title}: retry OK +${count}`);
@@ -451,6 +461,8 @@ async function autoRefreshFeeds() {
     log(`Auto-refresh [${now}] complete: ${successes} ok, ${failures} failed, ${totalNew} new episode(s), across ${staleFeeds.length} stale feed(s)`);
   } catch (e) {
     console.error("Auto-refresh error:", e);
+  } finally {
+    isAutoRefreshing = false;
   }
 }
 
