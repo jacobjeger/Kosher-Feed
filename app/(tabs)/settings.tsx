@@ -516,7 +516,7 @@ function SettingsScreenInner() {
         <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>ABOUT</Text>
         <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
           <SettingRow
-            icon={<Ionicons name="headset" size={20} color={colors.accent} />}
+            icon={<Ionicons name="information-circle" size={20} color={colors.accent} />}
             label="App Version"
             value={devModeUnlocked ? "1.0.0 (dev)" : "1.0.0"}
             onPress={handleVersionTap}

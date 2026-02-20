@@ -50,7 +50,7 @@ function WebNavBar() {
       <View style={webStyles.navInner}>
         <Pressable onPress={() => router.push("/")} style={webStyles.logoArea}>
           <View style={[webStyles.logoIcon, { backgroundColor: colors.accent }]}>
-            <Ionicons name="headset" size={18} color="#fff" />
+            <Ionicons name="radio" size={18} color="#fff" />
           </View>
           <Text style={[webStyles.logoText, { color: colors.text }]}>ShiurPod</Text>
         </Pressable>
