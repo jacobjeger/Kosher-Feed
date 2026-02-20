@@ -535,6 +535,10 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
     saveCurrentPosition();
 
+    setCurrentEpisode(episode);
+    setCurrentFeed(feed);
+    setPlayback(prev => ({ ...prev, isLoading: true, isPlaying: false, positionMs: 0, durationMs: 0 }));
+
     try {
       if (intervalRef.current) clearInterval(intervalRef.current);
 
@@ -542,6 +546,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         getSavedPosition(episode.id),
         getFeedSpeed(feed.id),
       ]);
+
+      setPlayback(prev => ({ ...prev, positionMs: savedPos, playbackRate: feedSpeed }));
 
       if (Platform.OS === "web") {
         if (audioRef.current) {
@@ -552,10 +558,6 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         audio.playbackRate = feedSpeed;
         audio.preload = "auto";
         audioRef.current = audio;
-
-        setCurrentEpisode(episode);
-        setCurrentFeed(feed);
-        setPlayback(prev => ({ ...prev, isLoading: true, isPlaying: false, positionMs: savedPos, durationMs: 0, playbackRate: feedSpeed }));
 
         audio.oncanplay = () => {
           if (savedPos > 0) {
@@ -574,9 +576,6 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: false }));
         };
       } else if (createAudioPlayerFn && nativePlayerReady) {
-        setCurrentEpisode(episode);
-        setCurrentFeed(feed);
-        setPlayback(prev => ({ ...prev, isLoading: true, isPlaying: false, positionMs: savedPos, durationMs: 0, playbackRate: feedSpeed }));
 
         try {
           if (nativePlayerRef.current) {

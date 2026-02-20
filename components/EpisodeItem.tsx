@@ -86,8 +86,8 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
         }
         router.push("/player");
       } else {
-        await playEpisode(episode, feed);
         router.push("/player");
+        playEpisode(episode, feed).catch(console.error);
       }
     } catch (e) {
       console.error(e);

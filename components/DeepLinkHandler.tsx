@@ -60,13 +60,14 @@ export function DeepLinkHandler() {
       return;
     }
 
-    await playEpisode(data.episode, data.feed);
-    if (parsed.timestamp && parsed.timestamp > 0) {
-      setTimeout(() => {
-        seekTo(parsed.timestamp!);
-      }, 1000);
-    }
     router.push("/player");
+    playEpisode(data.episode, data.feed).then(() => {
+      if (parsed.timestamp && parsed.timestamp > 0) {
+        setTimeout(() => {
+          seekTo(parsed.timestamp!);
+        }, 1000);
+      }
+    }).catch(console.error);
   };
 
   useEffect(() => {

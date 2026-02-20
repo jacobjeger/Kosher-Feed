@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { View, Text, Pressable, StyleSheet, Platform, Alert, ScrollView, Share, PanResponder, Animated as RNAnimated, Dimensions } from "react-native";
+import { View, Text, Pressable, StyleSheet, Platform, Alert, ScrollView, Share, PanResponder, Animated as RNAnimated, Dimensions, ActivityIndicator } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
@@ -213,8 +213,17 @@ export default function PlayerScreen() {
           </Pressable>
         </View>
         <View style={styles.emptyState}>
-          <Ionicons name="musical-notes-outline" size={64} color={colors.textSecondary} />
-          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No episode playing</Text>
+          {playback.isLoading ? (
+            <>
+              <Ionicons name="hourglass-outline" size={48} color={colors.accent} />
+              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>Loading...</Text>
+            </>
+          ) : (
+            <>
+              <Ionicons name="musical-notes-outline" size={64} color={colors.textSecondary} />
+              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No episode playing</Text>
+            </>
+          )}
         </View>
       </View>
     );
@@ -331,18 +340,23 @@ export default function PlayerScreen() {
 
         <Pressable
           onPress={() => {
+            if (playback.isLoading) return;
             mediumHaptic();
             playback.isPlaying ? pause() : resume();
           }}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           style={[styles.playBtn, isSmallScreen && styles.playBtnSmall, { backgroundColor: colors.accent }]}
         >
-          <Ionicons
-            name={playback.isPlaying ? "pause" : "play"}
-            size={isSmallScreen ? 32 : 36}
-            color="#fff"
-            style={playback.isPlaying ? undefined : { marginLeft: 3 }}
-          />
+          {playback.isLoading ? (
+            <ActivityIndicator size={isSmallScreen ? 28 : 32} color="#fff" />
+          ) : (
+            <Ionicons
+              name={playback.isPlaying ? "pause" : "play"}
+              size={isSmallScreen ? 32 : 36}
+              color="#fff"
+              style={playback.isPlaying ? undefined : { marginLeft: 3 }}
+            />
+          )}
         </Pressable>
 
         <Pressable
