@@ -13,7 +13,7 @@ try {
 const parser = new Parser();
 
 const rssClient = axios.create({
-  timeout: 15000,
+  timeout: 90000,
   maxRedirects: 5,
   headers: {
     'User-Agent': 'Mozilla/5.0 (compatible; ShiurPodBot/1.0)',

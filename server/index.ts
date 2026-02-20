@@ -428,33 +428,14 @@ async function autoRefreshFeeds() {
     for (let i = 0; i < staleFeeds.length; i++) {
       const feed = staleFeeds[i];
       try {
-        const count = await withTimeout(refreshOneFeed(feed), 20000, feed.title);
+        const count = await withTimeout(refreshOneFeed(feed), 120000, feed.title);
         totalNew += count;
         successes++;
         if (count > 0) log(`  [${i + 1}/${staleFeeds.length}] ${feed.title}: +${count} new`);
       } catch (e) {
+        failures++;
         const errMsg = (e as Error)?.message || String(e);
-        const isTimeout = errMsg.includes('Timeout') || errMsg.includes('timed out');
-        if (isTimeout) {
-          log(`  [${i + 1}/${staleFeeds.length}] ${feed.title}: timeout, retrying...`);
-          await new Promise(r => setTimeout(r, 2000));
-          try {
-            const count = await withTimeout(refreshOneFeed(feed), 20000, feed.title);
-            totalNew += count;
-            successes++;
-            if (count > 0) log(`  [${i + 1}/${staleFeeds.length}] ${feed.title}: retry OK +${count}`);
-          } catch (e2) {
-            failures++;
-            const retryMsg = (e2 as Error)?.message || String(e2);
-            log(`  [${i + 1}/${staleFeeds.length}] ${feed.title}: retry FAIL — ${retryMsg.slice(0, 80)}`);
-          }
-        } else {
-          failures++;
-          log(`  [${i + 1}/${staleFeeds.length}] ${feed.title}: FAIL — ${errMsg.slice(0, 80)}`);
-        }
-      }
-      if (i < staleFeeds.length - 1) {
-        await new Promise(r => setTimeout(r, 1000));
+        log(`  [${i + 1}/${staleFeeds.length}] ${feed.title}: FAIL — ${errMsg.slice(0, 80)}`);
       }
     }
 
