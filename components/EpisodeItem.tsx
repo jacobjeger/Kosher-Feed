@@ -1,5 +1,5 @@
-import React from "react";
-import { View, Text, Pressable, StyleSheet, Linking, Platform } from "react-native";
+import React, { useRef, useMemo } from "react";
+import { View, Text, Pressable, StyleSheet, Linking, Platform, Animated as RNAnimated, PanResponder } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -54,6 +54,8 @@ function formatRemainingTime(positionMs: number, durationMs: number): string {
   return `${minutes} min left`;
 }
 
+const SWIPE_THRESHOLD = 80;
+
 function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
   const { playEpisode, currentEpisode, playback, pause, resume, queue, addToQueue, removeFromQueue } = useAudioPlayer();
   const { downloadEpisode, isDownloaded, isDownloading, downloadProgress } = useDownloads();
@@ -74,6 +76,9 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
   const played = isPlayed(episode.id);
   const savedPos = getPosition(episode.id);
   const savedProgress = savedPos && savedPos.durationMs > 0 ? { positionMs: savedPos.positionMs, durationMs: savedPos.durationMs } : null;
+
+  const translateX = useRef(new RNAnimated.Value(0)).current;
+  const isNative = Platform.OS !== "web";
 
   const handlePlay = async () => {
     try {
@@ -137,13 +142,43 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
     }
   };
 
-  return (
-    <View
-      style={[
-        styles.container,
-        { backgroundColor: colors.surface, borderColor: colors.cardBorder },
-      ]}
-    >
+  const panResponder = useMemo(() => {
+    if (!isNative) return null;
+    return PanResponder.create({
+      onMoveShouldSetPanResponder: (_evt, gestureState) => {
+        return Math.abs(gestureState.dx) > 10 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.5;
+      },
+      onPanResponderMove: (_evt, gestureState) => {
+        translateX.setValue(gestureState.dx);
+      },
+      onPanResponderRelease: (_evt, gestureState) => {
+        if (gestureState.dx > SWIPE_THRESHOLD) {
+          handleToggleQueue();
+        } else if (gestureState.dx < -SWIPE_THRESHOLD) {
+          if (!downloaded && !downloading) {
+            handleDownload();
+          }
+        }
+        RNAnimated.spring(translateX, {
+          toValue: 0,
+          useNativeDriver: true,
+          tension: 40,
+          friction: 7,
+        }).start();
+      },
+      onPanResponderTerminate: () => {
+        RNAnimated.spring(translateX, {
+          toValue: 0,
+          useNativeDriver: true,
+          tension: 40,
+          friction: 7,
+        }).start();
+      },
+    });
+  }, [isNative, downloaded, downloading, isInQueue]);
+
+  const cardContent = (
+    <>
       <View style={styles.mainRow}>
         <Pressable
           onPress={handlePlay}
@@ -283,6 +318,66 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
           ) : null}
         </View>
       )}
+    </>
+  );
+
+  if (!isNative || !panResponder) {
+    return (
+      <View
+        style={[
+          styles.container,
+          { backgroundColor: colors.surface, borderColor: colors.cardBorder },
+        ]}
+      >
+        {cardContent}
+      </View>
+    );
+  }
+
+  const queueActionBg = isInQueue ? "#E53935" : "#2979FF";
+  const downloadActionBg = downloaded ? "#43A047" : "#43A047";
+
+  const rightActionOpacity = translateX.interpolate({
+    inputRange: [0, SWIPE_THRESHOLD],
+    outputRange: [0, 1],
+    extrapolate: "clamp",
+  });
+
+  const leftActionOpacity = translateX.interpolate({
+    inputRange: [-SWIPE_THRESHOLD, 0],
+    outputRange: [1, 0],
+    extrapolate: "clamp",
+  });
+
+  return (
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: colors.surface, borderColor: colors.cardBorder },
+      ]}
+    >
+      <View style={styles.swipeActionsContainer}>
+        <RNAnimated.View style={[styles.swipeActionLeft, { backgroundColor: queueActionBg, opacity: rightActionOpacity }]}>
+          <Ionicons name={isInQueue ? "remove-circle-outline" : "list-outline"} size={22} color="#fff" />
+          <Text style={styles.swipeActionText}>
+            {isInQueue ? "Remove" : "Queue"}
+          </Text>
+        </RNAnimated.View>
+        <RNAnimated.View style={[styles.swipeActionRight, { backgroundColor: downloadActionBg, opacity: leftActionOpacity }]}>
+          <Ionicons name={downloaded ? "checkmark-circle" : "download-outline"} size={22} color="#fff" />
+          <Text style={styles.swipeActionText}>
+            {downloaded ? "Done" : "Download"}
+          </Text>
+        </RNAnimated.View>
+      </View>
+      <RNAnimated.View
+        style={[
+          { backgroundColor: colors.surface, transform: [{ translateX }] },
+        ]}
+        {...panResponder.panHandlers}
+      >
+        {cardContent}
+      </RNAnimated.View>
     </View>
   );
 }
@@ -397,6 +492,33 @@ const styles = StyleSheet.create({
   progressTextLabel: {
     fontSize: 11,
     fontWeight: "500" as const,
+  },
+  swipeActionsContainer: {
+    ...StyleSheet.absoluteFillObject,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "stretch",
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  swipeActionLeft: {
+    width: 100,
+    justifyContent: "center" as const,
+    alignItems: "center" as const,
+    paddingHorizontal: 10,
+  },
+  swipeActionRight: {
+    width: 100,
+    justifyContent: "center" as const,
+    alignItems: "center" as const,
+    paddingHorizontal: 10,
+    marginLeft: "auto" as any,
+  },
+  swipeActionText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "600" as const,
+    marginTop: 2,
   },
 });
 

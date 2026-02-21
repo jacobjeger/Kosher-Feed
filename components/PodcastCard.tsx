@@ -10,9 +10,10 @@ import { router } from "expo-router";
 interface Props {
   feed: Feed;
   size?: "small" | "medium" | "featured";
+  hasNewEpisodes?: boolean;
 }
 
-function PodcastCard({ feed, size = "small" }: Props) {
+function PodcastCard({ feed, size = "small", hasNewEpisodes }: Props) {
   const { width } = useWindowDimensions();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
@@ -28,13 +29,16 @@ function PodcastCard({ feed, size = "small" }: Props) {
         ]}
         onPress={() => router.push({ pathname: "/podcast/[id]", params: { id: feed.id } })}
       >
-        {feed.imageUrl && !imgError ? (
-          <Image source={{ uri: feed.imageUrl }} style={styles.featuredImage} contentFit="cover" cachePolicy="memory-disk" onError={() => setImgError(true)} />
-        ) : (
-          <View style={[styles.featuredImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
-            <Ionicons name="mic" size={48} color={colors.textSecondary} />
-          </View>
-        )}
+        <View>
+          {feed.imageUrl && !imgError ? (
+            <Image source={{ uri: feed.imageUrl }} style={styles.featuredImage} contentFit="cover" cachePolicy="memory-disk" onError={() => setImgError(true)} />
+          ) : (
+            <View style={[styles.featuredImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
+              <Ionicons name="mic" size={48} color={colors.textSecondary} />
+            </View>
+          )}
+          {hasNewEpisodes && <View style={styles.newBadge} />}
+        </View>
         <View style={styles.featuredOverlay}>
           <View style={styles.featuredBadge}>
             <Ionicons name="star" size={10} color="#f59e0b" />
@@ -69,13 +73,16 @@ function PodcastCard({ feed, size = "small" }: Props) {
         ]}
         onPress={() => router.push({ pathname: "/podcast/[id]", params: { id: feed.id } })}
       >
-        {feed.imageUrl && !imgError ? (
-          <Image source={{ uri: feed.imageUrl }} style={styles.mediumImage} contentFit="cover" cachePolicy="memory-disk" onError={() => setImgError(true)} />
-        ) : (
-          <View style={[styles.mediumImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
-            <Ionicons name="mic" size={28} color={colors.textSecondary} />
-          </View>
-        )}
+        <View>
+          {feed.imageUrl && !imgError ? (
+            <Image source={{ uri: feed.imageUrl }} style={styles.mediumImage} contentFit="cover" cachePolicy="memory-disk" onError={() => setImgError(true)} />
+          ) : (
+            <View style={[styles.mediumImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
+              <Ionicons name="mic" size={28} color={colors.textSecondary} />
+            </View>
+          )}
+          {hasNewEpisodes && <View style={styles.newBadge} />}
+        </View>
         <View style={styles.mediumInfo}>
           <Text style={[styles.mediumTitle, { color: colors.text }]} numberOfLines={2}>
             {feed.title}
@@ -98,13 +105,16 @@ function PodcastCard({ feed, size = "small" }: Props) {
       ]}
       onPress={() => router.push({ pathname: "/podcast/[id]", params: { id: feed.id } })}
     >
-      {feed.imageUrl && !imgError ? (
-        <Image source={{ uri: feed.imageUrl }} style={styles.smallImage} contentFit="cover" cachePolicy="memory-disk" onError={() => setImgError(true)} />
-      ) : (
-        <View style={[styles.smallImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
-          <Ionicons name="mic" size={24} color={colors.textSecondary} />
-        </View>
-      )}
+      <View>
+        {feed.imageUrl && !imgError ? (
+          <Image source={{ uri: feed.imageUrl }} style={styles.smallImage} contentFit="cover" cachePolicy="memory-disk" onError={() => setImgError(true)} />
+        ) : (
+          <View style={[styles.smallImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
+            <Ionicons name="mic" size={24} color={colors.textSecondary} />
+          </View>
+        )}
+        {hasNewEpisodes && <View style={styles.newBadge} />}
+      </View>
       <View style={styles.smallInfo}>
         <Text style={[styles.smallTitle, { color: colors.text }]} numberOfLines={2}>
           {feed.title}
@@ -216,6 +226,18 @@ const styles = StyleSheet.create({
   },
   smallAuthor: {
     fontSize: 11,
+  },
+  newBadge: {
+    position: "absolute" as const,
+    top: 4,
+    right: 4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#ef4444",
+    borderWidth: 1,
+    borderColor: "#fff",
+    zIndex: 10,
   },
 });
 
