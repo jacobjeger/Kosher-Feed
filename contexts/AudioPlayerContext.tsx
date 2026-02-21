@@ -245,6 +245,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   const sleepTimerRef = useRef<SleepTimerState>(sleepTimer);
   const queueRef = useRef<QueueItem[]>(queue);
   const nativePlayerRef = useRef<any>(null);
+  const preBufferRef = useRef<HTMLAudioElement | null>(null);
+  const preBufferEpisodeIdRef = useRef<string | null>(null);
 
   const positionRef = useRef<PositionState>({ positionMs: 0, durationMs: 0 });
   const positionListenersRef = useRef<Set<() => void>>(new Set());
@@ -859,6 +861,11 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       try { oldPlayer.clearLockScreenControls(); } catch {}
       try { oldPlayer.remove(); } catch {}
     }
+    if (preBufferRef.current) {
+      preBufferRef.current.src = "";
+      preBufferRef.current = null;
+    }
+    preBufferEpisodeIdRef.current = null;
     setCurrentEpisode(null);
     setCurrentFeed(null);
     setPlayback({ isPlaying: false, isLoading: false, positionMs: 0, durationMs: 0, playbackRate: 1.0 });
@@ -868,6 +875,36 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     stopRef.current = stop;
   }, [stop]);
+
+  const preBufferNextEpisode = useCallback(async () => {
+    const q = queueRef.current;
+    if (q.length === 0) return;
+    const next = q[0];
+    if (preBufferEpisodeIdRef.current === next.episodeId) return;
+    preBufferEpisodeIdRef.current = next.episodeId;
+    try {
+      const result = await fetchEpisodeAndFeed(next.episodeId, next.feedId);
+      if (result && result.episode.audioUrl) {
+        if (Platform.OS === "web") {
+          const audio = new Audio();
+          audio.preload = "auto";
+          audio.src = result.episode.audioUrl;
+          if (preBufferRef.current) {
+            preBufferRef.current.src = "";
+          }
+          preBufferRef.current = audio;
+        }
+        addLog("info", `Pre-buffered next: ${result.episode.title}`, undefined, "audio");
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (playback.isPlaying && !playback.isLoading && queue.length > 0) {
+      const timer = setTimeout(preBufferNextEpisode, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [playback.isPlaying, playback.isLoading, queue.length, preBufferNextEpisode]);
 
   useEffect(() => {
     if (sleepTimerRef.current.active && sleepTimerRef.current.mode === "endOfEpisode" && !playback.isPlaying && playback.positionMs > 0 && playback.durationMs > 0) {

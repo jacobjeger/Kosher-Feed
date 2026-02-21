@@ -8,6 +8,7 @@ import { useDownloads } from "@/contexts/DownloadsContext";
 import { useFavorites } from "@/contexts/FavoritesContext";
 import { usePlayedEpisodes } from "@/contexts/PlayedEpisodesContext";
 import { usePositions } from "@/contexts/PositionsContext";
+import { useNetworkStatus } from "@/components/OfflineBanner";
 import Colors from "@/constants/colors";
 import type { Episode, Feed } from "@/lib/types";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
@@ -62,12 +63,14 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
   const { isFavorite, toggleFavorite } = useFavorites();
   const { isPlayed, togglePlayed } = usePlayedEpisodes();
   const { getPosition } = usePositions();
+  const isOnline = useNetworkStatus();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const [expanded, setExpanded] = React.useState<boolean>(false);
 
   const isCurrentlyPlaying = currentEpisode?.id === episode.id;
+  const offlineUnavailable = !isOnline && !isDownloaded(episode.id);
   const downloaded = isDownloaded(episode.id);
   const downloading = isDownloading(episode.id);
   const progress = downloading ? downloadProgress.get(episode.id) || 0 : 0;
@@ -180,18 +183,33 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
   const cardContent = (
     <>
       <View style={styles.mainRow}>
-        <Pressable
-          onPress={handlePlay}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          style={[styles.playBtn, { backgroundColor: isCurrentlyPlaying ? colors.accent : colors.accentLight }]}
-        >
-          <Ionicons
-            name={isCurrentlyPlaying && playback.isPlaying ? "pause" : "play"}
-            size={18}
-            color={isCurrentlyPlaying ? "#fff" : colors.accent}
-            style={isCurrentlyPlaying && playback.isPlaying ? undefined : { marginLeft: 2 }}
-          />
-        </Pressable>
+        <View>
+          <Pressable
+            onPress={offlineUnavailable ? undefined : handlePlay}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={[
+              styles.playBtn,
+              {
+                backgroundColor: offlineUnavailable
+                  ? (isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)")
+                  : isCurrentlyPlaying ? colors.accent : colors.accentLight,
+                opacity: offlineUnavailable ? 0.5 : 1,
+              },
+            ]}
+          >
+            <Ionicons
+              name={isCurrentlyPlaying && playback.isPlaying ? "pause" : "play"}
+              size={18}
+              color={offlineUnavailable ? colors.textSecondary : (isCurrentlyPlaying ? "#fff" : colors.accent)}
+              style={isCurrentlyPlaying && playback.isPlaying ? undefined : { marginLeft: 2 }}
+            />
+          </Pressable>
+          {!isOnline && downloaded && (
+            <View style={styles.offlineAvailableBadge}>
+              <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+            </View>
+          )}
+        </View>
         <Pressable onPress={handleToggleExpand} style={styles.info}>
           {showFeedTitle && (
             <Text style={[styles.feedTitle, { color: colors.accent }]} numberOfLines={1}>
@@ -211,6 +229,12 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
               <Text style={[styles.metaText, { color: colors.textSecondary }]}>
                 {formatDuration(episode.duration)}
               </Text>
+            )}
+            {offlineUnavailable && (
+              <View style={styles.offlineBadge}>
+                <Ionicons name="cloud-offline-outline" size={10} color="#fff" />
+                <Text style={styles.offlineBadgeText}>Offline</Text>
+              </View>
             )}
           </View>
         </Pressable>
@@ -519,6 +543,25 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "600" as const,
     marginTop: 2,
+  },
+  offlineBadge: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 3,
+    backgroundColor: "rgba(220, 38, 38, 0.85)",
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  offlineBadgeText: {
+    color: "#fff",
+    fontSize: 9,
+    fontWeight: "600" as const,
+  },
+  offlineAvailableBadge: {
+    position: "absolute" as const,
+    bottom: -4,
+    right: -4,
   },
 });
 

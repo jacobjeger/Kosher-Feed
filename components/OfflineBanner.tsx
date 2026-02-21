@@ -3,8 +3,9 @@ import { View, Text, StyleSheet, Platform, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import Animated, { useAnimatedStyle, withTiming, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { router } from "expo-router";
 
-function useNetworkStatus() {
+export function useNetworkStatus() {
   const [isOnline, setIsOnline] = useState(true);
   const checkRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -45,14 +46,14 @@ function useNetworkStatus() {
 export default function OfflineBanner() {
   const isOnline = useNetworkStatus();
   const insets = useSafeAreaInsets();
-  const translateY = useSharedValue(-60);
+  const translateY = useSharedValue(-80);
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
     if (!isOnline && !dismissed) {
       translateY.value = withTiming(0, { duration: 300 });
     } else {
-      translateY.value = withTiming(-60, { duration: 200 });
+      translateY.value = withTiming(-80, { duration: 200 });
     }
   }, [isOnline, dismissed]);
 
@@ -76,7 +77,15 @@ export default function OfflineBanner() {
     >
       <View style={styles.inner}>
         <Ionicons name="cloud-offline-outline" size={16} color="#fff" />
-        <Text style={styles.text}>No internet connection</Text>
+        <View style={styles.textContainer}>
+          <Text style={styles.text}>You're offline - downloaded shiurim are still available</Text>
+          <Pressable onPress={() => { setDismissed(true); router.push("/(tabs)/downloads"); }} hitSlop={4}>
+            <View style={styles.goToDownloads}>
+              <Ionicons name="download-outline" size={12} color="rgba(255,255,255,0.9)" />
+              <Text style={styles.goToDownloadsText}>Go to Downloads</Text>
+            </View>
+          </Pressable>
+        </View>
         <Pressable onPress={() => setDismissed(true)} hitSlop={8}>
           <Ionicons name="close" size={16} color="rgba(255,255,255,0.7)" />
         </Pressable>
@@ -102,10 +111,24 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 14,
   },
+  textContainer: {
+    flex: 1,
+    gap: 4,
+  },
   text: {
     color: "#fff",
     fontSize: 13,
     fontWeight: "600" as const,
-    flex: 1,
+  },
+  goToDownloads: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 4,
+  },
+  goToDownloadsText: {
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 12,
+    fontWeight: "500" as const,
+    textDecorationLine: "underline" as const,
   },
 });

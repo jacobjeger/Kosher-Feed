@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { View, Text, Pressable, StyleSheet, useWindowDimensions } from "react-native";
+import React, { useState, useRef, useCallback } from "react";
+import { View, Text, Pressable, StyleSheet, useWindowDimensions, Animated as RNAnimated, Platform } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,6 +19,19 @@ function PodcastCard({ feed, size = "small", hasNewEpisodes }: Props) {
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const [imgError, setImgError] = useState(false);
+
+  const scaleAnim = useRef(new RNAnimated.Value(1)).current;
+  const isNative = Platform.OS !== "web";
+
+  const onPressIn = useCallback(() => {
+    if (!isNative) return;
+    RNAnimated.spring(scaleAnim, { toValue: 0.97, useNativeDriver: true, speed: 50, bounciness: 4 }).start();
+  }, [scaleAnim, isNative]);
+
+  const onPressOut = useCallback(() => {
+    if (!isNative) return;
+    RNAnimated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, speed: 50, bounciness: 4 }).start();
+  }, [scaleAnim, isNative]);
 
   if (size === "featured") {
     return (
@@ -98,34 +111,38 @@ function PodcastCard({ feed, size = "small", hasNewEpisodes }: Props) {
   }
 
   return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.smallContainer,
-        { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.95 : 1 },
-      ]}
-      onPress={() => router.push({ pathname: "/podcast/[id]", params: { id: feed.id } })}
-    >
-      <View>
-        {feed.imageUrl && !imgError ? (
-          <Image source={{ uri: feed.imageUrl }} style={styles.smallImage} contentFit="cover" cachePolicy="memory-disk" onError={() => setImgError(true)} />
-        ) : (
-          <View style={[styles.smallImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
-            <Ionicons name="mic" size={24} color={colors.textSecondary} />
-          </View>
-        )}
-        {hasNewEpisodes && <View style={styles.newBadge} />}
-      </View>
-      <View style={styles.smallInfo}>
-        <Text style={[styles.smallTitle, { color: colors.text }]} numberOfLines={2}>
-          {feed.title}
-        </Text>
-        {feed.author && (
-          <Text style={[styles.smallAuthor, { color: colors.textSecondary }]} numberOfLines={1}>
-            {feed.author}
+    <RNAnimated.View style={isNative ? { transform: [{ scale: scaleAnim }] } : undefined}>
+      <Pressable
+        style={({ pressed }) => [
+          styles.smallContainer,
+          { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.95 : 1 },
+        ]}
+        onPress={() => router.push({ pathname: "/podcast/[id]", params: { id: feed.id } })}
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
+      >
+        <View>
+          {feed.imageUrl && !imgError ? (
+            <Image source={{ uri: feed.imageUrl }} style={styles.smallImage} contentFit="cover" cachePolicy="memory-disk" onError={() => setImgError(true)} />
+          ) : (
+            <View style={[styles.smallImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
+              <Ionicons name="mic" size={24} color={colors.textSecondary} />
+            </View>
+          )}
+          {hasNewEpisodes && <View style={styles.newBadge} />}
+        </View>
+        <View style={styles.smallInfo}>
+          <Text style={[styles.smallTitle, { color: colors.text }]} numberOfLines={2}>
+            {feed.title}
           </Text>
-        )}
-      </View>
-    </Pressable>
+          {feed.author && (
+            <Text style={[styles.smallAuthor, { color: colors.textSecondary }]} numberOfLines={1}>
+              {feed.author}
+            </Text>
+          )}
+        </View>
+      </Pressable>
+    </RNAnimated.View>
   );
 }
 

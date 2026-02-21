@@ -20,7 +20,7 @@ export default function MiniPlayer() {
   const rawProgress = position.durationMs > 0 ? position.positionMs / position.durationMs : 0;
   const progress = isNaN(rawProgress) ? 0 : Math.min(rawProgress, 1);
 
-  const enteringAnimation = Platform.OS !== "web" ? FadeInDown.duration(250) : undefined;
+  const enteringAnimation = Platform.OS !== "web" ? FadeInDown.duration(300).springify() : undefined;
 
   return (
     <Animated.View entering={enteringAnimation}>
@@ -29,7 +29,7 @@ export default function MiniPlayer() {
         onPress={() => router.push("/player")}
       >
         <View style={[styles.progressBar, { backgroundColor: "rgba(255,255,255,0.1)" }]}>
-          <View style={[styles.progressFill, { width: `${progress * 100}%`, backgroundColor: colors.playerAccent }]} />
+          <View style={[styles.progressFill, { width: `${progress * 100}%`, backgroundColor: colors.playerAccent }, Platform.OS === 'web' ? { transition: 'width 0.3s ease' } as any : undefined]} />
         </View>
 
         <View style={styles.content}>
