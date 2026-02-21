@@ -484,8 +484,8 @@ function PodcastDetailScreenInner() {
         contentContainerStyle={{ paddingBottom: 120, paddingHorizontal: 16, ...(Platform.OS === "web" ? { maxWidth: 900, marginHorizontal: "auto" as any, width: "100%" as any } : {}) }}
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
-        initialNumToRender={15}
-        maxToRenderPerBatch={10}
+        initialNumToRender={8}
+        maxToRenderPerBatch={5}
         windowSize={5}
         removeClippedSubviews={Platform.OS !== "web"}
         ListHeaderComponent={headerElement}

@@ -66,8 +66,8 @@ function FavoritesScreenInner() {
             <EpisodeItem episode={item.episode} feed={item.feed} showFeedTitle isOnline={isOnline} />
           )}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120, ...(Platform.OS === "web" ? { maxWidth: 900, marginHorizontal: "auto" as any, width: "100%" as any } : {}) }}
-          initialNumToRender={15}
-          maxToRenderPerBatch={10}
+          initialNumToRender={8}
+          maxToRenderPerBatch={5}
           windowSize={5}
           removeClippedSubviews={Platform.OS !== "web"}
         />

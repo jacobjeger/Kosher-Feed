@@ -143,8 +143,8 @@ function DownloadsScreenInner() {
       contentContainerStyle={{ paddingBottom: 140, paddingHorizontal: 16 }}
       data={downloads}
       keyExtractor={(item) => item.id}
-      initialNumToRender={10}
-      maxToRenderPerBatch={8}
+      initialNumToRender={8}
+      maxToRenderPerBatch={5}
       windowSize={5}
       removeClippedSubviews={Platform.OS !== "web"}
       ListHeaderComponent={() => (

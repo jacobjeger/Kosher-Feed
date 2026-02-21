@@ -120,8 +120,8 @@ function FollowingScreenInner() {
       contentContainerStyle={{ paddingBottom: 140, paddingHorizontal: 16, ...(Platform.OS === "web" ? { maxWidth: 900, marginHorizontal: "auto" as any, width: "100%" as any } : {}) }}
       data={episodes}
       keyExtractor={(item) => item.id}
-      initialNumToRender={10}
-      maxToRenderPerBatch={8}
+      initialNumToRender={8}
+      maxToRenderPerBatch={5}
       windowSize={5}
       removeClippedSubviews={Platform.OS !== "web"}
       refreshControl={
