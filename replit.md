@@ -2,9 +2,7 @@
 
 ## Overview
 
-ShiurPod is a mobile-first shiur (Torah lecture) listening application built with Expo (React Native) on the frontend and Express.js on the backend. It allows users to browse, follow, and listen to curated podcast/shiur feeds. The app includes audio playback with position saving, episode downloads for offline listening, auto-download on WiFi, new episode notifications, device-based subscriptions (no user accounts), and an admin panel for managing feeds and categories. The backend serves as both an API server and a static file server for the web build.
-
-**Terminology**: Content is referred to as "shiurim" (plural) / "shiur" (singular) throughout the app — NOT podcasts or shows.
+ShiurPod is a mobile-first application for listening to curated Torah lectures ("shiurim"). Built with Expo (React Native) for the frontend and Express.js for the backend, it enables users to browse, follow, and listen to shiur feeds. Key features include audio playback with position saving, offline listening via episode downloads, automatic downloads on WiFi, new episode notifications, and device-based subscriptions without user accounts. An admin panel facilitates feed and category management. The backend functions as both an API and a static file server.
 
 ## User Preferences
 
@@ -13,117 +11,60 @@ Preferred communication style: Simple, everyday language.
 ## System Architecture
 
 ### Frontend (Expo / React Native)
-- **Framework**: Expo SDK 54 with React Native 0.81, using expo-router for file-based routing
-- **Onboarding**: First-launch onboarding flow at `app/onboarding.tsx` with 4 swipeable pages (Welcome, Follow, Offline, Resume) + a final step to follow shiurim. Completion stored in AsyncStorage (`@shiurpod_onboarding_complete`). Root layout checks this key to determine initial route (`onboarding` vs `(tabs)`).
-- **Routing structure**: Tab-based navigation with 4 tabs (Home, Following, Downloads, Settings), a modal player screen, a queue screen, a podcast detail screen at `podcast/[id]`, and a Maggid Shiur (speaker) detail screen at `maggid-shiur/[author]`
-- **State management**: React Context for audio playback (`AudioPlayerContext`), downloads (`DownloadsContext`), user settings (`SettingsContext`), favorites (`FavoritesContext`), and played episodes (`PlayedEpisodesContext`); TanStack React Query for server state
-- **Played episodes tracking**: `PlayedEpisodesContext` stores played episode IDs in AsyncStorage (`@shiurpod_played_episodes`), auto-marks episodes when they finish, shows progress bars on episode cards (green=played, blue=in-progress)
-- **Continuous playback**: When enabled in settings, auto-plays next episode from same feed when current episode ends and queue is empty
-- **Queue management**: Queue screen at `app/queue.tsx` with up/down reorder buttons, remove items, clear queue, and play from queue. Queue state managed in AudioPlayerContext with `refreshQueue` for AsyncStorage sync
-- **Episode filtering**: Podcast detail screen has filter chips (All/Unplayed/Started/Saved) alongside sort options (Newest/Oldest)
-- **Long-press actions**: Context menu on episodes (native Alert) for quick access to queue, mark played, favorites, and download actions
-- **Pull-to-refresh**: Podcast detail screen supports pull-to-refresh to reload episodes and feed data
-- **Deep link sharing**: Player share generates a web share URL (`/share/episode/:id?t=timestamp`) with OG meta tags for social previews, an audio player fallback, and a deep link button to open directly in the app. `DeepLinkHandler` component in `_layout.tsx` handles incoming `shiurpod://episode/:id` links.
-- **Push notifications**: Expo push tokens registered on app start via `lib/push-notifications.ts`, stored in `push_tokens` table. Server sends push notifications via `expo-server-sdk` (`server/push.ts`) when new episodes are detected during RSS feed refresh. Android channel set to MAX importance for heads-up banners.
-- **Storage management**: Dedicated screen at `app/storage.tsx` accessible from Settings > Downloaded Episodes. Shows total download size, per-feed breakdowns with episode lists, and options to clear individual episodes, all episodes for a feed, or all downloads at once.
-- **Animated transitions**: MiniPlayer uses react-native-reanimated FadeInDown entrance animation (skipped on web)
-- **Audio playback**: Dual engine — `expo-audio` (`createAudioPlayer`) for native (Android/iOS) with background playback, lock-screen controls via `setActiveForLockScreen()`/`updateLockScreenMetadata()`, and media session integration; HTML5 Audio for web. Unified context API (`AudioPlayerContext`) provides play/pause/seek/skip/rate controls. Saves playback position to AsyncStorage every 30 seconds and on pause/stop, resuming from saved position on replay. Server-side position sync for cross-device resume. Background audio enabled via expo-audio plugin in app.json with `FOREGROUND_SERVICE_MEDIA_PLAYBACK` permission on Android and `UIBackgroundModes: ["audio"]` on iOS.
-- **Offline support**: Episode downloads managed via `expo-file-system` with progress tracking, persisted to AsyncStorage. Auto-download on WiFi for followed shiurim with configurable per-shiur episode storage limits. Batch download support for downloading multiple episodes at once.
-- **Notifications**: Local browser notifications (web) for new episodes from followed shiurim. Tracks seen episodes in AsyncStorage to avoid duplicate alerts.
-- **Background sync**: `BackgroundSync` component polls for new episodes every 5 minutes in foreground. On native, `expo-background-task` + `expo-task-manager` run a background task (`lib/background-tasks.ts`) every 15 minutes for notification checks even when the app is closed. Download progress throttled to 1s intervals with 2% minimum change to prevent UI freezing on low-end devices.
-- **Device identification**: Anonymous device IDs generated with `expo-crypto` and stored in AsyncStorage — no user accounts required for subscriptions
-- **Styling**: Plain React Native StyleSheet with a custom color system supporting light/dark themes (defined in `constants/colors.ts`)
-- **Haptics**: Optional haptic feedback on iOS/Android via `expo-haptics`, gated behind `hapticFeedbackEnabled` setting (off by default), gracefully skipped on web. Cache invalidation via `invalidateHapticCache()` when setting changes.
+- **Framework**: Expo SDK 54 with React Native 0.81, utilizing `expo-router` for file-based routing.
+- **Navigation**: Tab-based navigation (Home, Following, Downloads, Settings) with dedicated screens for audio player, queue, podcast details, and speaker details.
+- **State Management**: React Context manages audio playback, downloads, user settings, favorites, and played episodes. TanStack React Query handles server state.
+- **Audio Playback**: Uses `expo-audio` for native platforms (background playback, lock-screen controls) and HTML5 Audio for web, unified via `AudioPlayerContext`. Playback position is saved locally and synced server-side.
+- **Offline Support**: `expo-file-system` handles episode downloads, including auto-download on WiFi for followed shiurim and batch downloads.
+- **Notifications**: Expo push notifications for new episodes on native, and local browser notifications for web. Background tasks (`expo-background-task`) check for new episodes.
+- **Device Identification**: Anonymous device IDs are generated and stored locally, eliminating the need for user accounts.
+- **Styling**: React Native StyleSheet with a custom color system supporting light/dark themes.
+- **Error Handling**: Per-screen ErrorBoundaries, audio retry mechanisms, download validation, safe storage utilities, offline banners, and an in-app debug log viewer with remote error reporting.
+- **UX Enhancements (Feb 2026)**: Recently Added section on home screen, What's New badge on PodcastCards with unplayed episodes, swipe-to-queue/download gestures on episode cards (native only), loading skeletons replacing spinners, buffering indicators on player and mini-player, pre-buffering next queue episode, auto-retry failed downloads with exponential backoff, improved offline indicators (greyed-out play buttons, green available-offline badges, OfflineBanner with "Go to Downloads" link), skip silence setting, press-scale animations on cards, fade tab transitions, springify mini-player animation.
 
 ### Backend (Express.js)
-- **Server**: Express 5 running on port 5000 (configured in `server/index.ts`)
-- **API pattern**: RESTful JSON API under `/api/` prefix
-- **Key endpoints**:
-  - `GET /api/feeds` — list all feeds (includes `categoryIds[]` from junction table)
-  - `GET /api/feeds/featured` — list featured feeds
-  - `GET /api/feeds/maggid-shiur` — feeds grouped by author/speaker
-  - `GET /api/feeds/category/:categoryId` — feeds by category (merges legacy + junction table)
-  - `GET /api/feeds/:id/episodes` — episodes for a feed (supports sort=newest|oldest)
-  - `GET /api/categories` — list categories
-  - `POST/DELETE /api/subscriptions` — manage device subscriptions
-  - `GET /api/subscriptions/:deviceId/feeds` — get subscribed feeds
-  - `GET/POST/DELETE /api/favorites` — manage favorite episodes
-  - `POST /api/playback-positions` — sync playback position to server
-  - `GET /api/stats/:deviceId` — listening statistics
-  - `GET /api/episodes/search` — global episode search
-  - `GET /api/episodes/trending` — popular/trending episodes
-  - `POST /api/push-token` — register Expo push token for device
-  - `GET /api/share/episode/:id` — get episode + feed data for sharing
-  - `GET /share/episode/:id` — web share page with OG tags, audio player, deep link
-  - `GET /api/sponsor` — get active sponsor for loading screen
-  - `GET /api/admin/feed-vitals` — feed health metrics, refresh cycle history, failing feeds
-  - `POST /api/admin/force-sync/:feedId` — manually trigger a single feed sync with results
-  - Admin CRUD endpoints for feeds/categories/sponsors (Basic auth protected)
-- **RSS parsing**: SAX streaming parser (`sax`) for direct RSS fetches — streams XML and aborts after 50 episodes, solving large feed timeouts (e.g., 6000+ episode feeds parse in ~160ms). Falls back to `rss-parser` proxy (rss2json.com) if streaming fails. Conditional GET (ETag/Last-Modified) headers stored in feeds table; 304 Not Modified responses skip parsing entirely (~35ms). Bounded concurrency via `p-limit` (3 feeds at a time) replaces sequential refresh. DNS caching with Cloudflare/Google resolvers (1.1.1.1/8.8.8.8), IPv4-first. Pre-resolves all hostnames before batch refresh. Running lock prevents overlapping refresh cycles.
-- **Admin panel**: Server-rendered HTML admin interface at `/admin` for managing feeds, categories, and speaker (Maggid Shiur) profiles
-- **Admin auth**: Simple Basic auth with bcrypt-hashed passwords, default credentials `admin/admin123`
-- **CORS**: Dynamic origin allowlist based on Replit environment variables, plus localhost support for dev
-- **Performance**: gzip compression via `compression` middleware; Cache-Control headers on read endpoints (feeds/categories 60s, episodes 30s); React Query staleTime 5min, gcTime 30min; auto-refresh interval 60min with 30s per-feed timeout
+- **Server**: Express 5 serving a RESTful JSON API under `/api/` and static web content.
+- **Key Functionality**: Provides endpoints for managing feeds, categories, subscriptions, favorites, playback positions, push tokens, and listening statistics. Includes specific endpoints for search, trending episodes, and sharing.
+- **RSS Parsing**: Employs a SAX streaming parser for efficient RSS feed fetching, with fallback to `rss-parser`. Uses conditional GET requests (ETag/Last-Modified) and bounded concurrency for feed refreshing.
+- **Admin Panel**: Server-rendered HTML interface for managing content, protected by basic authentication.
+- **Performance**: Utilizes gzip compression and `Cache-Control` headers.
 
 ### Database (PostgreSQL + Drizzle ORM)
-- **ORM**: Drizzle ORM with PostgreSQL dialect
-- **Schema** (defined in `shared/schema.ts`):
-  - `categories` — podcast categories (id, name, slug)
-  - `feeds` — podcast feeds (id, title, rssUrl, imageUrl, description, author, categoryId, isActive, isFeatured, lastFetchedAt)
-  - `feedCategories` — many-to-many junction table linking feeds to multiple categories (feedId, categoryId)
-  - `episodes` — individual episodes (id, feedId, title, description, audioUrl, duration, publishedAt, guid, imageUrl, sourceSheetUrl, adminNotes) with unique index on (guid, feedId)
-  - `subscriptions` — device-feed subscriptions with unique index on (deviceId, feedId)
-  - `admin_users` — admin credentials for the management panel
-  - `favorites` — favorite episodes per device with unique index on (episodeId, deviceId)
-  - `playbackPositions` — server-synced playback positions per device/episode with upsert on (episodeId, deviceId)
-  - `adminNotifications` — admin notification campaigns
-  - `push_tokens` — Expo push notification tokens per device
-  - `episodeListens` — episode listen tracking for trending/analytics
-  - `maggid_shiurim` — customizable speaker profiles (id, name, imageUrl, bio) linked to feeds by author name
-  - `sponsors` — loading screen sponsors (id, name, text, logoUrl, linkUrl, isActive)
-- **Migrations**: Managed via `drizzle-kit push` (schema push approach, not file-based migrations)
-- **Connection**: `pg` Pool with `DATABASE_URL` environment variable
+- **ORM**: Drizzle ORM with PostgreSQL.
+- **Schema**:
+    - `categories`: Podcast categories.
+    - `feeds`: Podcast feeds with metadata.
+    - `feedCategories`: Many-to-many link between feeds and categories.
+    - `episodes`: Individual lecture episodes.
+    - `subscriptions`: Device-feed subscriptions.
+    - `admin_users`: Admin credentials.
+    - `favorites`: Favorite episodes per device.
+    - `playbackPositions`: Server-synced playback positions.
+    - `push_tokens`: Expo push notification tokens.
+    - `episodeListens`: Tracking for trending analytics.
+    - `maggid_shiurim`: Customizable speaker profiles.
+    - `sponsors`: Loading screen sponsors.
+- **Migrations**: Managed via `drizzle-kit push`.
 
 ### Build & Deployment
-- **Development**: Two processes run simultaneously — `expo:dev` for the Expo dev server and `server:dev` for the Express API (via tsx)
-- **Production build**: Custom build script (`scripts/build.js`) creates a static web export, then Express serves it alongside the API. Server is bundled with esbuild.
-- **Shared code**: The `shared/` directory contains schema and types used by both frontend and backend, with TypeScript path aliases (`@shared/*`)
+- **Development**: Separate processes for Expo dev server and Express API.
+- **Production**: Custom build script creates a static web export, served by Express alongside the API.
+- **Shared Code**: `shared/` directory contains common schema and types for frontend and backend.
 
 ## External Dependencies
 
 ### Required Services
-- **PostgreSQL**: Primary database, connected via `DATABASE_URL` environment variable. Must be provisioned before the app can start.
+- **PostgreSQL**: Primary database.
 
 ### Key NPM Packages
-- **expo** (~54.0.27) — React Native framework and build tooling
-- **expo-router** (~6.0.17) — File-based routing
-- **expo-audio** (~1.1.1) — Audio playback on native platforms (replaced deprecated expo-av)
-- **expo-file-system** — Download and store episodes locally
-- **expo-image** — Optimized image loading
-- **@tanstack/react-query** — Server state management and caching
-- **drizzle-orm** + **drizzle-kit** — Database ORM and schema management
-- **pg** — PostgreSQL client
-- **express** (v5) — HTTP server
-- **rss-parser** — RSS feed parsing for podcast metadata
-- **bcrypt** — Password hashing for admin auth
-- **react-native-reanimated** — Animations (mini player transitions)
-- **react-native-gesture-handler** — Touch gesture handling
-- **react-native-keyboard-controller** — Keyboard-aware scrolling
-- **@react-native-async-storage/async-storage** — Persistent key-value storage
-- **@react-native-community/slider** — Audio seek slider
-- **expo-haptics** — Haptic feedback on native
-- **expo-crypto** — UUID generation for device IDs
-- **zod** + **drizzle-zod** — Schema validation
-
-## Stability & Error Handling
-
-- **Per-screen ErrorBoundary**: Each tab screen (Home, Following, Favorites, Downloads, Settings) is wrapped in its own ErrorBoundary, so a crash in one screen doesn't take down the entire app
-- **Audio retry**: Web audio playback auto-retries up to 2 times on failure with exponential backoff; native resume is guarded against stale/unloaded sound refs
-- **Download validation**: On app start (native only), downloads are verified to ensure local files still exist; stale entries are automatically cleaned up
-- **Safe storage**: `lib/safe-storage.ts` provides `safeGetJSON`/`safeSetJSON` helpers with fallback values; all AsyncStorage JSON.parse calls are wrapped in try-catch throughout the codebase
-- **Offline banner**: `components/OfflineBanner.tsx` displays a dismissible red banner when the device loses internet connectivity (uses browser events on web, expo-network polling on native)
-- **Debug logs**: In-app debug log viewer accessible from Settings, captures errors, warnings, network failures, and unhandled promise rejections (filters out known dev warnings)
-- **Error logger**: `lib/error-logger.ts` captures global errors and stores them in AsyncStorage for the debug log screen
-- **Safe navigation**: `lib/safe-back.ts` provides `safeGoBack()` that checks `router.canGoBack()` and falls back to `router.replace("/(tabs)")` — prevents back button failures on Android
-- **Remote error reports**: Errors and warnings are batched and sent to `/api/admin/error-reports` for remote diagnostics (flushes at 5 pending or every 30s)
-- **Audio playback logging**: All play/resume/failure events are logged to the error logger with source "audio" for remote visibility
+- **expo**: React Native framework.
+- **expo-router**: File-based routing.
+- **expo-audio**: Native audio playback.
+- **expo-file-system**: Local file operations.
+- **@tanstack/react-query**: Server state management.
+- **drizzle-orm**, **drizzle-kit**, **pg**: Database ORM and client.
+- **express**: HTTP server.
+- **rss-parser**: RSS feed parsing.
+- **react-native-reanimated**: Animations.
+- **@react-native-async-storage/async-storage**: Persistent storage.
+- **zod**, **drizzle-zod**: Schema validation.
