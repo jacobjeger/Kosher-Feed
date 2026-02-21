@@ -430,6 +430,20 @@ function SettingsScreenInner() {
               />
             }
           />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingRow
+            icon={<Ionicons name="speedometer-outline" size={20} color={colors.accent} />}
+            label="Skip Silence"
+            subtitle="Speed through silent sections"
+            rightElement={
+              <Switch
+                value={settings.skipSilenceEnabled}
+                onValueChange={(value: boolean) => { lightHaptic(); updateSettings({ skipSilenceEnabled: value }); }}
+                trackColor={{ false: colors.border, true: colors.accent }}
+                thumbColor="#fff"
+              />
+            }
+          />
         </View>
       </View>
 

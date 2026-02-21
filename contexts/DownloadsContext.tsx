@@ -12,6 +12,13 @@ import { addLog } from "@/lib/error-logger";
 const PROGRESS_THROTTLE_MS = 2500;
 const PROGRESS_UPDATE_MIN_CHANGE = 0.08;
 const MAX_CONCURRENT_DOWNLOADS = 1;
+const MAX_RETRY_COUNT = 3;
+const RETRY_BASE_DELAY_MS = 5000;
+
+interface FailedDownloadInfo {
+  retryCount: number;
+  lastAttempt: number;
+}
 
 interface DownloadsContextValue {
   downloads: DownloadedEpisode[];
@@ -25,6 +32,10 @@ interface DownloadsContextValue {
   enforceStorageLimit: (feedId: string, maxPerFeed: number) => Promise<void>;
   getDownloadsForFeed: (feedId: string) => DownloadedEpisode[];
   batchDownload: (episodes: Episode[], feed: Feed) => Promise<void>;
+  failedDownloads: Map<string, FailedDownloadInfo>;
+  retryDownload: (episodeId: string) => Promise<void>;
+  retryAllFailed: () => Promise<void>;
+  isRetrying: (episodeId: string) => boolean;
 }
 
 const DOWNLOADS_KEY = "@kosher_podcast_downloads";
@@ -92,6 +103,11 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
   const lastProgressSnapshotRef = useRef<string>("");
   const downloadQueueRef = useRef<Array<{ episode: Episode; feed: Feed; resolve: (v: DownloadedEpisode | null) => void }>>([]);
   const processingQueueRef = useRef(false);
+  const [failedDownloads, setFailedDownloads] = useState<Map<string, FailedDownloadInfo>>(new Map());
+  const failedDownloadsRef = useRef<Map<string, FailedDownloadInfo>>(new Map());
+  const retryTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const retryingIdsRef = useRef<Set<string>>(new Set());
+  const episodeDataRef = useRef<Map<string, { episode: Episode; feed: Feed }>>(new Map());
 
   useEffect(() => {
     progressTimerRef.current = setInterval(() => {
@@ -115,6 +131,8 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     }, PROGRESS_THROTTLE_MS);
     return () => {
       if (progressTimerRef.current) clearInterval(progressTimerRef.current);
+      retryTimersRef.current.forEach(timer => clearTimeout(timer));
+      retryTimersRef.current.clear();
     };
   }, []);
 
@@ -185,10 +203,45 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const processQueueFnRef = useRef<() => void>(() => {});
+
+  const scheduleRetry = useCallback((episodeId: string) => {
+    const info = failedDownloadsRef.current.get(episodeId);
+    if (!info || info.retryCount >= MAX_RETRY_COUNT) return;
+    const data = episodeDataRef.current.get(episodeId);
+    if (!data) return;
+
+    const delay = RETRY_BASE_DELAY_MS * Math.pow(3, info.retryCount);
+    addLog("info", `Scheduling retry #${info.retryCount + 1} for ${episodeId} in ${delay}ms`, undefined, "downloads");
+
+    const existing = retryTimersRef.current.get(episodeId);
+    if (existing) clearTimeout(existing);
+
+    const timer = setTimeout(() => {
+      retryTimersRef.current.delete(episodeId);
+      retryingIdsRef.current.add(episodeId);
+      const nextCount = info.retryCount + 1;
+      failedDownloadsRef.current.set(episodeId, { retryCount: nextCount, lastAttempt: Date.now() });
+      setFailedDownloads(new Map(failedDownloadsRef.current));
+
+      downloadQueueRef.current.push({
+        episode: data.episode,
+        feed: data.feed,
+        resolve: () => {
+          retryingIdsRef.current.delete(episodeId);
+        },
+      });
+      processQueueFnRef.current();
+    }, delay);
+    retryTimersRef.current.set(episodeId, timer);
+  }, []);
+
   const downloadSingleEpisode = useCallback(async (episode: Episode, feed: Feed): Promise<DownloadedEpisode | null> => {
     if (activeDownloadsRef.current.has(episode.id)) return null;
     activeDownloadsRef.current.add(episode.id);
     downloadingIdsCache.add(episode.id);
+
+    episodeDataRef.current.set(episode.id, { episode, feed });
 
     if (Platform.OS === "web") {
       try {
@@ -272,6 +325,13 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
       };
     } catch (e) {
       addLog("error", `Download failed: ${episode.title} - ${(e as any)?.message || e}`, (e as any)?.stack, "downloads");
+      const existing = failedDownloadsRef.current.get(episode.id);
+      const retryCount = existing ? existing.retryCount : 0;
+      failedDownloadsRef.current.set(episode.id, { retryCount, lastAttempt: Date.now() });
+      setFailedDownloads(new Map(failedDownloadsRef.current));
+      if (retryCount < MAX_RETRY_COUNT) {
+        scheduleRetry(episode.id);
+      }
       return null;
     } finally {
       progressRef.current.delete(episode.id);
@@ -298,6 +358,15 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
       item.resolve(result);
 
       if (result) {
+        failedDownloadsRef.current.delete(item.episode.id);
+        setFailedDownloads(new Map(failedDownloadsRef.current));
+        const existingTimer = retryTimersRef.current.get(item.episode.id);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+          retryTimersRef.current.delete(item.episode.id);
+        }
+        retryingIdsRef.current.delete(item.episode.id);
+
         if (Platform.OS !== "web") {
           InteractionManager.runAfterInteractions(() => {
             setDownloads(prev => {
@@ -325,6 +394,8 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
       setDownloadProgress(new Map(progressRef.current));
     }
   }, [downloadSingleEpisode]);
+
+  processQueueFnRef.current = processDownloadQueue;
 
   const downloadEpisode = useCallback(async (episode: Episode, feed: Feed) => {
     return new Promise<void>((resolve) => {
@@ -409,6 +480,33 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const retryDownload = useCallback(async (episodeId: string) => {
+    const data = episodeDataRef.current.get(episodeId);
+    if (!data) {
+      addLog("warn", `Cannot retry download ${episodeId}: no stored episode data`, undefined, "downloads");
+      return;
+    }
+    failedDownloadsRef.current.delete(episodeId);
+    setFailedDownloads(new Map(failedDownloadsRef.current));
+    const existingTimer = retryTimersRef.current.get(episodeId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      retryTimersRef.current.delete(episodeId);
+    }
+    await downloadEpisode(data.episode, data.feed);
+  }, [downloadEpisode]);
+
+  const retryAllFailed = useCallback(async () => {
+    const failedIds = Array.from(failedDownloadsRef.current.keys());
+    for (const episodeId of failedIds) {
+      await retryDownload(episodeId);
+    }
+  }, [retryDownload]);
+
+  const isRetrying = useCallback((episodeId: string) => {
+    return retryingIdsRef.current.has(episodeId) || retryTimersRef.current.has(episodeId);
+  }, [failedDownloads]);
+
   const autoDownloadNewEpisodes = useCallback(async (feeds: Feed[], maxPerFeed: number) => {
     try {
       const onWifi = await isOnWifi();
@@ -455,7 +553,11 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     enforceStorageLimit,
     getDownloadsForFeed,
     batchDownload,
-  }), [downloads, downloadProgress, downloadEpisode, removeDownload, isDownloaded, isDownloading, getLocalUri, autoDownloadNewEpisodes, enforceStorageLimit, getDownloadsForFeed, batchDownload]);
+    failedDownloads,
+    retryDownload,
+    retryAllFailed,
+    isRetrying,
+  }), [downloads, downloadProgress, downloadEpisode, removeDownload, isDownloaded, isDownloading, getLocalUri, autoDownloadNewEpisodes, enforceStorageLimit, getDownloadsForFeed, batchDownload, failedDownloads, retryDownload, retryAllFailed, isRetrying]);
 
   return (
     <DownloadsContext.Provider value={value}>

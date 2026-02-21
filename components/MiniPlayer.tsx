@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
+import { View, Text, Pressable, StyleSheet, Platform, ActivityIndicator } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
@@ -67,11 +67,15 @@ export default function MiniPlayer() {
             hitSlop={12}
             style={styles.playBtn}
           >
-            <Ionicons
-              name={playback.isPlaying ? "pause" : "play"}
-              size={24}
-              color={colors.playerText}
-            />
+            {playback.isLoading ? (
+              <ActivityIndicator size={18} color={colors.playerText} />
+            ) : (
+              <Ionicons
+                name={playback.isPlaying ? "pause" : "play"}
+                size={24}
+                color={colors.playerText}
+              />
+            )}
           </Pressable>
         </View>
       </Pressable>

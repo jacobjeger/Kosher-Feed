@@ -279,6 +279,13 @@ export default function PlayerScreen() {
         </RNAnimated.View>
       </View>
 
+      {playback.isLoading && (
+        <View style={styles.bufferingBar}>
+          <ActivityIndicator size="small" color={colors.accent} />
+          <Text style={[styles.bufferingText, { color: colors.textSecondary }]}>Loading audio...</Text>
+        </View>
+      )}
+
       <View style={[styles.infoSection, isSmallScreen && styles.infoSectionSmall]}>
         <Text style={[styles.episodeTitle, { color: colors.text }, isSmallScreen && styles.episodeTitleSmall]} numberOfLines={2}>
           {currentEpisode.title}
@@ -668,6 +675,17 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
+    fontWeight: "500" as const,
+  },
+  bufferingBar: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    gap: 8,
+    paddingVertical: 8,
+  },
+  bufferingText: {
+    fontSize: 13,
     fontWeight: "500" as const,
   },
 });

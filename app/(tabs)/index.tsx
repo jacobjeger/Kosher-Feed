@@ -16,6 +16,7 @@ import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { lightHaptic } from "@/lib/haptics";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { usePlayedEpisodes } from "@/contexts/PlayedEpisodesContext";
+import { HomeScreenSkeleton } from "@/components/Skeleton";
 
 interface SavedPositionEntry {
   episodeId: string;
@@ -626,6 +627,8 @@ function HomeScreenInner() {
 
   const isSearching = searchQuery.trim().length > 0;
 
+  const isWeb = Platform.OS === "web";
+
   const onRefresh = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/categories"] });
     queryClient.invalidateQueries({ queryKey: ["/api/feeds"] });
@@ -636,8 +639,12 @@ function HomeScreenInner() {
 
   if (isLoading) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background, justifyContent: "center", alignItems: "center" }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={isWeb ? styles.webContentWrap : undefined}>
+          <View style={{ paddingTop: isWeb ? 20 : insets.top + 8 }}>
+            <HomeScreenSkeleton />
+          </View>
+        </View>
         <SponsorBanner colors={colors} />
       </View>
     );
@@ -672,8 +679,6 @@ function HomeScreenInner() {
   }
 
   const hasContent = allFeeds.length > 0;
-
-  const isWeb = Platform.OS === "web";
 
   return (
     <ScrollView
