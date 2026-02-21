@@ -12,8 +12,8 @@ function SkeletonPulse({ style }: { style?: any }) {
   useEffect(() => {
     const animation = RNAnimated.loop(
       RNAnimated.sequence([
-        RNAnimated.timing(opacity, { toValue: 0.7, duration: 800, useNativeDriver: true }),
-        RNAnimated.timing(opacity, { toValue: 0.3, duration: 800, useNativeDriver: true }),
+        RNAnimated.timing(opacity, { toValue: 0.7, duration: 1200, useNativeDriver: true }),
+        RNAnimated.timing(opacity, { toValue: 0.3, duration: 1200, useNativeDriver: true }),
       ])
     );
     animation.start();

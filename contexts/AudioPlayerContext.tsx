@@ -881,6 +881,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     if (q.length === 0) return;
     const next = q[0];
     if (preBufferEpisodeIdRef.current === next.episodeId) return;
+    if (Platform.OS !== "web") return;
     preBufferEpisodeIdRef.current = next.episodeId;
     try {
       const result = await fetchEpisodeAndFeed(next.episodeId, next.feedId);
@@ -901,7 +902,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (playback.isPlaying && !playback.isLoading && queue.length > 0) {
-      const timer = setTimeout(preBufferNextEpisode, 5000);
+      const timer = setTimeout(preBufferNextEpisode, 10000);
       return () => clearTimeout(timer);
     }
   }, [playback.isPlaying, playback.isLoading, queue.length, preBufferNextEpisode]);

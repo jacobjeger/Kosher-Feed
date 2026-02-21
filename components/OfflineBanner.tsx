@@ -32,7 +32,7 @@ export function useNetworkStatus() {
         }
       };
       check();
-      checkRef.current = setInterval(check, 15000);
+      checkRef.current = setInterval(check, 30000);
       return () => {
         mounted = false;
         if (checkRef.current) clearInterval(checkRef.current);

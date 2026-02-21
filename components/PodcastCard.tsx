@@ -25,12 +25,12 @@ function PodcastCard({ feed, size = "small", hasNewEpisodes }: Props) {
 
   const onPressIn = useCallback(() => {
     if (!isNative) return;
-    RNAnimated.spring(scaleAnim, { toValue: 0.97, useNativeDriver: true, speed: 50, bounciness: 4 }).start();
+    RNAnimated.spring(scaleAnim, { toValue: 0.97, useNativeDriver: true, tension: 150, friction: 8 }).start();
   }, [scaleAnim, isNative]);
 
   const onPressOut = useCallback(() => {
     if (!isNative) return;
-    RNAnimated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, speed: 50, bounciness: 4 }).start();
+    RNAnimated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, tension: 150, friction: 8 }).start();
   }, [scaleAnim, isNative]);
 
   if (size === "featured") {

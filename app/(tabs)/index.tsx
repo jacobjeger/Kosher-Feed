@@ -369,42 +369,6 @@ const SearchResultItem = React.memo(function SearchResultItem({ feed, colors }: 
   );
 });
 
-const RecentlyAddedCard = React.memo(function RecentlyAddedCard({ episode, feed, colors, onPlay }: { episode: Episode; feed: Feed; colors: any; onPlay: () => void }) {
-  const pubDate = episode.publishedAt ? new Date(episode.publishedAt) : null;
-  const dateStr = pubDate ? pubDate.toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
-  return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.recentCard,
-        { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.95 : 1 },
-      ]}
-      onPress={onPlay}
-    >
-      {feed.imageUrl ? (
-        <Image source={{ uri: feed.imageUrl }} style={styles.recentImage} contentFit="cover" cachePolicy="memory-disk" transition={0} />
-      ) : (
-        <View style={[styles.recentImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
-          <Ionicons name="mic" size={20} color={colors.textSecondary} />
-        </View>
-      )}
-      <View style={styles.recentInfo}>
-        <Text style={[styles.recentEpTitle, { color: colors.text }]} numberOfLines={2}>
-          {episode.title}
-        </Text>
-        <Text style={[styles.recentFeedTitle, { color: colors.textSecondary }]} numberOfLines={1}>
-          {feed.title}
-        </Text>
-        {dateStr ? (
-          <View style={styles.recentDateRow}>
-            <Ionicons name="calendar-outline" size={10} color={colors.textSecondary} />
-            <Text style={[styles.recentDateText, { color: colors.textSecondary }]}>{dateStr}</Text>
-          </View>
-        ) : null}
-      </View>
-    </Pressable>
-  );
-});
-
 const ContinueListeningCard = React.memo(function ContinueListeningCard({ episode, feed, position, colors, onPlay, onDismiss }: { episode: Episode; feed: Feed; position: SavedPositionEntry; colors: any; onPlay: () => void; onDismiss: () => void }) {
   const progress = position.durationMs > 0 ? position.positionMs / position.durationMs : 0;
   return (
@@ -570,17 +534,6 @@ function HomeScreenInner() {
       })
       .filter(Boolean) as { episode: Episode; feed: Feed }[];
   }, [recentlyPlayed, latestQuery.data, allFeeds]);
-
-  const recentlyAddedItems = useMemo(() => {
-    if (latestEpisodes.length === 0 || allFeeds.length === 0) return [];
-    const items: { episode: Episode; feed: Feed }[] = [];
-    for (let i = 0; i < latestEpisodes.length && items.length < 10; i++) {
-      const ep = latestEpisodes[i];
-      const feed = allFeeds.find(f => f.id === ep.feedId);
-      if (feed) items.push({ episode: ep, feed });
-    }
-    return items;
-  }, [latestEpisodes, allFeeds]);
 
   const feedsWithNew = useMemo(() => {
     const set = new Set<string>();
@@ -827,34 +780,6 @@ function HomeScreenInner() {
                 colors={colors}
                 onPlay={() => handlePlayEpisode(item.episode, item.feed)}
                 onDismiss={() => handleDismissContinue(item.episode.id)}
-              />
-            )}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 20 }}
-            initialNumToRender={5}
-            maxToRenderPerBatch={5}
-            windowSize={3}
-            removeClippedSubviews={Platform.OS !== "web"}
-          />
-        </View>
-      )}
-
-      {!isSearching && recentlyAddedItems.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Ionicons name="calendar-outline" size={18} color={colors.accent} />
-            <Text style={[styles.sectionTitle, { color: colors.text, paddingHorizontal: 0 }]}>Recently Added</Text>
-          </View>
-          <FlatList
-            horizontal
-            data={recentlyAddedItems}
-            keyExtractor={(item) => item.episode.id}
-            renderItem={({ item }) => (
-              <RecentlyAddedCard
-                episode={item.episode}
-                feed={item.feed}
-                colors={colors}
-                onPlay={() => handlePlayEpisode(item.episode, item.feed)}
               />
             )}
             showsHorizontalScrollIndicator={false}
@@ -1348,41 +1273,6 @@ const styles = StyleSheet.create({
   continueProgressFill: {
     height: "100%" as any,
     borderRadius: 2,
-  },
-  recentCard: {
-    width: 145,
-    borderRadius: 14,
-    borderWidth: 1,
-    overflow: "hidden",
-    marginRight: 12,
-  },
-  recentImage: {
-    width: "100%" as any,
-    height: 85,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-  },
-  recentInfo: {
-    padding: 10,
-    gap: 4,
-  },
-  recentEpTitle: {
-    fontSize: 12,
-    fontWeight: "600" as const,
-    lineHeight: 16,
-  },
-  recentFeedTitle: {
-    fontSize: 10,
-    fontWeight: "500" as const,
-  },
-  recentDateRow: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    gap: 3,
-    marginTop: 2,
-  },
-  recentDateText: {
-    fontSize: 10,
   },
   maggidCard: {
     width: 110,

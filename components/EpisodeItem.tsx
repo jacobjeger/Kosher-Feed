@@ -165,16 +165,16 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
         RNAnimated.spring(translateX, {
           toValue: 0,
           useNativeDriver: true,
-          tension: 40,
-          friction: 7,
+          tension: 120,
+          friction: 10,
         }).start();
       },
       onPanResponderTerminate: () => {
         RNAnimated.spring(translateX, {
           toValue: 0,
           useNativeDriver: true,
-          tension: 40,
-          friction: 7,
+          tension: 120,
+          friction: 10,
         }).start();
       },
     });

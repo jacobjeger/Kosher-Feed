@@ -12,8 +12,8 @@ import { addLog } from "@/lib/error-logger";
 const PROGRESS_THROTTLE_MS = 2500;
 const PROGRESS_UPDATE_MIN_CHANGE = 0.08;
 const MAX_CONCURRENT_DOWNLOADS = 1;
-const MAX_RETRY_COUNT = 3;
-const RETRY_BASE_DELAY_MS = 5000;
+const MAX_RETRY_COUNT = 2;
+const RETRY_BASE_DELAY_MS = 10000;
 
 interface FailedDownloadInfo {
   retryCount: number;
