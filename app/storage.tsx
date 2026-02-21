@@ -185,7 +185,7 @@ export default function StorageScreen() {
           <View key={group.feedId} style={[styles.feedSection, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
             <View style={styles.feedHeader}>
               {group.feedImageUrl ? (
-                <Image source={{ uri: group.feedImageUrl }} style={styles.feedImage} contentFit="cover" />
+                <Image source={{ uri: group.feedImageUrl }} style={styles.feedImage} contentFit="cover" cachePolicy="memory-disk" transition={0} />
               ) : (
                 <View style={[styles.feedImage, { backgroundColor: colors.surfaceAlt }]}>
                   <Ionicons name="musical-notes" size={18} color={colors.textSecondary} />

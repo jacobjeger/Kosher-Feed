@@ -428,6 +428,8 @@ function SponsorBanner({ colors }: { colors: any }) {
           source={{ uri: sponsor.logoUrl }}
           style={{ width: 120, height: 60, marginBottom: 12 }}
           contentFit="contain"
+          cachePolicy="memory-disk"
+          transition={0}
         />
       ) : null}
       {sponsor.text ? (
