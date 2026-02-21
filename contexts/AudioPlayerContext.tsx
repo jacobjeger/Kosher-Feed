@@ -609,51 +609,52 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           setPlayback(prev => ({ ...prev, positionMs: savedPos, playbackRate: feedSpeed }));
 
           let hasConfirmedPlaying = false;
+          let lockScreenDone = false;
+          const playStartTime = Date.now();
+
+          const setupLockScreen = () => {
+            if (lockScreenDone || nativePlayerRef.current !== player) return;
+            lockScreenDone = true;
+            try {
+              player.setActiveForLockScreen(true, {
+                title: episode.title || "Unknown",
+                artist: feed.title || "ShiurPod",
+                artworkUrl: feed.imageUrl || undefined,
+              }, {
+                showSeekForward: true,
+                showSeekBackward: true,
+              });
+            } catch (lockErr: any) {
+              addLog("warn", `Lock screen setup failed: ${lockErr?.message}`, undefined, "audio");
+            }
+            setTimeout(() => {
+              try {
+                if (nativePlayerRef.current === player) {
+                  player.updateLockScreenMetadata({
+                    title: episode.title || "Unknown",
+                    artist: feed.title || "ShiurPod",
+                    artworkUrl: feed.imageUrl || undefined,
+                  });
+                }
+              } catch {}
+            }, 500);
+          };
 
           const statusSub = player.addListener("playbackStatusUpdate", (status: any) => {
             if (nativePlayerRef.current !== player) return;
 
-            if (status.playing === true && !hasConfirmedPlaying) {
-              hasConfirmedPlaying = true;
-              setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true }));
-              addLog("info", `Playing confirmed (expo-audio): ${episode.title}`, undefined, "audio");
-
-              setTimeout(() => {
-                try {
-                  if (nativePlayerRef.current === player) {
-                    player.setActiveForLockScreen(true, {
-                      title: episode.title || "Unknown",
-                      artist: feed.title || "ShiurPod",
-                      artworkUrl: feed.imageUrl || undefined,
-                    }, {
-                      showSeekForward: true,
-                      showSeekBackward: true,
-                    });
-                    addLog("info", "Lock screen controls activated", undefined, "audio");
-                  }
-                } catch (lockErr: any) {
-                  addLog("warn", `Lock screen setup failed: ${lockErr?.message}`, undefined, "audio");
-                }
-              }, 300);
-
-              setTimeout(() => {
-                try {
-                  if (nativePlayerRef.current === player) {
-                    player.updateLockScreenMetadata({
-                      title: episode.title || "Unknown",
-                      artist: feed.title || "ShiurPod",
-                      artworkUrl: feed.imageUrl || undefined,
-                    });
-                  }
-                } catch {}
-              }, 1000);
+            if (status.playing === true) {
+              if (!hasConfirmedPlaying) {
+                hasConfirmedPlaying = true;
+                setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true }));
+                addLog("info", `Playing confirmed (expo-audio): ${episode.title}`, undefined, "audio");
+                setTimeout(setupLockScreen, 1500);
+              } else {
+                setPlayback(prev => prev.isPlaying ? prev : ({ ...prev, isPlaying: true }));
+              }
             }
 
-            if (hasConfirmedPlaying && status.playing === true) {
-              setPlayback(prev => prev.isPlaying ? prev : ({ ...prev, isPlaying: true }));
-            }
-
-            if (hasConfirmedPlaying && status.playing === false && status.currentTime > 0 && status.duration > 0) {
+            if (status.playing === false && status.currentTime > 0 && status.duration > 0) {
               const ratio = status.currentTime / status.duration;
               if (ratio > 0.97) {
                 const ep = currentEpisodeRef.current;
@@ -661,6 +662,9 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
                 if (ep && fd) {
                   handleEpisodeEndRef.current(ep, fd);
                 }
+              } else if (hasConfirmedPlaying && Date.now() - playStartTime < 8000) {
+                addLog("warn", "Auto-resuming: player paused during startup", undefined, "audio");
+                try { player.play(); } catch {}
               }
             }
           });
@@ -679,6 +683,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
               addLog("warn", "Playback not confirmed after 5s, forcing state", undefined, "audio");
               hasConfirmedPlaying = true;
               setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true }));
+              try { player.play(); } catch {}
+              setTimeout(setupLockScreen, 1000);
             }
           }, 5000);
 
