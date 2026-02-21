@@ -682,13 +682,13 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
           setTimeout(() => {
             if (!hasConfirmedPlaying && nativePlayerRef.current === player) {
-              addLog("warn", "Playback not confirmed after 5s, forcing state", undefined, "audio");
+              addLog("info", "Playback not confirmed after 15s, forcing state", undefined, "audio");
               hasConfirmedPlaying = true;
               setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true }));
               try { player.play(); } catch {}
               setTimeout(setupLockScreen, 1000);
             }
-          }, 5000);
+          }, 15000);
 
         } catch (audioErr: any) {
           const msg = audioErr?.message || String(audioErr);

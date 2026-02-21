@@ -78,11 +78,12 @@ export default function OfflineBanner() {
       <View style={styles.inner}>
         <Ionicons name="cloud-offline-outline" size={16} color="#fff" />
         <View style={styles.textContainer}>
-          <Text style={styles.text}>You're offline - downloaded shiurim are still available</Text>
+          <Text style={styles.text}>No internet connection</Text>
+          <Text style={styles.subText}>Your downloaded shiurim are ready to listen</Text>
           <Pressable onPress={() => { setDismissed(true); router.push("/(tabs)/downloads"); }} hitSlop={4}>
             <View style={styles.goToDownloads}>
-              <Ionicons name="download-outline" size={12} color="rgba(255,255,255,0.9)" />
-              <Text style={styles.goToDownloadsText}>Go to Downloads</Text>
+              <Ionicons name="headset-outline" size={12} color="rgba(255,255,255,0.9)" />
+              <Text style={styles.goToDownloadsText}>Listen Offline</Text>
             </View>
           </Pressable>
         </View>
@@ -119,6 +120,11 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 13,
     fontWeight: "600" as const,
+  },
+  subText: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 11.5,
+    fontWeight: "400" as const,
   },
   goToDownloads: {
     flexDirection: "row" as const,
