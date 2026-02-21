@@ -9,8 +9,8 @@ import { getApiUrl } from "@/lib/query-client";
 import { getDeviceId } from "@/lib/device-id";
 import { addLog } from "@/lib/error-logger";
 
-const PROGRESS_THROTTLE_MS = 2500;
-const PROGRESS_UPDATE_MIN_CHANGE = 0.08;
+const PROGRESS_THROTTLE_MS = 4000;
+const PROGRESS_UPDATE_MIN_CHANGE = 0.10;
 const MAX_CONCURRENT_DOWNLOADS = 1;
 const MAX_RETRY_COUNT = 2;
 const RETRY_BASE_DELAY_MS = 10000;
@@ -113,7 +113,7 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     progressTimerRef.current = setInterval(() => {
       const current = progressRef.current;
       if (current.size > 0) {
-        const snapshot = Array.from(current.entries()).map(([k, v]) => `${k}:${Math.round(v * 100)}`).join(",");
+        const snapshot = Array.from(current.entries()).map(([k, v]) => `${k}:${Math.round(v * 20)}`).join(",");
         if (snapshot !== lastProgressSnapshotRef.current) {
           lastProgressSnapshotRef.current = snapshot;
           if (Platform.OS !== "web") {

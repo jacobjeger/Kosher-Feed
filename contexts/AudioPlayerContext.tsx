@@ -762,6 +762,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
   const resume = useCallback(async () => {
     try {
+      setPlayback(prev => ({ ...prev, isPlaying: true }));
       if (Platform.OS === "web") {
         await audioRef.current?.play();
       } else if (nativePlayerRef.current) {
@@ -787,6 +788,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           }, 300);
         }
       } else {
+        setPlayback(prev => ({ ...prev, isPlaying: false }));
         const ep = currentEpisodeRef.current;
         const feed = currentFeedRef.current;
         if (ep && feed) {
@@ -796,8 +798,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         }
         return;
       }
-      setPlayback(prev => ({ ...prev, isPlaying: true }));
     } catch (e) {
+      setPlayback(prev => ({ ...prev, isPlaying: false }));
       addLog("error", `Resume failed: ${(e as any)?.message || e}`, (e as any)?.stack, "audio");
     }
   }, [playEpisodeInternal]);
