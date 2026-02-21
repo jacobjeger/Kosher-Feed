@@ -1,5 +1,5 @@
 import React, { useRef, useMemo } from "react";
-import { View, Text, Pressable, StyleSheet, Linking, Platform, Animated as RNAnimated, PanResponder } from "react-native";
+import { View, Text, Pressable, StyleSheet, Linking, Platform, Animated as RNAnimated, PanResponder, InteractionManager } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -8,7 +8,6 @@ import { useDownloads } from "@/contexts/DownloadsContext";
 import { useFavorites } from "@/contexts/FavoritesContext";
 import { usePlayedEpisodes } from "@/contexts/PlayedEpisodesContext";
 import { usePositions } from "@/contexts/PositionsContext";
-import { useNetworkStatus } from "@/components/OfflineBanner";
 import Colors from "@/constants/colors";
 import type { Episode, Feed } from "@/lib/types";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
@@ -18,6 +17,7 @@ interface Props {
   episode: Episode;
   feed: Feed;
   showFeedTitle?: boolean;
+  isOnline?: boolean;
 }
 
 function formatDuration(dur: string | null): string {
@@ -57,13 +57,12 @@ function formatRemainingTime(positionMs: number, durationMs: number): string {
 
 const SWIPE_THRESHOLD = 80;
 
-function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
+function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
   const { playEpisode, currentEpisode, playback, pause, resume, queue, addToQueue, removeFromQueue } = useAudioPlayer();
   const { downloadEpisode, isDownloaded, isDownloading, downloadProgress } = useDownloads();
   const { isFavorite, toggleFavorite } = useFavorites();
   const { isPlayed, togglePlayed } = usePlayedEpisodes();
   const { getPosition } = usePositions();
-  const isOnline = useNetworkStatus();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
@@ -95,7 +94,9 @@ function EpisodeItem({ episode, feed, showFeedTitle }: Props) {
         router.push("/player");
       } else {
         router.push("/player");
-        playEpisode(episode, feed).catch(console.error);
+        InteractionManager.runAfterInteractions(() => {
+          playEpisode(episode, feed).catch(console.error);
+        });
       }
     } catch (e) {
       console.error(e);
@@ -565,4 +566,9 @@ const styles = StyleSheet.create({
   },
 });
 
-export default React.memo(EpisodeItem);
+export default React.memo(EpisodeItem, (prev, next) => {
+  return prev.episode.id === next.episode.id && 
+         prev.feed.id === next.feed.id && 
+         prev.showFeedTitle === next.showFeedTitle &&
+         prev.isOnline === next.isOnline;
+});

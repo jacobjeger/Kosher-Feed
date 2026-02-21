@@ -17,7 +17,6 @@ interface AppSettings {
   dailyReminderEnabled: boolean;
   dailyReminderHour: number;
   autoDeleteAfterListen: boolean;
-  hapticFeedbackEnabled: boolean;
   skipSilenceEnabled: boolean;
 }
 
@@ -38,7 +37,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   dailyReminderEnabled: false,
   dailyReminderHour: 8,
   autoDeleteAfterListen: true,
-  hapticFeedbackEnabled: false,
   skipSilenceEnabled: false,
 };
 

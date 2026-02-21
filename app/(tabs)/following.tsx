@@ -11,12 +11,14 @@ import { getDeviceId } from "@/lib/device-id";
 import { getApiUrl, queryClient } from "@/lib/query-client";
 import type { Feed, Episode } from "@/lib/types";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { useNetworkStatus } from "@/components/OfflineBanner";
 
 function FollowingScreenInner() {
   const insets = useSafeAreaInsets();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
+  const isOnline = useNetworkStatus();
   const [deviceId, setDeviceId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -149,7 +151,7 @@ function FollowingScreenInner() {
               {whatsNewEpisodes.slice(0, 10).map(ep => {
                 const epFeed = allFeeds.find(f => f.id === ep.feedId);
                 if (!epFeed) return null;
-                return <EpisodeItem key={ep.id} episode={ep} feed={epFeed} showFeedTitle />;
+                return <EpisodeItem key={ep.id} episode={ep} feed={epFeed} showFeedTitle isOnline={isOnline} />;
               })}
             </View>
           )}
@@ -162,7 +164,7 @@ function FollowingScreenInner() {
       renderItem={({ item }) => {
         const feed = getFeedForEpisode(item);
         if (!feed) return null;
-        return <EpisodeItem episode={item} feed={feed} showFeedTitle />;
+        return <EpisodeItem episode={item} feed={feed} showFeedTitle isOnline={isOnline} />;
       }}
       ListEmptyComponent={() => (
         <View style={styles.emptyState}>

@@ -9,12 +9,14 @@ import Colors from "@/constants/colors";
 import { Ionicons } from "@expo/vector-icons";
 import type { Feed, Episode } from "@/lib/types";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { useNetworkStatus } from "@/components/OfflineBanner";
 
 function FavoritesScreenInner() {
   const insets = useSafeAreaInsets();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
+  const isOnline = useNetworkStatus();
   const { favorites, isLoading: favsLoading } = useFavorites();
 
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
@@ -61,7 +63,7 @@ function FavoritesScreenInner() {
           data={favoriteEpisodes}
           keyExtractor={item => item.episode.id}
           renderItem={({ item }) => (
-            <EpisodeItem episode={item.episode} feed={item.feed} showFeedTitle />
+            <EpisodeItem episode={item.episode} feed={item.feed} showFeedTitle isOnline={isOnline} />
           )}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120, ...(Platform.OS === "web" ? { maxWidth: 900, marginHorizontal: "auto" as any, width: "100%" as any } : {}) }}
           initialNumToRender={15}

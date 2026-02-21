@@ -17,6 +17,7 @@ import { lightHaptic } from "@/lib/haptics";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { usePlayedEpisodes } from "@/contexts/PlayedEpisodesContext";
 import { HomeScreenSkeleton } from "@/components/Skeleton";
+import { useNetworkStatus } from "@/components/OfflineBanner";
 
 interface SavedPositionEntry {
   episodeId: string;
@@ -449,6 +450,7 @@ function HomeScreenInner() {
   const colors = isDark ? Colors.dark : Colors.light;
   const { playEpisode, currentEpisode, playback, pause, resume, recentlyPlayed, getInProgressEpisodes, removeSavedPosition } = useAudioPlayer();
   const { isPlayed } = usePlayedEpisodes();
+  const isOnline = useNetworkStatus();
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [inProgressPositions, setInProgressPositions] = useState<SavedPositionEntry[]>([]);
@@ -735,7 +737,7 @@ function HomeScreenInner() {
                     {searchedEpisodes.map((ep) => {
                       const epFeed = allFeeds.find(f => f.id === ep.feedId);
                       if (!epFeed) return null;
-                      return <EpisodeItem key={ep.id} episode={ep} feed={epFeed} showFeedTitle />;
+                      return <EpisodeItem key={ep.id} episode={ep} feed={epFeed} showFeedTitle isOnline={isOnline} />;
                     })}
                   </View>
                 </>
@@ -883,7 +885,7 @@ function HomeScreenInner() {
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Recently Listened</Text>
           <View style={{ paddingHorizontal: 20 }}>
             {recentlyListenedItems.map(({ episode, feed }) => (
-              <EpisodeItem key={episode.id} episode={episode} feed={feed} showFeedTitle />
+              <EpisodeItem key={episode.id} episode={episode} feed={feed} showFeedTitle isOnline={isOnline} />
             ))}
           </View>
         </View>

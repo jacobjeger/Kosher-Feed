@@ -11,7 +11,7 @@ import { useDownloads } from "@/contexts/DownloadsContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { requestNotificationPermissions, checkNotificationPermission, setupNotificationChannel } from "@/lib/notifications";
 import { registerPushToken } from "@/lib/push-notifications";
-import { lightHaptic, mediumHaptic, invalidateHapticCache } from "@/lib/haptics";
+import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { getLogsSnapshot } from "@/lib/error-logger";
 import OptionPickerModal, { type PickerOption } from "@/components/OptionPickerModal";
@@ -455,24 +455,6 @@ function SettingsScreenInner() {
             label="Theme"
             value={THEME_LABELS[settings.darkModeOverride]}
             onPress={handleChangeTheme}
-          />
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <SettingRow
-            icon={<Ionicons name="phone-portrait-outline" size={20} color={colors.accent} />}
-            label="Haptic Feedback"
-            subtitle={Platform.OS === "web" ? "Available on mobile devices only" : undefined}
-            rightElement={
-              <Switch
-                value={settings.hapticFeedbackEnabled}
-                onValueChange={(value: boolean) => {
-                  updateSettings({ hapticFeedbackEnabled: value });
-                  invalidateHapticCache();
-                }}
-                trackColor={{ false: colors.border, true: colors.accent }}
-                thumbColor="#fff"
-                disabled={Platform.OS === "web"}
-              />
-            }
           />
         </View>
       </View>

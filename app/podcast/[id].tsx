@@ -18,6 +18,7 @@ import { useDownloads } from "@/contexts/DownloadsContext";
 import { usePlayedEpisodes } from "@/contexts/PlayedEpisodesContext";
 import { usePositions } from "@/contexts/PositionsContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { useNetworkStatus } from "@/components/OfflineBanner";
 
 function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
@@ -52,6 +53,7 @@ function PodcastDetailScreenInner() {
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = useMemo(() => isDark ? Colors.dark : Colors.light, [isDark]);
+  const isOnline = useNetworkStatus();
   const { getFeedSettings, updateFeedSettings } = useSettings();
   const { batchDownload, isDownloaded } = useDownloads();
   const { isPlayed } = usePlayedEpisodes();
@@ -228,8 +230,8 @@ function PodcastDetailScreenInner() {
 
   const renderEpisodeItem = useCallback(({ item }: { item: Episode }) => {
     if (!feed) return null;
-    return <EpisodeItem episode={item} feed={feed} />;
-  }, [feed]);
+    return <EpisodeItem episode={item} feed={feed} isOnline={isOnline} />;
+  }, [feed, isOnline]);
 
   const feedError = feedsQuery.isError || episodesInfiniteQuery.isError;
   const feedErrorMsg = feedsQuery.error?.message || episodesInfiniteQuery.error?.message || "";
