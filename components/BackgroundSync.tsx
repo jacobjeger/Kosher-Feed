@@ -1,18 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { AppState, Platform, type AppStateStatus } from "react-native";
 import { useQuery } from "@tanstack/react-query";
+import * as Notifications from "expo-notifications";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useDownloads } from "@/contexts/DownloadsContext";
 import { getDeviceId } from "@/lib/device-id";
 import { getApiUrl } from "@/lib/query-client";
 import {
-  checkForNewEpisodes,
-  notifyNewEpisodes,
   initializeSeenEpisodes,
-  checkNotificationPermission,
   setupNotificationChannel,
 } from "@/lib/notifications";
-import { registerBackgroundSync } from "@/lib/background-tasks";
 import { initPushNotifications } from "@/lib/push-notifications";
 import { cleanupExpiredDownloads } from "@/lib/auto-delete-download";
 import type { Feed, Episode } from "@/lib/types";
@@ -28,11 +25,12 @@ export function BackgroundSync() {
   const [ready, setReady] = useState(false);
   useEffect(() => {
     setupNotificationChannel().catch(() => {});
+
     if (Platform.OS !== "web") {
-      registerBackgroundSync().catch((e) => {
-        addLog("warn", `Background sync registration failed: ${(e as any)?.message || e}`, undefined, "background-sync");
-      });
+      Notifications.dismissAllNotificationsAsync().catch(() => {});
+      Notifications.setBadgeCountAsync(0).catch(() => {});
     }
+
     const timer = setTimeout(() => setReady(true), 30000);
     return () => clearTimeout(timer);
   }, []);
@@ -71,8 +69,6 @@ export function BackgroundSync() {
     addLog("info", `BackgroundSync: initialized seen episodes (${latestEpisodesQuery.data.length} total)`, undefined, "background-sync");
   }, [latestEpisodesQuery.data]);
 
-  const anyNotificationsEnabled = settings.notificationsEnabled || Object.values(feedSettingsMap).some(fs => fs.notificationsEnabled);
-
   useEffect(() => {
     const feeds = subscribedFeedsQuery.data;
     const episodes = latestEpisodesQuery.data;
@@ -89,28 +85,7 @@ export function BackgroundSync() {
 
     const runCheck = async () => {
       try {
-        addLog("info", `BackgroundSync: running check (${feeds.length} feeds, ${episodes.length} episodes, globalNotif=${settings.notificationsEnabled}, anyNotif=${anyNotificationsEnabled})`, undefined, "background-sync");
-
-        if (anyNotificationsEnabled) {
-          try {
-            const hasPermission = await checkNotificationPermission();
-            addLog("info", `BackgroundSync: notification permission=${hasPermission}`, undefined, "background-sync");
-            if (hasPermission) {
-              const newEps = await checkForNewEpisodes(feeds, episodes);
-              addLog("info", `BackgroundSync: found ${newEps.length} new episodes for notification`, undefined, "background-sync");
-              if (newEps.length > 0) {
-                await notifyNewEpisodes(newEps, feeds);
-                addLog("info", `BackgroundSync: sent notifications for ${newEps.length} episodes`, undefined, "background-sync");
-              }
-            } else {
-              addLog("warn", "BackgroundSync: notifications enabled in settings but permission not granted on device", undefined, "background-sync");
-            }
-          } catch (e) {
-            addLog("error", `BackgroundSync: notification check failed: ${(e as any)?.message || e}`, (e as any)?.stack, "background-sync");
-          }
-        } else {
-          addLog("info", "BackgroundSync: notifications disabled (global and all per-feed)", undefined, "background-sync");
-        }
+        addLog("info", `BackgroundSync: running check (${feeds.length} feeds, ${episodes.length} episodes)`, undefined, "background-sync");
 
         if (settings.autoDownloadOnWifi) {
           try {
@@ -141,11 +116,9 @@ export function BackgroundSync() {
   }, [
     subscribedFeedsQuery.data,
     latestEpisodesQuery.data,
-    settings.notificationsEnabled,
     settings.autoDownloadOnWifi,
     settings.maxEpisodesPerFeed,
     autoDownloadNewEpisodes,
-    anyNotificationsEnabled,
   ]);
 
   useEffect(() => {
@@ -153,6 +126,10 @@ export function BackgroundSync() {
       if (state === "active") {
         subscribedFeedsQuery.refetch();
         latestEpisodesQuery.refetch();
+        if (Platform.OS !== "web") {
+          Notifications.dismissAllNotificationsAsync().catch(() => {});
+          Notifications.setBadgeCountAsync(0).catch(() => {});
+        }
       }
     };
     const sub = AppState.addEventListener("change", handleAppState);

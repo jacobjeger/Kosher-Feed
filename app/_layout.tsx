@@ -21,7 +21,6 @@ import { BackgroundSync } from "@/components/BackgroundSync";
 import OfflineBanner from "@/components/OfflineBanner";
 import { setupNotificationChannel } from "@/lib/notifications";
 import { initErrorLogger, setupGlobalErrorHandlers } from "@/lib/error-logger";
-import { defineBackgroundTasks } from "@/lib/background-tasks";
 import { DeepLinkHandler } from "@/components/DeepLinkHandler";
 import { getNotificationData, setupForegroundNotificationHandler, setupPushNotificationChannels } from "@/lib/push-notifications";
 import { addLog } from "@/lib/error-logger";
@@ -31,7 +30,6 @@ const ONBOARDING_KEY = "@shiurpod_onboarding_complete";
 SplashScreen.preventAutoHideAsync();
 initErrorLogger();
 setupGlobalErrorHandlers();
-defineBackgroundTasks();
 setupForegroundNotificationHandler();
 setupPushNotificationChannels();
 
