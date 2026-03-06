@@ -58,7 +58,7 @@ export default function AnnouncementModal({ announcement, visible, onDismiss }: 
             <Text style={[styles.body, { color: colors.textSecondary }]}>{announcement.body}</Text>
           </ScrollView>
 
-          {announcement.actionLabel && announcement.actionUrl && (
+          {announcement.actionLabel && announcement.actionUrl && announcement.actionUrl.startsWith("/") && (
             <Pressable
               style={[styles.actionBtn, { backgroundColor: colors.accent }]}
               onPress={handleAction}

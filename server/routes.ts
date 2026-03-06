@@ -431,6 +431,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/queue/:deviceId", async (req: Request, res: Response) => {
+    try {
+      const items = await storage.getQueueForDevice(req.params.deviceId);
+      res.json(items);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.put("/api/queue/:deviceId", async (req: Request, res: Response) => {
+    try {
+      const { items } = req.body;
+      if (!Array.isArray(items)) return res.status(400).json({ error: "items array required" });
+      await storage.saveQueue(req.params.deviceId, items);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/episodes/trending", async (req: Request, res: Response) => {
     try {
       const limit = parseInt(req.query.limit as string) || 20;

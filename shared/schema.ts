@@ -265,3 +265,17 @@ export const announcementDismissals = pgTable("announcement_dismissals", {
 
 export type Announcement = typeof announcements.$inferSelect;
 export type AnnouncementDismissal = typeof announcementDismissals.$inferSelect;
+
+export const queueItems = pgTable("queue_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  deviceId: text("device_id").notNull(),
+  episodeId: varchar("episode_id").references(() => episodes.id, { onDelete: "cascade" }).notNull(),
+  feedId: varchar("feed_id").references(() => feeds.id, { onDelete: "cascade" }).notNull(),
+  position: integer("position").notNull().default(0),
+  addedAt: timestamp("added_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("queue_items_device_episode_idx").on(table.deviceId, table.episodeId),
+]);
+
+export type QueueItem = typeof queueItems.$inferSelect;

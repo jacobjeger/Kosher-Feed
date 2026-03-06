@@ -12,6 +12,7 @@ import { useSettings } from "@/contexts/SettingsContext";
 import { requestNotificationPermissions, checkNotificationPermission, setupNotificationChannel } from "@/lib/notifications";
 import { registerPushToken } from "@/lib/push-notifications";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
+import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { getLogsSnapshot } from "@/lib/error-logger";
 import OptionPickerModal, { type PickerOption } from "@/components/OptionPickerModal";
@@ -68,6 +69,7 @@ function SettingsScreenInner() {
   const colors = isDark ? Colors.dark : Colors.light;
   const { downloads } = useDownloads();
   const { settings, updateSettings } = useSettings();
+  const { setAudioBoost } = useAudioPlayer();
   const [deviceId, setDeviceId] = useState("");
   const [connectionStatus, setConnectionStatus] = useState<"idle" | "testing" | "ok" | "error">("idle");
   const [connectionError, setConnectionError] = useState("");
@@ -223,6 +225,7 @@ function SettingsScreenInner() {
   const handleToggleAudioBoost = (value: boolean) => {
     lightHaptic();
     updateSettings({ audioBoostEnabled: value });
+    setAudioBoost(value);
   };
 
   const handleChangeTheme = () => {
@@ -408,6 +411,7 @@ function SettingsScreenInner() {
           <SettingRow
             icon={<Ionicons name="volume-high" size={20} color={colors.accent} />}
             label="Audio Boost"
+            subtitle="Increase volume by 50%"
             rightElement={
               <Switch
                 value={settings.audioBoostEnabled}
@@ -425,20 +429,6 @@ function SettingsScreenInner() {
               <Switch
                 value={settings.continuousPlayback}
                 onValueChange={(value: boolean) => { lightHaptic(); updateSettings({ continuousPlayback: value }); }}
-                trackColor={{ false: colors.border, true: colors.accent }}
-                thumbColor="#fff"
-              />
-            }
-          />
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <SettingRow
-            icon={<Ionicons name="speedometer-outline" size={20} color={colors.accent} />}
-            label="Skip Silence"
-            subtitle="Speed through silent sections"
-            rightElement={
-              <Switch
-                value={settings.skipSilenceEnabled}
-                onValueChange={(value: boolean) => { lightHaptic(); updateSettings({ skipSilenceEnabled: value }); }}
                 trackColor={{ false: colors.border, true: colors.accent }}
                 thumbColor="#fff"
               />

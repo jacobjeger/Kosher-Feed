@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals } from "@shared/schema";
+import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals, queueItems } from "@shared/schema";
 import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor, NotificationPreference, Announcement, AnnouncementDismissal } from "@shared/schema";
 import { eq, and, desc, asc, inArray, sql, count, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
@@ -1115,4 +1115,25 @@ export async function getAnnouncementDismissCount(announcementId: string): Promi
     .from(announcementDismissals)
     .where(eq(announcementDismissals.announcementId, announcementId));
   return result?.count ?? 0;
+}
+
+export async function getQueueForDevice(deviceId: string) {
+  return db.select()
+    .from(queueItems)
+    .where(eq(queueItems.deviceId, deviceId))
+    .orderBy(asc(queueItems.position));
+}
+
+export async function saveQueue(deviceId: string, items: { episodeId: string; feedId: string; position: number }[]) {
+  await db.delete(queueItems).where(eq(queueItems.deviceId, deviceId));
+  if (items.length > 0) {
+    await db.insert(queueItems).values(
+      items.map(item => ({
+        deviceId,
+        episodeId: item.episodeId,
+        feedId: item.feedId,
+        position: item.position,
+      }))
+    );
+  }
 }
