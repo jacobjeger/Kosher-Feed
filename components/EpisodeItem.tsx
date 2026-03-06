@@ -1,6 +1,5 @@
 import React, { useRef, useMemo } from "react";
 import { View, Text, Pressable, StyleSheet, Platform, Animated as RNAnimated, PanResponder, InteractionManager } from "react-native";
-import * as WebBrowser from "expo-web-browser";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -138,12 +137,6 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
       await toggleFavorite(episode.id);
     } catch (e) {
       console.error(e);
-    }
-  };
-
-  const handleOpenSourceSheet = async () => {
-    if (episode.sourceSheetUrl) {
-      await WebBrowser.openBrowserAsync(episode.sourceSheetUrl);
     }
   };
 
@@ -313,17 +306,6 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
                 <Text style={{ fontSize: 12, lineHeight: 17, color: colors.textSecondary }}>{episode.adminNotes}</Text>
               </View>
             </View>
-          )}
-          {episode.sourceSheetUrl && (
-            <Pressable
-              onPress={handleOpenSourceSheet}
-              style={[styles.sourceSheetLink, { borderTopColor: colors.cardBorder }]}
-            >
-              <Ionicons name="open-outline" size={14} color={colors.accent} />
-              <Text style={[styles.sourceSheetText, { color: colors.accent }]}>
-                View Source Sheet
-              </Text>
-            </Pressable>
           )}
           <Pressable
             onPress={() => { lightHaptic(); togglePlayed(episode.id); }}

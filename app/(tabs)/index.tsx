@@ -1,6 +1,5 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { View, Text, FlatList, ScrollView, Pressable, StyleSheet, ActivityIndicator, RefreshControl, Platform, TextInput, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from "react-native";
-import * as WebBrowser from "expo-web-browser";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
@@ -279,14 +278,6 @@ function SponsorBanner({ colors }: { colors: any }) {
       )}
     </View>
   );
-
-  if (sponsor.linkUrl) {
-    return (
-      <Pressable onPress={() => WebBrowser.openBrowserAsync(sponsor.linkUrl!)}>
-        {content}
-      </Pressable>
-    );
-  }
 
   return content;
 }
