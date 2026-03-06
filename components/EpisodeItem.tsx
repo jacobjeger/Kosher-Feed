@@ -304,6 +304,15 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
               {episode.description}
             </Text>
           )}
+          {episode.adminNotes && (
+            <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 6, marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.cardBorder }}>
+              <Ionicons name="information-circle-outline" size={14} color={colors.accent} style={{ marginTop: 1 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 11, fontWeight: "600", color: colors.accent, marginBottom: 2 }}>Note</Text>
+                <Text style={{ fontSize: 12, lineHeight: 17, color: colors.textSecondary }}>{episode.adminNotes}</Text>
+              </View>
+            </View>
+          )}
           {episode.sourceSheetUrl && (
             <Pressable
               onPress={handleOpenSourceSheet}

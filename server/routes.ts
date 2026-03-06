@@ -5,6 +5,7 @@ import { parseFeed } from "./rss";
 import { sendNewEpisodePushes, sendCustomPush, checkPushReceipts } from "./push";
 import { getVitals, recordFeedResult } from "./feed-vitals";
 import { insertFeedSchema, insertCategorySchema } from "@shared/schema";
+import type { Feed } from "@shared/schema";
 import multer from "multer";
 import path from "node:path";
 import fs from "node:fs";
@@ -441,6 +442,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Recommendations
+  const recommendationCache = new Map<string, { data: Feed[]; ts: number }>();
+  app.get("/api/recommendations/:deviceId", async (req: Request, res: Response) => {
+    try {
+      const { deviceId } = req.params;
+      const limit = parseInt(req.query.limit as string) || 10;
+      const cached = recommendationCache.get(deviceId);
+      if (cached && Date.now() - cached.ts < 5 * 60 * 1000) {
+        res.setHeader("Cache-Control", "public, max-age=60");
+        return res.json(cached.data);
+      }
+      const recs = await storage.getRecommendations(deviceId, limit);
+      recommendationCache.set(deviceId, { data: recs, ts: Date.now() });
+      // Clean old cache entries
+      if (recommendationCache.size > 1000) {
+        const now = Date.now();
+        for (const [key, val] of recommendationCache) {
+          if (now - val.ts > 10 * 60 * 1000) recommendationCache.delete(key);
+        }
+      }
+      res.setHeader("Cache-Control", "public, max-age=60");
+      res.json(recs);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Analytics
   app.get("/api/admin/analytics", adminAuth as any, async (_req: Request, res: Response) => {
     try {
@@ -538,6 +566,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       await storage.removeSubscription(req.params.deviceId, req.params.feedId);
       res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Notification Preferences (per-feed mute/unmute)
+  app.get("/api/notification-preferences/:deviceId/:feedId", async (req: Request, res: Response) => {
+    try {
+      const pref = await storage.getNotificationPreference(req.params.deviceId, req.params.feedId);
+      res.json({ muted: pref?.muted ?? false });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/notification-preferences/mute", async (req: Request, res: Response) => {
+    try {
+      const { deviceId, feedId } = req.body;
+      if (!deviceId || !feedId) return res.status(400).json({ error: "deviceId and feedId required" });
+      await storage.muteNotificationsForFeed(deviceId, feedId);
+      res.json({ muted: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/notification-preferences/:deviceId/:feedId", async (req: Request, res: Response) => {
+    try {
+      await storage.unmuteNotificationsForFeed(req.params.deviceId, req.params.feedId);
+      res.json({ muted: false });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -1495,6 +1553,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
         res.json({ status: "error", error: syncErr.message?.slice(0, 200), durationMs: Date.now() - start });
       }
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Announcements (public)
+  app.get("/api/announcements/:deviceId", async (req: Request, res: Response) => {
+    try {
+      const anns = await storage.getAnnouncementsForDevice(req.params.deviceId);
+      res.json(anns);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/announcements/:id/dismiss", async (req: Request, res: Response) => {
+    try {
+      const { deviceId } = req.body;
+      if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+      await storage.dismissAnnouncement(req.params.id, deviceId);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Announcements (admin)
+  app.get("/api/admin/announcements", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const anns = await storage.getAllAnnouncements();
+      // Add dismiss counts
+      const result = await Promise.all(anns.map(async (ann) => ({
+        ...ann,
+        dismissCount: await storage.getAnnouncementDismissCount(ann.id),
+      })));
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/admin/announcements", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const ann = await storage.createAnnouncement(req.body);
+      res.json(ann);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.put("/api/admin/announcements/:id", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const ann = await storage.updateAnnouncement(req.params.id, req.body);
+      res.json(ann);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/admin/announcements/:id", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteAnnouncement(req.params.id);
+      res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

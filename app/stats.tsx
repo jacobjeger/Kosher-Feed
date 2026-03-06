@@ -21,6 +21,12 @@ interface StatsData {
   currentStreak: number;
   longestStreak: number;
   topFeeds: TopFeed[];
+  thisWeekMs?: number;
+  lastWeekMs?: number;
+  dailyChart?: { day: string; totalMs: number }[];
+  completionRate?: { completed: number; total: number; rate: number };
+  avgDailyTimeSeconds?: number;
+  topCategory?: { name: string; timeSeconds: number } | null;
 }
 
 function formatListeningTime(totalSeconds: number): { hours: number; minutes: number } {
@@ -129,6 +135,93 @@ export default function StatsScreen() {
               </Text>
             </View>
           </View>
+
+          {/* Weekly Comparison */}
+          {stats.thisWeekMs !== undefined && (
+            <View style={[styles.streakCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 12 }]}>This Week vs Last Week</Text>
+              <View style={{ flexDirection: "row", justifyContent: "space-around" }}>
+                <View style={{ alignItems: "center" }}>
+                  <Text style={[styles.statNumber, { color: colors.text, fontSize: 24 }]}>
+                    {formatFeedTime(Math.floor((stats.thisWeekMs || 0) / 1000))}
+                  </Text>
+                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>This Week</Text>
+                </View>
+                <View style={{ alignItems: "center", justifyContent: "center" }}>
+                  {(stats.thisWeekMs || 0) > (stats.lastWeekMs || 0) ? (
+                    <Ionicons name="arrow-up" size={24} color={colors.success} />
+                  ) : (stats.thisWeekMs || 0) < (stats.lastWeekMs || 0) ? (
+                    <Ionicons name="arrow-down" size={24} color="#ef4444" />
+                  ) : (
+                    <Ionicons name="remove" size={24} color={colors.textSecondary} />
+                  )}
+                </View>
+                <View style={{ alignItems: "center" }}>
+                  <Text style={[styles.statNumber, { color: colors.textSecondary, fontSize: 24 }]}>
+                    {formatFeedTime(Math.floor((stats.lastWeekMs || 0) / 1000))}
+                  </Text>
+                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Last Week</Text>
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* Daily Chart */}
+          {stats.dailyChart && stats.dailyChart.length > 0 && (
+            <View style={[styles.streakCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 12 }]}>Daily Activity</Text>
+              <View style={{ flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", height: 100, paddingHorizontal: 4 }}>
+                {(() => {
+                  const maxMs = Math.max(...stats.dailyChart!.map(d => d.totalMs), 1);
+                  return stats.dailyChart!.map((d) => {
+                    const height = Math.max((d.totalMs / maxMs) * 80, d.totalMs > 0 ? 4 : 0);
+                    const dayLabel = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Shab"][new Date(d.day + "T12:00:00").getDay()];
+                    return (
+                      <View key={d.day} style={{ alignItems: "center", flex: 1 }}>
+                        <View style={{ width: 20, height, backgroundColor: colors.accent, borderRadius: 4, marginBottom: 6 }} />
+                        <Text style={{ fontSize: 10, color: colors.textSecondary, fontWeight: "600" }}>{dayLabel}</Text>
+                      </View>
+                    );
+                  });
+                })()}
+              </View>
+            </View>
+          )}
+
+          {/* Extra Stats Row */}
+          <View style={styles.cardRow}>
+            {stats.completionRate && (
+              <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+                <View style={[styles.iconCircle, { backgroundColor: isDark ? "rgba(16,185,129,0.15)" : "rgba(16,185,129,0.1)" }]}>
+                  <Ionicons name="checkmark-done" size={22} color={colors.success} />
+                </View>
+                <Text style={[styles.statNumber, { color: colors.text }]}>{stats.completionRate.rate}%</Text>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Completed</Text>
+              </View>
+            )}
+            {stats.avgDailyTimeSeconds !== undefined && (
+              <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+                <View style={[styles.iconCircle, { backgroundColor: colors.accentLight }]}>
+                  <Ionicons name="time" size={22} color={colors.accent} />
+                </View>
+                <Text style={[styles.statNumber, { color: colors.text, fontSize: 24 }]}>{formatFeedTime(stats.avgDailyTimeSeconds)}</Text>
+                <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Avg/Day</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Top Category */}
+          {stats.topCategory && (
+            <View style={[styles.streakCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+              <View style={styles.streakRow}>
+                <View style={styles.streakInfo}>
+                  <Ionicons name="bookmark" size={20} color={colors.accent} />
+                  <Text style={[styles.streakTitle, { color: colors.text }]}>Top Category</Text>
+                </View>
+                <Text style={[styles.streakValue, { color: colors.accent }]}>{stats.topCategory.name}</Text>
+              </View>
+            </View>
+          )}
 
           {stats.topFeeds && stats.topFeeds.length > 0 && (
             <View style={styles.topFeedsSection}>

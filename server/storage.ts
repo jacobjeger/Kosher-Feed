@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors } from "@shared/schema";
-import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor } from "@shared/schema";
+import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals } from "@shared/schema";
+import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor, NotificationPreference, Announcement, AnnouncementDismissal } from "@shared/schema";
 import { eq, and, desc, asc, inArray, sql, count, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
@@ -382,12 +382,74 @@ export async function getListeningStats(deviceId: string) {
     }
   }
 
+  // This week vs last week
+  const now = new Date();
+  const thisWeekStart = new Date(now.getTime() - 7 * 86400000);
+  const lastWeekStart = new Date(now.getTime() - 14 * 86400000);
+  let thisWeekMs = 0;
+  let lastWeekMs = 0;
+  for (const p of positions) {
+    if (!p.updatedAt) continue;
+    const t = new Date(p.updatedAt).getTime();
+    if (t >= thisWeekStart.getTime()) thisWeekMs += (p.positionMs || 0);
+    else if (t >= lastWeekStart.getTime()) lastWeekMs += (p.positionMs || 0);
+  }
+
+  // Daily chart (last 7 days)
+  const dailyChart: { day: string; totalMs: number }[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now.getTime() - i * 86400000);
+    const dayStr = d.toISOString().split("T")[0];
+    let dayTotal = 0;
+    for (const p of positions) {
+      if (p.updatedAt && new Date(p.updatedAt).toISOString().split("T")[0] === dayStr) {
+        dayTotal += (p.positionMs || 0);
+      }
+    }
+    dailyChart.push({ day: dayStr, totalMs: dayTotal });
+  }
+
+  // Completion rate
+  const completedCount = positions.filter(p => p.completed).length;
+  const completionRate = {
+    completed: completedCount,
+    total: episodesPlayed,
+    rate: episodesPlayed > 0 ? Math.round((completedCount / episodesPlayed) * 100) : 0,
+  };
+
+  // Average daily listening time
+  const uniqueDays = listenDays.size;
+  const avgDailyTimeSeconds = uniqueDays > 0 ? Math.floor(totalListeningTimeMs / 1000 / uniqueDays) : 0;
+
+  // Top category
+  let topCategory: { name: string; timeSeconds: number } | null = null;
+  const categoryTimeMap = new Map<string, number>();
+  for (const [feedId, data] of feedTimeMap) {
+    const cats = await db.select({ categoryId: feedCategories.categoryId }).from(feedCategories).where(eq(feedCategories.feedId, feedId));
+    for (const cat of cats) {
+      categoryTimeMap.set(cat.categoryId, (categoryTimeMap.get(cat.categoryId) || 0) + data.time);
+    }
+  }
+  if (categoryTimeMap.size > 0) {
+    const topCatEntry = [...categoryTimeMap.entries()].sort((a, b) => b[1] - a[1])[0];
+    const [catRow] = await db.select({ name: categories.name }).from(categories).where(eq(categories.id, topCatEntry[0])).limit(1);
+    if (catRow) {
+      topCategory = { name: catRow.name, timeSeconds: Math.floor(topCatEntry[1]) };
+    }
+  }
+
   return {
     totalListeningTime,
     episodesPlayed,
     currentStreak,
     longestStreak,
     topFeeds,
+    thisWeekMs,
+    lastWeekMs,
+    dailyChart,
+    completionRate,
+    avgDailyTimeSeconds,
+    topCategory,
   };
 }
 
@@ -767,7 +829,39 @@ export async function getSubscribersForFeed(feedId: string): Promise<PushToken[]
   const subs = await db.select({ deviceId: subscriptions.deviceId }).from(subscriptions).where(eq(subscriptions.feedId, feedId));
   if (subs.length === 0) return [];
   const deviceIds = subs.map(s => s.deviceId);
-  return db.select().from(pushTokens).where(inArray(pushTokens.deviceId, deviceIds));
+
+  // Exclude muted devices
+  const mutedRows = await db.select({ deviceId: notificationPreferences.deviceId })
+    .from(notificationPreferences)
+    .where(and(eq(notificationPreferences.feedId, feedId), eq(notificationPreferences.muted, true)));
+  const mutedSet = new Set(mutedRows.map(r => r.deviceId));
+  const activeDeviceIds = deviceIds.filter(id => !mutedSet.has(id));
+
+  if (activeDeviceIds.length === 0) return [];
+  return db.select().from(pushTokens).where(inArray(pushTokens.deviceId, activeDeviceIds));
+}
+
+export async function muteNotificationsForFeed(deviceId: string, feedId: string): Promise<NotificationPreference> {
+  const [pref] = await db.insert(notificationPreferences)
+    .values({ deviceId, feedId, muted: true })
+    .onConflictDoUpdate({
+      target: [notificationPreferences.deviceId, notificationPreferences.feedId],
+      set: { muted: true },
+    })
+    .returning();
+  return pref;
+}
+
+export async function unmuteNotificationsForFeed(deviceId: string, feedId: string): Promise<void> {
+  await db.delete(notificationPreferences)
+    .where(and(eq(notificationPreferences.deviceId, deviceId), eq(notificationPreferences.feedId, feedId)));
+}
+
+export async function getNotificationPreference(deviceId: string, feedId: string): Promise<NotificationPreference | undefined> {
+  const [pref] = await db.select().from(notificationPreferences)
+    .where(and(eq(notificationPreferences.deviceId, deviceId), eq(notificationPreferences.feedId, feedId)))
+    .limit(1);
+  return pref;
 }
 
 export async function removePushToken(token: string): Promise<void> {
@@ -868,4 +962,157 @@ export async function updateSponsor(id: string, data: Partial<{ name: string; te
 
 export async function deleteSponsor(id: string): Promise<void> {
   await db.delete(sponsors).where(eq(sponsors.id, id));
+}
+
+export async function getRecommendations(deviceId: string, limit: number = 10): Promise<Feed[]> {
+  // Get feeds the user is subscribed to
+  const subs = await db.select({ feedId: subscriptions.feedId }).from(subscriptions).where(eq(subscriptions.deviceId, deviceId));
+  if (subs.length === 0) return [];
+  const subscribedIds = subs.map(s => s.feedId);
+
+  // Get categories of subscribed feeds
+  const subCats = await db.select({ categoryId: feedCategories.categoryId })
+    .from(feedCategories)
+    .where(inArray(feedCategories.feedId, subscribedIds));
+
+  // Also check direct categoryId on feeds
+  const directCats = await db.select({ categoryId: feeds.categoryId })
+    .from(feeds)
+    .where(and(inArray(feeds.id, subscribedIds), sql`${feeds.categoryId} IS NOT NULL`));
+
+  const categoryIds = [...new Set([
+    ...subCats.map(c => c.categoryId),
+    ...directCats.filter(c => c.categoryId).map(c => c.categoryId!),
+  ])];
+  if (categoryIds.length === 0) return [];
+
+  // Find other feeds in same categories, not already subscribed
+  const relatedViaJoin = await db.select({ feedId: feedCategories.feedId })
+    .from(feedCategories)
+    .where(and(
+      inArray(feedCategories.categoryId, categoryIds),
+      sql`${feedCategories.feedId} NOT IN (${sql.join(subscribedIds.map(id => sql`${id}`), sql`, `)})`
+    ));
+
+  const relatedViaDirect = await db.select({ id: feeds.id })
+    .from(feeds)
+    .where(and(
+      inArray(feeds.categoryId, categoryIds),
+      eq(feeds.isActive, true),
+      sql`${feeds.id} NOT IN (${sql.join(subscribedIds.map(id => sql`${id}`), sql`, `)})`
+    ));
+
+  const candidateIds = [...new Set([
+    ...relatedViaJoin.map(r => r.feedId),
+    ...relatedViaDirect.map(r => r.id),
+  ])];
+  if (candidateIds.length === 0) return [];
+
+  // Rank by listen count
+  const ranked = await db.select({
+    feedId: episodeListens.episodeId,
+    count: count(),
+  })
+    .from(episodeListens)
+    .innerJoin(episodes, eq(episodeListens.episodeId, episodes.id))
+    .where(inArray(episodes.feedId, candidateIds))
+    .groupBy(episodes.feedId)
+    .orderBy(desc(count()))
+    .limit(limit);
+
+  const rankedFeedIds = ranked.map(r => r.feedId);
+  // Fill remaining slots with unranked candidates
+  const remaining = candidateIds.filter(id => !rankedFeedIds.includes(id));
+  const finalIds = [...new Set([...rankedFeedIds, ...remaining])].slice(0, limit);
+
+  if (finalIds.length === 0) return [];
+  const result = await db.select().from(feeds).where(and(inArray(feeds.id, finalIds), eq(feeds.isActive, true)));
+  // Preserve rank order
+  const feedMap = new Map(result.map(f => [f.id, f]));
+  return finalIds.map(id => feedMap.get(id)).filter(Boolean) as Feed[];
+}
+
+// Announcements
+export async function getAllAnnouncements(): Promise<Announcement[]> {
+  return db.select().from(announcements).orderBy(desc(announcements.createdAt));
+}
+
+export async function getAnnouncementsForDevice(deviceId: string): Promise<Announcement[]> {
+  const active = await db.select().from(announcements).where(eq(announcements.isActive, true));
+  if (active.length === 0) return [];
+
+  // Get dismissals for this device
+  const dismissed = await db.select({ announcementId: announcementDismissals.announcementId })
+    .from(announcementDismissals)
+    .where(eq(announcementDismissals.deviceId, deviceId));
+  const dismissedIds = new Set(dismissed.map(d => d.announcementId));
+
+  // Get device subscriptions for targeting
+  const subs = await db.select({ feedId: subscriptions.feedId })
+    .from(subscriptions)
+    .where(eq(subscriptions.deviceId, deviceId));
+  const subscribedFeedIds = new Set(subs.map(s => s.feedId));
+
+  return active.filter(ann => {
+    // Filter by frequency + dismissal
+    if (ann.frequency === "once" && dismissedIds.has(ann.id)) return false;
+    if (ann.frequency === "until_dismissed" && dismissedIds.has(ann.id)) return false;
+    // "every_open" always shows (dismissal is per-session, handled client-side)
+
+    // Filter by targeting
+    if (ann.targetType === "all") return true;
+    if (ann.targetType === "feed_subscribers" && ann.targetValue) {
+      return subscribedFeedIds.has(ann.targetValue);
+    }
+    if (ann.targetType === "device" && ann.targetValue) {
+      return ann.targetValue === deviceId;
+    }
+    return true;
+  });
+}
+
+export async function createAnnouncement(data: {
+  title: string;
+  body: string;
+  imageUrl?: string;
+  actionLabel?: string;
+  actionUrl?: string;
+  targetType?: string;
+  targetValue?: string;
+  frequency?: string;
+}): Promise<Announcement> {
+  const [ann] = await db.insert(announcements).values(data).returning();
+  return ann;
+}
+
+export async function updateAnnouncement(id: string, data: Partial<{
+  title: string;
+  body: string;
+  imageUrl: string;
+  actionLabel: string;
+  actionUrl: string;
+  targetType: string;
+  targetValue: string;
+  frequency: string;
+  isActive: boolean;
+}>): Promise<Announcement> {
+  const [ann] = await db.update(announcements).set(data).where(eq(announcements.id, id)).returning();
+  return ann;
+}
+
+export async function deleteAnnouncement(id: string): Promise<void> {
+  await db.delete(announcements).where(eq(announcements.id, id));
+}
+
+export async function dismissAnnouncement(announcementId: string, deviceId: string): Promise<void> {
+  await db.insert(announcementDismissals)
+    .values({ announcementId, deviceId })
+    .onConflictDoNothing();
+}
+
+export async function getAnnouncementDismissCount(announcementId: string): Promise<number> {
+  const [result] = await db.select({ count: count() })
+    .from(announcementDismissals)
+    .where(eq(announcementDismissals.announcementId, announcementId));
+  return result?.count ?? 0;
 }
