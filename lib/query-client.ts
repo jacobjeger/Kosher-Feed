@@ -7,30 +7,24 @@ const apiFetch: typeof globalThis.fetch =
     ? globalThis.fetch.bind(globalThis)
     : require("expo/fetch").fetch;
 
-const PRODUCTION_API_URL = "https://kosher-feed.replit.app";
+const PRODUCTION_API_URL = process.env.EXPO_PUBLIC_API_URL || "https://kosher-feed.replit.app";
 const REQUEST_TIMEOUT_MS = 12000;
 const CACHE_PREFIX = "shiurpod_cache_";
 
 export function getApiUrl(): string {
-  const host = process.env.EXPO_PUBLIC_DOMAIN;
-
+  // Web: always same-origin (Express serves both frontend and API)
   if (Platform.OS === "web" && typeof window !== "undefined") {
-    const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-    if (isLocalhost) {
-      return "http://127.0.0.1:5000";
-    }
-    if (host) {
-      const protocol = window.location.protocol || "https:";
-      return `${protocol}//${host}`;
-    }
     return window.location.origin;
   }
 
+  // Native development
+  const host = process.env.EXPO_PUBLIC_DOMAIN;
   if (__DEV__ && host) {
     const cleanHost = host.replace(/:5000$/, "").replace(/:443$/, "");
     return `https://${cleanHost}`;
   }
 
+  // Native production
   return PRODUCTION_API_URL;
 }
 

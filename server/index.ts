@@ -37,6 +37,13 @@ function setupCors(app: express.Application) {
       });
     }
 
+    // Additional allowed origins (comma-separated), e.g. for Railway
+    if (process.env.ALLOWED_ORIGINS) {
+      process.env.ALLOWED_ORIGINS.split(",").forEach((o) => {
+        origins.add(o.trim());
+      });
+    }
+
     const origin = req.header("origin");
 
     // Allow localhost origins for Expo web development (any port)

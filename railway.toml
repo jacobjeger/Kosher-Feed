@@ -1,0 +1,9 @@
+[build]
+buildCommand = "npm run server:build && node scripts/build.js"
+
+[deploy]
+startCommand = "npm run server:prod"
+healthcheckPath = "/"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
