@@ -1,5 +1,6 @@
 import React, { useRef, useMemo } from "react";
-import { View, Text, Pressable, StyleSheet, Linking, Platform, Animated as RNAnimated, PanResponder, InteractionManager } from "react-native";
+import { View, Text, Pressable, StyleSheet, Platform, Animated as RNAnimated, PanResponder, InteractionManager } from "react-native";
+import * as WebBrowser from "expo-web-browser";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -142,7 +143,7 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
 
   const handleOpenSourceSheet = async () => {
     if (episode.sourceSheetUrl) {
-      await Linking.openURL(episode.sourceSheetUrl);
+      await WebBrowser.openBrowserAsync(episode.sourceSheetUrl);
     }
   };
 

@@ -1,8 +1,9 @@
 import React from "react";
-import { View, Text, Pressable, Modal, StyleSheet, Linking, ScrollView } from "react-native";
+import { View, Text, Pressable, Modal, StyleSheet, ScrollView } from "react-native";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import Colors from "@/constants/colors";
 
@@ -33,7 +34,7 @@ export default function AnnouncementModal({ announcement, visible, onDismiss }: 
     if (announcement.actionUrl.startsWith("/")) {
       router.push(announcement.actionUrl as any);
     } else {
-      Linking.openURL(announcement.actionUrl);
+      WebBrowser.openBrowserAsync(announcement.actionUrl);
     }
     onDismiss();
   };
