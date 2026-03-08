@@ -6,7 +6,7 @@ import { sendNewEpisodePushes, sendCustomPush, checkPushReceipts } from "./push"
 import { getVitals, recordFeedResult } from "./feed-vitals";
 import { insertFeedSchema, insertCategorySchema } from "@shared/schema";
 import type { Feed } from "@shared/schema";
-import { syncTATSpeakers, refreshTATFeedEpisodes } from "./torahanytime";
+import { syncTATSpeakers, refreshTATFeedEpisodes, fetchAllSpeakers } from "./torahanytime";
 import multer from "multer";
 import path from "node:path";
 import fs from "node:fs";
@@ -947,6 +947,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const activeCount = tatOnlyFeeds.filter(f => f.isActive).length;
       const enabled = activeCount > 0;
       res.json({ enabled, totalTATFeeds: tatOnlyFeeds.length, activeTATFeeds: activeCount, mergedFeeds: tatFeeds.length - tatOnlyFeeds.length });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Remove all female TAT speaker feeds
+  app.post("/api/admin/tat/remove-female-feeds", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const speakers = await fetchAllSpeakers();
+      const femaleSpeakerIds = new Set(speakers.filter(s => s.female).map(s => s.id));
+
+      const allFeeds = await storage.getAllFeeds();
+      let removed = 0;
+      for (const feed of allFeeds) {
+        if (feed.tatSpeakerId && femaleSpeakerIds.has(feed.tatSpeakerId)) {
+          await storage.deleteFeed(feed.id);
+          removed++;
+          console.log(`Removed female speaker feed: "${feed.title}" (TAT speaker ${feed.tatSpeakerId})`);
+        }
+      }
+      res.json({ removed, totalFemaleSpakers: femaleSpeakerIds.size });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

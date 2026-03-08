@@ -158,7 +158,9 @@ function normalizeName(name: string): string {
     .toLowerCase()
     .replace(/[''`]/g, "'")
     .replace(/\b(rabbi|rav|r\.|r'|rebbetzin|harav|hagaon|moreinu|dr\.?|mrs?\.?)\b/gi, "")
+    .replace(/\b(shiurim|shiur|lectures?|podcast|audio|video|series|classes?|torah)\b/gi, "")
     .replace(/\b[a-z]\.\s*/gi, "") // Remove middle initials like "J."
+    .replace(/[-–—]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -228,12 +230,22 @@ export async function syncTATSpeakers(): Promise<{ created: number; linked: numb
     const normalizedSpeakerName = normalizeName(speakerName);
     const photoUrl = buildSpeakerPhotoUrl(speaker);
 
-    // Try to match existing feed by name (exact normalized match, then last-name match)
+    // Try to match existing feed by name
+    // 1. Exact normalized match
     let matchedFeed = feedsByNormalizedName.get(normalizedSpeakerName);
+    // 2. Try first+last without title
     if (!matchedFeed && speaker.name_last) {
-      // Try matching by last name + first name (without title)
-      const lastFirst = normalizeName(`${speaker.name_first} ${speaker.name_last}`);
-      matchedFeed = feedsByNormalizedName.get(lastFirst);
+      const firstLast = normalizeName(`${speaker.name_first} ${speaker.name_last}`);
+      matchedFeed = feedsByNormalizedName.get(firstLast);
+    }
+    // 3. Substring match: find any feed whose normalized name contains the speaker name
+    if (!matchedFeed && normalizedSpeakerName.length >= 5) {
+      for (const [normalizedFeedName, feed] of feedsByNormalizedName) {
+        if (normalizedFeedName.includes(normalizedSpeakerName) || normalizedSpeakerName.includes(normalizedFeedName)) {
+          matchedFeed = feed;
+          break;
+        }
+      }
     }
 
     if (matchedFeed) {
