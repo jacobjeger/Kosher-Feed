@@ -12,6 +12,7 @@ export interface Feed {
   scheduledPublishAt: string | null;
   lastFetchedAt: string | null;
   createdAt: string;
+  sourceNetwork: string | null;
 }
 
 export interface MaggidShiur {

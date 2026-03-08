@@ -207,9 +207,16 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
         </View>
         <Pressable onPress={handleToggleExpand} style={styles.info}>
           {showFeedTitle && (
-            <Text style={[styles.feedTitle, { color: colors.accent }]} numberOfLines={1}>
-              {feed.title}
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Text style={[styles.feedTitle, { color: colors.accent }]} numberOfLines={1}>
+                {feed.title}
+              </Text>
+              {feed.sourceNetwork && (
+                <View style={styles.networkTag}>
+                  <Text style={styles.networkTagText}>{feed.sourceNetwork}</Text>
+                </View>
+              )}
+            </View>
           )}
           <Text style={[styles.title, { color: colors.text, opacity: played ? 0.6 : 1 }]} numberOfLines={expanded ? undefined : 2}>
             {episode.title}
@@ -431,6 +438,19 @@ const styles = StyleSheet.create({
     fontWeight: "600" as const,
     textTransform: "uppercase" as const,
     letterSpacing: 0.5,
+    flexShrink: 1,
+  },
+  networkTag: {
+    backgroundColor: "rgba(37, 99, 235, 0.85)",
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 3,
+    flexShrink: 0,
+  },
+  networkTagText: {
+    color: "#fff",
+    fontSize: 8,
+    fontWeight: "600" as const,
   },
   title: {
     fontSize: 14,

@@ -11,6 +11,16 @@ import path from "node:path";
 import fs from "node:fs";
 
 const ON_DEMAND_STALE_MS = 5 * 60 * 1000;
+
+function detectSourceNetwork(rssUrl: string): string | null {
+  try {
+    const hostname = new URL(rssUrl).hostname.toLowerCase();
+    if (hostname.includes("torahanytime") || hostname.includes("torah-anytime")) {
+      return "Torah Anytime";
+    }
+  } catch {}
+  return null;
+}
 const refreshingFeeds = new Set<string>();
 
 async function onDemandRefreshFeed(feedId: string): Promise<void> {
@@ -262,7 +272,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/admin/feeds", adminAuth as any, async (req: Request, res: Response) => {
     try {
-      const { rssUrl, categoryId, categoryIds } = req.body;
+      const { rssUrl, categoryId, categoryIds, sourceNetwork } = req.body;
       if (!rssUrl) return res.status(400).json({ error: "rssUrl is required" });
 
       const parsed = await parseFeed("temp", rssUrl);
@@ -276,6 +286,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         description: parsed.description || null,
         author: parsed.author || null,
         categoryId: effectiveCategoryId,
+        sourceNetwork: sourceNetwork || detectSourceNetwork(rssUrl),
       });
 
       const effectiveCategoryIds = (categoryIds && Array.isArray(categoryIds) && categoryIds.length > 0)
@@ -881,6 +892,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             description: parsed.description || null,
             author: parsed.author || null,
             categoryId: categoryId || null,
+            sourceNetwork: detectSourceNetwork(rssUrl),
           });
           const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
           await storage.upsertEpisodes(feed.id, episodeData);

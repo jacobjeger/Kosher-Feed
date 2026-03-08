@@ -318,6 +318,12 @@ function PodcastDetailScreenInner() {
           {feed.author && (
             <Text style={[styles.podcastAuthor, { color: colors.textSecondary }]}>{feed.author}</Text>
           )}
+          {feed.sourceNetwork && (
+            <View style={styles.sourceNetworkBadge}>
+              <Ionicons name="globe-outline" size={11} color="#fff" />
+              <Text style={styles.sourceNetworkText}>{feed.sourceNetwork}</Text>
+            </View>
+          )}
 
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <Pressable
@@ -625,6 +631,21 @@ const styles = StyleSheet.create({
   },
   podcastAuthor: {
     fontSize: 14,
+  },
+  sourceNetworkBadge: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    alignSelf: "flex-start" as const,
+    gap: 4,
+    backgroundColor: "rgba(37, 99, 235, 0.85)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  sourceNetworkText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "600" as const,
   },
   followBtn: {
     flexDirection: "row",

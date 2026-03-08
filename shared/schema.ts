@@ -25,6 +25,7 @@ export const feeds = pgTable("feeds", {
   scheduledPublishAt: timestamp("scheduled_publish_at"),
   etag: text("etag"),
   lastModifiedHeader: text("last_modified_header"),
+  sourceNetwork: text("source_network"),
 });
 
 export const episodes = pgTable("episodes", {
@@ -193,6 +194,7 @@ export const insertFeedSchema = createInsertSchema(feeds).pick({
   description: true,
   author: true,
   categoryId: true,
+  sourceNetwork: true,
 });
 
 export const insertCategorySchema = createInsertSchema(categories).pick({

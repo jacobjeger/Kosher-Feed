@@ -33,6 +33,13 @@ function PodcastCard({ feed, size = "small", hasNewEpisodes }: Props) {
     RNAnimated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, tension: 150, friction: 8 }).start();
   }, [scaleAnim, isNative]);
 
+  const networkBadge = feed.sourceNetwork ? (
+    <View style={styles.networkBadge}>
+      <Ionicons name="globe-outline" size={9} color="#fff" />
+      <Text style={styles.networkBadgeText}>{feed.sourceNetwork}</Text>
+    </View>
+  ) : null;
+
   if (size === "featured") {
     return (
       <Pressable
@@ -53,9 +60,12 @@ function PodcastCard({ feed, size = "small", hasNewEpisodes }: Props) {
           {hasNewEpisodes && <View style={styles.newBadge} />}
         </View>
         <View style={styles.featuredOverlay}>
-          <View style={styles.featuredBadge}>
-            <Ionicons name="star" size={10} color="#f59e0b" />
-            <Text style={styles.featuredBadgeText}>Featured</Text>
+          <View style={{ flexDirection: "row", gap: 6 }}>
+            <View style={styles.featuredBadge}>
+              <Ionicons name="star" size={10} color="#f59e0b" />
+              <Text style={styles.featuredBadgeText}>Featured</Text>
+            </View>
+            {networkBadge}
           </View>
         </View>
         <View style={styles.featuredInfo}>
@@ -105,6 +115,7 @@ function PodcastCard({ feed, size = "small", hasNewEpisodes }: Props) {
               {feed.author}
             </Text>
           )}
+          {networkBadge}
         </View>
       </Pressable>
     );
@@ -140,6 +151,7 @@ function PodcastCard({ feed, size = "small", hasNewEpisodes }: Props) {
               {feed.author}
             </Text>
           )}
+          {networkBadge}
         </View>
       </Pressable>
     </RNAnimated.View>
@@ -243,6 +255,22 @@ const styles = StyleSheet.create({
   },
   smallAuthor: {
     fontSize: 11,
+  },
+  networkBadge: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    alignSelf: "flex-start" as const,
+    gap: 3,
+    backgroundColor: "rgba(37, 99, 235, 0.85)",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginTop: 2,
+  },
+  networkBadgeText: {
+    color: "#fff",
+    fontSize: 9,
+    fontWeight: "600" as const,
   },
   newBadge: {
     position: "absolute" as const,

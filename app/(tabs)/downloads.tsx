@@ -48,6 +48,9 @@ function DownloadItem({ item }: { item: DownloadedEpisode }) {
     isActive: true,
     lastFetchedAt: null,
     createdAt: "",
+    isFeatured: false,
+    scheduledPublishAt: null,
+    sourceNetwork: null,
   };
 
   const episodeToPlay = {
