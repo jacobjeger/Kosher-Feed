@@ -914,6 +914,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin: Toggle all TAT feeds active/inactive
+  app.post("/api/admin/tat/toggle", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { enabled } = req.body;
+      if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) required" });
+      const allFeeds = await storage.getAllFeeds();
+      const tatOnlyFeeds = allFeeds.filter(f => f.tatSpeakerId != null && f.rssUrl.startsWith("tat://"));
+      let updated = 0;
+      for (const feed of tatOnlyFeeds) {
+        if (feed.isActive !== enabled) {
+          await storage.updateFeed(feed.id, { isActive: enabled });
+          updated++;
+        }
+      }
+      res.json({ updated, enabled });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Get TAT status
+  app.get("/api/admin/tat/status", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const allFeeds = await storage.getAllFeeds();
+      const tatFeeds = allFeeds.filter(f => f.tatSpeakerId != null);
+      const tatOnlyFeeds = tatFeeds.filter(f => f.rssUrl.startsWith("tat://"));
+      const activeCount = tatOnlyFeeds.filter(f => f.isActive).length;
+      const enabled = activeCount > 0;
+      res.json({ enabled, totalTATFeeds: tatOnlyFeeds.length, activeTATFeeds: activeCount, mergedFeeds: tatFeeds.length - tatOnlyFeeds.length });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Admin: Link/unlink feed to TAT speaker
   app.put("/api/admin/feeds/:id/tat-link", adminAuth as any, async (req: Request, res: Response) => {
     try {
