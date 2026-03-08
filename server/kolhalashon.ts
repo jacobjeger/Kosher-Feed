@@ -21,8 +21,8 @@ export interface KHSearchItem {
 }
 
 // --- HTTP Client ---
-// Cloudflare fingerprints TLS clients. We try axios first (works on most hosts),
-// then fall back to curl which has a different TLS fingerprint.
+// Cloudflare blocks Node.js axios based on TLS fingerprint on some hosts.
+// Strategy: try axios → curl → python3, whichever works first stays as default.
 
 const BROWSER_HEADERS: Record<string, string> = {
   "accept": "application/json, text/plain, */*",
@@ -40,87 +40,174 @@ const BROWSER_HEADERS: Record<string, string> = {
   "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 };
 
+// --- Transport implementations ---
+
 const khAxios: AxiosInstance = axios.create({
   baseURL: KH_BASE_URL,
   timeout: 30000,
   headers: BROWSER_HEADERS,
 });
 
-// Check if curl is available at startup
-let hasCurl = false;
-try {
-  execFileSync("curl", ["--version"], { encoding: "utf8", timeout: 3000 });
-  hasCurl = true;
-} catch {
-  hasCurl = false;
+function checkTool(name: string): boolean {
+  try {
+    execFileSync(name, ["--version"], { encoding: "utf8", timeout: 3000, stdio: "pipe" });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-// curl-based headers as flat array for execFileSync
+const hasCurl = checkTool("curl");
+const hasPython = checkTool("python3");
+
+console.log(`KH transport: curl=${hasCurl}, python3=${hasPython}`);
+
+// curl transport
 const CURL_HEADER_ARGS: string[] = [];
 for (const [key, value] of Object.entries(BROWSER_HEADERS)) {
   CURL_HEADER_ARGS.push("-H", `${key}: ${value}`);
 }
 
-function curlGet(url: string): string {
-  return execFileSync("curl", ["-s", "--tlsv1.3", "--max-time", "30", ...CURL_HEADER_ARGS, url], {
+function curlGet(url: string): any {
+  const raw = execFileSync("curl", ["-s", "-f", "--tlsv1.3", "--max-time", "30", ...CURL_HEADER_ARGS, url], {
     encoding: "utf8",
     timeout: 35000,
   });
+  return JSON.parse(raw);
 }
 
-function curlPost(url: string, body: string): string {
-  return execFileSync("curl", ["-s", "--tlsv1.3", "--max-time", "30", "-X", "POST", "-d", body, ...CURL_HEADER_ARGS, url], {
+function curlPost(url: string, body: string): any {
+  const raw = execFileSync("curl", ["-s", "-f", "--tlsv1.3", "--max-time", "30", "-X", "POST", "-d", body, ...CURL_HEADER_ARGS, url], {
     encoding: "utf8",
     timeout: 35000,
   });
+  return JSON.parse(raw);
 }
 
-function parseCurlResponse(raw: string): any {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    if (raw.includes("Just a moment") || raw.includes("challenge-platform")) {
-      throw Object.assign(new Error("Cloudflare blocked the request"), { response: { status: 403 } });
-    }
-    throw new Error(`KH API returned non-JSON: ${raw.substring(0, 150)}`);
-  }
+// python3 transport — uses urllib which has different TLS fingerprint than Node.js
+function pythonGet(url: string): any {
+  const script = `
+import urllib.request, json, ssl
+ctx = ssl.create_default_context()
+headers = ${JSON.stringify(BROWSER_HEADERS)}
+req = urllib.request.Request(url="${url}", headers=headers)
+with urllib.request.urlopen(req, timeout=30, context=ctx) as r:
+    print(r.read().decode())
+`;
+  const raw = execFileSync("python3", ["-c", script], {
+    encoding: "utf8",
+    timeout: 35000,
+  });
+  return JSON.parse(raw);
+}
+
+function pythonPost(url: string, body: string): any {
+  const script = `
+import urllib.request, json, ssl
+ctx = ssl.create_default_context()
+headers = ${JSON.stringify(BROWSER_HEADERS)}
+data = ${JSON.stringify(body)}.encode('utf-8')
+req = urllib.request.Request(url="${url}", data=data, headers=headers, method='POST')
+with urllib.request.urlopen(req, timeout=30, context=ctx) as r:
+    print(r.read().decode())
+`;
+  const raw = execFileSync("python3", ["-c", script], {
+    encoding: "utf8",
+    timeout: 35000,
+  });
+  return JSON.parse(raw);
+}
+
+// --- Smart transport: try each method, remember what works ---
+
+type TransportMethod = "axios" | "curl" | "python";
+let preferredTransport: TransportMethod | null = null;
+
+function isCFBlock(err: any): boolean {
+  const status = err?.response?.status;
+  if (status === 403 || status === 503) return true;
+  if (typeof err?.message === "string" && err.message.includes("403")) return true;
+  return false;
 }
 
 async function khGet(path: string): Promise<any> {
   const url = `${KH_BASE_URL}${path}`;
-  // Try axios first
-  try {
-    const res = await khAxios.get(path);
-    return res.data;
-  } catch (axiosErr: any) {
-    const status = axiosErr.response?.status;
-    // If CF blocked us and curl is available, try curl
-    if ((status === 403 || status === 503) && hasCurl) {
-      console.log("KH: axios blocked by CF, falling back to curl");
-      return parseCurlResponse(curlGet(url));
+  const methods: TransportMethod[] = preferredTransport
+    ? [preferredTransport]
+    : ["axios", ...(hasCurl ? ["curl" as const] : []), ...(hasPython ? ["python" as const] : [])];
+
+  let lastErr: any;
+  for (const method of methods) {
+    try {
+      let result: any;
+      if (method === "axios") {
+        const res = await khAxios.get(path);
+        result = res.data;
+      } else if (method === "curl") {
+        result = curlGet(url);
+      } else {
+        result = pythonGet(url);
+      }
+      // If this worked and we haven't set a preference yet, remember it
+      if (!preferredTransport) {
+        preferredTransport = method;
+        console.log(`KH: using ${method} transport (working)`);
+      }
+      return result;
+    } catch (err: any) {
+      lastErr = err;
+      if (isCFBlock(err)) {
+        console.log(`KH: ${method} blocked by Cloudflare, trying next...`);
+        continue;
+      }
+      // Non-CF error — don't try other transports
+      throw err;
     }
-    throw axiosErr;
   }
+  // All methods failed
+  throw lastErr;
 }
 
 async function khPost(path: string, body: any): Promise<any> {
   const url = `${KH_BASE_URL}${path}`;
   const bodyStr = JSON.stringify(body);
-  try {
-    const res = await khAxios.post(path, body);
-    return res.data;
-  } catch (axiosErr: any) {
-    const status = axiosErr.response?.status;
-    if ((status === 403 || status === 503) && hasCurl) {
-      console.log("KH: axios blocked by CF, falling back to curl");
-      return parseCurlResponse(curlPost(url, bodyStr));
+  const methods: TransportMethod[] = preferredTransport
+    ? [preferredTransport]
+    : ["axios", ...(hasCurl ? ["curl" as const] : []), ...(hasPython ? ["python" as const] : [])];
+
+  let lastErr: any;
+  for (const method of methods) {
+    try {
+      let result: any;
+      if (method === "axios") {
+        const res = await khAxios.post(path, body);
+        result = res.data;
+      } else if (method === "curl") {
+        result = curlPost(url, bodyStr);
+      } else {
+        result = pythonPost(url, bodyStr);
+      }
+      if (!preferredTransport) {
+        preferredTransport = method;
+        console.log(`KH: using ${method} transport (working)`);
+      }
+      return result;
+    } catch (err: any) {
+      lastErr = err;
+      if (isCFBlock(err)) {
+        console.log(`KH: ${method} blocked by Cloudflare, trying next...`);
+        continue;
+      }
+      throw err;
     }
-    throw axiosErr;
   }
+  throw lastErr;
 }
 
 // Keep for backward compatibility with routes.ts
-export function reloadKHClient() {}
+export function reloadKHClient() {
+  preferredTransport = null; // reset to re-probe
+}
 
 // --- API Functions ---
 
@@ -222,10 +309,10 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
   } catch (e: any) {
     const status = e.response?.status;
     if (status === 403 || status === 503) {
-      console.error(`KH Sync: Cloudflare blocked the request (${status}).`);
+      console.error(`KH Sync: Cloudflare blocked the request (${status}). All transports failed.`);
       return { created: 0, linked: 0, total: 0, errors: 1 };
     }
-    console.error(`KH Sync: failed to search speakers — ${e.message?.slice(0, 150)}`);
+    console.error(`KH Sync: failed to search speakers — ${e.message?.slice(0, 200)}`);
     return { created: 0, linked: 0, total: 0, errors: 1 };
   }
 
