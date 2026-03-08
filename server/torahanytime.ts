@@ -219,6 +219,7 @@ export async function syncTATSpeakers(): Promise<{ created: number; linked: numb
   for (const speaker of speakers) {
     if (!speaker.display_active) continue;
     if (speaker.lecture_count === 0) continue;
+    if (speaker.female) continue;
 
     // Already synced
     if (existingTATFeeds.has(speaker.id)) continue;
