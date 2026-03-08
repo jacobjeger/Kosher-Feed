@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView, Platform, Switch, Alert, ActivityIndicator, TextInput, Modal, KeyboardAvoidingView, Dimensions } from "react-native";
+import { View, Text, Pressable, StyleSheet, ScrollView, Platform, Switch, Alert, ActivityIndicator, TextInput, Modal, KeyboardAvoidingView } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
@@ -15,7 +15,7 @@ import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { getLogsSnapshot } from "@/lib/error-logger";
-import OptionPickerModal, { type PickerOption } from "@/components/OptionPickerModal";
+import OptionPickerModal from "@/components/OptionPickerModal";
 
 const EPISODE_LIMIT_OPTIONS = [3, 5, 10, 15, 25, 50];
 const SKIP_OPTIONS = [10, 15, 30, 45, 60];
@@ -532,7 +532,7 @@ function SettingsScreenInner() {
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <View style={styles.settingDescription}>
             <Text style={[styles.descriptionText, { color: colors.textSecondary }]}>
-              Request new shiurim to be added or report any issues you're experiencing.
+              Request new shiurim to be added or report any issues you&apos;re experiencing.
             </Text>
           </View>
         </View>

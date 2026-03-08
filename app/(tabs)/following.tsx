@@ -146,7 +146,7 @@ function FollowingScreenInner() {
             <View style={styles.whatsNewSection}>
               <View style={styles.whatsNewHeader}>
                 <Ionicons name="sparkles" size={18} color={colors.accent} />
-                <Text style={[styles.whatsNewTitle, { color: colors.text }]}>What's New</Text>
+                <Text style={[styles.whatsNewTitle, { color: colors.text }]}>What&apos;s New</Text>
               </View>
               {whatsNewEpisodes.slice(0, 10).map(ep => {
                 const epFeed = allFeeds.find(f => f.id === ep.feedId);

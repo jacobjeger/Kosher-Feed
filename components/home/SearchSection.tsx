@@ -56,7 +56,7 @@ export default React.memo(function SearchSection({ searchQuery, searchResults, s
         <View style={styles.noResults}>
           <Ionicons name="search-outline" size={40} color={colors.textSecondary} />
           <Text style={[styles.noResultsText, { color: colors.textSecondary }]}>
-            No results found for "{searchQuery}"
+            No results found for &quot;{searchQuery}&quot;
           </Text>
         </View>
       </View>

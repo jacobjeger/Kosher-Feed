@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from "react";
-import { View, Text, FlatList, ScrollView, Pressable, StyleSheet, ActivityIndicator, RefreshControl, Platform, TextInput, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from "react-native";
+import { View, Text, FlatList, ScrollView, Pressable, StyleSheet, RefreshControl, Platform, TextInput, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
@@ -145,8 +145,6 @@ const FeaturedCarousel = React.memo(function FeaturedCarousel({ feeds, colors }:
 const SCROLL_AMOUNT = 300;
 
 const WebScrollArrows = React.memo(function WebScrollArrows({ children, colors }: { children: React.ReactNode; colors: any }) {
-  if (Platform.OS !== "web") return <>{children}</>;
-
   const scrollRef = useRef<FlatList>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(true);
@@ -178,6 +176,8 @@ const WebScrollArrows = React.memo(function WebScrollArrows({ children, colors }
     const newOffset = Math.min(maxScroll, scrollOffsetRef.current + SCROLL_AMOUNT);
     scrollRef.current?.scrollToOffset({ offset: newOffset, animated: true });
   }, []);
+
+  if (Platform.OS !== "web") return <>{children}</>;
 
   const cloned = React.Children.map(children, (child) => {
     if (React.isValidElement(child) && (child.type === FlatList || (child as any).type?.name === "FlatList")) {
