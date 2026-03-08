@@ -7,6 +7,7 @@ import { getVitals, recordFeedResult } from "./feed-vitals";
 import { insertFeedSchema, insertCategorySchema } from "@shared/schema";
 import type { Feed } from "@shared/schema";
 import { syncTATSpeakers, refreshTATFeedEpisodes, fetchAllSpeakers } from "./torahanytime";
+import { syncAllDafAuthors, refreshAllDafFeedEpisodes } from "./alldaf";
 import multer from "multer";
 import path from "node:path";
 import fs from "node:fs";
@@ -53,8 +54,23 @@ async function onDemandRefreshFeed(feedId: string): Promise<void> {
       return;
     }
 
-    // Regular RSS feed (skip TAT-only URLs)
-    if (!feed.rssUrl || isOnDemandTatUrl) return;
+    // AllDaf feed: refresh from AllDaf API
+    const isOnDemandAlldafUrl = feed.rssUrl.startsWith("alldaf://");
+    const onDemandAlldafId = (feed as any).alldafAuthorId ?? (isOnDemandAlldafUrl ? parseInt(feed.rssUrl.replace("alldaf://author/", ""), 10) || null : null);
+    if (onDemandAlldafId) {
+      await refreshAllDafFeedEpisodes({ id: feed.id, title: feed.title, alldafAuthorId: onDemandAlldafId });
+      if (!isOnDemandAlldafUrl) {
+        const parsed = await parseFeed(feed.id, feed.rssUrl);
+        if (parsed) {
+          const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
+          await storage.upsertEpisodes(feed.id, episodeData);
+        }
+      }
+      return;
+    }
+
+    // Regular RSS feed (skip TAT/AllDaf-only URLs)
+    if (!feed.rssUrl || isOnDemandTatUrl || isOnDemandAlldafUrl) return;
     const parsed = await parseFeed(feed.id, feed.rssUrl);
     if (!parsed) {
       await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
@@ -362,8 +378,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalNew += tatResult.newEpisodes;
       }
 
-      // RSS refresh (skip for TAT-only feeds)
-      if (!isTatFeedUrl) {
+      // AllDaf refresh
+      const isAlldafFeedUrl = feed.rssUrl.startsWith("alldaf://");
+      const effectiveAlldafId = (feed as any).alldafAuthorId ?? (isAlldafFeedUrl ? parseInt(feed.rssUrl.replace("alldaf://author/", ""), 10) || null : null);
+      if (effectiveAlldafId) {
+        const alldafResult = await refreshAllDafFeedEpisodes({ id: feed.id, title: feed.title, alldafAuthorId: effectiveAlldafId });
+        totalNew += alldafResult.newEpisodes;
+      }
+
+      // RSS refresh (skip for TAT-only and AllDaf-only feeds)
+      if (!isTatFeedUrl && !isAlldafFeedUrl) {
         const parsed = await parseFeed(feed.id, feed.rssUrl);
         if (parsed) {
           const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
@@ -405,8 +429,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const tatResult = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveTatId });
             totalNew += tatResult.newEpisodes;
           }
-          // RSS refresh (skip for TAT-only feeds)
-          if (!feed.rssUrl.startsWith("tat://")) {
+          // AllDaf feed refresh
+          const isAlldafUrl = feed.rssUrl.startsWith("alldaf://");
+          const effectiveAlldafId = (feed as any).alldafAuthorId ?? (isAlldafUrl ? parseInt(feed.rssUrl.replace("alldaf://author/", ""), 10) || null : null);
+          if (effectiveAlldafId) {
+            const alldafResult = await refreshAllDafFeedEpisodes({ id: feed.id, title: feed.title, alldafAuthorId: effectiveAlldafId });
+            totalNew += alldafResult.newEpisodes;
+          }
+          // RSS refresh (skip for TAT-only and AllDaf-only feeds)
+          if (!feed.rssUrl.startsWith("tat://") && !isAlldafUrl) {
             const parsed = await parseFeed(feed.id, feed.rssUrl);
             if (!parsed) { await storage.updateFeed(feed.id, { lastFetchedAt: new Date() }); continue; }
             const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
@@ -996,6 +1027,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // --- AllDaf Integration ---
+
+  // Admin: Sync AllDaf authors (create/link feeds)
+  app.post("/api/admin/alldaf/sync-authors", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const result = await syncAllDafAuthors();
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Toggle all AllDaf feeds active/inactive
+  app.post("/api/admin/alldaf/toggle", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { enabled } = req.body;
+      if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) required" });
+      const allFeeds = await storage.getAllFeeds();
+      const alldafOnlyFeeds = allFeeds.filter(f => (f as any).alldafAuthorId != null && f.rssUrl.startsWith("alldaf://"));
+      let updated = 0;
+      for (const feed of alldafOnlyFeeds) {
+        if (feed.isActive !== enabled) {
+          await storage.updateFeed(feed.id, { isActive: enabled });
+          updated++;
+        }
+      }
+      res.json({ updated, enabled });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Get AllDaf status
+  app.get("/api/admin/alldaf/status", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const allFeeds = await storage.getAllFeeds();
+      const alldafFeeds = allFeeds.filter(f => (f as any).alldafAuthorId != null);
+      const alldafOnlyFeeds = alldafFeeds.filter(f => f.rssUrl.startsWith("alldaf://"));
+      const activeCount = alldafOnlyFeeds.filter(f => f.isActive).length;
+      const enabled = activeCount > 0;
+      res.json({ enabled, totalAllDafFeeds: alldafOnlyFeeds.length, activeAllDafFeeds: activeCount, mergedFeeds: alldafFeeds.length - alldafOnlyFeeds.length });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Link/unlink feed to AllDaf author
+  app.put("/api/admin/feeds/:id/alldaf-link", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { alldafAuthorId } = req.body;
+      if (!alldafAuthorId) return res.status(400).json({ error: "alldafAuthorId required" });
+      await storage.setAlldafAuthorId(req.params.id, alldafAuthorId);
+      const feed = await storage.getFeedById(req.params.id);
+      res.json(feed);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/admin/feeds/:id/alldaf-link", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      await storage.setAlldafAuthorId(req.params.id, null as any);
+      const feed = await storage.getFeedById(req.params.id);
+      res.json(feed);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Admin: Merge two feeds (move episodes + subscribers from source into target, delete source)
   app.post("/api/admin/feeds/merge", adminAuth as any, async (req: Request, res: Response) => {
     try {
@@ -1008,9 +1108,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!source) return res.status(404).json({ error: "Source feed not found" });
       if (!target) return res.status(404).json({ error: "Target feed not found" });
 
-      // If source has tatSpeakerId and target doesn't, carry it over
+      // If source has tatSpeakerId/alldafAuthorId and target doesn't, carry it over
       if (source.tatSpeakerId && !target.tatSpeakerId) {
         await storage.updateFeed(targetId, { tatSpeakerId: source.tatSpeakerId } as any);
+      }
+      if ((source as any).alldafAuthorId && !(target as any).alldafAuthorId) {
+        await storage.setAlldafAuthorId(targetId, (source as any).alldafAuthorId);
       }
 
       const result = await storage.mergeFeeds(sourceId, targetId);
@@ -1689,6 +1792,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (forceTatId) {
           const tatResult = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: forceTatId });
           res.json({ status: "ok", method: "tat", newEpisodes: tatResult.newEpisodes, durationMs: Date.now() - start });
+          return;
+        }
+
+        // Handle AllDaf feeds
+        const isForceAlldafUrl = feed.rssUrl.startsWith("alldaf://");
+        const forceAlldafId = (feed as any).alldafAuthorId ?? (isForceAlldafUrl ? parseInt(feed.rssUrl.replace("alldaf://author/", ""), 10) || null : null);
+        if (forceAlldafId) {
+          const alldafResult = await refreshAllDafFeedEpisodes({ id: feed.id, title: feed.title, alldafAuthorId: forceAlldafId });
+          res.json({ status: "ok", method: "alldaf", newEpisodes: alldafResult.newEpisodes, durationMs: Date.now() - start });
           return;
         }
 

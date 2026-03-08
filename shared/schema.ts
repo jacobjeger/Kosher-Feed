@@ -27,6 +27,7 @@ export const feeds = pgTable("feeds", {
   lastModifiedHeader: text("last_modified_header"),
   sourceNetwork: text("source_network"),
   tatSpeakerId: integer("tat_speaker_id"),
+  alldafAuthorId: integer("alldaf_author_id"),
 });
 
 export const episodes = pgTable("episodes", {

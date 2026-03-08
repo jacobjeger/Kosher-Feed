@@ -154,6 +154,43 @@ export async function upsertTATEpisodes(feedId: string, episodeData: any[]): Pro
   return inserted;
 }
 
+export async function upsertAllDafEpisodes(feedId: string, episodeData: any[]): Promise<Episode[]> {
+  if (episodeData.length === 0) return [];
+  const inserted: Episode[] = [];
+  for (const ep of episodeData) {
+    try {
+      const [result] = await db.insert(episodes).values({
+        feedId: ep.feedId,
+        title: ep.title,
+        description: ep.description,
+        audioUrl: ep.audioUrl,
+        duration: ep.duration,
+        publishedAt: ep.publishedAt,
+        guid: ep.guid,
+        imageUrl: ep.imageUrl,
+        noDownload: ep.noDownload || false,
+      }).onConflictDoNothing().returning();
+      if (result) inserted.push(result);
+    } catch (e) {
+      // skip duplicates
+    }
+  }
+  return inserted;
+}
+
+export async function setAlldafAuthorId(feedId: string, authorId: number): Promise<void> {
+  await db.update(feeds).set({ alldafAuthorId: authorId } as any).where(eq(feeds.id, feedId));
+}
+
+export async function getAllDafFeeds(): Promise<Feed[]> {
+  return db.select().from(feeds).where(
+    and(
+      sql`${feeds.alldafAuthorId} IS NOT NULL`,
+      eq(feeds.isActive, true),
+    )
+  );
+}
+
 export async function getTATFeeds(): Promise<Feed[]> {
   return db.select().from(feeds).where(
     and(

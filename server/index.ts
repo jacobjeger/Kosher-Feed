@@ -11,6 +11,7 @@ import * as storage from "./storage";
 import { sendNewEpisodePushes } from "./push";
 import { startRefreshCycle, recordFeedResult, endRefreshCycle } from "./feed-vitals";
 import { refreshTATFeedEpisodes, syncTATSpeakers } from "./torahanytime";
+import { refreshAllDafFeedEpisodes } from "./alldaf";
 import * as fs from "fs";
 import * as path from "path";
 import pLimit from "p-limit";
@@ -401,7 +402,7 @@ export interface RefreshResult {
   episodesFound: number;
 }
 
-export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string; etag?: string | null; lastModifiedHeader?: string | null; tatSpeakerId?: number | null }): Promise<RefreshResult> {
+export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string; etag?: string | null; lastModifiedHeader?: string | null; tatSpeakerId?: number | null; alldafAuthorId?: number | null }): Promise<RefreshResult> {
   const start = Date.now();
 
   // TAT feed: refresh from TorahAnytime API
@@ -413,6 +414,15 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
     return { newEpisodes: result.newEpisodes, method: 'stream', durationMs: Date.now() - start, episodesFound: result.newEpisodes };
   }
 
+  // AllDaf feed: refresh from AllDaf API
+  const isAlldafUrl = feed.rssUrl.startsWith("alldaf://");
+  const effectiveAlldafAuthorId = feed.alldafAuthorId ?? (isAlldafUrl ? parseInt(feed.rssUrl.replace("alldaf://author/", ""), 10) || null : null);
+
+  if (effectiveAlldafAuthorId && isAlldafUrl) {
+    const result = await refreshAllDafFeedEpisodes({ id: feed.id, title: feed.title, alldafAuthorId: effectiveAlldafAuthorId });
+    return { newEpisodes: result.newEpisodes, method: 'stream', durationMs: Date.now() - start, episodesFound: result.newEpisodes };
+  }
+
   // Merged feed (has both RSS + TAT): refresh both
   if (effectiveTatSpeakerId) {
     await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveTatSpeakerId }).catch(e => {
@@ -420,8 +430,15 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
     });
   }
 
-  // Skip RSS parsing for TAT-only URLs
-  if (isTatUrl) {
+  // Merged feed (has both RSS + AllDaf): refresh both
+  if (effectiveAlldafAuthorId) {
+    await refreshAllDafFeedEpisodes({ id: feed.id, title: feed.title, alldafAuthorId: effectiveAlldafAuthorId }).catch(e => {
+      console.log(`AllDaf refresh failed for merged feed ${feed.title}: ${(e as Error).message?.slice(0, 100)}`);
+    });
+  }
+
+  // Skip RSS parsing for TAT-only or AllDaf-only URLs
+  if (isTatUrl || isAlldafUrl) {
     return { newEpisodes: 0, method: 'stream', durationMs: Date.now() - start, episodesFound: 0 };
   }
 
