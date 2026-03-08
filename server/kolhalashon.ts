@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import * as storage from "./storage";
 import { sendNewEpisodePushes } from "./push";
 import { normalizeName } from "./name-utils";
@@ -39,16 +39,16 @@ const CURL_HEADERS = [
 ];
 
 function curlGet(url: string, timeoutSec: number = 30): string {
-  const args = ["curl", "-s", "--tlsv1.3", "--max-time", String(timeoutSec), ...CURL_HEADERS, url];
-  return execSync(args.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(" "), {
+  const args = ["-s", "--tlsv1.3", "--max-time", String(timeoutSec), ...CURL_HEADERS, url];
+  return execFileSync("curl", args, {
     encoding: "utf8",
     timeout: (timeoutSec + 5) * 1000,
   });
 }
 
 function curlPost(url: string, body: string, timeoutSec: number = 30): string {
-  const args = ["curl", "-s", "--tlsv1.3", "--max-time", String(timeoutSec), "-X", "POST", "-d", body, ...CURL_HEADERS, url];
-  return execSync(args.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(" "), {
+  const args = ["-s", "--tlsv1.3", "--max-time", String(timeoutSec), "-X", "POST", "-d", body, ...CURL_HEADERS, url];
+  return execFileSync("curl", args, {
     encoding: "utf8",
     timeout: (timeoutSec + 5) * 1000,
   });
