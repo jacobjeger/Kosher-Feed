@@ -6,6 +6,8 @@ import type { Request, Response, NextFunction } from "express";
 import compression from "compression";
 import { registerRoutes } from "./routes";
 import { seedIfEmpty } from "./seed";
+import { db } from "./db";
+import { sql } from "drizzle-orm";
 import { parseFeed, preResolveHostnames } from "./rss";
 import * as storage from "./storage";
 import { sendNewEpisodePushes } from "./push";
@@ -22,6 +24,25 @@ const log = console.log;
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
+  }
+}
+
+async function ensureColumns() {
+  // Add missing columns that drizzle-kit push hasn't run for yet
+  const columnsToAdd = [
+    { column: "alldaf_author_id", type: "INTEGER" },
+    { column: "allmishnah_author_id", type: "INTEGER" },
+    { column: "allparsha_author_id", type: "INTEGER" },
+  ];
+  for (const { column, type } of columnsToAdd) {
+    try {
+      await db.execute(sql.raw(`ALTER TABLE feeds ADD COLUMN IF NOT EXISTS ${column} ${type}`));
+    } catch (e: any) {
+      // Column might already exist (older PG without IF NOT EXISTS)
+      if (!e.message?.includes("already exists")) {
+        console.error(`Migration: failed to add ${column}:`, e.message);
+      }
+    }
   }
 }
 
@@ -645,7 +666,7 @@ function startAutoRefresh() {
     },
     () => {
       log(`express server serving on port ${serverPort}`);
-      seedIfEmpty().catch((e) => console.error("Seed error:", e));
+      ensureColumns().then(() => seedIfEmpty()).catch((e) => console.error("Seed/migration error:", e));
       startAutoRefresh();
       // Sync TorahAnytime speakers in background after 15s
       setTimeout(() => {
