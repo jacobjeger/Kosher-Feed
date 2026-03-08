@@ -631,6 +631,7 @@
           <h2>Kol Halashon Integration</h2>
         </div>
         <div id="khStatusArea" style="padding:4px 0 12px;color:#94a3b8;font-size:13px;">Loading...</div>
+        <div id="khCookieArea" style="padding:0 0 12px;font-size:12px;"></div>
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
           <span style="font-size:14px;color:#e2e8f0;">Show Kol Halashon content</span>
           <button id="khToggleBtn" class="toggle-btn off" onclick="toggleKH()" title="Toggle Kol Halashon"></button>
@@ -640,6 +641,15 @@
           <button class="btn btn-secondary btn-sm" onclick="syncKHSpeakers()" id="khSyncBtn">Sync Speakers Now</button>
           <span id="khSyncStatus" style="font-size:12px;color:#64748b;margin-left:8px;"></span>
         </div>
+        <details style="margin-top:12px;">
+          <summary style="cursor:pointer;font-size:12px;color:#94a3b8;">Cloudflare Cookie Setup</summary>
+          <p style="font-size:11px;color:#64748b;margin:8px 0 4px;">KH uses Cloudflare protection. To sync: visit <a href="https://www2.kolhalashon.com" target="_blank" style="color:#60a5fa;">www2.kolhalashon.com</a>, open DevTools &gt; Application &gt; Cookies, copy <code>cf_clearance</code> value and paste below.</p>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="text" id="khCfCookie" placeholder="cf_clearance value" style="flex:1;padding:4px 8px;font-size:12px;background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:4px;">
+            <button class="btn btn-secondary btn-sm" onclick="setKHCookie()">Set</button>
+          </div>
+          <span id="khCookieStatus" style="font-size:11px;color:#64748b;margin-top:4px;display:block;"></span>
+        </details>
       </div>
       <div class="card" style="max-width:500px;">
         <div class="card-header">
@@ -2303,8 +2313,26 @@ async function loadKHStatus() {
     document.getElementById('khStatusArea').innerHTML =
       '<strong style="color:#e2e8f0;">' + data.totalKHFeeds + '</strong> KH-only feeds (' + data.activeKHFeeds + ' active)' +
       (data.mergedFeeds > 0 ? ' · <strong style="color:#e2e8f0;">' + data.mergedFeeds + '</strong> merged with other feeds' : '');
+    document.getElementById('khCookieArea').innerHTML = data.hasCFCookie
+      ? '<span style="color:#22c55e;">CF cookie set</span>'
+      : '<span style="color:#f59e0b;">CF cookie not set — sync requires Cloudflare cookie</span>';
   } catch(e) {
     document.getElementById('khStatusArea').textContent = 'Could not load status';
+  }
+}
+
+async function setKHCookie() {
+  const input = document.getElementById('khCfCookie');
+  const status = document.getElementById('khCookieStatus');
+  const val = input.value.trim();
+  if (!val) { status.innerHTML = '<span style="color:#ef4444;">Paste the cf_clearance value first</span>'; return; }
+  try {
+    const result = await api('/api/admin/kh/set-cookie', { method: 'POST', body: JSON.stringify({ cfClearance: val }) });
+    status.innerHTML = '<span style="color:#22c55e;">' + result.message + '</span>';
+    input.value = '';
+    loadKHStatus();
+  } catch(e) {
+    status.innerHTML = '<span style="color:#ef4444;">Error: ' + e.message + '</span>';
   }
 }
 

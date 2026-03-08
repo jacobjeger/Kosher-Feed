@@ -8,7 +8,7 @@ import { insertFeedSchema, insertCategorySchema } from "@shared/schema";
 import type { Feed } from "@shared/schema";
 import { syncTATSpeakers, refreshTATFeedEpisodes, fetchAllSpeakers } from "./torahanytime";
 import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, OU_PLATFORMS, type OUPlatformKey } from "./alldaf";
-import { syncKHSpeakers, refreshKHFeedEpisodes } from "./kolhalashon";
+import { syncKHSpeakers, refreshKHFeedEpisodes, reloadKHClient } from "./kolhalashon";
 import multer from "multer";
 import path from "node:path";
 import fs from "node:fs";
@@ -1120,6 +1120,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // --- Kol Halashon Integration ---
 
+  // Admin: Set KH Cloudflare cookie (required for API access)
+  app.post("/api/admin/kh/set-cookie", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { cfClearance } = req.body;
+      if (!cfClearance || typeof cfClearance !== "string") {
+        return res.status(400).json({ error: "cfClearance string required" });
+      }
+      process.env.KH_CF_CLEARANCE = cfClearance.trim();
+      reloadKHClient();
+      res.json({ success: true, message: "KH_CF_CLEARANCE cookie set. You can now sync speakers." });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Admin: Sync KH speakers
   app.post("/api/admin/kh/sync-speakers", adminAuth as any, async (_req: Request, res: Response) => {
     try {
@@ -1158,7 +1173,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const khOnlyFeeds = khFeeds.filter(f => f.rssUrl.startsWith("kh://"));
       const activeCount = khOnlyFeeds.filter(f => f.isActive).length;
       const enabled = activeCount > 0;
-      res.json({ enabled, totalKHFeeds: khOnlyFeeds.length, activeKHFeeds: activeCount, mergedFeeds: khFeeds.length - khOnlyFeeds.length });
+      res.json({
+        enabled,
+        totalKHFeeds: khOnlyFeeds.length,
+        activeKHFeeds: activeCount,
+        mergedFeeds: khFeeds.length - khOnlyFeeds.length,
+        hasCFCookie: !!process.env.KH_CF_CLEARANCE,
+      });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

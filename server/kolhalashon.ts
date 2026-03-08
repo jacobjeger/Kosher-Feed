@@ -4,138 +4,79 @@ import { sendNewEpisodePushes } from "./push";
 import { normalizeName } from "./name-utils";
 import { filterCrossSourceDuplicates, isMergedFeed } from "./episode-dedup";
 
-const KH_BASE_URL = "https://www.kolhalashon.com/api";
-const KH_DOWNLOAD_BASE = "https://download.kolhalashon.com";
+// Real KH API base URL (from the official Python SDK: pypi.org/project/kolhalashon)
+const KH_BASE_URL = "https://srv.kolhalashon.com/api";
+const KH_SITE_KEY = "Bearer 8ea2pe8";
 
 // --- Types ---
 
-export interface KHSpeakerSearchResult {
-  RavID: number;
-  RavNameHebrew: string;
-  RavNameEnglish: string;
-  ShiurimCount: number;
+export interface KHSearchItem {
+  SearchItemId: number;
+  SearchItemType: number; // 2 = rav, 8 = book, 10 = shiur
+  SearchItemTextHebrew: string;
+  SearchItemTextEnglish: string;
+  SearchItemCount: number;
   ImageFileName: string | null;
 }
 
-export interface KHShiurDetail {
-  FileId: number;
-  UserId: number;
-  UserNameHebrew: string;
-  UserNameEnglish: string;
-  RavImageFileName: string;
-  ShiurDuration: string;
-  TitleHebrew: string;
-  TitleEnglish: string;
-  LanguageId: number;
-  MainTopicHebrew: string;
-  MainTopicEnglish: string;
-  RecordDate: string;
-  FolderId: number;
-  HasAudio: boolean;
-  HasVideo: boolean;
-  HasHdVideo: boolean;
-  CatId1: string;
-  CatDesc1: string;
-  CatDescEnglish1: string;
-  CatId2: string;
-  CatDescEnglish2: string;
-  DisableDownload: boolean | null;
-  IsLocked: boolean | null;
-  DownloadCount: number;
-  IsWomenOnly: boolean;
-}
+// --- Axios Client ---
 
-export interface KHFileLocation {
-  location: string;
-}
+function createKHClient(): AxiosInstance {
+  const headers: Record<string, string> = {
+    "accept": "application/json, text/plain, */*",
+    "accept-language": "he-IL,he;q=0.9,en-AU;q=0.8,en;q=0.7,en-US;q=0.6",
+    "authorization-site-key": KH_SITE_KEY,
+    "content-type": "application/json",
+    "origin": "https://www2.kolhalashon.com",
+    "referer": "https://www2.kolhalashon.com/",
+    "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  };
 
-// --- Axios Client (browser-like headers for Cloudflare) ---
-
-const khClient: AxiosInstance = axios.create({
-  baseURL: KH_BASE_URL,
-  timeout: 30000,
-  headers: {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "en-US,en;q=0.9,he;q=0.8",
-    "Referer": "https://www.kolhalashon.com/",
-    "Origin": "https://www.kolhalashon.com",
-  },
-});
-
-// Add cf_clearance cookie if available
-if (process.env.KH_CF_CLEARANCE) {
-  khClient.defaults.headers.common["Cookie"] = `cf_clearance=${process.env.KH_CF_CLEARANCE}`;
-}
-
-async function khGet(path: string, retries = 3): Promise<any> {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const res = await khClient.get(path);
-      return res.data;
-    } catch (e: any) {
-      const status = e.response?.status;
-      if ((status === 403 || status === 503) && attempt < retries) {
-        await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
-        continue;
-      }
-      throw e;
-    }
+  // cf_clearance cookie is required to pass Cloudflare
+  // Obtain it by visiting www2.kolhalashon.com in a browser and copying the cookie value
+  const cfClearance = process.env.KH_CF_CLEARANCE;
+  if (cfClearance) {
+    headers["cookie"] = `cf_clearance=${cfClearance}`;
   }
+
+  return axios.create({
+    baseURL: KH_BASE_URL,
+    timeout: 30000,
+    headers,
+  });
 }
 
-async function khPost(path: string, body: any, retries = 3): Promise<any> {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const res = await khClient.post(path, body);
-      return res.data;
-    } catch (e: any) {
-      const status = e.response?.status;
-      if ((status === 403 || status === 503) && attempt < retries) {
-        await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
-        continue;
-      }
-      throw e;
-    }
+let khClient: AxiosInstance = createKHClient();
+
+// Allow hot-reloading the cookie at runtime
+export function reloadKHClient() {
+  khClient = createKHClient();
+}
+
+async function khGet(path: string): Promise<any> {
+  const res = await khClient.get(path);
+  return res.data;
+}
+
+async function khPost(path: string, body: any): Promise<any> {
+  const res = await khClient.post(path, body);
+  return res.data;
+}
+
+function checkCFCookie(): void {
+  if (!process.env.KH_CF_CLEARANCE) {
+    throw new Error(
+      "KH_CF_CLEARANCE env var not set. " +
+      "Visit www2.kolhalashon.com in a browser, open DevTools > Application > Cookies, " +
+      "copy the cf_clearance value, and set it as KH_CF_CLEARANCE in your environment."
+    );
   }
 }
 
 // --- API Functions ---
 
-export async function searchSpeakers(
-  searchText: string = "NULL",
-  languageId: number = -1,
-  fromRow: number = 0,
-  numRows: number = 500,
-): Promise<any[]> {
-  return khGet(`/Search/WebSite_SearchRav/${encodeURIComponent(searchText)}/${languageId}/1/${fromRow}/${numRows}/true`);
-}
-
-export async function getSpeakerCount(searchText: string = "NULL", languageId: number = -1): Promise<number> {
-  const data = await khGet(`/Search/WebSite_SearchRavGetCount/${encodeURIComponent(searchText)}/${languageId}`);
-  return typeof data === "number" ? data : (data?.VarInt ?? data?.count ?? 0);
-}
-
-export async function getSpeakerDetail(ravId: number): Promise<{ hebrewName: string; englishName: string; imageFilename: string | null }> {
-  const data = await khGet(`/Ravs/WebSIte_GetRavDafTabls/${ravId}`);
-  let hebrewName = "";
-  let englishName = "";
-  let imageFilename: string | null = null;
-
-  if (Array.isArray(data)) {
-    for (const item of data) {
-      if (item.VarInt === 100) hebrewName = item.VarString || "";
-      if (item.VarInt === 101) englishName = item.VarString || "";
-      if (item.VarInt === 102) imageFilename = item.VarString || null;
-    }
-  }
-
-  return { hebrewName, englishName, imageFilename };
-}
-
-export async function getSpeakerShiurimCount(ravId: number, languageId: number = -1): Promise<number> {
-  const data = await khGet(`/Ravs/WebSite_GetRavShiurimCount/${ravId}/${languageId}`);
-  return data?.VarInt ?? 0;
+export async function searchItems(keyword: string = "NULL", userId: number = -1): Promise<KHSearchItem[]> {
+  return khGet(`/Search/WebSite_GetSearchItems/${encodeURIComponent(keyword)}/${userId}/1/4`);
 }
 
 export async function getSpeakerShiurim(ravId: number, fromRow: number, numRows: number): Promise<any[]> {
@@ -157,15 +98,19 @@ export async function getSpeakerShiurim(ravId: number, fromRow: number, numRows:
     SearchOrder: 7,
     FiltersArray: [],
     GeneralID: ravId,
-    FilterSwitch: "111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+    FilterSwitch: "1".repeat(111),
     activefilterType: "all",
   };
   return khPost("/Search/WebSite_GetRavShiurim/", body);
 }
 
+export async function getShiurDetails(fileId: number): Promise<any> {
+  return khGet(`/TblShiurimLists/WebSite_GetShiurDetails/${fileId}`);
+}
+
 export async function getAllSpeakerShiurim(ravId: number, maxShiurim: number = 150): Promise<any[]> {
   const allShiurim: any[] = [];
-  const pageSize = 50;
+  const pageSize = 24;
   let fromRow = 0;
 
   while (fromRow < maxShiurim) {
@@ -180,17 +125,6 @@ export async function getAllSpeakerShiurim(ravId: number, maxShiurim: number = 1
   return allShiurim;
 }
 
-export async function getFileLocation(fileId: number): Promise<string> {
-  const data = await khGet(`/files/getLocationOfFileToVideo/${fileId}`);
-  return data?.location || "";
-}
-
-export function buildAudioUrl(location: string, fileId: number): string {
-  // location is like "42368/42368707", we need the prefix "42368"
-  const prefix = location.split("/")[0];
-  return `${KH_DOWNLOAD_BASE}/${prefix}/${fileId}.mp3`;
-}
-
 // --- Helpers ---
 
 function buildSpeakerImageUrl(imageFilename: string | null): string | null {
@@ -198,18 +132,19 @@ function buildSpeakerImageUrl(imageFilename: string | null): string | null {
   return `https://www.kolhalashon.com/Images/Ravs/${imageFilename}`;
 }
 
-function getSpeakerDisplayName(detail: { hebrewName: string; englishName: string }): string {
-  return detail.englishName?.trim() || detail.hebrewName?.trim() || "Unknown Speaker";
-}
-
 // --- Episode Mapping ---
 
-export function mapKHShiurToEpisodeData(shiur: any, feedId: string, audioUrl: string) {
-  const title = shiur.TitleEnglish?.trim() || shiur.TitleHebrew?.trim() || shiur.ShiurName?.trim() || "Untitled";
+export function mapKHShiurToEpisodeData(shiur: any, feedId: string) {
+  const fileId = shiur.FileId || shiur.FileID;
+  const title = shiur.TitleEnglish?.trim() || shiur.TitleHebrew?.trim() || "Untitled";
   const topicParts = [
     shiur.MainTopicEnglish || shiur.MainTopicHebrew,
     shiur.CatDescEnglish1 || shiur.CatDesc1,
   ].filter(Boolean);
+
+  // Audio URL pattern: files are served from the API's download endpoint
+  // For streaming without auth, we use a proxy-friendly URL pattern
+  const audioUrl = `${KH_BASE_URL}/files/getLocationOfFileToVideo/${fileId}`;
 
   return {
     feedId,
@@ -218,9 +153,9 @@ export function mapKHShiurToEpisodeData(shiur: any, feedId: string, audioUrl: st
     audioUrl,
     duration: shiur.ShiurDuration || null,
     publishedAt: shiur.RecordDate ? new Date(shiur.RecordDate) : null,
-    guid: `kh-${shiur.FileId || shiur.FileID}`,
+    guid: `kh-${fileId}`,
     imageUrl: null,
-    kolhalashonFileId: shiur.FileId || shiur.FileID,
+    kolhalashonFileId: fileId,
     noDownload: shiur.DisableDownload || false,
   };
 }
@@ -228,39 +163,39 @@ export function mapKHShiurToEpisodeData(shiur: any, feedId: string, audioUrl: st
 // --- Sync Logic ---
 
 export async function syncKHSpeakers(): Promise<{ created: number; linked: number; total: number; errors: number }> {
-  console.log("KH Sync: fetching speaker count...");
-  let totalSpeakers: number;
+  checkCFCookie();
+
+  console.log("KH Sync: searching for speakers...");
+
+  // Use the search endpoint to find ravs — search with empty keyword returns all
+  let allRavs: KHSearchItem[] = [];
   try {
-    totalSpeakers = await getSpeakerCount();
-    console.log(`KH Sync: ${totalSpeakers} total speakers`);
+    const items = await searchItems("NULL", -1);
+    if (Array.isArray(items)) {
+      allRavs = items.filter(item => item.SearchItemType === 2);
+    }
+    console.log(`KH Sync: found ${allRavs.length} ravs from search`);
   } catch (e: any) {
-    console.error(`KH Sync: failed to get speaker count — ${e.message?.slice(0, 100)}`);
+    const status = e.response?.status;
+    if (status === 403 || status === 503) {
+      console.error("KH Sync: Cloudflare blocked the request (403). The KH_CF_CLEARANCE cookie may be expired.");
+      return { created: 0, linked: 0, total: 0, errors: 1 };
+    }
+    console.error(`KH Sync: failed to search speakers — ${e.message?.slice(0, 150)}`);
     return { created: 0, linked: 0, total: 0, errors: 1 };
   }
 
-  // Fetch all speakers in pages
-  const allSpeakers: any[] = [];
-  const pageSize = 100;
-  for (let fromRow = 0; fromRow < totalSpeakers; fromRow += pageSize) {
-    try {
-      const batch = await searchSpeakers("NULL", -1, fromRow, pageSize);
-      if (Array.isArray(batch)) allSpeakers.push(...batch);
-      if (fromRow + pageSize < totalSpeakers) {
-        await new Promise(r => setTimeout(r, 300));
-      }
-    } catch (e: any) {
-      console.error(`KH Sync: failed to fetch speakers page ${fromRow}: ${e.message?.slice(0, 100)}`);
-    }
+  if (allRavs.length === 0) {
+    console.log("KH Sync: no ravs found in search results");
+    return { created: 0, linked: 0, total: 0, errors: 0 };
   }
-
-  console.log(`KH Sync: fetched ${allSpeakers.length} speaker records`);
 
   // Get all existing feeds for matching
   const allFeeds = await storage.getAllFeeds();
   const existingKHFeeds = new Map<number, string>();
   for (const feed of allFeeds) {
-    if (feed.kolhalashonRavId) {
-      existingKHFeeds.set(feed.kolhalashonRavId, feed.id);
+    if ((feed as any).kolhalashonRavId) {
+      existingKHFeeds.set((feed as any).kolhalashonRavId, feed.id);
     }
     if (feed.rssUrl.startsWith("kh://")) {
       const id = parseInt(feed.rssUrl.replace("kh://rav/", ""), 10);
@@ -268,10 +203,10 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
     }
   }
 
-  // Build normalized name -> feed map (match against ALL feeds, including those with other platform IDs)
+  // Build normalized name -> feed map
   const feedsByNormalizedName = new Map<string, typeof allFeeds[0]>();
   for (const feed of allFeeds) {
-    if (feed.kolhalashonRavId) continue; // already linked to KH
+    if ((feed as any).kolhalashonRavId) continue;
     if (feed.rssUrl.startsWith("kh://")) continue;
     if (feed.author) {
       feedsByNormalizedName.set(normalizeName(feed.author), feed);
@@ -288,45 +223,28 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
   let linked = 0;
   let errors = 0;
 
-  for (const speaker of allSpeakers) {
-    const ravId = speaker.RavID || speaker.ravId || speaker.Id;
+  for (const rav of allRavs) {
+    const ravId = rav.SearchItemId;
     if (!ravId) continue;
 
     // Already synced
     if (existingKHFeeds.has(ravId)) continue;
 
-    // Get speaker detail for names
-    let detail: { hebrewName: string; englishName: string; imageFilename: string | null };
-    try {
-      detail = await getSpeakerDetail(ravId);
-    } catch (e: any) {
-      errors++;
-      continue;
-    }
-
-    const englishName = detail.englishName?.trim() || "";
-    const hebrewName = detail.hebrewName?.trim() || "";
-    const displayName = getSpeakerDisplayName(detail);
+    const englishName = rav.SearchItemTextEnglish?.trim() || "";
+    const hebrewName = rav.SearchItemTextHebrew?.trim() || "";
+    const displayName = englishName || hebrewName || "Unknown Speaker";
+    const shiurimCount = rav.SearchItemCount || 0;
 
     // Skip speakers with very few shiurim
-    let shiurimCount = speaker.ShiurimCount || speaker.shiurimCount || 0;
-    if (shiurimCount === 0) {
-      try {
-        shiurimCount = await getSpeakerShiurimCount(ravId);
-      } catch { /* ignore */ }
-    }
     if (shiurimCount < 5) continue;
 
-    const imageUrl = buildSpeakerImageUrl(detail.imageFilename);
+    const imageUrl = buildSpeakerImageUrl(rav.ImageFileName);
 
     // Try to match existing feed by name
-    // 1. Exact normalized match (English name)
     let matchedFeed = englishName ? feedsByNormalizedName.get(normalizeName(englishName)) : undefined;
-    // 2. Try Hebrew name
     if (!matchedFeed && hebrewName) {
       matchedFeed = feedsByNormalizedName.get(normalizeName(hebrewName));
     }
-    // 3. Substring match on English name
     if (!matchedFeed && englishName.length >= 5) {
       const normalizedEN = normalizeName(englishName);
       for (const [normalizedFeedName, feed] of feedsByNormalizedName) {
@@ -338,7 +256,6 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
     }
 
     if (matchedFeed) {
-      // Link existing feed to this KH speaker
       await storage.updateFeed(matchedFeed.id, {
         kolhalashonRavId: ravId,
         sourceNetwork: matchedFeed.sourceNetwork || "Kol Halashon",
@@ -346,7 +263,6 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
       linked++;
       console.log(`KH Sync: linked "${displayName}" to existing feed "${matchedFeed.title}"`);
     } else {
-      // Create new feed for this KH speaker
       try {
         await storage.createFeed({
           title: displayName,
@@ -366,13 +282,10 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
         }
       }
     }
-
-    // Rate limit: small delay between speaker detail lookups
-    await new Promise(r => setTimeout(r, 200));
   }
 
-  console.log(`KH Sync complete: ${created} created, ${linked} linked, ${allSpeakers.length} total speakers, ${errors} errors`);
-  return { created, linked, total: allSpeakers.length, errors };
+  console.log(`KH Sync complete: ${created} created, ${linked} linked, ${allRavs.length} total ravs, ${errors} errors`);
+  return { created, linked, total: allRavs.length, errors };
 }
 
 // --- Episode Refresh ---
@@ -381,6 +294,8 @@ export async function refreshKHFeedEpisodes(
   feed: { id: string; title: string; kolhalashonRavId: number },
   feedRecord?: any,
 ): Promise<{ newEpisodes: number }> {
+  checkCFCookie();
+
   const shiurim = await getAllSpeakerShiurim(feed.kolhalashonRavId);
 
   if (!Array.isArray(shiurim) || shiurim.length === 0) {
@@ -395,28 +310,9 @@ export async function refreshKHFeedEpisodes(
     return true;
   });
 
-  // Resolve audio URLs
-  const episodeData: any[] = [];
-  for (const shiur of validShiurim) {
-    const fileId = shiur.FileId || shiur.FileID;
-    if (!fileId) continue;
-
-    let audioUrl: string;
-    try {
-      const location = await getFileLocation(fileId);
-      if (!location) continue;
-      audioUrl = buildAudioUrl(location, fileId);
-    } catch {
-      // Fallback: try predictable pattern
-      const prefix = Math.floor(fileId / 1000) * 1000;
-      audioUrl = `${KH_DOWNLOAD_BASE}/${prefix}/${fileId}.mp3`;
-    }
-
-    episodeData.push(mapKHShiurToEpisodeData(shiur, feed.id, audioUrl));
-
-    // Rate limit file location lookups
-    await new Promise(r => setTimeout(r, 50));
-  }
+  const episodeData = validShiurim
+    .filter(s => s.FileId || s.FileID)
+    .map(s => mapKHShiurToEpisodeData(s, feed.id));
 
   // Cross-source dedup for merged feeds
   let finalEpisodeData = episodeData;
