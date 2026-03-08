@@ -1,3 +1,4 @@
+import axios, { AxiosInstance } from "axios";
 import { execFileSync } from "child_process";
 import * as storage from "./storage";
 import { sendNewEpisodePushes } from "./push";
@@ -6,6 +7,7 @@ import { filterCrossSourceDuplicates, isMergedFeed } from "./episode-dedup";
 
 // Real KH API base URL (from the official Python SDK: pypi.org/project/kolhalashon)
 const KH_BASE_URL = "https://srv.kolhalashon.com/api";
+const KH_SITE_KEY = "Bearer 8ea2pe8";
 
 // --- Types ---
 
@@ -18,48 +20,65 @@ export interface KHSearchItem {
   ImageFileName: string | null;
 }
 
-// --- HTTP Client via curl ---
-// Cloudflare fingerprints TLS clients — Node.js axios/fetch get blocked (403)
-// but curl with --tlsv1.3 and browser-like sec-fetch headers passes through.
+// --- HTTP Client ---
+// Cloudflare fingerprints TLS clients. We try axios first (works on most hosts),
+// then fall back to curl which has a different TLS fingerprint.
 
-const CURL_HEADERS = [
-  "-H", "accept: application/json, text/plain, */*",
-  "-H", "accept-language: he-IL,he;q=0.9,en-AU;q=0.8,en;q=0.7,en-US;q=0.6",
-  "-H", "authorization-site-key: Bearer 8ea2pe8",
-  "-H", "content-type: application/json",
-  "-H", "origin: https://www2.kolhalashon.com",
-  "-H", "referer: https://www2.kolhalashon.com/",
-  '-H', 'sec-ch-ua: "Chromium";v="120", "Google Chrome";v="120", "Not=A?Brand";v="8"',
-  "-H", "sec-ch-ua-mobile: ?0",
-  '-H', 'sec-ch-ua-platform: "macOS"',
-  "-H", "sec-fetch-dest: empty",
-  "-H", "sec-fetch-mode: cors",
-  "-H", "sec-fetch-site: cross-site",
-  "-H", "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-];
+const BROWSER_HEADERS: Record<string, string> = {
+  "accept": "application/json, text/plain, */*",
+  "accept-language": "he-IL,he;q=0.9,en-AU;q=0.8,en;q=0.7,en-US;q=0.6",
+  "authorization-site-key": KH_SITE_KEY,
+  "content-type": "application/json",
+  "origin": "https://www2.kolhalashon.com",
+  "referer": "https://www2.kolhalashon.com/",
+  "sec-ch-ua": '"Chromium";v="120", "Google Chrome";v="120", "Not=A?Brand";v="8"',
+  "sec-ch-ua-mobile": "?0",
+  "sec-ch-ua-platform": '"macOS"',
+  "sec-fetch-dest": "empty",
+  "sec-fetch-mode": "cors",
+  "sec-fetch-site": "cross-site",
+  "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+};
 
-function curlGet(url: string, timeoutSec: number = 30): string {
-  const args = ["-s", "--tlsv1.3", "--max-time", String(timeoutSec), ...CURL_HEADERS, url];
-  return execFileSync("curl", args, {
+const khAxios: AxiosInstance = axios.create({
+  baseURL: KH_BASE_URL,
+  timeout: 30000,
+  headers: BROWSER_HEADERS,
+});
+
+// Check if curl is available at startup
+let hasCurl = false;
+try {
+  execFileSync("curl", ["--version"], { encoding: "utf8", timeout: 3000 });
+  hasCurl = true;
+} catch {
+  hasCurl = false;
+}
+
+// curl-based headers as flat array for execFileSync
+const CURL_HEADER_ARGS: string[] = [];
+for (const [key, value] of Object.entries(BROWSER_HEADERS)) {
+  CURL_HEADER_ARGS.push("-H", `${key}: ${value}`);
+}
+
+function curlGet(url: string): string {
+  return execFileSync("curl", ["-s", "--tlsv1.3", "--max-time", "30", ...CURL_HEADER_ARGS, url], {
     encoding: "utf8",
-    timeout: (timeoutSec + 5) * 1000,
+    timeout: 35000,
   });
 }
 
-function curlPost(url: string, body: string, timeoutSec: number = 30): string {
-  const args = ["-s", "--tlsv1.3", "--max-time", String(timeoutSec), "-X", "POST", "-d", body, ...CURL_HEADERS, url];
-  return execFileSync("curl", args, {
+function curlPost(url: string, body: string): string {
+  return execFileSync("curl", ["-s", "--tlsv1.3", "--max-time", "30", "-X", "POST", "-d", body, ...CURL_HEADER_ARGS, url], {
     encoding: "utf8",
-    timeout: (timeoutSec + 5) * 1000,
+    timeout: 35000,
   });
 }
 
-function khGet(path: string): any {
-  const raw = curlGet(`${KH_BASE_URL}${path}`);
+function parseCurlResponse(raw: string): any {
   try {
     return JSON.parse(raw);
   } catch {
-    // Check if CF blocked us
     if (raw.includes("Just a moment") || raw.includes("challenge-platform")) {
       throw Object.assign(new Error("Cloudflare blocked the request"), { response: { status: 403 } });
     }
@@ -67,15 +86,36 @@ function khGet(path: string): any {
   }
 }
 
-function khPost(path: string, body: any): any {
-  const raw = curlPost(`${KH_BASE_URL}${path}`, JSON.stringify(body));
+async function khGet(path: string): Promise<any> {
+  const url = `${KH_BASE_URL}${path}`;
+  // Try axios first
   try {
-    return JSON.parse(raw);
-  } catch {
-    if (raw.includes("Just a moment") || raw.includes("challenge-platform")) {
-      throw Object.assign(new Error("Cloudflare blocked the request"), { response: { status: 403 } });
+    const res = await khAxios.get(path);
+    return res.data;
+  } catch (axiosErr: any) {
+    const status = axiosErr.response?.status;
+    // If CF blocked us and curl is available, try curl
+    if ((status === 403 || status === 503) && hasCurl) {
+      console.log("KH: axios blocked by CF, falling back to curl");
+      return parseCurlResponse(curlGet(url));
     }
-    throw new Error(`KH API returned non-JSON: ${raw.substring(0, 150)}`);
+    throw axiosErr;
+  }
+}
+
+async function khPost(path: string, body: any): Promise<any> {
+  const url = `${KH_BASE_URL}${path}`;
+  const bodyStr = JSON.stringify(body);
+  try {
+    const res = await khAxios.post(path, body);
+    return res.data;
+  } catch (axiosErr: any) {
+    const status = axiosErr.response?.status;
+    if ((status === 403 || status === 503) && hasCurl) {
+      console.log("KH: axios blocked by CF, falling back to curl");
+      return parseCurlResponse(curlPost(url, bodyStr));
+    }
+    throw axiosErr;
   }
 }
 
@@ -84,11 +124,11 @@ export function reloadKHClient() {}
 
 // --- API Functions ---
 
-export function searchItems(keyword: string = "NULL", userId: number = -1, limit: number = 5000): KHSearchItem[] {
+export async function searchItems(keyword: string = "NULL", userId: number = -1, limit: number = 5000): Promise<KHSearchItem[]> {
   return khGet(`/Search/WebSite_GetSearchItems/${encodeURIComponent(keyword)}/${userId}/1/${limit}`);
 }
 
-export function getSpeakerShiurim(ravId: number, fromRow: number, numRows: number): any[] {
+export async function getSpeakerShiurim(ravId: number, fromRow: number, numRows: number): Promise<any[]> {
   const body = {
     QueryType: -1,
     LangID: -1,
@@ -113,21 +153,22 @@ export function getSpeakerShiurim(ravId: number, fromRow: number, numRows: numbe
   return khPost("/Search/WebSite_GetRavShiurim/", body);
 }
 
-export function getShiurDetails(fileId: number): any {
+export async function getShiurDetails(fileId: number): Promise<any> {
   return khGet(`/TblShiurimLists/WebSite_GetShiurDetails/${fileId}`);
 }
 
-export function getAllSpeakerShiurim(ravId: number, maxShiurim: number = 150): any[] {
+export async function getAllSpeakerShiurim(ravId: number, maxShiurim: number = 150): Promise<any[]> {
   const allShiurim: any[] = [];
   const pageSize = 24;
   let fromRow = 0;
 
   while (fromRow < maxShiurim) {
-    const batch = getSpeakerShiurim(ravId, fromRow, pageSize);
+    const batch = await getSpeakerShiurim(ravId, fromRow, pageSize);
     if (!Array.isArray(batch) || batch.length === 0) break;
     allShiurim.push(...batch);
     if (batch.length < pageSize) break;
     fromRow += pageSize;
+    await new Promise(r => setTimeout(r, 300));
   }
 
   return allShiurim;
@@ -150,7 +191,6 @@ export function mapKHShiurToEpisodeData(shiur: any, feedId: string) {
     shiur.CatDescEnglish1 || shiur.CatDesc1,
   ].filter(Boolean);
 
-  // Audio URL pattern: files are served from the API's download endpoint
   const audioUrl = `${KH_BASE_URL}/files/getLocationOfFileToVideo/${fileId}`;
 
   return {
@@ -172,11 +212,9 @@ export function mapKHShiurToEpisodeData(shiur: any, feedId: string) {
 export async function syncKHSpeakers(): Promise<{ created: number; linked: number; total: number; errors: number }> {
   console.log("KH Sync: searching for speakers...");
 
-  // Use the search endpoint to find ravs
-  // Search with "הרב" (Rabbi) and high limit to get all speakers
   let allRavs: KHSearchItem[] = [];
   try {
-    const items = searchItems("הרב", -1, 10000);
+    const items = await searchItems("הרב", -1, 10000);
     if (Array.isArray(items)) {
       allRavs = items.filter(item => item.SearchItemType === 2);
     }
@@ -196,7 +234,6 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
     return { created: 0, linked: 0, total: 0, errors: 0 };
   }
 
-  // Get all existing feeds for matching
   const allFeeds = await storage.getAllFeeds();
   const existingKHFeeds = new Map<number, string>();
   for (const feed of allFeeds) {
@@ -209,7 +246,6 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
     }
   }
 
-  // Build normalized name -> feed map
   const feedsByNormalizedName = new Map<string, typeof allFeeds[0]>();
   for (const feed of allFeeds) {
     if ((feed as any).kolhalashonRavId) continue;
@@ -233,19 +269,16 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
     const ravId = rav.SearchItemId;
     if (!ravId) continue;
 
-    // Already synced
     if (existingKHFeeds.has(ravId)) continue;
 
     const rawEnglish = rav.SearchItemTextEnglish?.trim() || "";
     const rawHebrew = rav.SearchItemTextHebrew?.trim() || "";
-    // KH returns English names as "LastName, Title FirstName" — normalize
     const englishName = rawEnglish === "null" ? "" : rawEnglish;
     const hebrewName = rawHebrew;
     const displayName = englishName || hebrewName || "Unknown Speaker";
 
     const imageUrl = buildSpeakerImageUrl(rav.ImageFileName);
 
-    // Try to match existing feed by name
     let matchedFeed = englishName ? feedsByNormalizedName.get(normalizeName(englishName)) : undefined;
     if (!matchedFeed && hebrewName) {
       matchedFeed = feedsByNormalizedName.get(normalizeName(hebrewName));
@@ -299,14 +332,13 @@ export async function refreshKHFeedEpisodes(
   feed: { id: string; title: string; kolhalashonRavId: number },
   feedRecord?: any,
 ): Promise<{ newEpisodes: number }> {
-  const shiurim = getAllSpeakerShiurim(feed.kolhalashonRavId);
+  const shiurim = await getAllSpeakerShiurim(feed.kolhalashonRavId);
 
   if (!Array.isArray(shiurim) || shiurim.length === 0) {
     await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
     return { newEpisodes: 0 };
   }
 
-  // Filter: must have audio, not women-only
   const validShiurim = shiurim.filter(s => {
     if (s.IsWomenOnly) return false;
     if (s.HasAudio === false) return false;
@@ -317,7 +349,6 @@ export async function refreshKHFeedEpisodes(
     .filter(s => s.FileId || s.FileID)
     .map(s => mapKHShiurToEpisodeData(s, feed.id));
 
-  // Cross-source dedup for merged feeds
   let finalEpisodeData = episodeData;
   if (feedRecord && isMergedFeed(feedRecord)) {
     const existingEpisodes = await storage.getEpisodesByFeed(feed.id);
