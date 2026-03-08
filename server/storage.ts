@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals, queueItems } from "@shared/schema";
-import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor, NotificationPreference, Announcement, AnnouncementDismissal } from "@shared/schema";
+import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals, queueItems, notificationTaps } from "@shared/schema";
+import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor, NotificationPreference, Announcement, AnnouncementDismissal, NotificationTap } from "@shared/schema";
 import { eq, and, desc, asc, inArray, sql, count, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
@@ -1136,4 +1136,35 @@ export async function saveQueue(deviceId: string, items: { episodeId: string; fe
       }))
     );
   }
+}
+
+export async function recordNotificationTap(data: {
+  deviceId: string;
+  notificationType?: string;
+  episodeId?: string;
+  feedId?: string;
+}): Promise<void> {
+  await db.insert(notificationTaps).values({
+    deviceId: data.deviceId,
+    notificationType: data.notificationType || null,
+    episodeId: data.episodeId || null,
+    feedId: data.feedId || null,
+  });
+}
+
+export async function getNotificationTapStats(days: number = 30) {
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const taps = await db.select()
+    .from(notificationTaps)
+    .where(sql`${notificationTaps.tappedAt} >= ${since}`)
+    .orderBy(desc(notificationTaps.tappedAt));
+
+  const total = taps.length;
+  const byType: Record<string, number> = {};
+  for (const tap of taps) {
+    const t = tap.notificationType || "unknown";
+    byType[t] = (byType[t] || 0) + 1;
+  }
+
+  return { total, byType, recentTaps: taps.slice(0, 50) };
 }

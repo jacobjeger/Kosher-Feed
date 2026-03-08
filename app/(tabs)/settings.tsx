@@ -9,7 +9,7 @@ import { getDeviceId } from "@/lib/device-id";
 import { getApiUrl, apiRequest } from "@/lib/query-client";
 import { useDownloads } from "@/contexts/DownloadsContext";
 import { useSettings } from "@/contexts/SettingsContext";
-import { requestNotificationPermissions, checkNotificationPermission, setupNotificationChannel } from "@/lib/notifications";
+import { requestNotificationPermissions, checkNotificationPermission, setupNotificationChannel, scheduleDailyReminder, cancelDailyReminder } from "@/lib/notifications";
 import { registerPushToken } from "@/lib/push-notifications";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
@@ -239,17 +239,35 @@ function SettingsScreenInner() {
     setActivePicker("theme");
   };
 
-  const handleToggleDailyReminder = (value: boolean) => {
+  const handleToggleDailyReminder = async (value: boolean) => {
     lightHaptic();
     updateSettings({ dailyReminderEnabled: value });
+    if (value) {
+      const hasPermission = await checkNotificationPermission();
+      if (!hasPermission) {
+        const granted = await requestNotificationPermissions();
+        if (!granted) {
+          Alert.alert("Notifications", "Please enable notifications in your device settings to use daily reminders.");
+          updateSettings({ dailyReminderEnabled: false });
+          return;
+        }
+      }
+      await scheduleDailyReminder(settings.dailyReminderHour);
+    } else {
+      await cancelDailyReminder();
+    }
   };
 
-  const handleChangeReminderHour = () => {
+  const handleChangeReminderHour = async () => {
     lightHaptic();
     if (Platform.OS === "web") {
       const currentIndex = REMINDER_HOUR_OPTIONS.indexOf(settings.dailyReminderHour);
       const nextIndex = (currentIndex + 1) % REMINDER_HOUR_OPTIONS.length;
-      updateSettings({ dailyReminderHour: REMINDER_HOUR_OPTIONS[nextIndex] });
+      const newHour = REMINDER_HOUR_OPTIONS[nextIndex];
+      updateSettings({ dailyReminderHour: newHour });
+      if (settings.dailyReminderEnabled) {
+        await scheduleDailyReminder(newHour);
+      }
       return;
     }
     setActivePicker("reminderHour");
@@ -751,7 +769,12 @@ function SettingsScreenInner() {
         subtitle="Choose when to receive daily reminders."
         options={REMINDER_HOUR_OPTIONS.map(h => ({
           label: formatHour(h),
-          onPress: () => updateSettings({ dailyReminderHour: h }),
+          onPress: () => {
+            updateSettings({ dailyReminderHour: h });
+            if (settings.dailyReminderEnabled) {
+              scheduleDailyReminder(h);
+            }
+          },
           selected: settings.dailyReminderHour === h,
         }))}
         onClose={() => setActivePicker(null)}

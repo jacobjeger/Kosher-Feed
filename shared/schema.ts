@@ -281,3 +281,14 @@ export const queueItems = pgTable("queue_items", {
 ]);
 
 export type QueueItem = typeof queueItems.$inferSelect;
+
+export const notificationTaps = pgTable("notification_taps", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  deviceId: text("device_id").notNull(),
+  notificationType: text("notification_type"), // "new_episode" | "custom" | "daily_reminder" | null
+  episodeId: varchar("episode_id"),
+  feedId: varchar("feed_id"),
+  tappedAt: timestamp("tapped_at").defaultNow().notNull(),
+});
+
+export type NotificationTap = typeof notificationTaps.$inferSelect;

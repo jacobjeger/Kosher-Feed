@@ -86,6 +86,21 @@ function handleNotificationResponse(response: Notifications.NotificationResponse
     const data = getNotificationData(response);
     addLog("info", `Notification tapped: ${JSON.stringify(data)}`, undefined, "push");
 
+    // Track notification tap
+    (async () => {
+      try {
+        const deviceId = await getDeviceId();
+        await apiRequest("POST", "/api/notification-tap", {
+          deviceId,
+          notificationType: data.type,
+          episodeId: data.episodeId,
+          feedId: data.feedId,
+        });
+      } catch (e) {
+        addLog("warn", `Failed to track notification tap: ${(e as any)?.message || e}`, undefined, "push");
+      }
+    })();
+
     if (data.feedId) {
       setTimeout(() => {
         router.push(`/podcast/${data.feedId}` as any);

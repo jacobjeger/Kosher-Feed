@@ -1653,6 +1653,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Notification tap tracking
+  app.post("/api/notification-tap", async (req: Request, res: Response) => {
+    try {
+      const { deviceId, notificationType, episodeId, feedId } = req.body;
+      if (!deviceId) {
+        res.status(400).json({ error: "deviceId required" });
+        return;
+      }
+      await storage.recordNotificationTap({ deviceId, notificationType, episodeId, feedId });
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/admin/notification-taps", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const days = parseInt(req.query.days as string) || 30;
+      const stats = await storage.getNotificationTapStats(days);
+      res.json(stats);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
