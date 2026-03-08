@@ -145,10 +145,10 @@ index 04486e2..4ea4b24 100644
        player: AudioPlayer?,
 diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/ShiurPodAutoService.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/ShiurPodAutoService.kt
 new file mode 100644
-index 0000000..eead079
+index 0000000..dd3613e
 --- /dev/null
 +++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/ShiurPodAutoService.kt
-@@ -0,0 +1,368 @@
+@@ -0,0 +1,378 @@
 +package expo.modules.audio.service
 +
 +import androidx.annotation.OptIn
@@ -169,6 +169,7 @@ index 0000000..eead079
 +import java.io.InputStreamReader
 +import java.net.HttpURLConnection
 +import java.net.URL
++import android.content.pm.PackageManager
 +import java.util.concurrent.Executors
 +
 +@OptIn(UnstableApi::class)
@@ -179,16 +180,25 @@ index 0000000..eead079
 +  private var cachedTree: MutableMap<String, List<MediaItem>> = mutableMapOf()
 +  private var cacheTimestamp: Long = 0
 +  private val CACHE_TTL_MS = 5 * 60 * 1000L
++  private lateinit var apiBaseUrl: String
 +
 +  companion object {
 +    private const val ROOT_ID = "shiurpod_root"
 +    private const val MY_SHIURIM_ID = "my_shiurim"
 +    private const val BROWSE_ALL_ID = "browse_all"
-+    private const val API_BASE_URL = "https://kosher-feed.replit.app"
++    private const val DEFAULT_API_BASE_URL = "https://kosher-feed.replit.app"
 +  }
 +
 +  override fun onCreate() {
 +    super.onCreate()
++
++    // Read API URL from manifest meta-data (injected by withAndroidAuto plugin)
++    apiBaseUrl = try {
++      val appInfo = packageManager.getApplicationInfo(packageName, PackageManager.GET_META_DATA)
++      appInfo.metaData?.getString("shiurpod_api_url") ?: DEFAULT_API_BASE_URL
++    } catch (e: Exception) {
++      DEFAULT_API_BASE_URL
++    }
 +
 +    val audioService = AudioControlsService.getInstance()
 +    val existingSession = audioService?.getMediaSession()
@@ -287,7 +297,7 @@ index 0000000..eead079
 +
 +  private fun fetchSubscribedFeeds(): List<MediaItem> {
 +    val deviceId = getDeviceId() ?: return listOf(buildInfoItem("Open ShiurPod to set up"))
-+    val json = fetchJson("$API_BASE_URL/api/subscriptions/$deviceId/feeds")
++    val json = fetchJson("$apiBaseUrl/api/subscriptions/$deviceId/feeds")
 +      ?: return listOf(buildInfoItem("No connection"))
 +
 +    val feeds = JSONArray(json)
@@ -322,7 +332,7 @@ index 0000000..eead079
 +  }
 +
 +  private fun fetchAllFeeds(): List<MediaItem> {
-+    val json = fetchJson("$API_BASE_URL/api/feeds")
++    val json = fetchJson("$apiBaseUrl/api/feeds")
 +      ?: return listOf(buildInfoItem("No connection"))
 +
 +    val feeds = JSONArray(json)
@@ -356,7 +366,7 @@ index 0000000..eead079
 +  }
 +
 +  private fun fetchEpisodes(feedId: String): List<MediaItem> {
-+    val json = fetchJson("$API_BASE_URL/api/feeds/$feedId/episodes?limit=30&slim=1")
++    val json = fetchJson("$apiBaseUrl/api/feeds/$feedId/episodes?limit=30&slim=1")
 +      ?: return listOf(buildInfoItem("No connection"))
 +
 +    val episodes = JSONArray(json)
