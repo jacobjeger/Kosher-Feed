@@ -1,6 +1,8 @@
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
+index 04486e2..4ea4b24 100644
 --- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
 +++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
-@@ -20,6 +20,7 @@
+@@ -20,6 +20,7 @@ import androidx.core.app.NotificationCompat
  import androidx.media3.common.Player
  import androidx.media3.common.util.UnstableApi
  import androidx.media3.session.CommandButton
@@ -8,7 +10,7 @@
  import androidx.media3.session.MediaSession
  import androidx.media3.session.MediaSessionService
  import androidx.media3.session.MediaStyleNotificationHelper
-@@ -80,6 +81,30 @@
+@@ -80,6 +81,30 @@ class AudioControlsService : MediaSessionService() {
      instance = this
      createNotificationChannelIfNeeded()
  
@@ -39,15 +41,15 @@
      pendingPlayer?.let { player ->
        setActivePlayerInternal(player, pendingMetadata, pendingOptions)
        pendingPlayer = null
-@@ -91,13 +116,14 @@
+@@ -91,13 +116,14 @@ class AudioControlsService : MediaSessionService() {
      val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
        if (notificationManager.getNotificationChannel(CHANNEL_ID) == null) {
 -        notificationManager.createNotificationChannel(
 -          NotificationChannel(
--            CHANNEL_ID,
 +        val channel = NotificationChannel(
              CHANNEL_ID,
+-            CHANNEL_ID,
 -            NotificationManager.IMPORTANCE_LOW
 +            "Audio Playback",
 +            NotificationManager.IMPORTANCE_DEFAULT
@@ -59,7 +61,7 @@
        }
      }
    }
-@@ -114,6 +140,7 @@
+@@ -114,6 +140,7 @@ class AudioControlsService : MediaSessionService() {
  
    private fun buildNotification(): Notification? {
      val session = mediaSession ?: return null
@@ -67,7 +69,7 @@
  
      val builder = NotificationCompat.Builder(this, CHANNEL_ID)
        .setSmallIcon(androidx.media3.session.R.drawable.media3_icon_circular_play)
-@@ -123,11 +150,52 @@
+@@ -123,11 +150,52 @@ class AudioControlsService : MediaSessionService() {
        .setLargeIcon(currentArtwork)
        .setContentIntent(buildContentIntent())
        .setAutoCancel(false)
@@ -123,3 +125,395 @@
  
      return builder.build()
    }
+@@ -284,6 +352,8 @@ class AudioControlsService : MediaSessionService() {
+     return mediaSession
+   }
+ 
++  fun getMediaSession(): MediaSession? = mediaSession
++
+   private fun withPlayerOnAppThread(block: (Player) -> Unit) {
+     val player = currentPlayer?.ref ?: return
+     val looper: Looper = player.applicationLooper
+@@ -351,6 +421,8 @@ class AudioControlsService : MediaSessionService() {
+ 
+     fun getInstance(): AudioControlsService? = instance
+ 
++    fun getMediaSessionStatic(): MediaSession? = instance?.mediaSession
++
+     fun setActivePlayer(
+       context: Context,
+       player: AudioPlayer?,
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/ShiurPodAutoService.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/ShiurPodAutoService.kt
+new file mode 100644
+index 0000000..eead079
+--- /dev/null
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/ShiurPodAutoService.kt
+@@ -0,0 +1,368 @@
++package expo.modules.audio.service
++
++import androidx.annotation.OptIn
++import androidx.media3.common.MediaItem
++import androidx.media3.common.MediaMetadata
++import androidx.media3.common.util.UnstableApi
++import androidx.media3.session.MediaSession
++import androidx.media3.session.MediaLibraryService
++import androidx.media3.session.LibraryResult
++import com.google.common.collect.ImmutableList
++import com.google.common.util.concurrent.Futures
++import com.google.common.util.concurrent.ListenableFuture
++import com.google.common.util.concurrent.ListeningExecutorService
++import com.google.common.util.concurrent.MoreExecutors
++import com.google.common.util.concurrent.SettableFuture
++import org.json.JSONArray
++import java.io.BufferedReader
++import java.io.InputStreamReader
++import java.net.HttpURLConnection
++import java.net.URL
++import java.util.concurrent.Executors
++
++@OptIn(UnstableApi::class)
++class ShiurPodAutoService : MediaLibraryService() {
++
++  private var librarySession: MediaLibrarySession? = null
++  private val ioExecutor: ListeningExecutorService = MoreExecutors.listeningDecorator(Executors.newCachedThreadPool())
++  private var cachedTree: MutableMap<String, List<MediaItem>> = mutableMapOf()
++  private var cacheTimestamp: Long = 0
++  private val CACHE_TTL_MS = 5 * 60 * 1000L
++
++  companion object {
++    private const val ROOT_ID = "shiurpod_root"
++    private const val MY_SHIURIM_ID = "my_shiurim"
++    private const val BROWSE_ALL_ID = "browse_all"
++    private const val API_BASE_URL = "https://kosher-feed.replit.app"
++  }
++
++  override fun onCreate() {
++    super.onCreate()
++
++    val audioService = AudioControlsService.getInstance()
++    val existingSession = audioService?.getMediaSession()
++    if (existingSession != null) {
++      librarySession = MediaLibrarySession.Builder(this, existingSession.player, LibraryCallback())
++        .setId("shiurpod_auto_library")
++        .build()
++    }
++  }
++
++  override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
++    if (librarySession != null) return librarySession
++
++    val audioService = AudioControlsService.getInstance()
++    val existingSession = audioService?.getMediaSession()
++    if (existingSession != null) {
++      librarySession = MediaLibrarySession.Builder(this, existingSession.player, LibraryCallback())
++        .setId("shiurpod_auto_library")
++        .build()
++    }
++
++    return librarySession
++  }
++
++  private fun getDeviceId(): String? {
++    return try {
++      // Read deviceId from file written by JS via expo-file-system
++      val filesDir = applicationContext.filesDir
++      val deviceIdFile = java.io.File(filesDir, "shiurpod_device_id.txt")
++      if (deviceIdFile.exists()) {
++        deviceIdFile.readText().trim()
++      } else {
++        // Fallback: try the ExponentExperienceData SharedPreferences used by AsyncStorage
++        null
++      }
++    } catch (e: Exception) {
++      null
++    }
++  }
++
++  private fun fetchJson(urlString: String): String? {
++    return try {
++      val url = URL(urlString)
++      val conn = url.openConnection() as HttpURLConnection
++      conn.connectTimeout = 8000
++      conn.readTimeout = 8000
++      conn.requestMethod = "GET"
++      conn.setRequestProperty("Accept", "application/json")
++
++      if (conn.responseCode == 200) {
++        val reader = BufferedReader(InputStreamReader(conn.inputStream))
++        val response = reader.readText()
++        reader.close()
++        response
++      } else {
++        null
++      }
++    } catch (e: Exception) {
++      null
++    }
++  }
++
++  private fun clearCacheIfStale() {
++    if (System.currentTimeMillis() - cacheTimestamp > CACHE_TTL_MS) {
++      cachedTree.clear()
++      cacheTimestamp = System.currentTimeMillis()
++    }
++  }
++
++  private fun buildRootItems(): List<MediaItem> {
++    return listOf(
++      MediaItem.Builder()
++        .setMediaId(MY_SHIURIM_ID)
++        .setMediaMetadata(
++          MediaMetadata.Builder()
++            .setTitle("My Shiurim")
++            .setIsBrowsable(true)
++            .setIsPlayable(false)
++            .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
++            .build()
++        )
++        .build(),
++      MediaItem.Builder()
++        .setMediaId(BROWSE_ALL_ID)
++        .setMediaMetadata(
++          MediaMetadata.Builder()
++            .setTitle("Browse All")
++            .setIsBrowsable(true)
++            .setIsPlayable(false)
++            .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
++            .build()
++        )
++        .build()
++    )
++  }
++
++  private fun fetchSubscribedFeeds(): List<MediaItem> {
++    val deviceId = getDeviceId() ?: return listOf(buildInfoItem("Open ShiurPod to set up"))
++    val json = fetchJson("$API_BASE_URL/api/subscriptions/$deviceId/feeds")
++      ?: return listOf(buildInfoItem("No connection"))
++
++    val feeds = JSONArray(json)
++    if (feeds.length() == 0) return listOf(buildInfoItem("No subscriptions yet"))
++
++    val items = mutableListOf<MediaItem>()
++    for (i in 0 until feeds.length()) {
++      val feed = feeds.getJSONObject(i)
++      val feedId = feed.getString("id")
++      val title = feed.optString("title", "Unknown Feed")
++      val imageUrl = feed.optString("imageUrl", "")
++
++      val metadataBuilder = MediaMetadata.Builder()
++        .setTitle(title)
++        .setIsBrowsable(true)
++        .setIsPlayable(false)
++        .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_EPISODES)
++
++      if (imageUrl.isNotEmpty()) {
++        metadataBuilder.setArtworkUri(android.net.Uri.parse(imageUrl))
++      }
++
++      items.add(
++        MediaItem.Builder()
++          .setMediaId("feed_$feedId")
++          .setMediaMetadata(metadataBuilder.build())
++          .build()
++      )
++    }
++
++    return items
++  }
++
++  private fun fetchAllFeeds(): List<MediaItem> {
++    val json = fetchJson("$API_BASE_URL/api/feeds")
++      ?: return listOf(buildInfoItem("No connection"))
++
++    val feeds = JSONArray(json)
++    val items = mutableListOf<MediaItem>()
++
++    for (i in 0 until feeds.length()) {
++      val feed = feeds.getJSONObject(i)
++      val feedId = feed.getString("id")
++      val title = feed.optString("title", "Unknown Feed")
++      val imageUrl = feed.optString("imageUrl", "")
++
++      val metadataBuilder = MediaMetadata.Builder()
++        .setTitle(title)
++        .setIsBrowsable(true)
++        .setIsPlayable(false)
++        .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_EPISODES)
++
++      if (imageUrl.isNotEmpty()) {
++        metadataBuilder.setArtworkUri(android.net.Uri.parse(imageUrl))
++      }
++
++      items.add(
++        MediaItem.Builder()
++          .setMediaId("feed_$feedId")
++          .setMediaMetadata(metadataBuilder.build())
++          .build()
++      )
++    }
++
++    return items
++  }
++
++  private fun fetchEpisodes(feedId: String): List<MediaItem> {
++    val json = fetchJson("$API_BASE_URL/api/feeds/$feedId/episodes?limit=30&slim=1")
++      ?: return listOf(buildInfoItem("No connection"))
++
++    val episodes = JSONArray(json)
++    val items = mutableListOf<MediaItem>()
++
++    for (i in 0 until episodes.length()) {
++      val ep = episodes.getJSONObject(i)
++      val epId = ep.getString("id")
++      val title = ep.optString("title", "Episode")
++      val audioUrl = ep.optString("audioUrl", "")
++
++      if (audioUrl.isEmpty()) continue
++
++      items.add(
++        MediaItem.Builder()
++          .setMediaId("episode_${feedId}_${epId}")
++          .setMediaMetadata(
++            MediaMetadata.Builder()
++              .setTitle(title)
++              .setIsBrowsable(false)
++              .setIsPlayable(true)
++              .setMediaType(MediaMetadata.MEDIA_TYPE_PODCAST_EPISODE)
++              .build()
++          )
++          .setRequestMetadata(
++            MediaItem.RequestMetadata.Builder()
++              .setMediaUri(android.net.Uri.parse(audioUrl))
++              .build()
++          )
++          .build()
++      )
++    }
++
++    return items
++  }
++
++  private fun buildInfoItem(message: String): MediaItem {
++    return MediaItem.Builder()
++      .setMediaId("info_${System.currentTimeMillis()}")
++      .setMediaMetadata(
++        MediaMetadata.Builder()
++          .setTitle(message)
++          .setIsBrowsable(false)
++          .setIsPlayable(false)
++          .build()
++      )
++      .build()
++  }
++
++  inner class LibraryCallback : MediaLibrarySession.Callback {
++    override fun onGetLibraryRoot(
++      session: MediaLibrarySession,
++      browser: MediaSession.ControllerInfo,
++      params: LibraryParams?
++    ): ListenableFuture<LibraryResult<MediaItem>> {
++      val root = MediaItem.Builder()
++        .setMediaId(ROOT_ID)
++        .setMediaMetadata(
++          MediaMetadata.Builder()
++            .setTitle("ShiurPod")
++            .setIsBrowsable(true)
++            .setIsPlayable(false)
++            .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
++            .build()
++        )
++        .build()
++      return Futures.immediateFuture(LibraryResult.ofItem(root, params))
++    }
++
++    override fun onGetChildren(
++      session: MediaLibrarySession,
++      browser: MediaSession.ControllerInfo,
++      parentId: String,
++      page: Int,
++      pageSize: Int,
++      params: LibraryParams?
++    ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
++      val future = SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
++      ioExecutor.execute {
++        try {
++          clearCacheIfStale()
++
++          val cached = cachedTree[parentId]
++          if (cached != null) {
++            future.set(LibraryResult.ofItemList(ImmutableList.copyOf(cached), params))
++            return@execute
++          }
++
++          val children = when (parentId) {
++            ROOT_ID -> buildRootItems()
++            MY_SHIURIM_ID -> fetchSubscribedFeeds()
++            BROWSE_ALL_ID -> fetchAllFeeds()
++            else -> {
++              if (parentId.startsWith("feed_")) {
++                val feedId = parentId.removePrefix("feed_")
++                fetchEpisodes(feedId)
++              } else {
++                emptyList()
++              }
++            }
++          }
++
++          cachedTree[parentId] = children
++          future.set(LibraryResult.ofItemList(ImmutableList.copyOf(children), params))
++        } catch (e: Exception) {
++          future.set(LibraryResult.ofError(LibraryResult.RESULT_ERROR_UNKNOWN))
++        }
++      }
++      return future
++    }
++
++    override fun onGetItem(
++      session: MediaLibrarySession,
++      browser: MediaSession.ControllerInfo,
++      mediaId: String
++    ): ListenableFuture<LibraryResult<MediaItem>> {
++      for ((_, items) in cachedTree) {
++        val item = items.find { it.mediaId == mediaId }
++        if (item != null) {
++          return Futures.immediateFuture(LibraryResult.ofItem(item, null))
++        }
++      }
++      return Futures.immediateFuture(LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE))
++    }
++
++    override fun onAddMediaItems(
++      mediaSession: MediaSession,
++      controller: MediaSession.ControllerInfo,
++      mediaItems: MutableList<MediaItem>
++    ): ListenableFuture<MutableList<MediaItem>> {
++      val resolved = mediaItems.map { item ->
++        val uri = item.requestMetadata.mediaUri
++        if (uri != null) {
++          item.buildUpon().setUri(uri).build()
++        } else {
++          // Try to find the item in cache and get its URI
++          var resolvedItem = item
++          for ((_, items) in cachedTree) {
++            val cached = items.find { it.mediaId == item.mediaId }
++            if (cached?.requestMetadata?.mediaUri != null) {
++              resolvedItem = item.buildUpon()
++                .setUri(cached.requestMetadata.mediaUri)
++                .build()
++              break
++            }
++          }
++          resolvedItem
++        }
++      }.toMutableList()
++      return Futures.immediateFuture(resolved)
++    }
++  }
++
++  override fun onDestroy() {
++    librarySession?.release()
++    librarySession = null
++    ioExecutor.shutdown()
++    super.onDestroy()
++  }
++}
