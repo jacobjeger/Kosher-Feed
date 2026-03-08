@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from "axios";
+import { execSync } from "child_process";
 import * as storage from "./storage";
 import { sendNewEpisodePushes } from "./push";
 import { normalizeName } from "./name-utils";
@@ -6,7 +6,6 @@ import { filterCrossSourceDuplicates, isMergedFeed } from "./episode-dedup";
 
 // Real KH API base URL (from the official Python SDK: pypi.org/project/kolhalashon)
 const KH_BASE_URL = "https://srv.kolhalashon.com/api";
-const KH_SITE_KEY = "Bearer 8ea2pe8";
 
 // --- Types ---
 
@@ -19,53 +18,77 @@ export interface KHSearchItem {
   ImageFileName: string | null;
 }
 
-// --- Axios Client ---
+// --- HTTP Client via curl ---
+// Cloudflare fingerprints TLS clients — Node.js axios/fetch get blocked (403)
+// but curl with --tlsv1.3 and browser-like sec-fetch headers passes through.
 
-function createKHClient(): AxiosInstance {
-  return axios.create({
-    baseURL: KH_BASE_URL,
-    timeout: 30000,
-    headers: {
-      "accept": "application/json, text/plain, */*",
-      "accept-language": "he-IL,he;q=0.9,en-AU;q=0.8,en;q=0.7,en-US;q=0.6",
-      "authorization-site-key": KH_SITE_KEY,
-      "content-type": "application/json",
-      "origin": "https://www2.kolhalashon.com",
-      "referer": "https://www2.kolhalashon.com/",
-      // sec-fetch headers are critical — they tell Cloudflare this is a legitimate CORS request
-      "sec-ch-ua": '"Chromium";v="120", "Google Chrome";v="120", "Not=A?Brand";v="8"',
-      "sec-ch-ua-mobile": "?0",
-      "sec-ch-ua-platform": '"macOS"',
-      "sec-fetch-dest": "empty",
-      "sec-fetch-mode": "cors",
-      "sec-fetch-site": "cross-site",
-      "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    },
+const CURL_HEADERS = [
+  "-H", "accept: application/json, text/plain, */*",
+  "-H", "accept-language: he-IL,he;q=0.9,en-AU;q=0.8,en;q=0.7,en-US;q=0.6",
+  "-H", "authorization-site-key: Bearer 8ea2pe8",
+  "-H", "content-type: application/json",
+  "-H", "origin: https://www2.kolhalashon.com",
+  "-H", "referer: https://www2.kolhalashon.com/",
+  '-H', 'sec-ch-ua: "Chromium";v="120", "Google Chrome";v="120", "Not=A?Brand";v="8"',
+  "-H", "sec-ch-ua-mobile: ?0",
+  '-H', 'sec-ch-ua-platform: "macOS"',
+  "-H", "sec-fetch-dest: empty",
+  "-H", "sec-fetch-mode: cors",
+  "-H", "sec-fetch-site: cross-site",
+  "-H", "user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+];
+
+function curlGet(url: string, timeoutSec: number = 30): string {
+  const args = ["curl", "-s", "--tlsv1.3", "--max-time", String(timeoutSec), ...CURL_HEADERS, url];
+  return execSync(args.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(" "), {
+    encoding: "utf8",
+    timeout: (timeoutSec + 5) * 1000,
   });
 }
 
-const khClient: AxiosInstance = createKHClient();
+function curlPost(url: string, body: string, timeoutSec: number = 30): string {
+  const args = ["curl", "-s", "--tlsv1.3", "--max-time", String(timeoutSec), "-X", "POST", "-d", body, ...CURL_HEADERS, url];
+  return execSync(args.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(" "), {
+    encoding: "utf8",
+    timeout: (timeoutSec + 5) * 1000,
+  });
+}
+
+function khGet(path: string): any {
+  const raw = curlGet(`${KH_BASE_URL}${path}`);
+  try {
+    return JSON.parse(raw);
+  } catch {
+    // Check if CF blocked us
+    if (raw.includes("Just a moment") || raw.includes("challenge-platform")) {
+      throw Object.assign(new Error("Cloudflare blocked the request"), { response: { status: 403 } });
+    }
+    throw new Error(`KH API returned non-JSON: ${raw.substring(0, 150)}`);
+  }
+}
+
+function khPost(path: string, body: any): any {
+  const raw = curlPost(`${KH_BASE_URL}${path}`, JSON.stringify(body));
+  try {
+    return JSON.parse(raw);
+  } catch {
+    if (raw.includes("Just a moment") || raw.includes("challenge-platform")) {
+      throw Object.assign(new Error("Cloudflare blocked the request"), { response: { status: 403 } });
+    }
+    throw new Error(`KH API returned non-JSON: ${raw.substring(0, 150)}`);
+  }
+}
 
 // Keep for backward compatibility with routes.ts
 export function reloadKHClient() {}
 
-async function khGet(path: string): Promise<any> {
-  const res = await khClient.get(path);
-  return res.data;
-}
-
-async function khPost(path: string, body: any): Promise<any> {
-  const res = await khClient.post(path, body);
-  return res.data;
-}
-
 // --- API Functions ---
 
-export async function searchItems(keyword: string = "NULL", userId: number = -1, limit: number = 5000): Promise<KHSearchItem[]> {
+export function searchItems(keyword: string = "NULL", userId: number = -1, limit: number = 5000): KHSearchItem[] {
   return khGet(`/Search/WebSite_GetSearchItems/${encodeURIComponent(keyword)}/${userId}/1/${limit}`);
 }
 
-export async function getSpeakerShiurim(ravId: number, fromRow: number, numRows: number): Promise<any[]> {
+export function getSpeakerShiurim(ravId: number, fromRow: number, numRows: number): any[] {
   const body = {
     QueryType: -1,
     LangID: -1,
@@ -90,22 +113,21 @@ export async function getSpeakerShiurim(ravId: number, fromRow: number, numRows:
   return khPost("/Search/WebSite_GetRavShiurim/", body);
 }
 
-export async function getShiurDetails(fileId: number): Promise<any> {
+export function getShiurDetails(fileId: number): any {
   return khGet(`/TblShiurimLists/WebSite_GetShiurDetails/${fileId}`);
 }
 
-export async function getAllSpeakerShiurim(ravId: number, maxShiurim: number = 150): Promise<any[]> {
+export function getAllSpeakerShiurim(ravId: number, maxShiurim: number = 150): any[] {
   const allShiurim: any[] = [];
   const pageSize = 24;
   let fromRow = 0;
 
   while (fromRow < maxShiurim) {
-    const batch = await getSpeakerShiurim(ravId, fromRow, pageSize);
+    const batch = getSpeakerShiurim(ravId, fromRow, pageSize);
     if (!Array.isArray(batch) || batch.length === 0) break;
     allShiurim.push(...batch);
     if (batch.length < pageSize) break;
     fromRow += pageSize;
-    await new Promise(r => setTimeout(r, 300));
   }
 
   return allShiurim;
@@ -154,7 +176,7 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
   // Search with "הרב" (Rabbi) and high limit to get all speakers
   let allRavs: KHSearchItem[] = [];
   try {
-    const items = await searchItems("הרב", -1, 10000);
+    const items = searchItems("הרב", -1, 10000);
     if (Array.isArray(items)) {
       allRavs = items.filter(item => item.SearchItemType === 2);
     }
@@ -221,7 +243,6 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
     const hebrewName = rawHebrew;
     const displayName = englishName || hebrewName || "Unknown Speaker";
 
-    // SearchItemCount is 0 in search results; skip filtering by count
     const imageUrl = buildSpeakerImageUrl(rav.ImageFileName);
 
     // Try to match existing feed by name
@@ -278,7 +299,7 @@ export async function refreshKHFeedEpisodes(
   feed: { id: string; title: string; kolhalashonRavId: number },
   feedRecord?: any,
 ): Promise<{ newEpisodes: number }> {
-  const shiurim = await getAllSpeakerShiurim(feed.kolhalashonRavId);
+  const shiurim = getAllSpeakerShiurim(feed.kolhalashonRavId);
 
   if (!Array.isArray(shiurim) || shiurim.length === 0) {
     await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
