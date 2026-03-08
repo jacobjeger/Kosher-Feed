@@ -26,7 +26,7 @@ function addAutoMetaData(config) {
     }
 
     // Add API base URL meta-data for Android Auto browsing service
-    const apiUrl = process.env.EXPO_PUBLIC_API_URL || "https://kosher-feed.replit.app";
+    const apiUrl = process.env.EXPO_PUBLIC_API_URL || "https://kosher-feed-production.up.railway.app";
     const apiMeta = app["meta-data"].find(
       (m) => m.$["android:name"] === "shiurpod_api_url"
     );

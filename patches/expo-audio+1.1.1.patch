@@ -145,7 +145,7 @@ index 04486e2..4ea4b24 100644
        player: AudioPlayer?,
 diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/ShiurPodAutoService.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/ShiurPodAutoService.kt
 new file mode 100644
-index 0000000..dd3613e
+index 0000000..1618618
 --- /dev/null
 +++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/ShiurPodAutoService.kt
 @@ -0,0 +1,378 @@
@@ -186,7 +186,7 @@ index 0000000..dd3613e
 +    private const val ROOT_ID = "shiurpod_root"
 +    private const val MY_SHIURIM_ID = "my_shiurim"
 +    private const val BROWSE_ALL_ID = "browse_all"
-+    private const val DEFAULT_API_BASE_URL = "https://kosher-feed.replit.app"
++    private const val DEFAULT_API_BASE_URL = "https://kosher-feed-production.up.railway.app"
 +  }
 +
 +  override fun onCreate() {
