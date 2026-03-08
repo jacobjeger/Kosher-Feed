@@ -38,10 +38,12 @@ async function onDemandRefreshFeed(feedId: string): Promise<void> {
     console.log(`On-demand refresh: ${feed.title} (last fetched ${feed.lastFetchedAt ? Math.round((Date.now() - lastFetched) / 60000) + 'm ago' : 'never'})`);
 
     // TAT feed: refresh from TorahAnytime API
-    if (feed.tatSpeakerId) {
-      await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: feed.tatSpeakerId });
+    const isOnDemandTatUrl = feed.rssUrl.startsWith("tat://");
+    const onDemandTatId = feed.tatSpeakerId ?? (isOnDemandTatUrl ? parseInt(feed.rssUrl.replace("tat://speaker/", ""), 10) || null : null);
+    if (onDemandTatId) {
+      await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: onDemandTatId });
       // Also refresh RSS if this is a merged feed (has real RSS URL)
-      if (!feed.rssUrl.startsWith("tat://")) {
+      if (!isOnDemandTatUrl) {
         const parsed = await parseFeed(feed.id, feed.rssUrl);
         if (parsed) {
           const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
@@ -51,8 +53,8 @@ async function onDemandRefreshFeed(feedId: string): Promise<void> {
       return;
     }
 
-    // Regular RSS feed
-    if (!feed.rssUrl) return;
+    // Regular RSS feed (skip TAT-only URLs)
+    if (!feed.rssUrl || isOnDemandTatUrl) return;
     const parsed = await parseFeed(feed.id, feed.rssUrl);
     if (!parsed) {
       await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
@@ -1651,6 +1653,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const start = Date.now();
       try {
+        // Handle TAT feeds
+        const isForceTatUrl = feed.rssUrl.startsWith("tat://");
+        const forceTatId = feed.tatSpeakerId ?? (isForceTatUrl ? parseInt(feed.rssUrl.replace("tat://speaker/", ""), 10) || null : null);
+        if (forceTatId) {
+          const tatResult = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: forceTatId });
+          res.json({ status: "ok", method: "tat", newEpisodes: tatResult.newEpisodes, durationMs: Date.now() - start });
+          return;
+        }
+
         const parsed = await parseFeed(feed.id, feed.rssUrl, {
           etag: feed.etag,
           lastModified: feed.lastModifiedHeader,
