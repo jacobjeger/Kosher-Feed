@@ -10,6 +10,7 @@ import { parseFeed, preResolveHostnames } from "./rss";
 import * as storage from "./storage";
 import { sendNewEpisodePushes } from "./push";
 import { startRefreshCycle, recordFeedResult, endRefreshCycle } from "./feed-vitals";
+import { refreshTATFeedEpisodes, syncTATSpeakers } from "./torahanytime";
 import * as fs from "fs";
 import * as path from "path";
 import pLimit from "p-limit";
@@ -400,8 +401,31 @@ export interface RefreshResult {
   episodesFound: number;
 }
 
-export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string; etag?: string | null; lastModifiedHeader?: string | null }): Promise<RefreshResult> {
+export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string; etag?: string | null; lastModifiedHeader?: string | null; tatSpeakerId?: number | null }): Promise<RefreshResult> {
   const start = Date.now();
+
+  // TAT feed: refresh from TorahAnytime API
+  const isTatUrl = feed.rssUrl.startsWith("tat://");
+  const effectiveTatSpeakerId = feed.tatSpeakerId ?? (isTatUrl ? parseInt(feed.rssUrl.replace("tat://speaker/", ""), 10) || null : null);
+
+  if (effectiveTatSpeakerId && isTatUrl) {
+    const result = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveTatSpeakerId });
+    return { newEpisodes: result.newEpisodes, method: 'stream', durationMs: Date.now() - start, episodesFound: result.newEpisodes };
+  }
+
+  // Merged feed (has both RSS + TAT): refresh both
+  if (effectiveTatSpeakerId) {
+    await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveTatSpeakerId }).catch(e => {
+      console.log(`TAT refresh failed for merged feed ${feed.title}: ${(e as Error).message?.slice(0, 100)}`);
+    });
+  }
+
+  // Skip RSS parsing for TAT-only URLs
+  if (isTatUrl) {
+    return { newEpisodes: 0, method: 'stream', durationMs: Date.now() - start, episodesFound: 0 };
+  }
+
+  // RSS refresh
   const parsed = await parseFeed(feed.id, feed.rssUrl, {
     etag: feed.etag,
     lastModified: feed.lastModifiedHeader,
@@ -459,7 +483,7 @@ async function autoRefreshFeeds() {
       return;
     }
 
-    await preResolveHostnames(staleFeeds.map(f => f.rssUrl));
+    await preResolveHostnames(staleFeeds.filter(f => !f.rssUrl.startsWith("tat://")).map(f => f.rssUrl));
 
     log(`Auto-refresh [${now}]: refreshing ${staleFeeds.length} stale feed(s) out of ${allFeeds.length} total (3 concurrent)...`);
     let totalNew = 0;
@@ -606,6 +630,10 @@ function startAutoRefresh() {
       log(`express server serving on port ${serverPort}`);
       seedIfEmpty().catch((e) => console.error("Seed error:", e));
       startAutoRefresh();
+      // Sync TorahAnytime speakers in background after 15s
+      setTimeout(() => {
+        syncTATSpeakers().catch(e => console.error("TAT initial sync error:", e.message));
+      }, 15000);
     },
   );
 })();

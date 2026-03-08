@@ -7,7 +7,7 @@ const apiFetch: typeof globalThis.fetch =
     ? globalThis.fetch.bind(globalThis)
     : require("expo/fetch").fetch;
 
-const PRODUCTION_API_URL = process.env.EXPO_PUBLIC_API_URL || "https://kosher-feed.replit.app";
+const PRODUCTION_API_URL = process.env.EXPO_PUBLIC_API_URL || "https://kosher-feed-production.up.railway.app";
 const REQUEST_TIMEOUT_MS = 12000;
 const CACHE_PREFIX = "shiurpod_cache_";
 

@@ -24,6 +24,9 @@ import { initErrorLogger, setupGlobalErrorHandlers } from "@/lib/error-logger";
 import { DeepLinkHandler } from "@/components/DeepLinkHandler";
 import { getNotificationData, setupForegroundNotificationHandler, setupPushNotificationChannels } from "@/lib/push-notifications";
 import { addLog } from "@/lib/error-logger";
+import AnnouncementModal from "@/components/AnnouncementModal";
+import { getDeviceId } from "@/lib/device-id";
+import { getApiUrl, apiRequest } from "@/lib/query-client";
 
 const ONBOARDING_KEY = "@shiurpod_onboarding_complete";
 
@@ -83,6 +86,21 @@ function handleNotificationResponse(response: Notifications.NotificationResponse
     const data = getNotificationData(response);
     addLog("info", `Notification tapped: ${JSON.stringify(data)}`, undefined, "push");
 
+    // Track notification tap
+    (async () => {
+      try {
+        const deviceId = await getDeviceId();
+        await apiRequest("POST", "/api/notification-tap", {
+          deviceId,
+          notificationType: data.type,
+          episodeId: data.episodeId,
+          feedId: data.feedId,
+        });
+      } catch (e) {
+        addLog("warn", `Failed to track notification tap: ${(e as any)?.message || e}`, undefined, "push");
+      }
+    })();
+
     if (data.feedId) {
       setTimeout(() => {
         router.push(`/podcast/${data.feedId}` as any);
@@ -135,6 +153,50 @@ export default function RootLayout() {
     };
   }, [fontsLoaded, onboardingChecked]);
 
+  // Announcements
+  const [currentAnnouncement, setCurrentAnnouncement] = useState<any>(null);
+  const [announcementQueue, setAnnouncementQueue] = useState<any[]>([]);
+  const [announcementVisible, setAnnouncementVisible] = useState(false);
+
+  useEffect(() => {
+    if (!fontsLoaded || !onboardingChecked || initialRoute !== "(tabs)") return;
+    (async () => {
+      try {
+        const deviceId = await getDeviceId();
+        const baseUrl = getApiUrl();
+        const res = await fetch(`${baseUrl}/api/announcements/${deviceId}`);
+        if (!res.ok) return;
+        const anns = await res.json();
+        if (anns.length > 0) {
+          setAnnouncementQueue(anns);
+          setCurrentAnnouncement(anns[0]);
+          setAnnouncementVisible(true);
+        }
+      } catch {}
+    })();
+  }, [fontsLoaded, onboardingChecked, initialRoute]);
+
+  const handleDismissAnnouncement = async () => {
+    if (currentAnnouncement) {
+      try {
+        const deviceId = await getDeviceId();
+        await apiRequest("POST", `/api/announcements/${currentAnnouncement.id}/dismiss`, { deviceId });
+      } catch {}
+    }
+    setAnnouncementVisible(false);
+    // Show next in queue
+    const remaining = announcementQueue.slice(1);
+    setAnnouncementQueue(remaining);
+    if (remaining.length > 0) {
+      setTimeout(() => {
+        setCurrentAnnouncement(remaining[0]);
+        setAnnouncementVisible(true);
+      }, 300);
+    } else {
+      setCurrentAnnouncement(null);
+    }
+  };
+
   if (!fontsLoaded || !onboardingChecked) return null;
 
   return (
@@ -152,6 +214,11 @@ export default function RootLayout() {
                         <OfflineBanner />
                         <DeepLinkHandler />
                         <RootLayoutNav initialRoute={initialRoute} />
+                        <AnnouncementModal
+                          announcement={currentAnnouncement}
+                          visible={announcementVisible}
+                          onDismiss={handleDismissAnnouncement}
+                        />
                       </KeyboardProvider>
                     </GestureHandlerRootView>
                   </PositionsProvider>

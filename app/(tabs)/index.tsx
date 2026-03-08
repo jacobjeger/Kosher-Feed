@@ -1,13 +1,11 @@
-import React, { useMemo, useState, useCallback, useEffect, useRef, forwardRef } from "react";
-import { View, Text, FlatList, ScrollView, Pressable, StyleSheet, ActivityIndicator, RefreshControl, Platform, TextInput, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from "react-native";
+import React, { useMemo, useState, useCallback, useEffect, useRef } from "react";
+import { View, Text, FlatList, ScrollView, Pressable, StyleSheet, RefreshControl, Platform, TextInput, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import PodcastCard from "@/components/PodcastCard";
-import EpisodeItem from "@/components/EpisodeItem";
 import Colors from "@/constants/colors";
 import type { Feed, Episode, Category, MaggidShiur } from "@/lib/types";
 import { queryClient, getApiUrl } from "@/lib/query-client";
@@ -18,6 +16,15 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { usePlayedEpisodes } from "@/contexts/PlayedEpisodesContext";
 import { HomeScreenSkeleton } from "@/components/Skeleton";
 import { useNetworkStatus } from "@/components/OfflineBanner";
+import SearchSection from "@/components/home/SearchSection";
+import ContinueListeningSection from "@/components/home/ContinueListeningSection";
+import TrendingSection from "@/components/home/TrendingSection";
+import AllShiurimSection from "@/components/home/AllShiurimSection";
+import MaggidShiurSection from "@/components/home/MaggidShiurSection";
+import CategoriesGrid from "@/components/home/CategoriesGrid";
+import RecentlyListenedSection from "@/components/home/RecentlyListenedSection";
+import RecommendedSection from "@/components/home/RecommendedSection";
+import { getDeviceId } from "@/lib/device-id";
 
 interface SavedPositionEntry {
   episodeId: string;
@@ -134,80 +141,10 @@ const FeaturedCarousel = React.memo(function FeaturedCarousel({ feeds, colors }:
   );
 });
 
-const TrendingEpisodeCard = React.memo(function TrendingEpisodeCard({ episode, feed, rank, colors, onPlay }: { episode: TrendingEpisode; feed: Feed; rank: number; colors: any; onPlay: () => void }) {
-  return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.trendingCard,
-        { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.95 : 1 },
-      ]}
-      onPress={onPlay}
-    >
-      <View style={[styles.rankBadge, { backgroundColor: rank <= 3 ? colors.accent : colors.surfaceAlt }]}>
-        <Text style={[styles.rankText, { color: rank <= 3 ? "#fff" : colors.textSecondary }]}>{rank}</Text>
-      </View>
-      {feed.imageUrl ? (
-        <Image source={{ uri: feed.imageUrl }} style={styles.trendingImage} contentFit="cover" cachePolicy="memory-disk" transition={0} />
-      ) : (
-        <View style={[styles.trendingImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
-          <Ionicons name="mic" size={16} color={colors.textSecondary} />
-        </View>
-      )}
-      <View style={styles.trendingInfo}>
-        <Text style={[styles.trendingFeed, { color: colors.accent }]} numberOfLines={1}>
-          {feed.title}
-        </Text>
-        <Text style={[styles.trendingTitle, { color: colors.text }]} numberOfLines={2}>
-          {episode.title}
-        </Text>
-        {episode.listenCount > 0 && (
-          <View style={styles.trendingMeta}>
-            <Ionicons name="headset-outline" size={11} color={colors.textSecondary} />
-            <Text style={[styles.trendingMetaText, { color: colors.textSecondary }]}>
-              {episode.listenCount}
-            </Text>
-          </View>
-        )}
-      </View>
-      <View style={[styles.trendingPlayBtn, { backgroundColor: colors.accentLight }]}>
-        <Ionicons name="play" size={14} color={colors.accent} />
-      </View>
-    </Pressable>
-  );
-});
-
-const MaggidShiurCard = React.memo(function MaggidShiurCard({ author, feeds, colors }: { author: string; feeds: Feed[]; colors: any }) {
-  const firstImage = feeds.find(f => f.imageUrl)?.imageUrl;
-  return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.maggidCard,
-        { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.95 : 1 },
-      ]}
-      onPress={() => { lightHaptic(); router.push({ pathname: "/maggid-shiur/[author]" as any, params: { author, feedIds: feeds.map(f => f.id).join(",") } }); }}
-    >
-      {firstImage ? (
-        <Image source={{ uri: firstImage }} style={styles.maggidAvatar} contentFit="cover" cachePolicy="memory-disk" transition={0} />
-      ) : (
-        <View style={[styles.maggidAvatar, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
-          <Ionicons name="person" size={22} color={colors.textSecondary} />
-        </View>
-      )}
-      <Text style={[styles.maggidName, { color: colors.text }]} numberOfLines={2}>
-        {author}
-      </Text>
-      <Text style={[styles.maggidCount, { color: colors.textSecondary }]}>
-        {feeds.length} {feeds.length === 1 ? "shiur" : "shiurim"}
-      </Text>
-    </Pressable>
-  );
-});
 
 const SCROLL_AMOUNT = 300;
 
 const WebScrollArrows = React.memo(function WebScrollArrows({ children, colors }: { children: React.ReactNode; colors: any }) {
-  if (Platform.OS !== "web") return <>{children}</>;
-
   const scrollRef = useRef<FlatList>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(true);
@@ -239,6 +176,8 @@ const WebScrollArrows = React.memo(function WebScrollArrows({ children, colors }
     const newOffset = Math.min(maxScroll, scrollOffsetRef.current + SCROLL_AMOUNT);
     scrollRef.current?.scrollToOffset({ offset: newOffset, animated: true });
   }, []);
+
+  if (Platform.OS !== "web") return <>{children}</>;
 
   const cloned = React.Children.map(children, (child) => {
     if (React.isValidElement(child) && (child.type === FlatList || (child as any).type?.name === "FlatList")) {
@@ -307,110 +246,6 @@ const arrowStyles = StyleSheet.create({
   },
 });
 
-const CategorySection = React.memo(function CategorySection({ category, feeds, colors }: { category: Category; feeds: Feed[]; colors: any }) {
-  if (feeds.length === 0) return null;
-  return (
-    <View style={styles.section}>
-      <View style={styles.sectionHeaderRowSpaced}>
-        <Text style={[styles.sectionTitle, { color: colors.text, paddingHorizontal: 0, marginBottom: 0 }]}>{category.name}</Text>
-        <Pressable
-          onPress={() => { lightHaptic(); router.push({ pathname: "/category/[id]", params: { id: category.id, name: category.name } }); }}
-          style={({ pressed }) => [styles.seeAllBtn, { backgroundColor: colors.accentLight, opacity: pressed ? 0.8 : 1 }]}
-        >
-          <Text style={[styles.seeAllText, { color: colors.accent }]}>See All</Text>
-          <Ionicons name="chevron-forward" size={14} color={colors.accent} />
-        </Pressable>
-      </View>
-      <WebScrollArrows colors={colors}>
-        <FlatList
-          horizontal
-          data={feeds}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <PodcastCard feed={item} size="small" />}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 20 }}
-          initialNumToRender={5}
-          maxToRenderPerBatch={5}
-          windowSize={3}
-          removeClippedSubviews={Platform.OS !== "web"}
-        />
-      </WebScrollArrows>
-    </View>
-  );
-});
-
-const SearchResultItem = React.memo(function SearchResultItem({ feed, colors }: { feed: Feed; colors: any }) {
-  return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.searchResult,
-        { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.9 : 1 },
-      ]}
-      onPress={() => router.push(`/podcast/${feed.id}`)}
-    >
-      {feed.imageUrl ? (
-        <Image source={{ uri: feed.imageUrl }} style={styles.searchResultImage} contentFit="cover" cachePolicy="memory-disk" transition={0} />
-      ) : (
-        <View style={[styles.searchResultImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
-          <Ionicons name="mic" size={20} color={colors.textSecondary} />
-        </View>
-      )}
-      <View style={styles.searchResultInfo}>
-        <Text style={[styles.searchResultTitle, { color: colors.text }]} numberOfLines={1}>
-          {feed.title}
-        </Text>
-        {feed.author ? (
-          <Text style={[styles.searchResultAuthor, { color: colors.textSecondary }]} numberOfLines={1}>
-            {feed.author}
-          </Text>
-        ) : null}
-      </View>
-      <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-    </Pressable>
-  );
-});
-
-const ContinueListeningCard = React.memo(function ContinueListeningCard({ episode, feed, position, colors, onPlay, onDismiss }: { episode: Episode; feed: Feed; position: SavedPositionEntry; colors: any; onPlay: () => void; onDismiss: () => void }) {
-  const progress = position.durationMs > 0 ? position.positionMs / position.durationMs : 0;
-  return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.continueCard,
-        { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.95 : 1 },
-      ]}
-      onPress={onPlay}
-    >
-      <Pressable
-        onPress={(e) => {
-          e.stopPropagation?.();
-          onDismiss();
-        }}
-        hitSlop={6}
-        style={[styles.continueDismiss, { backgroundColor: colors.surfaceAlt }]}
-      >
-        <Ionicons name="close" size={12} color={colors.textSecondary} />
-      </Pressable>
-      {feed.imageUrl ? (
-        <Image source={{ uri: feed.imageUrl }} style={styles.continueImage} contentFit="cover" cachePolicy="memory-disk" transition={0} />
-      ) : (
-        <View style={[styles.continueImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
-          <Ionicons name="mic" size={20} color={colors.textSecondary} />
-        </View>
-      )}
-      <View style={styles.continueInfo}>
-        <Text style={[styles.continueEpTitle, { color: colors.text }]} numberOfLines={2}>
-          {episode.title}
-        </Text>
-        <Text style={[styles.continueFeedTitle, { color: colors.textSecondary }]} numberOfLines={1}>
-          {feed.title}
-        </Text>
-        <View style={[styles.continueProgressBg, { backgroundColor: colors.border }]}>
-          <View style={[styles.continueProgressFill, { width: `${Math.min(progress * 100, 100)}%` as any, backgroundColor: colors.accent }]} />
-        </View>
-      </View>
-    </Pressable>
-  );
-});
 
 function SponsorBanner({ colors }: { colors: any }) {
   const sponsorQuery = useQuery<{ name: string; text?: string; logoUrl?: string; linkUrl?: string } | null>({
@@ -421,7 +256,7 @@ function SponsorBanner({ colors }: { colors: any }) {
   const sponsor = sponsorQuery.data;
   if (!sponsor) return null;
 
-  return (
+  const content = (
     <View style={{ marginTop: 32, alignItems: "center", paddingHorizontal: 32 }}>
       {sponsor.logoUrl ? (
         <Image
@@ -443,6 +278,8 @@ function SponsorBanner({ colors }: { colors: any }) {
       )}
     </View>
   );
+
+  return content;
 }
 
 function HomeScreenInner() {
@@ -467,6 +304,17 @@ function HomeScreenInner() {
   const trendingQuery = useQuery<TrendingEpisode[]>({ queryKey: ["/api/episodes/trending"] });
   const featuredQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds/featured"] });
   const maggidQuery = useQuery<{ author: string; feeds: Feed[] }[]>({ queryKey: ["/api/feeds/maggid-shiur"] });
+  const recommendationsQuery = useQuery<Feed[]>({
+    queryKey: ["/api/recommendations"],
+    queryFn: async () => {
+      const deviceId = await getDeviceId();
+      const baseUrl = getApiUrl();
+      const res = await fetch(`${baseUrl}/api/recommendations/${deviceId}?limit=10`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
 
   const isLoading = categoriesQuery.isLoading || feedsQuery.isLoading;
   const hasError = feedsQuery.isError || categoriesQuery.isError;
@@ -477,6 +325,7 @@ function HomeScreenInner() {
   const trendingEpisodes = trendingQuery.data || [];
   const featuredFeeds = featuredQuery.data || [];
   const maggidShiurim = maggidQuery.data || [];
+  const recommendedFeeds = recommendationsQuery.data || [];
 
   const handleDismissContinue = useCallback(async (episodeId: string) => {
     lightHaptic();
@@ -592,6 +441,7 @@ function HomeScreenInner() {
     queryClient.invalidateQueries({ queryKey: ["/api/episodes/latest"] });
     queryClient.invalidateQueries({ queryKey: ["/api/episodes/trending"] });
     queryClient.invalidateQueries({ queryKey: ["/api/feeds/featured"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/recommendations"] });
   }, []);
 
   if (isLoading) {
@@ -678,85 +528,16 @@ function HomeScreenInner() {
       </View>
 
       {isSearching && (
-        <View style={styles.searchResultsSection}>
-          {searchResults.length === 0 && searchedEpisodes.length === 0 && speakerSearchResults.length === 0 && searchQuery.trim().length >= 3 && !episodeSearchQuery.isLoading ? (
-            <View style={styles.noResults}>
-              <Ionicons name="search-outline" size={40} color={colors.textSecondary} />
-              <Text style={[styles.noResultsText, { color: colors.textSecondary }]}>
-                No results found for "{searchQuery}"
-              </Text>
-            </View>
-          ) : (
-            <>
-              {speakerSearchResults.length > 0 && (
-                <>
-                  <Text style={[styles.searchSectionLabel, { color: colors.textSecondary }]}>Maggidei Shiur</Text>
-                  <View style={{ paddingHorizontal: 20 }}>
-                    {speakerSearchResults.map((speaker) => (
-                      <Pressable
-                        key={speaker.author}
-                        style={({ pressed }) => [
-                          styles.searchResult,
-                          { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.9 : 1 },
-                        ]}
-                        onPress={() => { lightHaptic(); router.push({ pathname: "/maggid-shiur/[author]" as any, params: { author: speaker.author, feedIds: speaker.feeds.map((f: Feed) => f.id).join(",") } }); }}
-                      >
-                        {speaker.feeds[0]?.imageUrl ? (
-                          <Image source={{ uri: speaker.feeds[0].imageUrl }} style={styles.searchResultImage} contentFit="cover" cachePolicy="memory-disk" transition={0} />
-                        ) : (
-                          <View style={[styles.searchResultImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
-                            <Ionicons name="person" size={20} color={colors.textSecondary} />
-                          </View>
-                        )}
-                        <View style={styles.searchResultInfo}>
-                          <Text style={[styles.searchResultTitle, { color: colors.text }]} numberOfLines={1}>
-                            {speaker.author}
-                          </Text>
-                          <Text style={[styles.searchResultAuthor, { color: colors.textSecondary }]} numberOfLines={1}>
-                            {speaker.feeds.length} {speaker.feeds.length === 1 ? "shiur" : "shiurim"}
-                          </Text>
-                        </View>
-                        <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-                      </Pressable>
-                    ))}
-                  </View>
-                </>
-              )}
-              {searchResults.length > 0 && (
-                <>
-                  <Text style={[styles.searchSectionLabel, { color: colors.textSecondary }]}>Shiurim</Text>
-                  <View style={{ paddingHorizontal: 20 }}>
-                    {searchResults.map((feed) => (
-                      <SearchResultItem key={feed.id} feed={feed} colors={colors} />
-                    ))}
-                  </View>
-                </>
-              )}
-              {searchedEpisodes.length > 0 && (
-                <>
-                  <Text style={[styles.searchSectionLabel, { color: colors.textSecondary }]}>Episodes</Text>
-                  <View style={{ paddingHorizontal: 16 }}>
-                    {searchedEpisodes.map((ep) => {
-                      const epFeed = allFeeds.find(f => f.id === ep.feedId);
-                      if (!epFeed) return null;
-                      return <EpisodeItem key={ep.id} episode={ep} feed={epFeed} showFeedTitle isOnline={isOnline} />;
-                    })}
-                  </View>
-                </>
-              )}
-              {searchQuery.trim().length < 3 && searchResults.length === 0 && speakerSearchResults.length === 0 && (
-                <View style={styles.noResults}>
-                  <Text style={[styles.noResultsText, { color: colors.textSecondary }]}>
-                    Type 3+ characters to search episodes
-                  </Text>
-                </View>
-              )}
-              {episodeSearchQuery.isLoading && (
-                <ActivityIndicator size="small" color={colors.accent} style={{ marginTop: 12 }} />
-              )}
-            </>
-          )}
-        </View>
+        <SearchSection
+          searchQuery={searchQuery}
+          searchResults={searchResults}
+          searchedEpisodes={searchedEpisodes}
+          speakerSearchResults={speakerSearchResults}
+          isSearchLoading={episodeSearchQuery.isLoading}
+          allFeeds={allFeeds}
+          colors={colors}
+          isOnline={isOnline}
+        />
       )}
 
       {!isSearching && !hasContent && (
@@ -769,128 +550,41 @@ function HomeScreenInner() {
         </View>
       )}
 
-      {!isSearching && continueListeningItems.length > 0 && (
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Continue Listening</Text>
-          <FlatList
-            horizontal
-            data={continueListeningItems}
-            keyExtractor={(item) => item.episode.id}
-            renderItem={({ item }) => (
-              <ContinueListeningCard
-                episode={item.episode}
-                feed={item.feed}
-                position={item.position}
-                colors={colors}
-                onPlay={() => handlePlayEpisode(item.episode, item.feed)}
-                onDismiss={() => handleDismissContinue(item.episode.id)}
-              />
-            )}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 20 }}
-            initialNumToRender={5}
-            maxToRenderPerBatch={5}
-            windowSize={3}
-            removeClippedSubviews={Platform.OS !== "web"}
-          />
-        </View>
+      {!isSearching && (
+        <ContinueListeningSection
+          items={continueListeningItems}
+          colors={colors}
+          onPlay={handlePlayEpisode}
+          onDismiss={handleDismissContinue}
+        />
       )}
 
       {!isSearching && featuredFeeds.length > 0 && (
         <FeaturedCarousel feeds={featuredFeeds} colors={colors} />
       )}
 
-      {!isSearching && quickPlayItems.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Ionicons name="flame" size={18} color="#f59e0b" />
-            <Text style={[styles.sectionTitle, { color: colors.text, paddingHorizontal: 0 }]}>Trending</Text>
-          </View>
-          <View style={{ paddingHorizontal: 20 }}>
-            {quickPlayItems.map(({ episode, feed }, index) => (
-              <TrendingEpisodeCard
-                key={episode.id}
-                episode={episode}
-                feed={feed}
-                rank={index + 1}
-                colors={colors}
-                onPlay={() => handlePlayEpisode(episode, feed)}
-              />
-            ))}
-          </View>
-        </View>
+      {!isSearching && (
+        <TrendingSection items={quickPlayItems} colors={colors} onPlay={handlePlayEpisode} />
       )}
 
-      {!isSearching && allFeeds.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRowSpaced}>
-            <Text style={[styles.sectionTitle, { color: colors.text, paddingHorizontal: 0, marginBottom: 0 }]}>All Shiurim</Text>
-            <Pressable
-              onPress={() => { lightHaptic(); router.push("/all-shiurim"); }}
-              style={({ pressed }) => [styles.seeAllBtn, { backgroundColor: colors.accentLight, opacity: pressed ? 0.8 : 1 }]}
-            >
-              <Text style={[styles.seeAllText, { color: colors.accent }]}>See All</Text>
-              <Ionicons name="chevron-forward" size={14} color={colors.accent} />
-            </Pressable>
-          </View>
-          <FlatList
-            horizontal
-            data={allFeeds}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => <PodcastCard feed={item} size="small" hasNewEpisodes={feedsWithNew.has(item.id)} />}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 20 }}
-            initialNumToRender={5}
-            maxToRenderPerBatch={5}
-            windowSize={3}
-            removeClippedSubviews={Platform.OS !== "web"}
-          />
-        </View>
+      {!isSearching && (
+        <AllShiurimSection feeds={allFeeds} feedsWithNew={feedsWithNew} colors={colors} />
       )}
 
-      {!isSearching && maggidShiurim.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRowSpaced}>
-            <Text style={[styles.sectionTitle, { color: colors.text, paddingHorizontal: 0, marginBottom: 0 }]}>Maggidei Shiur</Text>
-            <Pressable
-              onPress={() => { lightHaptic(); router.push("/all-maggidei-shiur"); }}
-              style={({ pressed }) => [styles.seeAllBtn, { backgroundColor: colors.accentLight, opacity: pressed ? 0.8 : 1 }]}
-            >
-              <Text style={[styles.seeAllText, { color: colors.accent }]}>See All</Text>
-              <Ionicons name="chevron-forward" size={14} color={colors.accent} />
-            </Pressable>
-          </View>
-          <FlatList
-            horizontal
-            data={maggidShiurim}
-            keyExtractor={(item) => item.author}
-            renderItem={({ item }) => <MaggidShiurCard author={item.author} feeds={item.feeds} colors={colors} />}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 20 }}
-            initialNumToRender={6}
-            maxToRenderPerBatch={5}
-            windowSize={3}
-            removeClippedSubviews={Platform.OS !== "web"}
-          />
-        </View>
+      {!isSearching && (
+        <RecommendedSection feeds={recommendedFeeds} colors={colors} />
       )}
 
-      {!isSearching && categories.map(cat => {
-        const catFeeds = allFeeds.filter(f => 
-          (f.categoryIds && f.categoryIds.includes(cat.id)) || f.categoryId === cat.id
-        );
-        return <CategorySection key={cat.id} category={cat} feeds={catFeeds} colors={colors} />;
-      })}
+      {!isSearching && (
+        <MaggidShiurSection maggidShiurim={maggidShiurim} colors={colors} />
+      )}
 
-      {!isSearching && recentlyListenedItems.length > 0 && (
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Recently Listened</Text>
-          <View style={{ paddingHorizontal: 20 }}>
-            {recentlyListenedItems.map(({ episode, feed }) => (
-              <EpisodeItem key={episode.id} episode={episode} feed={feed} showFeedTitle isOnline={isOnline} />
-            ))}
-          </View>
-        </View>
+      {!isSearching && (
+        <CategoriesGrid categories={categories} allFeeds={allFeeds} colors={colors} />
+      )}
+
+      {!isSearching && (
+        <RecentlyListenedSection items={recentlyListenedItems} colors={colors} isOnline={isOnline} />
       )}
      </View>
     </ScrollView>
@@ -1010,103 +704,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
 
-  section: {
-    marginBottom: 22,
-  },
-  sectionHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 20,
-    marginBottom: 14,
-  },
-  sectionHeaderRowSpaced: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    marginBottom: 14,
-  },
-  seeAllBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 2,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  seeAllText: {
-    fontSize: 13,
-    fontWeight: "600" as const,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: "700" as const,
-    paddingHorizontal: 20,
-    marginBottom: 10,
-  },
-
-  trendingCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: 14,
-    borderWidth: 1,
-    overflow: "hidden",
-    marginBottom: 10,
-    paddingRight: 12,
-  },
-  rankBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    marginLeft: 12,
-  },
-  rankText: {
-    fontSize: 13,
-    fontWeight: "800" as const,
-  },
-  trendingImage: {
-    width: 52,
-    height: 52,
-    borderRadius: 10,
-    marginLeft: 10,
-    marginVertical: 10,
-  },
-  trendingInfo: {
-    flex: 1,
-    paddingHorizontal: 12,
-    gap: 2,
-  },
-  trendingFeed: {
-    fontSize: 10,
-    fontWeight: "600" as const,
-    textTransform: "uppercase" as const,
-    letterSpacing: 0.3,
-  },
-  trendingTitle: {
-    fontSize: 13,
-    fontWeight: "600" as const,
-    lineHeight: 17,
-  },
-  trendingMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-    marginTop: 1,
-  },
-  trendingMetaText: {
-    fontSize: 11,
-  },
-  trendingPlayBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -1125,65 +722,6 @@ const styles = StyleSheet.create({
   },
   searchClear: {
     padding: 10,
-  },
-  searchResultsSection: {
-    paddingTop: 4,
-    paddingBottom: 20,
-  },
-  searchSectionLabel: {
-    fontSize: 13,
-    fontWeight: "600" as const,
-    textTransform: "uppercase" as const,
-    letterSpacing: 1,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 8,
-  },
-  searchResultsCount: {
-    fontSize: 12,
-    fontWeight: "600" as const,
-    textTransform: "uppercase" as const,
-    letterSpacing: 0.5,
-    paddingHorizontal: 20,
-    marginBottom: 12,
-  },
-  searchResult: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: 14,
-    borderWidth: 1,
-    overflow: "hidden",
-    marginBottom: 10,
-    paddingRight: 14,
-  },
-  searchResultImage: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
-    marginLeft: 12,
-    marginVertical: 10,
-  },
-  searchResultInfo: {
-    flex: 1,
-    paddingHorizontal: 14,
-    gap: 2,
-  },
-  searchResultTitle: {
-    fontSize: 15,
-    fontWeight: "600" as const,
-  },
-  searchResultAuthor: {
-    fontSize: 12,
-  },
-  noResults: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 40,
-    gap: 12,
-  },
-  noResultsText: {
-    fontSize: 14,
-    textAlign: "center",
   },
   emptyState: {
     alignItems: "center",
@@ -1230,79 +768,5 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 15,
     fontWeight: "600" as const,
-  },
-  continueCard: {
-    width: 145,
-    borderRadius: 14,
-    borderWidth: 1,
-    overflow: "hidden",
-    marginRight: 12,
-    position: "relative" as const,
-  },
-  continueDismiss: {
-    position: "absolute" as const,
-    top: 6,
-    right: 6,
-    zIndex: 10,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-  },
-  continueImage: {
-    width: "100%" as any,
-    height: 85,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  continueInfo: {
-    padding: 10,
-    gap: 4,
-  },
-  continueEpTitle: {
-    fontSize: 12,
-    fontWeight: "600" as const,
-    lineHeight: 16,
-  },
-  continueFeedTitle: {
-    fontSize: 10,
-    fontWeight: "500" as const,
-  },
-  continueProgressBg: {
-    height: 3,
-    borderRadius: 2,
-    marginTop: 4,
-  },
-  continueProgressFill: {
-    height: "100%" as any,
-    borderRadius: 2,
-  },
-  maggidCard: {
-    width: 110,
-    borderRadius: 14,
-    borderWidth: 1,
-    overflow: "hidden",
-    marginRight: 12,
-    alignItems: "center",
-    paddingVertical: 14,
-    paddingHorizontal: 8,
-  },
-  maggidAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    marginBottom: 8,
-  },
-  maggidName: {
-    fontSize: 13,
-    fontWeight: "600" as const,
-    textAlign: "center" as const,
-    lineHeight: 16,
-    marginBottom: 2,
-  },
-  maggidCount: {
-    fontSize: 11,
-    textAlign: "center" as const,
   },
 });

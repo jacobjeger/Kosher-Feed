@@ -10,7 +10,7 @@ import {
   initializeSeenEpisodes,
   setupNotificationChannel,
 } from "@/lib/notifications";
-import { initPushNotifications } from "@/lib/push-notifications";
+
 import { cleanupExpiredDownloads } from "@/lib/auto-delete-download";
 import type { Feed, Episode } from "@/lib/types";
 import { addLog } from "@/lib/error-logger";

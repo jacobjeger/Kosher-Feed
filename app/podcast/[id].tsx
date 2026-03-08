@@ -133,6 +133,38 @@ function PodcastDetailScreenInner() {
   const [filterPickerVisible, setFilterPickerVisible] = useState(false);
   const [downloadCountPickerVisible, setDownloadCountPickerVisible] = useState(false);
 
+  const notifPrefQuery = useQuery<{ muted: boolean }>({
+    queryKey: [`/api/notification-preferences`, id],
+    queryFn: async () => {
+      const deviceId = await getDeviceId();
+      const baseUrl = getApiUrl();
+      const res = await fetch(`${baseUrl}/api/notification-preferences/${deviceId}/${id}`);
+      return res.json();
+    },
+    enabled: !!id && isFollowing,
+  });
+
+  const isMuted = notifPrefQuery.data?.muted ?? false;
+
+  const muteMutation = useMutation({
+    mutationFn: async () => {
+      const deviceId = await getDeviceId();
+      if (isMuted) {
+        await apiRequest("DELETE", `/api/notification-preferences/${deviceId}/${id}`);
+      } else {
+        await apiRequest("POST", "/api/notification-preferences/mute", { deviceId, feedId: id });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/notification-preferences`, id] });
+    },
+  });
+
+  const handleToggleMute = useCallback(() => {
+    lightHaptic();
+    muteMutation.mutate();
+  }, [muteMutation]);
+
   const followMutation = useMutation({
     mutationFn: async () => {
       const deviceId = await getDeviceId();
@@ -286,27 +318,48 @@ function PodcastDetailScreenInner() {
           {feed.author && (
             <Text style={[styles.podcastAuthor, { color: colors.textSecondary }]}>{feed.author}</Text>
           )}
+          {feed.sourceNetwork && (
+            <View style={styles.sourceNetworkBadge}>
+              <Ionicons name="globe-outline" size={11} color="#fff" />
+              <Text style={styles.sourceNetworkText}>{feed.sourceNetwork}</Text>
+            </View>
+          )}
 
-          <Pressable
-            onPress={handleFollow}
-            style={[
-              styles.followBtn,
-              {
-                backgroundColor: isFollowing ? colors.surfaceAlt : colors.accent,
-                borderColor: isFollowing ? colors.border : colors.accent,
-                borderWidth: isFollowing ? 1 : 0,
-              },
-            ]}
-          >
-            <Feather
-              name={isFollowing ? "check" : "plus"}
-              size={16}
-              color={isFollowing ? colors.text : "#fff"}
-            />
-            <Text style={[styles.followText, { color: isFollowing ? colors.text : "#fff" }]}>
-              {isFollowing ? "Following" : "Follow"}
-            </Text>
-          </Pressable>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Pressable
+              onPress={handleFollow}
+              style={[
+                styles.followBtn,
+                {
+                  backgroundColor: isFollowing ? colors.surfaceAlt : colors.accent,
+                  borderColor: isFollowing ? colors.border : colors.accent,
+                  borderWidth: isFollowing ? 1 : 0,
+                },
+              ]}
+            >
+              <Feather
+                name={isFollowing ? "check" : "plus"}
+                size={16}
+                color={isFollowing ? colors.text : "#fff"}
+              />
+              <Text style={[styles.followText, { color: isFollowing ? colors.text : "#fff" }]}>
+                {isFollowing ? "Following" : "Follow"}
+              </Text>
+            </Pressable>
+            {isFollowing && (
+              <Pressable
+                onPress={handleToggleMute}
+                style={[styles.followBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, borderWidth: 1, paddingHorizontal: 10 }]}
+                hitSlop={8}
+              >
+                <Ionicons
+                  name={isMuted ? "notifications-off-outline" : "notifications-outline"}
+                  size={18}
+                  color={isMuted ? colors.textSecondary : colors.accent}
+                />
+              </Pressable>
+            )}
+          </View>
         </View>
       </View>
 
@@ -441,7 +494,7 @@ function PodcastDetailScreenInner() {
       </View>
     </View>
   );
-  }, [feed, feedError, feedErrorMsg, colors, insets.top, isFollowing, showFullDescription, showPreferences, feedSettings, allEpisodes.length, totalCount, sortOrder, episodeSearch, isEpisodeSearchFocused, handleFollow, handleToggleNotifications, handleChangeEpisodeLimit, episodeFilter, id]);
+  }, [feed, feedError, feedErrorMsg, colors, insets.top, isFollowing, showFullDescription, showPreferences, feedSettings, allEpisodes.length, totalCount, sortOrder, episodeSearch, isEpisodeSearchFocused, handleFollow, handleToggleNotifications, handleChangeEpisodeLimit, episodeFilter, id, isMuted, handleToggleMute]);
 
   const footerElement = useMemo(() => {
     if (episodesInfiniteQuery.isFetchingNextPage) {
@@ -578,6 +631,21 @@ const styles = StyleSheet.create({
   },
   podcastAuthor: {
     fontSize: 14,
+  },
+  sourceNetworkBadge: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    alignSelf: "flex-start" as const,
+    gap: 4,
+    backgroundColor: "rgba(37, 99, 235, 0.85)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  sourceNetworkText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "600" as const,
   },
   followBtn: {
     flexDirection: "row",

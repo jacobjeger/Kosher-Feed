@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView, Platform, Switch, Alert, ActivityIndicator, TextInput, Modal, KeyboardAvoidingView, Dimensions } from "react-native";
+import { View, Text, Pressable, StyleSheet, ScrollView, Platform, Switch, Alert, ActivityIndicator, TextInput, Modal, KeyboardAvoidingView } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
@@ -9,12 +9,13 @@ import { getDeviceId } from "@/lib/device-id";
 import { getApiUrl, apiRequest } from "@/lib/query-client";
 import { useDownloads } from "@/contexts/DownloadsContext";
 import { useSettings } from "@/contexts/SettingsContext";
-import { requestNotificationPermissions, checkNotificationPermission, setupNotificationChannel } from "@/lib/notifications";
+import { requestNotificationPermissions, checkNotificationPermission, setupNotificationChannel, scheduleDailyReminder, cancelDailyReminder } from "@/lib/notifications";
 import { registerPushToken } from "@/lib/push-notifications";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
+import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { getLogsSnapshot } from "@/lib/error-logger";
-import OptionPickerModal, { type PickerOption } from "@/components/OptionPickerModal";
+import OptionPickerModal from "@/components/OptionPickerModal";
 
 const EPISODE_LIMIT_OPTIONS = [3, 5, 10, 15, 25, 50];
 const SKIP_OPTIONS = [10, 15, 30, 45, 60];
@@ -68,6 +69,7 @@ function SettingsScreenInner() {
   const colors = isDark ? Colors.dark : Colors.light;
   const { downloads } = useDownloads();
   const { settings, updateSettings } = useSettings();
+  const { setAudioBoost } = useAudioPlayer();
   const [deviceId, setDeviceId] = useState("");
   const [connectionStatus, setConnectionStatus] = useState<"idle" | "testing" | "ok" | "error">("idle");
   const [connectionError, setConnectionError] = useState("");
@@ -223,6 +225,7 @@ function SettingsScreenInner() {
   const handleToggleAudioBoost = (value: boolean) => {
     lightHaptic();
     updateSettings({ audioBoostEnabled: value });
+    setAudioBoost(value);
   };
 
   const handleChangeTheme = () => {
@@ -236,17 +239,35 @@ function SettingsScreenInner() {
     setActivePicker("theme");
   };
 
-  const handleToggleDailyReminder = (value: boolean) => {
+  const handleToggleDailyReminder = async (value: boolean) => {
     lightHaptic();
     updateSettings({ dailyReminderEnabled: value });
+    if (value) {
+      const hasPermission = await checkNotificationPermission();
+      if (!hasPermission) {
+        const granted = await requestNotificationPermissions();
+        if (!granted) {
+          Alert.alert("Notifications", "Please enable notifications in your device settings to use daily reminders.");
+          updateSettings({ dailyReminderEnabled: false });
+          return;
+        }
+      }
+      await scheduleDailyReminder(settings.dailyReminderHour);
+    } else {
+      await cancelDailyReminder();
+    }
   };
 
-  const handleChangeReminderHour = () => {
+  const handleChangeReminderHour = async () => {
     lightHaptic();
     if (Platform.OS === "web") {
       const currentIndex = REMINDER_HOUR_OPTIONS.indexOf(settings.dailyReminderHour);
       const nextIndex = (currentIndex + 1) % REMINDER_HOUR_OPTIONS.length;
-      updateSettings({ dailyReminderHour: REMINDER_HOUR_OPTIONS[nextIndex] });
+      const newHour = REMINDER_HOUR_OPTIONS[nextIndex];
+      updateSettings({ dailyReminderHour: newHour });
+      if (settings.dailyReminderEnabled) {
+        await scheduleDailyReminder(newHour);
+      }
       return;
     }
     setActivePicker("reminderHour");
@@ -408,6 +429,7 @@ function SettingsScreenInner() {
           <SettingRow
             icon={<Ionicons name="volume-high" size={20} color={colors.accent} />}
             label="Audio Boost"
+            subtitle="Increase volume by 50%"
             rightElement={
               <Switch
                 value={settings.audioBoostEnabled}
@@ -425,20 +447,6 @@ function SettingsScreenInner() {
               <Switch
                 value={settings.continuousPlayback}
                 onValueChange={(value: boolean) => { lightHaptic(); updateSettings({ continuousPlayback: value }); }}
-                trackColor={{ false: colors.border, true: colors.accent }}
-                thumbColor="#fff"
-              />
-            }
-          />
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <SettingRow
-            icon={<Ionicons name="speedometer-outline" size={20} color={colors.accent} />}
-            label="Skip Silence"
-            subtitle="Speed through silent sections"
-            rightElement={
-              <Switch
-                value={settings.skipSilenceEnabled}
-                onValueChange={(value: boolean) => { lightHaptic(); updateSettings({ skipSilenceEnabled: value }); }}
                 trackColor={{ false: colors.border, true: colors.accent }}
                 thumbColor="#fff"
               />
@@ -524,7 +532,7 @@ function SettingsScreenInner() {
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <View style={styles.settingDescription}>
             <Text style={[styles.descriptionText, { color: colors.textSecondary }]}>
-              Request new shiurim to be added or report any issues you're experiencing.
+              Request new shiurim to be added or report any issues you&apos;re experiencing.
             </Text>
           </View>
         </View>
@@ -761,7 +769,12 @@ function SettingsScreenInner() {
         subtitle="Choose when to receive daily reminders."
         options={REMINDER_HOUR_OPTIONS.map(h => ({
           label: formatHour(h),
-          onPress: () => updateSettings({ dailyReminderHour: h }),
+          onPress: () => {
+            updateSettings({ dailyReminderHour: h });
+            if (settings.dailyReminderEnabled) {
+              scheduleDailyReminder(h);
+            }
+          },
           selected: settings.dailyReminderHour === h,
         }))}
         onClose={() => setActivePicker(null)}

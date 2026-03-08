@@ -5,7 +5,7 @@ import type { Episode, Feed } from "@/lib/types";
 import { addLog } from "@/lib/error-logger";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { getDeviceId } from "@/lib/device-id";
-import { getQueue, addToQueue as addToQueueStorage, removeFromQueue as removeFromQueueStorage, clearQueue as clearQueueStorage, type QueueItem } from "@/lib/queue";
+import { getQueue, addToQueue as addToQueueStorage, removeFromQueue as removeFromQueueStorage, clearQueue as clearQueueStorage, initQueueFromServer, type QueueItem } from "@/lib/queue";
 import { addToHistory, updateHistoryPosition } from "@/lib/history";
 import { notifyEpisodePlayed } from "@/contexts/PlayedEpisodesContext";
 
@@ -27,6 +27,20 @@ if (Platform.OS !== "web") {
 const POSITIONS_KEY = "@kosher_shiurim_positions";
 const RECENTLY_PLAYED_KEY = "@shiurpod_recently_played";
 const FEED_SPEEDS_KEY = "@shiurpod_feed_speeds";
+const SETTINGS_KEY = "@kosher_shiurim_settings";
+const BOOST_VOLUME = 1.5;
+const NORMAL_VOLUME = 1.0;
+
+async function getAudioBoostEnabled(): Promise<boolean> {
+  try {
+    const data = await AsyncStorage.getItem(SETTINGS_KEY);
+    if (data) {
+      const s = JSON.parse(data);
+      return s.audioBoostEnabled === true;
+    }
+  } catch {}
+  return false;
+}
 
 interface SavedPosition {
   episodeId: string;
@@ -90,6 +104,7 @@ interface AudioPlayerContextValue {
   getPositionSnapshot: () => PositionState;
   episodeCompleted: string | null;
   clearEpisodeCompleted: () => void;
+  setAudioBoost: (enabled: boolean) => void;
 }
 
 const AudioPlayerContext = createContext<AudioPlayerContextValue | null>(null);
@@ -277,7 +292,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    getQueue().then(setQueue).catch(() => {});
+    initQueueFromServer().then(setQueue).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -555,9 +570,10 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       if (intervalRef.current) clearInterval(intervalRef.current);
 
       if (Platform.OS === "web") {
-        const [savedPos, feedSpeed] = await Promise.all([
+        const [savedPos, feedSpeed, boostEnabled] = await Promise.all([
           getSavedPosition(episode.id),
           getFeedSpeed(feed.id),
+          getAudioBoostEnabled(),
         ]);
         setPlayback(prev => ({ ...prev, positionMs: savedPos, playbackRate: feedSpeed }));
 
@@ -567,6 +583,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         }
         const audio = new Audio(episode.audioUrl);
         audio.playbackRate = feedSpeed;
+        audio.volume = boostEnabled ? BOOST_VOLUME : NORMAL_VOLUME;
         audio.preload = "auto";
         audioRef.current = audio;
 
@@ -604,11 +621,13 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           nativePlayerRef.current = player;
           nativePlayerInstance = player;
 
-          const [savedPos, feedSpeed] = await Promise.all([
+          const [savedPos, feedSpeed, boostEnabledNative] = await Promise.all([
             getSavedPosition(episode.id),
             getFeedSpeed(feed.id),
+            getAudioBoostEnabled(),
           ]);
           setPlayback(prev => ({ ...prev, positionMs: savedPos, playbackRate: feedSpeed }));
+          try { player.volume = boostEnabledNative ? BOOST_VOLUME : NORMAL_VOLUME; } catch {}
 
           let hasConfirmedPlaying = false;
           let lockScreenDone = false;
@@ -942,6 +961,15 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     setQueue(q);
   }, []);
 
+  const setAudioBoost = useCallback((enabled: boolean) => {
+    const vol = enabled ? BOOST_VOLUME : NORMAL_VOLUME;
+    if (Platform.OS === "web" && audioRef.current) {
+      audioRef.current.volume = vol;
+    } else if (nativePlayerRef.current) {
+      try { nativePlayerRef.current.volume = vol; } catch {}
+    }
+  }, []);
+
   const value = useMemo(() => ({
     currentEpisode,
     currentFeed,
@@ -971,7 +999,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     getPositionSnapshot,
     episodeCompleted,
     clearEpisodeCompleted,
-  }), [currentEpisode, currentFeed, playback, playEpisode, pause, resume, seekTo, skip, setRate, stop, getSavedPosition, removeSavedPosition, recentlyPlayed, getFeedSpeed, sleepTimer, setSleepTimerFn, cancelSleepTimer, getInProgressEpisodes, queue, handleAddToQueue, handleRemoveFromQueue, handleClearQueue, refreshQueue, playNext, subscribePosition, getPositionSnapshot, episodeCompleted, clearEpisodeCompleted]);
+    setAudioBoost,
+  }), [currentEpisode, currentFeed, playback, playEpisode, pause, resume, seekTo, skip, setRate, stop, getSavedPosition, removeSavedPosition, recentlyPlayed, getFeedSpeed, sleepTimer, setSleepTimerFn, cancelSleepTimer, getInProgressEpisodes, queue, handleAddToQueue, handleRemoveFromQueue, handleClearQueue, refreshQueue, playNext, subscribePosition, getPositionSnapshot, episodeCompleted, clearEpisodeCompleted, setAudioBoost]);
 
   return (
     <AudioPlayerContext.Provider value={value}>

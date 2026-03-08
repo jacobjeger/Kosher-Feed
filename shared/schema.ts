@@ -25,6 +25,8 @@ export const feeds = pgTable("feeds", {
   scheduledPublishAt: timestamp("scheduled_publish_at"),
   etag: text("etag"),
   lastModifiedHeader: text("last_modified_header"),
+  sourceNetwork: text("source_network"),
+  tatSpeakerId: integer("tat_speaker_id"),
 });
 
 export const episodes = pgTable("episodes", {
@@ -40,6 +42,8 @@ export const episodes = pgTable("episodes", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   adminNotes: text("admin_notes"),
   sourceSheetUrl: text("source_sheet_url"),
+  tatLectureId: integer("tat_lecture_id"),
+  noDownload: boolean("no_download").default(false),
 }, (table) => [
   uniqueIndex("episodes_guid_feed_idx").on(table.guid, table.feedId),
 ]);
@@ -193,6 +197,8 @@ export const insertFeedSchema = createInsertSchema(feeds).pick({
   description: true,
   author: true,
   categoryId: true,
+  sourceNetwork: true,
+  tatSpeakerId: true,
 });
 
 export const insertCategorySchema = createInsertSchema(categories).pick({
@@ -227,3 +233,66 @@ export type ContactMessage = typeof contactMessages.$inferSelect;
 export type FeedCategory = typeof feedCategories.$inferSelect;
 export type MaggidShiur = typeof maggidShiurim.$inferSelect;
 export type InsertMaggidShiur = typeof maggidShiurim.$inferInsert;
+
+export const notificationPreferences = pgTable("notification_preferences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  deviceId: text("device_id").notNull(),
+  feedId: varchar("feed_id").references(() => feeds.id, { onDelete: "cascade" }).notNull(),
+  muted: boolean("muted").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("notification_prefs_device_feed_idx").on(table.deviceId, table.feedId),
+]);
+
+export type NotificationPreference = typeof notificationPreferences.$inferSelect;
+
+export const announcements = pgTable("announcements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  imageUrl: text("image_url"),
+  actionLabel: text("action_label"),
+  actionUrl: text("action_url"),
+  targetType: text("target_type").notNull().default("all"), // "all" | "feed_subscribers" | "device"
+  targetValue: text("target_value"), // null for "all", feedId for "feed_subscribers", deviceId for "device"
+  frequency: text("frequency").notNull().default("once"), // "once" | "every_open" | "until_dismissed"
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const announcementDismissals = pgTable("announcement_dismissals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  announcementId: varchar("announcement_id").references(() => announcements.id, { onDelete: "cascade" }).notNull(),
+  deviceId: text("device_id").notNull(),
+  dismissedAt: timestamp("dismissed_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("announcement_dismissals_ann_device_idx").on(table.announcementId, table.deviceId),
+]);
+
+export type Announcement = typeof announcements.$inferSelect;
+export type AnnouncementDismissal = typeof announcementDismissals.$inferSelect;
+
+export const queueItems = pgTable("queue_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  deviceId: text("device_id").notNull(),
+  episodeId: varchar("episode_id").references(() => episodes.id, { onDelete: "cascade" }).notNull(),
+  feedId: varchar("feed_id").references(() => feeds.id, { onDelete: "cascade" }).notNull(),
+  position: integer("position").notNull().default(0),
+  addedAt: timestamp("added_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("queue_items_device_episode_idx").on(table.deviceId, table.episodeId),
+]);
+
+export type QueueItem = typeof queueItems.$inferSelect;
+
+export const notificationTaps = pgTable("notification_taps", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  deviceId: text("device_id").notNull(),
+  notificationType: text("notification_type"), // "new_episode" | "custom" | "daily_reminder" | null
+  episodeId: varchar("episode_id"),
+  feedId: varchar("feed_id"),
+  tappedAt: timestamp("tapped_at").defaultNow().notNull(),
+});
+
+export type NotificationTap = typeof notificationTaps.$inferSelect;

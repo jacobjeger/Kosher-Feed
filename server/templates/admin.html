@@ -133,6 +133,32 @@
   .featured-star.featured { color: #fbbf24; }
   .featured-star:hover { color: #fbbf24; }
 
+  .health-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; flex-shrink: 0; cursor: help; }
+  .health-green { background: #22c55e; }
+  .health-yellow { background: #eab308; }
+  .health-red { background: #ef4444; }
+  .health-tooltip { position: relative; }
+  .health-tooltip:hover::after { content: attr(data-tip); position: absolute; left: 16px; top: -4px; background: #1e293b; color: #f8fafc; padding: 4px 8px; border-radius: 4px; font-size: 11px; white-space: nowrap; z-index: 10; }
+
+  .bulk-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: #172554; border: 1px solid #1e40af; border-radius: 10px; margin-bottom: 12px; }
+  .bulk-bar .bulk-count { font-size: 13px; color: #93c5fd; font-weight: 600; }
+
+  .scheduled-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; background: #4c1d95; color: #c4b5fd; margin-left: 6px; }
+
+  .ann-item { padding: 14px; background: #0f172a; border-radius: 10px; margin-bottom: 8px; }
+  .ann-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .ann-title { font-weight: 600; font-size: 14px; color: #f8fafc; }
+  .ann-meta { font-size: 12px; color: #64748b; }
+
+  .episode-item { display: flex; align-items: center; gap: 10px; padding: 10px; background: #0f172a; border-radius: 8px; margin-bottom: 6px; }
+  .episode-info { flex: 1; min-width: 0; }
+  .episode-title { font-size: 13px; color: #f8fafc; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .episode-meta { font-size: 11px; color: #64748b; margin-top: 2px; }
+
+  .notif-item { padding: 12px; background: #0f172a; border-radius: 8px; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .notif-title { font-weight: 600; font-size: 13px; color: #f8fafc; }
+  .notif-msg { font-size: 12px; color: #94a3b8; margin-top: 2px; }
+
   @media (max-width: 768px) {
     .feed-item { flex-wrap: wrap; }
     .feed-actions { width: 100%; justify-content: flex-end; margin-top: 8px; }
@@ -180,6 +206,7 @@
       <button class="tab" onclick="switchTab('sponsors', this)">Sponsors</button>
       <button class="tab" onclick="switchTab('pushtracker', this)">Push Tracker</button>
       <button class="tab" onclick="switchTab('vitals', this)">Feed Vitals</button>
+      <button class="tab" onclick="switchTab('announcements', this)">Announcements</button>
       <button class="tab" onclick="switchTab('settings', this)">Settings</button>
     </div>
 
@@ -238,6 +265,7 @@
         <div class="card-header">
           <h2>Approved RSS Feeds</h2>
           <div style="display:flex;gap:8px;">
+            <button class="btn btn-secondary btn-sm" onclick="toggleBulkMode()" id="bulkModeBtn">Bulk Select</button>
             <button class="btn btn-secondary btn-sm" onclick="refreshAllFeeds()">Refresh All</button>
             <button class="btn btn-success btn-sm" onclick="showBulkImportModal()">Bulk Import</button>
             <button class="btn btn-primary btn-sm" onclick="showAddFeedModal()">Add Feed</button>
@@ -444,6 +472,13 @@
         </div>
         <div id="pushTokensList"></div>
       </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Notification History</h2>
+          <button class="btn btn-secondary btn-sm" onclick="loadNotificationHistory()">Refresh</button>
+        </div>
+        <div id="notificationHistoryList"></div>
+      </div>
     </div>
 
     <div id="vitalsTab" class="hidden">
@@ -480,7 +515,72 @@
       </div>
     </div>
 
+    <div id="announcementsTab" class="hidden">
+      <div class="card">
+        <div class="card-header">
+          <h2>Create Announcement</h2>
+        </div>
+        <div id="annAlert"></div>
+        <div class="form-group"><label>Title *</label><input type="text" id="annTitle" placeholder="Announcement title"></div>
+        <div class="form-group"><label>Body *</label><textarea id="annBody" rows="3" placeholder="Announcement body text..."></textarea></div>
+        <div class="form-group"><label>Image URL</label><input type="url" id="annImageUrl" placeholder="https://..."></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="form-group"><label>Action Label</label><input type="text" id="annActionLabel" placeholder="e.g., Learn More"></div>
+          <div class="form-group"><label>Action URL</label><input type="url" id="annActionUrl" placeholder="https://..."></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="form-group">
+            <label>Target</label>
+            <select id="annTargetType" onchange="annTargetChanged()">
+              <option value="all">All Users</option>
+              <option value="feed_subscribers">Subscribers of Feed</option>
+              <option value="device">Specific Device</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Frequency</label>
+            <select id="annFrequency">
+              <option value="once">Show Once</option>
+              <option value="every_open">Every App Open</option>
+              <option value="until_dismissed">Until Dismissed</option>
+            </select>
+          </div>
+        </div>
+        <div id="annTargetValueGroup" class="form-group hidden">
+          <label id="annTargetValueLabel">Target Value</label>
+          <select id="annTargetFeedPicker" class="hidden"></select>
+          <input type="text" id="annTargetDeviceInput" class="hidden" placeholder="Device ID...">
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button class="btn btn-primary" onclick="saveAnnouncement()" id="annSaveBtn">Create Announcement</button>
+          <button class="btn btn-secondary hidden" onclick="cancelEditAnnouncement()" id="annCancelBtn">Cancel Edit</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>All Announcements</h2>
+          <button class="btn btn-secondary btn-sm" onclick="loadAnnouncements()">Refresh</button>
+        </div>
+        <div id="announcementsList"></div>
+      </div>
+    </div>
+
     <div id="settingsTab" class="hidden">
+      <div class="card" style="max-width:500px;margin-bottom:20px;">
+        <div class="card-header">
+          <h2>Torah Anytime Integration</h2>
+        </div>
+        <div id="tatStatusArea" style="padding:4px 0 12px;color:#94a3b8;font-size:13px;">Loading...</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+          <span style="font-size:14px;color:#e2e8f0;">Show Torah Anytime content</span>
+          <button id="tatToggleBtn" class="toggle-btn off" onclick="toggleTAT()" title="Toggle Torah Anytime"></button>
+        </div>
+        <p style="font-size:12px;color:#64748b;margin:0;">When off, all Torah Anytime-only feeds are hidden from the app immediately. Merged feeds (RSS + TAT) are not affected.</p>
+        <div style="margin-top:12px;">
+          <button class="btn btn-secondary btn-sm" onclick="syncTATSpeakers()" id="tatSyncBtn">Sync Speakers Now</button>
+          <span id="tatSyncStatus" style="font-size:12px;color:#64748b;margin-left:8px;"></span>
+        </div>
+      </div>
       <div class="card" style="max-width:500px;">
         <div class="card-header">
           <h2>Change Password</h2>
@@ -906,23 +1006,27 @@ function filterFeeds(query) {
     return;
   }
 
-  list.innerHTML = filtered.map(f => `
-    <div class="feed-item">
-      ${f.imageUrl ? `<img src="${f.imageUrl}" class="feed-img" onerror="this.style.display='none'">` : '<div class="feed-img"></div>'}
+  list.innerHTML = (bulkMode ? '<div class="bulk-bar" id="bulkActionBar"><input type="checkbox" id="bulkSelectAll" onchange="toggleBulkSelectAll(this.checked)" style="width:18px;height:18px;accent-color:#3b82f6;"><span class="bulk-count" id="bulkSelectedCount">0 selected</span><button class="btn btn-success btn-sm" onclick="bulkAction(\'activate\')">Activate</button><button class="btn btn-secondary btn-sm" onclick="bulkAction(\'deactivate\')">Deactivate</button><button class="btn btn-primary btn-sm" onclick="bulkAction(\'refresh\')">Refresh</button><button class="btn btn-danger btn-sm" onclick="bulkAction(\'delete\')">Delete</button></div>' : '') + filtered.map(f => {
+    const healthInfo = getFeedHealthInfo(f);
+    const scheduledBadge = f.scheduledPublishAt ? '<span class="scheduled-badge">Scheduled ' + new Date(f.scheduledPublishAt).toLocaleDateString() + '</span>' : '';
+    return `<div class="feed-item">
+      ${bulkMode ? '<input type="checkbox" class="bulk-feed-cb" value="' + f.id + '" onchange="updateBulkCount()" style="width:18px;height:18px;accent-color:#3b82f6;flex-shrink:0;">' : ''}
+      ${f.imageUrl ? '<img src="' + f.imageUrl + '" class="feed-img" onerror="this.style.display=\'none\'">' : '<div class="feed-img"></div>'}
       <div class="feed-info">
-        <div class="feed-title">${esc(f.title)}</div>
+        <div class="feed-title"><span class="health-tooltip health-dot ${healthInfo.cls}" data-tip="${esc(healthInfo.tip)}"></span>${esc(f.title)}${scheduledBadge}</div>
         <div class="feed-meta">${esc(f.author || 'Unknown')} &bull; ${(f.categoryIds && f.categoryIds.length > 0) ? f.categoryIds.map(cid => categories.find(c => c.id === cid)?.name || '').filter(Boolean).join(', ') || 'Uncategorized' : (categories.find(c => c.id === f.categoryId)?.name || 'Uncategorized')}</div>
         <div class="feed-meta" style="font-size:11px;margin-top:2px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.rssUrl)}</div>
       </div>
       <button class="toggle-btn ${f.isActive ? 'on' : 'off'}" onclick="toggleFeedActive('${f.id}', ${!f.isActive})" title="${f.isActive ? 'Active' : 'Inactive'}"></button>
-      <button class="featured-star ${f.isFeatured ? 'featured' : ''}" onclick="toggleFeedFeatured('${f.id}', ${!f.isFeatured})" title="${f.isFeatured ? 'Featured' : 'Not Featured'}">★</button>
+      <button class="featured-star ${f.isFeatured ? 'featured' : ''}" onclick="toggleFeedFeatured('${f.id}', ${!f.isFeatured})" title="${f.isFeatured ? 'Featured' : 'Not Featured'}">&#9733;</button>
       <div class="feed-actions">
+        <button class="btn btn-secondary btn-sm" onclick="viewEpisodes('${f.id}')">Episodes</button>
         <button class="btn btn-secondary btn-sm" onclick="editFeed('${f.id}')">Edit</button>
         <button class="btn btn-secondary btn-sm" onclick="refreshFeed('${f.id}')">Refresh</button>
         <button class="btn btn-danger btn-sm" onclick="deleteFeed('${f.id}')">Remove</button>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 async function loadCategories() {
@@ -1380,6 +1484,7 @@ async function editFeed(id) {
       <div class="form-group"><label>Image URL</label><input type="url" id="editImage" value="${esc(feed.imageUrl || '')}"></div>
       <div class="form-group"><label>Categories</label><div style="max-height:180px;overflow-y:auto;padding:8px;border:1px solid #1e293b;border-radius:8px;background:#0f172a;">${catCheckboxes || '<span style="color:#94a3b8;">No categories created yet</span>'}</div></div>
       <div class="form-group"><label>Description</label><textarea id="editDesc">${esc(feed.description || '')}</textarea></div>
+      <div class="form-group"><label>Scheduled Publish Date</label><input type="datetime-local" id="editScheduledPublish" value="${feed.scheduledPublishAt ? new Date(feed.scheduledPublishAt).toISOString().slice(0,16) : ''}"><p style="font-size:11px;color:#64748b;margin-top:4px;">Leave blank for immediate publish. Set a date to schedule this feed.</p></div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;">
         <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
         <button class="btn btn-primary" onclick="saveFeedEdit('${id}')">Save Changes</button>
@@ -1394,6 +1499,7 @@ async function editFeed(id) {
 async function saveFeedEdit(id) {
   try {
     const selectedCategoryIds = Array.from(document.querySelectorAll('.editCategoryCb:checked')).map(cb => cb.value);
+    const scheduledVal = document.getElementById('editScheduledPublish').value;
     const data = {
       title: document.getElementById('editTitle').value.trim(),
       author: document.getElementById('editAuthor').value.trim() || null,
@@ -1401,6 +1507,7 @@ async function saveFeedEdit(id) {
       categoryId: selectedCategoryIds[0] || null,
       categoryIds: selectedCategoryIds,
       description: document.getElementById('editDesc').value.trim() || null,
+      scheduledPublishAt: scheduledVal ? new Date(scheduledVal).toISOString() : null,
     };
     await api(`/api/admin/feeds/${id}`, { method: 'PUT', body: JSON.stringify(data) });
     closeModal();
@@ -1535,7 +1642,7 @@ async function deleteSpeaker(id) {
 function switchTab(tab, btn) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
-  ['analytics','feeds','categories','speakers','errors','feedback','messages','apk','sponsors','pushtracker','vitals','settings'].forEach(t => {
+  ['analytics','feeds','categories','speakers','errors','feedback','messages','apk','sponsors','pushtracker','vitals','announcements','settings'].forEach(t => {
     document.getElementById(t + 'Tab').classList.toggle('hidden', tab !== t);
   });
   if (tab === 'speakers') loadSpeakers();
@@ -1544,8 +1651,10 @@ function switchTab(tab, btn) {
   if (tab === 'messages') loadMessages();
   if (tab === 'apk') loadApks();
   if (tab === 'sponsors') loadSponsors();
-  if (tab === 'pushtracker') loadPushTokens();
+  if (tab === 'pushtracker') { loadPushTokens(); loadNotificationHistory(); }
   if (tab === 'vitals') loadVitals();
+  if (tab === 'announcements') loadAnnouncements();
+  if (tab === 'settings') loadTATStatus();
 }
 
 function formatDate(dateStr) {
@@ -1934,6 +2043,57 @@ async function deleteApk(id) {
     loadApks();
   } catch(e) {
     showAlert(e.message, 'error');
+  }
+}
+
+async function loadTATStatus() {
+  try {
+    const data = await api('/api/admin/tat/status');
+    const btn = document.getElementById('tatToggleBtn');
+    btn.className = 'toggle-btn ' + (data.enabled ? 'on' : 'off');
+    document.getElementById('tatStatusArea').innerHTML =
+      '<strong style="color:#e2e8f0;">' + data.totalTATFeeds + '</strong> TAT-only feeds (' + data.activeTATFeeds + ' active)' +
+      (data.mergedFeeds > 0 ? ' · <strong style="color:#e2e8f0;">' + data.mergedFeeds + '</strong> merged with RSS feeds' : '');
+  } catch(e) {
+    document.getElementById('tatStatusArea').textContent = 'Could not load status';
+  }
+}
+
+async function toggleTAT() {
+  const btn = document.getElementById('tatToggleBtn');
+  const currentlyOn = btn.classList.contains('on');
+  const newState = !currentlyOn;
+  if (!newState && !confirm('This will hide all Torah Anytime feeds from the app immediately. Continue?')) return;
+  try {
+    btn.disabled = true;
+    const result = await api('/api/admin/tat/toggle', { method: 'POST', body: JSON.stringify({ enabled: newState }) });
+    btn.className = 'toggle-btn ' + (newState ? 'on' : 'off');
+    showAlert((newState ? 'Enabled' : 'Disabled') + ' Torah Anytime — ' + result.updated + ' feeds updated');
+    loadTATStatus();
+    loadFeeds();
+    loadAnalytics();
+  } catch(e) {
+    showAlert('Failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function syncTATSpeakers() {
+  const btn = document.getElementById('tatSyncBtn');
+  const status = document.getElementById('tatSyncStatus');
+  btn.disabled = true;
+  status.textContent = 'Syncing speakers...';
+  try {
+    const result = await api('/api/admin/tat/sync-speakers', { method: 'POST' });
+    status.innerHTML = '<span style="color:#22c55e;">Done — ' + result.created + ' created, ' + result.linked + ' linked, ' + result.total + ' total</span>';
+    loadTATStatus();
+    loadFeeds();
+    loadAnalytics();
+  } catch(e) {
+    status.innerHTML = '<span style="color:#ef4444;">Error: ' + e.message + '</span>';
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -2498,6 +2658,362 @@ async function forceSync(feedId, btn) {
   } finally {
     btn.disabled = false;
     btn.textContent = 'Force Sync';
+  }
+}
+
+// === Feature 11: Feed Health Indicators ===
+function getFeedHealthInfo(feed) {
+  if (!feed.lastFetchedAt && !feed.etag) {
+    return { cls: 'health-red', tip: 'Never fetched / no etag' };
+  }
+  if (!feed.lastFetchedAt) {
+    return { cls: 'health-red', tip: 'Never fetched' };
+  }
+  const lastFetched = new Date(feed.lastFetchedAt);
+  const hoursAgo = (Date.now() - lastFetched.getTime()) / 3600000;
+  const timeStr = lastFetched.toLocaleString();
+  if (hoursAgo <= 24) {
+    return { cls: 'health-green', tip: 'Last refreshed: ' + timeStr };
+  }
+  return { cls: 'health-yellow', tip: 'Stale — last refreshed: ' + timeStr };
+}
+
+// === Feature 10: Bulk Feed Actions ===
+let bulkMode = false;
+
+function toggleBulkMode() {
+  bulkMode = !bulkMode;
+  const btn = document.getElementById('bulkModeBtn');
+  btn.textContent = bulkMode ? 'Cancel Bulk' : 'Bulk Select';
+  btn.className = bulkMode ? 'btn btn-danger btn-sm' : 'btn btn-secondary btn-sm';
+  filterFeeds(document.getElementById('feedSearchInput')?.value || '');
+}
+
+function toggleBulkSelectAll(checked) {
+  document.querySelectorAll('.bulk-feed-cb').forEach(cb => { cb.checked = checked; });
+  updateBulkCount();
+}
+
+function updateBulkCount() {
+  const checked = document.querySelectorAll('.bulk-feed-cb:checked');
+  const countEl = document.getElementById('bulkSelectedCount');
+  if (countEl) countEl.textContent = checked.length + ' selected';
+  const selectAll = document.getElementById('bulkSelectAll');
+  if (selectAll) {
+    const total = document.querySelectorAll('.bulk-feed-cb').length;
+    selectAll.checked = checked.length === total && total > 0;
+  }
+}
+
+async function bulkAction(action) {
+  const ids = Array.from(document.querySelectorAll('.bulk-feed-cb:checked')).map(cb => cb.value);
+  if (ids.length === 0) return showAlert('No feeds selected', 'error');
+
+  if (action === 'delete' && !confirm('Delete ' + ids.length + ' feed(s) and all their episodes? This cannot be undone.')) return;
+  if (action === 'deactivate' && !confirm('Deactivate ' + ids.length + ' feed(s)?')) return;
+
+  let done = 0, errors = 0;
+  showAlert('Processing ' + ids.length + ' feed(s)...', 'success');
+
+  for (const id of ids) {
+    try {
+      if (action === 'activate') {
+        await api('/api/admin/feeds/' + id, { method: 'PUT', body: JSON.stringify({ isActive: true }) });
+      } else if (action === 'deactivate') {
+        await api('/api/admin/feeds/' + id, { method: 'PUT', body: JSON.stringify({ isActive: false }) });
+      } else if (action === 'delete') {
+        await api('/api/admin/feeds/' + id, { method: 'DELETE' });
+      } else if (action === 'refresh') {
+        await api('/api/admin/feeds/' + id + '/refresh', { method: 'POST' });
+      }
+      done++;
+    } catch(e) { errors++; }
+  }
+
+  showAlert(done + ' feed(s) processed.' + (errors > 0 ? ' ' + errors + ' error(s).' : ''), errors > 0 ? 'error' : 'success');
+  await Promise.all([loadFeeds(), loadAnalytics()]);
+}
+
+// === Feature 7: Episode Management ===
+async function viewEpisodes(feedId) {
+  const feed = allAdminFeeds.find(f => f.id === feedId);
+  const feedTitle = feed ? feed.title : 'Feed';
+  document.getElementById('modalContent').innerHTML = '<h2>Episodes — ' + esc(feedTitle) + '</h2><p style="color:#94a3b8;">Loading episodes...</p>';
+  document.getElementById('modalOverlay').classList.remove('hidden');
+
+  try {
+    const eps = await api('/api/feeds/' + feedId + '/episodes?limit=200');
+    const epList = Array.isArray(eps) ? eps : (eps.episodes || []);
+    if (epList.length === 0) {
+      document.getElementById('modalContent').innerHTML = '<h2>Episodes — ' + esc(feedTitle) + '</h2><p style="color:#64748b;text-align:center;padding:20px;">No episodes found for this feed.</p><div style="text-align:right;margin-top:16px;"><button class="btn btn-secondary" onclick="closeModal()">Close</button></div>';
+      return;
+    }
+    let html = '<h2>Episodes — ' + esc(feedTitle) + ' (' + epList.length + ')</h2>';
+    html += '<div style="max-height:60vh;overflow-y:auto;">';
+    epList.forEach(ep => {
+      const pubDate = ep.publishedAt ? new Date(ep.publishedAt).toLocaleDateString() : 'Unknown';
+      const dur = ep.duration ? formatDuration(ep.duration) : '';
+      html += '<div class="episode-item">';
+      html += '<div class="episode-info">';
+      html += '<div class="episode-title" title="' + esc(ep.title) + '">' + esc(ep.title) + '</div>';
+      html += '<div class="episode-meta">' + pubDate + (dur ? ' &bull; ' + dur : '') + (ep.adminNotes ? ' &bull; <span style="color:#a78bfa;">Note: ' + esc(ep.adminNotes.substring(0,40)) + '</span>' : '') + '</div>';
+      html += '</div>';
+      html += '<button class="btn btn-secondary btn-sm" onclick="editEpisodeNotes(\'' + ep.id + '\', \'' + esc(ep.adminNotes || '').replace(/'/g, "\\'") + '\', \'' + esc(ep.sourceSheetUrl || '').replace(/'/g, "\\'") + '\')">Edit</button>';
+      html += '</div>';
+    });
+    html += '</div>';
+    html += '<div style="text-align:right;margin-top:16px;"><button class="btn btn-secondary" onclick="closeModal()">Close</button></div>';
+    document.getElementById('modalContent').innerHTML = html;
+  } catch(e) {
+    document.getElementById('modalContent').innerHTML = '<h2>Episodes — ' + esc(feedTitle) + '</h2><p style="color:#ef4444;">Failed to load episodes: ' + esc(e.message) + '</p><div style="text-align:right;margin-top:16px;"><button class="btn btn-secondary" onclick="closeModal()">Close</button></div>';
+  }
+}
+
+function formatDuration(seconds) {
+  if (!seconds || seconds <= 0) return '';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return h + 'h ' + m + 'm';
+  if (m > 0) return m + 'm ' + s + 's';
+  return s + 's';
+}
+
+function editEpisodeNotes(episodeId, currentNotes, currentSheet) {
+  document.getElementById('modalContent').innerHTML = `
+    <h2>Edit Episode Notes</h2>
+    <div class="form-group"><label>Admin Notes</label><textarea id="epNotes" rows="4" placeholder="Internal notes about this episode...">${esc(currentNotes)}</textarea></div>
+    <div class="form-group"><label>Source Sheet URL</label><input type="url" id="epSourceSheet" value="${esc(currentSheet)}" placeholder="https://..."></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveEpisodeNotes('${episodeId}')">Save</button>
+    </div>
+  `;
+}
+
+async function saveEpisodeNotes(episodeId) {
+  const adminNotes = document.getElementById('epNotes').value.trim();
+  const sourceSheetUrl = document.getElementById('epSourceSheet').value.trim();
+  try {
+    await api('/api/admin/episodes/' + episodeId + '/notes', {
+      method: 'PUT',
+      body: JSON.stringify({ adminNotes: adminNotes || null, sourceSheetUrl: sourceSheetUrl || null })
+    });
+    closeModal();
+    showAlert('Episode notes saved!');
+  } catch(e) {
+    showAlert('Failed to save: ' + e.message, 'error');
+  }
+}
+
+// === Feature 9: Notification History ===
+async function loadNotificationHistory() {
+  const list = document.getElementById('notificationHistoryList');
+  if (!list) return;
+  list.innerHTML = '<p style="color:#94a3b8;padding:12px;">Loading...</p>';
+  try {
+    const notifications = await api('/api/admin/notifications');
+    if (!notifications || notifications.length === 0) {
+      list.innerHTML = '<p style="color:#64748b;text-align:center;padding:20px;">No notifications sent yet.</p>';
+      return;
+    }
+    list.innerHTML = notifications.map(n => {
+      const d = new Date(n.createdAt || n.sentAt);
+      const dateStr = d.toLocaleString();
+      const statusBadge = n.sentAt
+        ? '<span class="status-badge status-active">Sent</span>'
+        : '<span class="status-badge status-inactive">Draft</span>';
+      return '<div class="notif-item">' +
+        '<div style="flex:1;min-width:0;">' +
+          '<div class="notif-title">' + esc(n.title) + '</div>' +
+          '<div class="notif-msg">' + esc(n.body || n.message || '') + '</div>' +
+          '<div style="font-size:11px;color:#64748b;margin-top:4px;">' + dateStr +
+            (n.targetDeviceId ? ' &bull; Device: ' + esc(n.targetDeviceId.substring(0,12)) + '...' : ' &bull; All devices') +
+          '</div>' +
+        '</div>' +
+        '<div style="flex-shrink:0;">' + statusBadge + '</div>' +
+      '</div>';
+    }).join('');
+  } catch(e) {
+    list.innerHTML = '<p style="color:#ef4444;padding:12px;">Failed to load notification history: ' + esc(e.message) + '</p>';
+  }
+}
+
+// === Feature 12: Announcements ===
+let editingAnnouncementId = null;
+
+function annTargetChanged() {
+  const type = document.getElementById('annTargetType').value;
+  const group = document.getElementById('annTargetValueGroup');
+  const feedPicker = document.getElementById('annTargetFeedPicker');
+  const deviceInput = document.getElementById('annTargetDeviceInput');
+  const label = document.getElementById('annTargetValueLabel');
+
+  if (type === 'all') {
+    group.classList.add('hidden');
+    feedPicker.classList.add('hidden');
+    deviceInput.classList.add('hidden');
+  } else if (type === 'feed_subscribers') {
+    group.classList.remove('hidden');
+    feedPicker.classList.remove('hidden');
+    deviceInput.classList.add('hidden');
+    label.textContent = 'Select Feed';
+    // Populate feed picker
+    feedPicker.innerHTML = '<option value="">Select a feed...</option>' +
+      allAdminFeeds.map(f => '<option value="' + f.id + '">' + esc(f.title) + '</option>').join('');
+  } else if (type === 'device') {
+    group.classList.remove('hidden');
+    feedPicker.classList.add('hidden');
+    deviceInput.classList.remove('hidden');
+    label.textContent = 'Device ID';
+  }
+}
+
+async function saveAnnouncement() {
+  const title = document.getElementById('annTitle').value.trim();
+  const body = document.getElementById('annBody').value.trim();
+  const imageUrl = document.getElementById('annImageUrl').value.trim();
+  const actionLabel = document.getElementById('annActionLabel').value.trim();
+  const actionUrl = document.getElementById('annActionUrl').value.trim();
+  const targetType = document.getElementById('annTargetType').value;
+  const frequency = document.getElementById('annFrequency').value;
+
+  if (!title || !body) {
+    document.getElementById('annAlert').innerHTML = '<div class="alert alert-error">Title and body are required</div>';
+    setTimeout(() => document.getElementById('annAlert').innerHTML = '', 3000);
+    return;
+  }
+
+  let targetValue = null;
+  if (targetType === 'feed_subscribers') {
+    targetValue = document.getElementById('annTargetFeedPicker').value;
+    if (!targetValue) {
+      document.getElementById('annAlert').innerHTML = '<div class="alert alert-error">Please select a feed</div>';
+      setTimeout(() => document.getElementById('annAlert').innerHTML = '', 3000);
+      return;
+    }
+  } else if (targetType === 'device') {
+    targetValue = document.getElementById('annTargetDeviceInput').value.trim();
+    if (!targetValue) {
+      document.getElementById('annAlert').innerHTML = '<div class="alert alert-error">Please enter a device ID</div>';
+      setTimeout(() => document.getElementById('annAlert').innerHTML = '', 3000);
+      return;
+    }
+  }
+
+  const data = { title, body, imageUrl: imageUrl || null, actionLabel: actionLabel || null, actionUrl: actionUrl || null, targetType, targetValue, frequency, isActive: true };
+
+  try {
+    if (editingAnnouncementId) {
+      await api('/api/admin/announcements/' + editingAnnouncementId, { method: 'PUT', body: JSON.stringify(data) });
+      showAlert('Announcement updated!');
+    } else {
+      await api('/api/admin/announcements', { method: 'POST', body: JSON.stringify(data) });
+      showAlert('Announcement created!');
+    }
+    cancelEditAnnouncement();
+    loadAnnouncements();
+  } catch(e) {
+    document.getElementById('annAlert').innerHTML = '<div class="alert alert-error">' + esc(e.message) + '</div>';
+    setTimeout(() => document.getElementById('annAlert').innerHTML = '', 4000);
+  }
+}
+
+function cancelEditAnnouncement() {
+  editingAnnouncementId = null;
+  document.getElementById('annTitle').value = '';
+  document.getElementById('annBody').value = '';
+  document.getElementById('annImageUrl').value = '';
+  document.getElementById('annActionLabel').value = '';
+  document.getElementById('annActionUrl').value = '';
+  document.getElementById('annTargetType').value = 'all';
+  document.getElementById('annFrequency').value = 'once';
+  document.getElementById('annTargetValueGroup').classList.add('hidden');
+  document.getElementById('annSaveBtn').textContent = 'Create Announcement';
+  document.getElementById('annCancelBtn').classList.add('hidden');
+}
+
+async function loadAnnouncements() {
+  const list = document.getElementById('announcementsList');
+  list.innerHTML = '<p style="color:#94a3b8;padding:12px;">Loading...</p>';
+  try {
+    const anns = await api('/api/admin/announcements');
+    if (!anns || anns.length === 0) {
+      list.innerHTML = '<p style="color:#64748b;text-align:center;padding:20px;">No announcements yet.</p>';
+      return;
+    }
+    list.innerHTML = anns.map(a => {
+      const created = new Date(a.createdAt).toLocaleDateString();
+      const freqLabel = a.frequency === 'once' ? 'Show Once' : a.frequency === 'every_open' ? 'Every Open' : 'Until Dismissed';
+      const targetLabel = a.targetType === 'all' ? 'All Users' : a.targetType === 'feed_subscribers' ? 'Feed Subscribers' : 'Device: ' + (a.targetValue || '').substring(0, 12);
+      return '<div class="ann-item">' +
+        '<div class="ann-header">' +
+          '<div>' +
+            '<span class="ann-title">' + esc(a.title) + '</span>' +
+            ' <span class="status-badge ' + (a.isActive ? 'status-active' : 'status-inactive') + '">' + (a.isActive ? 'Active' : 'Inactive') + '</span>' +
+          '</div>' +
+          '<div class="ann-meta">' + targetLabel + ' &bull; ' + freqLabel + ' &bull; ' + created +
+            (a.dismissCount !== undefined ? ' &bull; ' + a.dismissCount + ' dismissed' : '') +
+          '</div>' +
+        '</div>' +
+        (a.body ? '<div style="font-size:13px;color:#94a3b8;margin-bottom:8px;">' + esc(a.body.substring(0, 120)) + (a.body.length > 120 ? '...' : '') + '</div>' : '') +
+        '<div style="display:flex;gap:6px;">' +
+          '<button class="btn btn-secondary btn-sm" onclick="toggleAnnouncementActive(\'' + a.id + '\', ' + !a.isActive + ')">' + (a.isActive ? 'Deactivate' : 'Activate') + '</button>' +
+          '<button class="btn btn-secondary btn-sm" onclick="editAnnouncement(\'' + a.id + '\')">Edit</button>' +
+          '<button class="btn btn-danger btn-sm" onclick="deleteAnnouncement(\'' + a.id + '\')">Delete</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch(e) {
+    list.innerHTML = '<p style="color:#ef4444;padding:12px;">Failed to load announcements: ' + esc(e.message) + '</p>';
+  }
+}
+
+async function toggleAnnouncementActive(id, isActive) {
+  try {
+    await api('/api/admin/announcements/' + id, { method: 'PUT', body: JSON.stringify({ isActive }) });
+    showAlert('Announcement ' + (isActive ? 'activated' : 'deactivated'));
+    loadAnnouncements();
+  } catch(e) {
+    showAlert(e.message, 'error');
+  }
+}
+
+async function editAnnouncement(id) {
+  try {
+    const anns = await api('/api/admin/announcements');
+    const a = anns.find(x => x.id === id);
+    if (!a) return;
+    editingAnnouncementId = id;
+    document.getElementById('annTitle').value = a.title || '';
+    document.getElementById('annBody').value = a.body || '';
+    document.getElementById('annImageUrl').value = a.imageUrl || '';
+    document.getElementById('annActionLabel').value = a.actionLabel || '';
+    document.getElementById('annActionUrl').value = a.actionUrl || '';
+    document.getElementById('annTargetType').value = a.targetType || 'all';
+    document.getElementById('annFrequency').value = a.frequency || 'once';
+    annTargetChanged();
+    if (a.targetType === 'feed_subscribers' && a.targetValue) {
+      document.getElementById('annTargetFeedPicker').value = a.targetValue;
+    } else if (a.targetType === 'device' && a.targetValue) {
+      document.getElementById('annTargetDeviceInput').value = a.targetValue;
+    }
+    document.getElementById('annSaveBtn').textContent = 'Update Announcement';
+    document.getElementById('annCancelBtn').classList.remove('hidden');
+    document.getElementById('announcementsTab').scrollIntoView({ behavior: 'smooth' });
+  } catch(e) {
+    showAlert('Failed to load announcement: ' + e.message, 'error');
+  }
+}
+
+async function deleteAnnouncement(id) {
+  if (!confirm('Delete this announcement?')) return;
+  try {
+    await api('/api/admin/announcements/' + id, { method: 'DELETE' });
+    showAlert('Announcement deleted');
+    loadAnnouncements();
+  } catch(e) {
+    showAlert(e.message, 'error');
   }
 }
 

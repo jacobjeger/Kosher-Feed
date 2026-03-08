@@ -3,7 +3,6 @@ import { View, Text, FlatList, Pressable, StyleSheet, Platform, Alert } from "re
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
-import { Image } from "expo-image";
 import { useDownloads } from "@/contexts/DownloadsContext";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { usePlayedEpisodes } from "@/contexts/PlayedEpisodesContext";
@@ -48,6 +47,9 @@ function DownloadItem({ item }: { item: DownloadedEpisode }) {
     isActive: true,
     lastFetchedAt: null,
     createdAt: "",
+    isFeatured: false,
+    scheduledPublishAt: null,
+    sourceNetwork: null,
   };
 
   const episodeToPlay = {

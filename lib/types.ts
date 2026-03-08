@@ -12,6 +12,8 @@ export interface Feed {
   scheduledPublishAt: string | null;
   lastFetchedAt: string | null;
   createdAt: string;
+  sourceNetwork: string | null;
+  tatSpeakerId?: number | null;
 }
 
 export interface MaggidShiur {
@@ -36,6 +38,8 @@ export interface Episode {
   adminNotes: string | null;
   sourceSheetUrl: string | null;
   createdAt: string;
+  tatLectureId?: number | null;
+  noDownload?: boolean;
 }
 
 export interface Favorite {

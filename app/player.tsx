@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { View, Text, Pressable, StyleSheet, Platform, Alert, ScrollView, Share, PanResponder, Animated as RNAnimated, Dimensions, ActivityIndicator } from "react-native";
+import { View, Text, Pressable, StyleSheet, Platform, Alert, ScrollView, PanResponder, Animated as RNAnimated, Dimensions, ActivityIndicator } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
@@ -186,17 +186,6 @@ export default function PlayerScreen() {
     }
   };
 
-  const handleShareEpisode = useCallback(async () => {
-    if (!currentEpisode || !currentFeed) return;
-    try {
-      lightHaptic();
-      const timestampText = position.positionMs > 5000 ? ` (at ${formatTime(position.positionMs)})` : "";
-      await Share.share({
-        message: `Listen to "${currentEpisode.title}" from ${currentFeed.title}${timestampText} on ShiurPod`,
-      });
-    } catch (e) {
-    }
-  }, [currentEpisode, currentFeed, position.positionMs]);
 
   const handleToggleFavorite = useCallback(async () => {
     if (!currentEpisode) return;
@@ -414,16 +403,6 @@ export default function PlayerScreen() {
           />
         </Pressable>
 
-        <Pressable
-          onPress={handleShareEpisode}
-          style={[styles.secondaryBtn, { backgroundColor: colors.surfaceAlt }]}
-        >
-          <Ionicons
-            name="share-outline"
-            size={18}
-            color={colors.textSecondary}
-          />
-        </Pressable>
 
         <Pressable
           onPress={handleToggleFavorite}

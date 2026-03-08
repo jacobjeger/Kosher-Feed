@@ -1,5 +1,5 @@
 import React, { useRef, useMemo } from "react";
-import { View, Text, Pressable, StyleSheet, Linking, Platform, Animated as RNAnimated, PanResponder, InteractionManager } from "react-native";
+import { View, Text, Pressable, StyleSheet, Platform, Animated as RNAnimated, PanResponder, InteractionManager } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -69,6 +69,7 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
   const [expanded, setExpanded] = React.useState<boolean>(false);
 
   const isCurrentlyPlaying = currentEpisode?.id === episode.id;
+  const canDownload = !episode.noDownload;
   const offlineUnavailable = !isOnline && !isDownloaded(episode.id);
   const downloaded = isDownloaded(episode.id);
   const downloading = isDownloading(episode.id);
@@ -140,12 +141,6 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
     }
   };
 
-  const handleOpenSourceSheet = async () => {
-    if (episode.sourceSheetUrl) {
-      await Linking.openURL(episode.sourceSheetUrl);
-    }
-  };
-
   const panResponder = useMemo(() => {
     if (!isNative) return null;
     return PanResponder.create({
@@ -159,7 +154,7 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
         if (gestureState.dx > SWIPE_THRESHOLD) {
           handleToggleQueue();
         } else if (gestureState.dx < -SWIPE_THRESHOLD) {
-          if (!downloaded && !downloading) {
+          if (canDownload && !downloaded && !downloading) {
             handleDownload();
           }
         }
@@ -213,9 +208,16 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
         </View>
         <Pressable onPress={handleToggleExpand} style={styles.info}>
           {showFeedTitle && (
-            <Text style={[styles.feedTitle, { color: colors.accent }]} numberOfLines={1}>
-              {feed.title}
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Text style={[styles.feedTitle, { color: colors.accent }]} numberOfLines={1}>
+                {feed.title}
+              </Text>
+              {feed.sourceNetwork && (
+                <View style={styles.networkTag}>
+                  <Text style={styles.networkTagText}>{feed.sourceNetwork}</Text>
+                </View>
+              )}
+            </View>
           )}
           <Text style={[styles.title, { color: colors.text, opacity: played ? 0.6 : 1 }]} numberOfLines={expanded ? undefined : 2}>
             {episode.title}
@@ -268,33 +270,35 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
               <Ionicons name="add-circle-outline" size={20} color={colors.textSecondary} />
             )}
           </Pressable>
-          <Pressable
-            onPress={(e) => {
-              e.stopPropagation();
-              if (Platform.OS === "web") {
-                if (episode.id) {
-                  const downloadUrl = `${window.location.origin}/api/episodes/${episode.id}/download`;
-                  window.open(downloadUrl, "_blank");
+          {canDownload && (
+            <Pressable
+              onPress={(e) => {
+                e.stopPropagation();
+                if (Platform.OS === "web") {
+                  if (episode.id) {
+                    const downloadUrl = `${window.location.origin}/api/episodes/${episode.id}/download`;
+                    window.open(downloadUrl, "_blank");
+                  }
+                } else {
+                  handleDownload();
                 }
-              } else {
-                handleDownload();
-              }
-            }}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            style={styles.downloadBtn}
-          >
-            {Platform.OS !== "web" && downloading ? (
-              <View style={styles.downloadingIndicator}>
-                <Text style={[styles.progressText, { color: colors.accent }]}>
-                  {Math.round(progress * 100)}%
-                </Text>
-              </View>
-            ) : Platform.OS !== "web" && downloaded ? (
-              <Ionicons name="checkmark-circle" size={22} color={colors.success} />
-            ) : (
-              <Feather name="download" size={20} color={colors.textSecondary} />
-            )}
-          </Pressable>
+              }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={styles.downloadBtn}
+            >
+              {Platform.OS !== "web" && downloading ? (
+                <View style={styles.downloadingIndicator}>
+                  <Text style={[styles.progressText, { color: colors.accent }]}>
+                    {Math.round(progress * 100)}%
+                  </Text>
+                </View>
+              ) : Platform.OS !== "web" && downloaded ? (
+                <Ionicons name="checkmark-circle" size={22} color={colors.success} />
+              ) : (
+                <Feather name="download" size={20} color={colors.textSecondary} />
+              )}
+            </Pressable>
+          )}
         </View>
       </View>
       {expanded && (
@@ -304,16 +308,14 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
               {episode.description}
             </Text>
           )}
-          {episode.sourceSheetUrl && (
-            <Pressable
-              onPress={handleOpenSourceSheet}
-              style={[styles.sourceSheetLink, { borderTopColor: colors.cardBorder }]}
-            >
-              <Ionicons name="open-outline" size={14} color={colors.accent} />
-              <Text style={[styles.sourceSheetText, { color: colors.accent }]}>
-                View Source Sheet
-              </Text>
-            </Pressable>
+          {episode.adminNotes && (
+            <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 6, marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.cardBorder }}>
+              <Ionicons name="information-circle-outline" size={14} color={colors.accent} style={{ marginTop: 1 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 11, fontWeight: "600", color: colors.accent, marginBottom: 2 }}>Note</Text>
+                <Text style={{ fontSize: 12, lineHeight: 17, color: colors.textSecondary }}>{episode.adminNotes}</Text>
+              </View>
+            </View>
           )}
           <Pressable
             onPress={() => { lightHaptic(); togglePlayed(episode.id); }}
@@ -439,6 +441,19 @@ const styles = StyleSheet.create({
     fontWeight: "600" as const,
     textTransform: "uppercase" as const,
     letterSpacing: 0.5,
+    flexShrink: 1,
+  },
+  networkTag: {
+    backgroundColor: "rgba(37, 99, 235, 0.85)",
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 3,
+    flexShrink: 0,
+  },
+  networkTagText: {
+    color: "#fff",
+    fontSize: 8,
+    fontWeight: "600" as const,
   },
   title: {
     fontSize: 14,
