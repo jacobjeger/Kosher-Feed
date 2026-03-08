@@ -69,6 +69,7 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
   const [expanded, setExpanded] = React.useState<boolean>(false);
 
   const isCurrentlyPlaying = currentEpisode?.id === episode.id;
+  const canDownload = !episode.noDownload;
   const offlineUnavailable = !isOnline && !isDownloaded(episode.id);
   const downloaded = isDownloaded(episode.id);
   const downloading = isDownloading(episode.id);
@@ -153,7 +154,7 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
         if (gestureState.dx > SWIPE_THRESHOLD) {
           handleToggleQueue();
         } else if (gestureState.dx < -SWIPE_THRESHOLD) {
-          if (!downloaded && !downloading) {
+          if (canDownload && !downloaded && !downloading) {
             handleDownload();
           }
         }
@@ -269,33 +270,35 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
               <Ionicons name="add-circle-outline" size={20} color={colors.textSecondary} />
             )}
           </Pressable>
-          <Pressable
-            onPress={(e) => {
-              e.stopPropagation();
-              if (Platform.OS === "web") {
-                if (episode.id) {
-                  const downloadUrl = `${window.location.origin}/api/episodes/${episode.id}/download`;
-                  window.open(downloadUrl, "_blank");
+          {canDownload && (
+            <Pressable
+              onPress={(e) => {
+                e.stopPropagation();
+                if (Platform.OS === "web") {
+                  if (episode.id) {
+                    const downloadUrl = `${window.location.origin}/api/episodes/${episode.id}/download`;
+                    window.open(downloadUrl, "_blank");
+                  }
+                } else {
+                  handleDownload();
                 }
-              } else {
-                handleDownload();
-              }
-            }}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            style={styles.downloadBtn}
-          >
-            {Platform.OS !== "web" && downloading ? (
-              <View style={styles.downloadingIndicator}>
-                <Text style={[styles.progressText, { color: colors.accent }]}>
-                  {Math.round(progress * 100)}%
-                </Text>
-              </View>
-            ) : Platform.OS !== "web" && downloaded ? (
-              <Ionicons name="checkmark-circle" size={22} color={colors.success} />
-            ) : (
-              <Feather name="download" size={20} color={colors.textSecondary} />
-            )}
-          </Pressable>
+              }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={styles.downloadBtn}
+            >
+              {Platform.OS !== "web" && downloading ? (
+                <View style={styles.downloadingIndicator}>
+                  <Text style={[styles.progressText, { color: colors.accent }]}>
+                    {Math.round(progress * 100)}%
+                  </Text>
+                </View>
+              ) : Platform.OS !== "web" && downloaded ? (
+                <Ionicons name="checkmark-circle" size={22} color={colors.success} />
+              ) : (
+                <Feather name="download" size={20} color={colors.textSecondary} />
+              )}
+            </Pressable>
+          )}
         </View>
       </View>
       {expanded && (

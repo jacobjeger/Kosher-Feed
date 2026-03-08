@@ -26,6 +26,7 @@ export const feeds = pgTable("feeds", {
   etag: text("etag"),
   lastModifiedHeader: text("last_modified_header"),
   sourceNetwork: text("source_network"),
+  tatSpeakerId: integer("tat_speaker_id"),
 });
 
 export const episodes = pgTable("episodes", {
@@ -41,6 +42,8 @@ export const episodes = pgTable("episodes", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   adminNotes: text("admin_notes"),
   sourceSheetUrl: text("source_sheet_url"),
+  tatLectureId: integer("tat_lecture_id"),
+  noDownload: boolean("no_download").default(false),
 }, (table) => [
   uniqueIndex("episodes_guid_feed_idx").on(table.guid, table.feedId),
 ]);
@@ -195,6 +198,7 @@ export const insertFeedSchema = createInsertSchema(feeds).pick({
   author: true,
   categoryId: true,
   sourceNetwork: true,
+  tatSpeakerId: true,
 });
 
 export const insertCategorySchema = createInsertSchema(categories).pick({

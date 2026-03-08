@@ -39,7 +39,7 @@ export async function createFeed(data: InsertFeed): Promise<Feed> {
   return feed;
 }
 
-export async function updateFeed(id: string, data: Partial<InsertFeed & { isActive: boolean; lastFetchedAt: Date; etag: string | null; lastModifiedHeader: string | null; sourceNetwork: string | null }>): Promise<Feed> {
+export async function updateFeed(id: string, data: Partial<InsertFeed & { isActive: boolean; lastFetchedAt: Date; etag: string | null; lastModifiedHeader: string | null; sourceNetwork: string | null; tatSpeakerId: number | null }>): Promise<Feed> {
   const [feed] = await db.update(feeds).set(data).where(eq(feeds.id, id)).returning();
   return feed;
 }
@@ -72,7 +72,30 @@ export async function getLatestEpisodes(limit: number = 50): Promise<Episode[]> 
   return db.select().from(episodes).orderBy(desc(episodes.publishedAt)).limit(limit);
 }
 
-export async function upsertEpisodes(feedId: string, episodeData: Omit<Episode, "id" | "createdAt">[]): Promise<Episode[]> {
+export async function upsertEpisodes(feedId: string, episodeData: Partial<Episode>[]): Promise<Episode[]> {
+  if (episodeData.length === 0) return [];
+  const inserted: Episode[] = [];
+  for (const ep of episodeData) {
+    try {
+      const [result] = await db.insert(episodes).values({
+        feedId: ep.feedId || feedId,
+        title: ep.title!,
+        description: ep.description,
+        audioUrl: ep.audioUrl!,
+        duration: ep.duration,
+        publishedAt: ep.publishedAt as any,
+        guid: ep.guid!,
+        imageUrl: ep.imageUrl,
+      }).onConflictDoNothing().returning();
+      if (result) inserted.push(result);
+    } catch (e) {
+      // skip duplicates
+    }
+  }
+  return inserted;
+}
+
+export async function upsertTATEpisodes(feedId: string, episodeData: any[]): Promise<Episode[]> {
   if (episodeData.length === 0) return [];
   const inserted: Episode[] = [];
   for (const ep of episodeData) {
@@ -86,6 +109,8 @@ export async function upsertEpisodes(feedId: string, episodeData: Omit<Episode, 
         publishedAt: ep.publishedAt,
         guid: ep.guid,
         imageUrl: ep.imageUrl,
+        tatLectureId: ep.tatLectureId,
+        noDownload: ep.noDownload || false,
       }).onConflictDoNothing().returning();
       if (result) inserted.push(result);
     } catch (e) {
@@ -93,6 +118,15 @@ export async function upsertEpisodes(feedId: string, episodeData: Omit<Episode, 
     }
   }
   return inserted;
+}
+
+export async function getTATFeeds(): Promise<Feed[]> {
+  return db.select().from(feeds).where(
+    and(
+      sql`${feeds.tatSpeakerId} IS NOT NULL`,
+      eq(feeds.isActive, true),
+    )
+  );
 }
 
 export async function deleteEpisodesByFeed(feedId: string): Promise<void> {

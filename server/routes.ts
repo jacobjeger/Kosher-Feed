@@ -6,6 +6,7 @@ import { sendNewEpisodePushes, sendCustomPush, checkPushReceipts } from "./push"
 import { getVitals, recordFeedResult } from "./feed-vitals";
 import { insertFeedSchema, insertCategorySchema } from "@shared/schema";
 import type { Feed } from "@shared/schema";
+import { syncTATSpeakers, refreshTATFeedEpisodes } from "./torahanytime";
 import multer from "multer";
 import path from "node:path";
 import fs from "node:fs";
@@ -25,17 +26,33 @@ const refreshingFeeds = new Set<string>();
 
 async function onDemandRefreshFeed(feedId: string): Promise<void> {
   if (refreshingFeeds.has(feedId)) return;
-  
+
   try {
     const feed = await storage.getFeedById(feedId);
-    if (!feed || !feed.isActive || !feed.rssUrl) return;
-    
+    if (!feed || !feed.isActive) return;
+
     const lastFetched = feed.lastFetchedAt ? new Date(feed.lastFetchedAt).getTime() : 0;
     if (Date.now() - lastFetched < ON_DEMAND_STALE_MS) return;
-    
+
     refreshingFeeds.add(feedId);
     console.log(`On-demand refresh: ${feed.title} (last fetched ${feed.lastFetchedAt ? Math.round((Date.now() - lastFetched) / 60000) + 'm ago' : 'never'})`);
-    
+
+    // TAT feed: refresh from TorahAnytime API
+    if (feed.tatSpeakerId) {
+      await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: feed.tatSpeakerId });
+      // Also refresh RSS if this is a merged feed (has real RSS URL)
+      if (!feed.rssUrl.startsWith("tat://")) {
+        const parsed = await parseFeed(feed.id, feed.rssUrl);
+        if (parsed) {
+          const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
+          await storage.upsertEpisodes(feed.id, episodeData);
+        }
+      }
+      return;
+    }
+
+    // Regular RSS feed
+    if (!feed.rssUrl) return;
     const parsed = await parseFeed(feed.id, feed.rssUrl);
     if (!parsed) {
       await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
@@ -44,7 +61,7 @@ async function onDemandRefreshFeed(feedId: string): Promise<void> {
     const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
     const inserted = await storage.upsertEpisodes(feed.id, episodeData);
     await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
-    
+
     if (inserted.length > 0) {
       console.log(`On-demand refresh: ${feed.title} found ${inserted.length} new episode(s)`);
       for (const ep of inserted.slice(0, 3)) {
@@ -333,26 +350,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const feed = allFeeds.find(f => f.id === req.params.id);
       if (!feed) return res.status(404).json({ error: "Feed not found" });
 
-      const parsed = await parseFeed(feed.id, feed.rssUrl);
-      if (!parsed) return res.json({ newEpisodes: 0 });
-      const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
-      const inserted = await storage.upsertEpisodes(feed.id, episodeData);
+      let totalNew = 0;
 
-      await storage.updateFeed(feed.id, {
-        lastFetchedAt: new Date(),
-        title: parsed.title,
-        imageUrl: parsed.imageUrl || feed.imageUrl,
-        description: parsed.description || feed.description,
-        author: parsed.author || feed.author,
-      });
+      // TAT refresh
+      if (feed.tatSpeakerId) {
+        const tatResult = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: feed.tatSpeakerId });
+        totalNew += tatResult.newEpisodes;
+      }
 
-      if (inserted.length > 0) {
-        for (const ep of inserted.slice(0, 3)) {
-          sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
+      // RSS refresh (skip for TAT-only feeds)
+      if (!feed.rssUrl.startsWith("tat://")) {
+        const parsed = await parseFeed(feed.id, feed.rssUrl);
+        if (parsed) {
+          const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
+          const inserted = await storage.upsertEpisodes(feed.id, episodeData);
+          totalNew += inserted.length;
+
+          await storage.updateFeed(feed.id, {
+            lastFetchedAt: new Date(),
+            title: parsed.title,
+            imageUrl: parsed.imageUrl || feed.imageUrl,
+            description: parsed.description || feed.description,
+            author: parsed.author || feed.author,
+          });
+
+          if (inserted.length > 0) {
+            for (const ep of inserted.slice(0, 3)) {
+              sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
+            }
+          }
         }
       }
 
-      res.json({ newEpisodes: inserted.length });
+      res.json({ newEpisodes: totalNew });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -364,15 +394,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let totalNew = 0;
       for (const feed of allFeeds) {
         try {
-          const parsed = await parseFeed(feed.id, feed.rssUrl);
-          if (!parsed) { await storage.updateFeed(feed.id, { lastFetchedAt: new Date() }); continue; }
-          const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
-          const inserted = await storage.upsertEpisodes(feed.id, episodeData);
-          totalNew += inserted.length;
-          await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
-          if (inserted.length > 0) {
-            for (const ep of inserted.slice(0, 3)) {
-              sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
+          // TAT feed refresh
+          if (feed.tatSpeakerId) {
+            const tatResult = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: feed.tatSpeakerId });
+            totalNew += tatResult.newEpisodes;
+          }
+          // RSS refresh (skip for TAT-only feeds)
+          if (!feed.rssUrl.startsWith("tat://")) {
+            const parsed = await parseFeed(feed.id, feed.rssUrl);
+            if (!parsed) { await storage.updateFeed(feed.id, { lastFetchedAt: new Date() }); continue; }
+            const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
+            const inserted = await storage.upsertEpisodes(feed.id, episodeData);
+            totalNew += inserted.length;
+            await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
+            if (inserted.length > 0) {
+              for (const ep of inserted.slice(0, 3)) {
+                sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
+              }
             }
           }
         } catch (e) {
@@ -861,6 +899,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       await storage.deleteMaggidShiur(req.params.id);
       res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: TorahAnytime sync
+  app.post("/api/admin/tat/sync-speakers", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const result = await syncTATSpeakers();
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Link/unlink feed to TAT speaker
+  app.put("/api/admin/feeds/:id/tat-link", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { tatSpeakerId } = req.body;
+      if (!tatSpeakerId) return res.status(400).json({ error: "tatSpeakerId required" });
+      const feed = await storage.updateFeed(req.params.id, { tatSpeakerId } as any);
+      res.json(feed);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/admin/feeds/:id/tat-link", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const feed = await storage.updateFeed(req.params.id, { tatSpeakerId: null } as any);
+      res.json(feed);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
