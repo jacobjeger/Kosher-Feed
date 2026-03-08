@@ -1,6 +1,8 @@
 import axios from "axios";
 import * as storage from "./storage";
 import { sendNewEpisodePushes } from "./push";
+import { normalizeName } from "./name-utils";
+import { filterCrossSourceDuplicates, isMergedFeed } from "./episode-dedup";
 
 // --- Platform Configuration ---
 
@@ -214,18 +216,6 @@ function getAudioUrl(post: OUPost): string | null {
   return null;
 }
 
-function normalizeName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[''`]/g, "'")
-    .replace(/\b(rabbi|rav|r\.|r'|rebbetzin|harav|hagaon|moreinu|dr\.?|mrs?\.?)\b/gi, "")
-    .replace(/\b(shiurim|shiur|lectures?|podcast|audio|video|series|classes?|torah|daf yomi|daf|gemara|mishnah?|parsha|parasha)\b/gi, "")
-    .replace(/\b[a-z]\.\s*/gi, "")
-    .replace(/[-–—]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 export function mapOUPostToEpisodeData(post: OUPost, feedId: string, guidPrefix: string) {
   const audioUrl = getAudioUrl(post);
   if (!audioUrl) return null;
@@ -341,13 +331,20 @@ export async function syncOUPlatformAuthors(platform: OUPlatformKey): Promise<{ 
 export async function refreshOUFeedEpisodes(
   platform: OUPlatformKey,
   feed: { id: string; title: string; authorId: number },
+  feedRecord?: any,
 ): Promise<{ newEpisodes: number }> {
   const cfg = OU_PLATFORMS[platform];
   const posts = await fetchAllAuthorPosts(platform, feed.authorId);
 
-  const episodeData = posts
+  let episodeData = posts
     .map(p => mapOUPostToEpisodeData(p, feed.id, cfg.guidPrefix))
     .filter((ep): ep is NonNullable<typeof ep> => ep !== null);
+
+  // Cross-source dedup for merged feeds
+  if (feedRecord && isMergedFeed(feedRecord)) {
+    const existingEpisodes = await storage.getEpisodesByFeed(feed.id);
+    episodeData = filterCrossSourceDuplicates(episodeData, existingEpisodes, cfg.guidPrefix);
+  }
 
   const inserted = await storage.upsertOUEpisodes(feed.id, episodeData);
 

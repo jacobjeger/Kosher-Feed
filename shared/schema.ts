@@ -30,6 +30,7 @@ export const feeds = pgTable("feeds", {
   alldafAuthorId: integer("alldaf_author_id"),
   allmishnahAuthorId: integer("allmishnah_author_id"),
   allparshaAuthorId: integer("allparsha_author_id"),
+  kolhalashonRavId: integer("kolhalashon_rav_id"),
 });
 
 export const episodes = pgTable("episodes", {
@@ -46,6 +47,7 @@ export const episodes = pgTable("episodes", {
   adminNotes: text("admin_notes"),
   sourceSheetUrl: text("source_sheet_url"),
   tatLectureId: integer("tat_lecture_id"),
+  kolhalashonFileId: integer("kolhalashon_file_id"),
   noDownload: boolean("no_download").default(false),
 }, (table) => [
   uniqueIndex("episodes_guid_feed_idx").on(table.guid, table.feedId),
@@ -202,6 +204,7 @@ export const insertFeedSchema = createInsertSchema(feeds).pick({
   categoryId: true,
   sourceNetwork: true,
   tatSpeakerId: true,
+  kolhalashonRavId: true,
 });
 
 export const insertCategorySchema = createInsertSchema(categories).pick({

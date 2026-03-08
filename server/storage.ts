@@ -191,6 +191,36 @@ export async function setAlldafAuthorId(feedId: string, authorId: number): Promi
   return setOUAuthorId(feedId, "alldafAuthorId", authorId);
 }
 
+// Kol Halashon episode upsert
+export async function upsertKHEpisodes(feedId: string, episodeData: any[]): Promise<Episode[]> {
+  if (episodeData.length === 0) return [];
+  const inserted: Episode[] = [];
+  for (const ep of episodeData) {
+    try {
+      const [result] = await db.insert(episodes).values({
+        feedId: ep.feedId,
+        title: ep.title,
+        description: ep.description,
+        audioUrl: ep.audioUrl,
+        duration: ep.duration,
+        publishedAt: ep.publishedAt,
+        guid: ep.guid,
+        imageUrl: ep.imageUrl,
+        kolhalashonFileId: ep.kolhalashonFileId,
+        noDownload: ep.noDownload || false,
+      }).onConflictDoNothing().returning();
+      if (result) inserted.push(result);
+    } catch (e) {
+      // skip duplicates
+    }
+  }
+  return inserted;
+}
+
+export async function setKHRavId(feedId: string, ravId: number | null): Promise<void> {
+  await db.update(feeds).set({ kolhalashonRavId: ravId } as any).where(eq(feeds.id, feedId));
+}
+
 export async function getTATFeeds(): Promise<Feed[]> {
   return db.select().from(feeds).where(
     and(

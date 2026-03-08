@@ -1,6 +1,8 @@
 import axios from "axios";
 import * as storage from "./storage";
 import { sendNewEpisodePushes } from "./push";
+import { normalizeName } from "./name-utils";
+import { filterCrossSourceDuplicates, isMergedFeed } from "./episode-dedup";
 
 const TAT_BASE_URL = "https://api.torahanytime.com";
 const TAT_PROJECT_ID = 1;
@@ -153,18 +155,6 @@ function buildSpeakerPhotoUrl(speaker: TATSpeaker): string | null {
   return `${TAT_SPEAKER_PHOTO_BASE}${speaker.photo}`;
 }
 
-function normalizeName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[''`]/g, "'")
-    .replace(/\b(rabbi|rav|r\.|r'|rebbetzin|harav|hagaon|moreinu|dr\.?|mrs?\.?)\b/gi, "")
-    .replace(/\b(shiurim|shiur|lectures?|podcast|audio|video|series|classes?|torah)\b/gi, "")
-    .replace(/\b[a-z]\.\s*/gi, "") // Remove middle initials like "J."
-    .replace(/[-–—]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 export function mapTATLectureToEpisodeData(lecture: TATLecture, feedId: string) {
   return {
     feedId,
@@ -285,13 +275,20 @@ export async function syncTATSpeakers(): Promise<{ created: number; linked: numb
 
 // --- Episode Refresh for TAT Feeds ---
 
-export async function refreshTATFeedEpisodes(feed: { id: string; title: string; tatSpeakerId: number }): Promise<{ newEpisodes: number }> {
+export async function refreshTATFeedEpisodes(feed: { id: string; title: string; tatSpeakerId: number }, feedRecord?: any): Promise<{ newEpisodes: number }> {
   const lectures = await fetchAllSpeakerLectures(feed.tatSpeakerId);
 
   // Filter out private and inactive lectures
   const validLectures = lectures.filter(l => !l.private && l.display_active);
 
-  const episodeData = validLectures.map(l => mapTATLectureToEpisodeData(l, feed.id));
+  let episodeData = validLectures.map(l => mapTATLectureToEpisodeData(l, feed.id));
+
+  // Cross-source dedup for merged feeds
+  if (feedRecord && isMergedFeed(feedRecord)) {
+    const existingEpisodes = await storage.getEpisodesByFeed(feed.id);
+    episodeData = filterCrossSourceDuplicates(episodeData, existingEpisodes, "tat-");
+  }
+
   const inserted = await storage.upsertTATEpisodes(feed.id, episodeData);
 
   await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });

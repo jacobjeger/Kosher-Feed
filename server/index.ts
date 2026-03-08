@@ -14,6 +14,7 @@ import { sendNewEpisodePushes } from "./push";
 import { startRefreshCycle, recordFeedResult, endRefreshCycle } from "./feed-vitals";
 import { refreshTATFeedEpisodes, syncTATSpeakers } from "./torahanytime";
 import { detectOUPlatform, refreshOUFeedEpisodes, OU_PLATFORMS } from "./alldaf";
+import { refreshKHFeedEpisodes, syncKHSpeakers } from "./kolhalashon";
 import * as fs from "fs";
 import * as path from "path";
 import pLimit from "p-limit";
@@ -33,14 +34,17 @@ async function ensureColumns() {
     { column: "alldaf_author_id", type: "INTEGER" },
     { column: "allmishnah_author_id", type: "INTEGER" },
     { column: "allparsha_author_id", type: "INTEGER" },
+    { column: "kolhalashon_rav_id", type: "INTEGER" },
+    { column: "kolhalashon_file_id", type: "INTEGER", table: "episodes" },
   ];
-  for (const { column, type } of columnsToAdd) {
+  for (const col of columnsToAdd) {
+    const table = (col as any).table || "feeds";
     try {
-      await db.execute(sql.raw(`ALTER TABLE feeds ADD COLUMN IF NOT EXISTS ${column} ${type}`));
+      await db.execute(sql.raw(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${col.column} ${col.type}`));
     } catch (e: any) {
       // Column might already exist (older PG without IF NOT EXISTS)
       if (!e.message?.includes("already exists")) {
-        console.error(`Migration: failed to add ${column}:`, e.message);
+        console.error(`Migration: failed to add ${col.column} to ${table}:`, e.message);
       }
     }
   }
@@ -423,7 +427,7 @@ export interface RefreshResult {
   episodesFound: number;
 }
 
-export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string; etag?: string | null; lastModifiedHeader?: string | null; tatSpeakerId?: number | null; alldafAuthorId?: number | null; allmishnahAuthorId?: number | null; allparshaAuthorId?: number | null }): Promise<RefreshResult> {
+export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string; etag?: string | null; lastModifiedHeader?: string | null; tatSpeakerId?: number | null; alldafAuthorId?: number | null; allmishnahAuthorId?: number | null; allparshaAuthorId?: number | null; kolhalashonRavId?: number | null }): Promise<RefreshResult> {
   const start = Date.now();
 
   // TAT feed: refresh from TorahAnytime API
@@ -440,26 +444,42 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
   const isOUUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
 
   if (ouPlatform && isOUUrl) {
-    const result = await refreshOUFeedEpisodes(ouPlatform.platform, { id: feed.id, title: feed.title, authorId: ouPlatform.authorId });
+    const result = await refreshOUFeedEpisodes(ouPlatform.platform, { id: feed.id, title: feed.title, authorId: ouPlatform.authorId }, feed);
+    return { newEpisodes: result.newEpisodes, method: 'stream', durationMs: Date.now() - start, episodesFound: result.newEpisodes };
+  }
+
+  // KH feed: refresh from Kol Halashon API
+  const isKhUrl = feed.rssUrl.startsWith("kh://");
+  const effectiveKhRavId = feed.kolhalashonRavId ?? (isKhUrl ? parseInt(feed.rssUrl.replace("kh://rav/", ""), 10) || null : null);
+
+  if (effectiveKhRavId && isKhUrl) {
+    const result = await refreshKHFeedEpisodes({ id: feed.id, title: feed.title, kolhalashonRavId: effectiveKhRavId }, feed);
     return { newEpisodes: result.newEpisodes, method: 'stream', durationMs: Date.now() - start, episodesFound: result.newEpisodes };
   }
 
   // Merged feed (has both RSS + TAT): refresh both
   if (effectiveTatSpeakerId) {
-    await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveTatSpeakerId }).catch(e => {
+    await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveTatSpeakerId }, feed).catch(e => {
       console.log(`TAT refresh failed for merged feed ${feed.title}: ${(e as Error).message?.slice(0, 100)}`);
     });
   }
 
   // Merged feed (has both RSS + OU platform): refresh both
   if (ouPlatform && !isOUUrl) {
-    await refreshOUFeedEpisodes(ouPlatform.platform, { id: feed.id, title: feed.title, authorId: ouPlatform.authorId }).catch(e => {
+    await refreshOUFeedEpisodes(ouPlatform.platform, { id: feed.id, title: feed.title, authorId: ouPlatform.authorId }, feed).catch(e => {
       console.log(`${OU_PLATFORMS[ouPlatform.platform].label} refresh failed for merged feed ${feed.title}: ${(e as Error).message?.slice(0, 100)}`);
     });
   }
 
-  // Skip RSS parsing for TAT-only or OU-only URLs
-  if (isTatUrl || isOUUrl) {
+  // Merged feed (has both RSS + KH): refresh both
+  if (effectiveKhRavId && !isKhUrl) {
+    await refreshKHFeedEpisodes({ id: feed.id, title: feed.title, kolhalashonRavId: effectiveKhRavId }, feed).catch(e => {
+      console.log(`KH refresh failed for merged feed ${feed.title}: ${(e as Error).message?.slice(0, 100)}`);
+    });
+  }
+
+  // Skip RSS parsing for TAT-only, OU-only, or KH-only URLs
+  if (isTatUrl || isOUUrl || isKhUrl) {
     return { newEpisodes: 0, method: 'stream', durationMs: Date.now() - start, episodesFound: 0 };
   }
 
@@ -521,7 +541,7 @@ async function autoRefreshFeeds() {
       return;
     }
 
-    await preResolveHostnames(staleFeeds.filter(f => !f.rssUrl.startsWith("tat://")).map(f => f.rssUrl));
+    await preResolveHostnames(staleFeeds.filter(f => !f.rssUrl.startsWith("tat://") && !f.rssUrl.startsWith("kh://")).map(f => f.rssUrl));
 
     log(`Auto-refresh [${now}]: refreshing ${staleFeeds.length} stale feed(s) out of ${allFeeds.length} total (3 concurrent)...`);
     let totalNew = 0;
@@ -675,6 +695,10 @@ function startAutoRefresh() {
       setTimeout(() => {
         syncTATSpeakers().catch(e => console.error("TAT initial sync error:", e.message));
       }, 15000);
+      // Sync Kol Halashon speakers in background after 30s
+      setTimeout(() => {
+        syncKHSpeakers().catch(e => console.error("KH initial sync error:", e.message));
+      }, 30000);
     },
   );
 })();

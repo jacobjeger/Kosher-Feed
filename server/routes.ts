@@ -8,6 +8,7 @@ import { insertFeedSchema, insertCategorySchema } from "@shared/schema";
 import type { Feed } from "@shared/schema";
 import { syncTATSpeakers, refreshTATFeedEpisodes, fetchAllSpeakers } from "./torahanytime";
 import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, OU_PLATFORMS, type OUPlatformKey } from "./alldaf";
+import { syncKHSpeakers, refreshKHFeedEpisodes } from "./kolhalashon";
 import multer from "multer";
 import path from "node:path";
 import fs from "node:fs";
@@ -57,7 +58,7 @@ async function onDemandRefreshFeed(feedId: string): Promise<void> {
     // OU Torah platform feed (AllDaf, AllMishnah, AllParsha)
     const onDemandOU = detectOUPlatform(feed as any);
     if (onDemandOU) {
-      await refreshOUFeedEpisodes(onDemandOU.platform, { id: feed.id, title: feed.title, authorId: onDemandOU.authorId });
+      await refreshOUFeedEpisodes(onDemandOU.platform, { id: feed.id, title: feed.title, authorId: onDemandOU.authorId }, feed);
       const ouCfg = OU_PLATFORMS[onDemandOU.platform];
       if (!feed.rssUrl.startsWith(ouCfg.urlScheme)) {
         const parsed = await parseFeed(feed.id, feed.rssUrl);
@@ -69,9 +70,24 @@ async function onDemandRefreshFeed(feedId: string): Promise<void> {
       return;
     }
 
-    // Regular RSS feed (skip TAT/OU-only URLs)
+    // Kol Halashon feed
+    const isKhUrl = feed.rssUrl.startsWith("kh://");
+    const onDemandKhId = (feed as any).kolhalashonRavId ?? (isKhUrl ? parseInt(feed.rssUrl.replace("kh://rav/", ""), 10) || null : null);
+    if (onDemandKhId) {
+      await refreshKHFeedEpisodes({ id: feed.id, title: feed.title, kolhalashonRavId: onDemandKhId }, feed);
+      if (!isKhUrl) {
+        const parsed = await parseFeed(feed.id, feed.rssUrl);
+        if (parsed) {
+          const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
+          await storage.upsertEpisodes(feed.id, episodeData);
+        }
+      }
+      return;
+    }
+
+    // Regular RSS feed (skip TAT/OU/KH-only URLs)
     const isOUUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
-    if (!feed.rssUrl || isOnDemandTatUrl || isOUUrl) return;
+    if (!feed.rssUrl || isOnDemandTatUrl || isOUUrl || isKhUrl) return;
     const parsed = await parseFeed(feed.id, feed.rssUrl);
     if (!parsed) {
       await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
@@ -1102,6 +1118,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   } // end OU platform loop
 
+  // --- Kol Halashon Integration ---
+
+  // Admin: Sync KH speakers
+  app.post("/api/admin/kh/sync-speakers", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const result = await syncKHSpeakers();
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Toggle all KH feeds active/inactive
+  app.post("/api/admin/kh/toggle", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { enabled } = req.body;
+      if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) required" });
+      const allFeeds = await storage.getAllFeeds();
+      const khOnlyFeeds = allFeeds.filter(f => (f as any).kolhalashonRavId != null && f.rssUrl.startsWith("kh://"));
+      let updated = 0;
+      for (const feed of khOnlyFeeds) {
+        if (feed.isActive !== enabled) {
+          await storage.updateFeed(feed.id, { isActive: enabled });
+          updated++;
+        }
+      }
+      res.json({ updated, enabled });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Get KH status
+  app.get("/api/admin/kh/status", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const allFeeds = await storage.getAllFeeds();
+      const khFeeds = allFeeds.filter(f => (f as any).kolhalashonRavId != null);
+      const khOnlyFeeds = khFeeds.filter(f => f.rssUrl.startsWith("kh://"));
+      const activeCount = khOnlyFeeds.filter(f => f.isActive).length;
+      const enabled = activeCount > 0;
+      res.json({ enabled, totalKHFeeds: khOnlyFeeds.length, activeKHFeeds: activeCount, mergedFeeds: khFeeds.length - khOnlyFeeds.length });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Link/unlink feed to KH rav
+  app.put("/api/admin/feeds/:id/kh-link", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { kolhalashonRavId } = req.body;
+      if (!kolhalashonRavId) return res.status(400).json({ error: "kolhalashonRavId required" });
+      await storage.setKHRavId(req.params.id, kolhalashonRavId);
+      const feed = await storage.getFeedById(req.params.id);
+      res.json(feed);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/admin/feeds/:id/kh-link", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      await storage.setKHRavId(req.params.id, null);
+      const feed = await storage.getFeedById(req.params.id);
+      res.json(feed);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Admin: Merge two feeds (move episodes + subscribers from source into target, delete source)
   app.post("/api/admin/feeds/merge", adminAuth as any, async (req: Request, res: Response) => {
     try {
@@ -1122,6 +1207,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if ((source as any)[cfg.feedIdField] && !(target as any)[cfg.feedIdField]) {
           await storage.setOUAuthorId(targetId, cfg.feedIdField, (source as any)[cfg.feedIdField]);
         }
+      }
+      if ((source as any).kolhalashonRavId && !(target as any).kolhalashonRavId) {
+        await storage.setKHRavId(targetId, (source as any).kolhalashonRavId);
       }
 
       const result = await storage.mergeFeeds(sourceId, targetId);
