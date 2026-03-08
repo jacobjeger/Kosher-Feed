@@ -1023,6 +1023,7 @@ function filterFeeds(query) {
         <button class="btn btn-secondary btn-sm" onclick="viewEpisodes('${f.id}')">Episodes</button>
         <button class="btn btn-secondary btn-sm" onclick="editFeed('${f.id}')">Edit</button>
         <button class="btn btn-secondary btn-sm" onclick="refreshFeed('${f.id}')">Refresh</button>
+        <button class="btn btn-secondary btn-sm" onclick="showMergeModal('${f.id}')" title="Merge into another feed">Merge</button>
         <button class="btn btn-danger btn-sm" onclick="deleteFeed('${f.id}')">Remove</button>
       </div>
     </div>`;
@@ -1274,6 +1275,79 @@ async function deleteCategory(id) {
     await api(`/api/admin/categories/${id}`, { method: 'DELETE' });
     showAlert('Category removed');
     await Promise.all([loadCategories(), loadAnalytics()]);
+  } catch (e) {
+    showAlert(e.message, 'error');
+  }
+}
+
+function showMergeModal(sourceId) {
+  const source = allAdminFeeds.find(f => f.id === sourceId);
+  if (!source) return;
+  const otherFeeds = allAdminFeeds.filter(f => f.id !== sourceId);
+
+  document.getElementById('modalContent').innerHTML = `
+    <h2>Merge Feed</h2>
+    <p style="color:#94a3b8;font-size:13px;margin-bottom:12px;">Merge <strong style="color:#e2e8f0;">${esc(source.title)}</strong> into another feed. All episodes and subscribers will be moved to the target, and this feed will be deleted.</p>
+    <div class="form-group">
+      <label>Target Feed</label>
+      <input type="text" id="mergeSearch" placeholder="Search feeds..." oninput="filterMergeTargets('${sourceId}')">
+    </div>
+    <div id="mergeTargetList" style="max-height:300px;overflow-y:auto;border:1px solid #1e293b;border-radius:8px;background:#0f172a;">
+      ${otherFeeds.slice(0, 50).map(f => `
+        <div class="merge-target-item" data-id="${f.id}" onclick="selectMergeTarget(this, '${f.id}')" style="padding:10px 12px;cursor:pointer;border-bottom:1px solid #1e293b;display:flex;align-items:center;gap:10px;">
+          ${f.imageUrl ? '<img src="' + f.imageUrl + '" style="width:32px;height:32px;border-radius:6px;object-fit:cover;" onerror="this.style.display=\'none\'">' : ''}
+          <div>
+            <div style="color:#e2e8f0;font-size:13px;">${esc(f.title)}</div>
+            <div style="color:#64748b;font-size:11px;">${esc(f.author || '')} &bull; ${esc(f.rssUrl)}</div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+    <input type="hidden" id="mergeTargetId" value="">
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" id="mergeBtn" onclick="executeMerge('${sourceId}')" disabled>Merge</button>
+    </div>
+  `;
+  document.getElementById('modalOverlay').classList.remove('hidden');
+}
+
+function filterMergeTargets(sourceId) {
+  const query = document.getElementById('mergeSearch').value.toLowerCase().trim();
+  const otherFeeds = allAdminFeeds.filter(f => f.id !== sourceId);
+  const filtered = query ? otherFeeds.filter(f => (f.title || '').toLowerCase().includes(query) || (f.author || '').toLowerCase().includes(query)) : otherFeeds;
+  const list = document.getElementById('mergeTargetList');
+  const selectedId = document.getElementById('mergeTargetId').value;
+  list.innerHTML = filtered.slice(0, 50).map(f => `
+    <div class="merge-target-item ${f.id === selectedId ? 'selected' : ''}" data-id="${f.id}" onclick="selectMergeTarget(this, '${f.id}')" style="padding:10px 12px;cursor:pointer;border-bottom:1px solid #1e293b;display:flex;align-items:center;gap:10px;${f.id === selectedId ? 'background:#1e3a5f;' : ''}">
+      ${f.imageUrl ? '<img src="' + f.imageUrl + '" style="width:32px;height:32px;border-radius:6px;object-fit:cover;" onerror="this.style.display=\'none\'">' : ''}
+      <div>
+        <div style="color:#e2e8f0;font-size:13px;">${esc(f.title)}</div>
+        <div style="color:#64748b;font-size:11px;">${esc(f.author || '')} &bull; ${esc(f.rssUrl)}</div>
+      </div>
+    </div>
+  `).join('') || '<p style="color:#64748b;text-align:center;padding:16px;">No matching feeds</p>';
+}
+
+function selectMergeTarget(el, targetId) {
+  document.querySelectorAll('.merge-target-item').forEach(i => { i.style.background = ''; i.classList.remove('selected'); });
+  el.style.background = '#1e3a5f';
+  el.classList.add('selected');
+  document.getElementById('mergeTargetId').value = targetId;
+  document.getElementById('mergeBtn').disabled = false;
+}
+
+async function executeMerge(sourceId) {
+  const targetId = document.getElementById('mergeTargetId').value;
+  if (!targetId) return;
+  const source = allAdminFeeds.find(f => f.id === sourceId);
+  const target = allAdminFeeds.find(f => f.id === targetId);
+  if (!confirm(`Merge "${source?.title}" into "${target?.title}"?\n\nAll episodes and subscribers will be moved. The source feed will be deleted. This cannot be undone.`)) return;
+  try {
+    const data = await api('/api/admin/feeds/merge', { method: 'POST', body: JSON.stringify({ sourceId, targetId }) });
+    closeModal();
+    showAlert(`Merged! ${data.episodesMoved} episodes and ${data.subscriptionsMoved} subscribers moved.`);
+    await loadFeeds();
   } catch (e) {
     showAlert(e.message, 'error');
   }

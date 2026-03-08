@@ -996,6 +996,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin: Merge two feeds (move episodes + subscribers from source into target, delete source)
+  app.post("/api/admin/feeds/merge", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { sourceId, targetId } = req.body;
+      if (!sourceId || !targetId) return res.status(400).json({ error: "sourceId and targetId required" });
+      if (sourceId === targetId) return res.status(400).json({ error: "Cannot merge a feed into itself" });
+
+      const source = await storage.getFeedById(sourceId);
+      const target = await storage.getFeedById(targetId);
+      if (!source) return res.status(404).json({ error: "Source feed not found" });
+      if (!target) return res.status(404).json({ error: "Target feed not found" });
+
+      // If source has tatSpeakerId and target doesn't, carry it over
+      if (source.tatSpeakerId && !target.tatSpeakerId) {
+        await storage.updateFeed(targetId, { tatSpeakerId: source.tatSpeakerId } as any);
+      }
+
+      const result = await storage.mergeFeeds(sourceId, targetId);
+      console.log(`Feed merge: "${source.title}" -> "${target.title}" (${result.episodesMoved} episodes, ${result.subscriptionsMoved} subscriptions moved)`);
+      res.json({
+        message: `Merged "${source.title}" into "${target.title}"`,
+        sourceFeed: source.title,
+        targetFeed: target.title,
+        ...result,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Admin: Bulk Feed Import with streaming progress
   app.post("/api/admin/feeds/bulk-import", adminAuth as any, async (req: Request, res: Response) => {
     try {

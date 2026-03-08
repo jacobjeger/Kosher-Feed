@@ -48,6 +48,40 @@ export async function deleteFeed(id: string): Promise<void> {
   await db.delete(feeds).where(eq(feeds.id, id));
 }
 
+export async function mergeFeeds(sourceId: string, targetId: string): Promise<{ episodesMoved: number; subscriptionsMoved: number }> {
+  // Move episodes from source to target (skip duplicates by guid)
+  const sourceEps = await db.select().from(episodes).where(eq(episodes.feedId, sourceId));
+  const targetEps = await db.select().from(episodes).where(eq(episodes.feedId, targetId));
+  const targetGuids = new Set(targetEps.map(e => e.guid).filter(Boolean));
+
+  let episodesMoved = 0;
+  for (const ep of sourceEps) {
+    if (ep.guid && targetGuids.has(ep.guid)) continue;
+    await db.update(episodes).set({ feedId: targetId }).where(eq(episodes.id, ep.id));
+    episodesMoved++;
+  }
+
+  // Move subscriptions from source to target (skip duplicates by deviceId)
+  const sourceSubs = await db.select().from(subscriptions).where(eq(subscriptions.feedId, sourceId));
+  const targetSubs = await db.select().from(subscriptions).where(eq(subscriptions.feedId, targetId));
+  const targetDevices = new Set(targetSubs.map(s => s.deviceId));
+
+  let subscriptionsMoved = 0;
+  for (const sub of sourceSubs) {
+    if (targetDevices.has(sub.deviceId)) {
+      await db.delete(subscriptions).where(eq(subscriptions.id, sub.id));
+    } else {
+      await db.update(subscriptions).set({ feedId: targetId }).where(eq(subscriptions.id, sub.id));
+      subscriptionsMoved++;
+    }
+  }
+
+  // Delete the source feed (remaining episodes/subscriptions cascade)
+  await db.delete(feeds).where(eq(feeds.id, sourceId));
+
+  return { episodesMoved, subscriptionsMoved };
+}
+
 export async function getEpisodeById(episodeId: string): Promise<Episode | undefined> {
   const result = await db.select().from(episodes).where(eq(episodes.id, episodeId)).limit(1);
   return result[0];
