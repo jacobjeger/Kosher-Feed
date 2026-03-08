@@ -695,13 +695,9 @@ function startAutoRefresh() {
       setTimeout(() => {
         syncTATSpeakers().catch(e => console.error("TAT initial sync error:", e.message));
       }, 15000);
-      // Sync Kol Halashon speakers in background after 30s (only if CF cookie is set)
+      // Sync Kol Halashon speakers in background after 30s (auto-solves CF challenge via Playwright)
       setTimeout(() => {
-        if (process.env.KH_CF_CLEARANCE) {
-          syncKHSpeakers().catch(e => console.error("KH initial sync error:", e.message));
-        } else {
-          log("KH Sync: skipped — KH_CF_CLEARANCE not set. Set via admin panel or env var.");
-        }
+        syncKHSpeakers().catch(e => console.error("KH initial sync error:", e.message));
       }, 30000);
     },
   );

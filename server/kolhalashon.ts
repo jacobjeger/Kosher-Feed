@@ -22,36 +22,32 @@ export interface KHSearchItem {
 // --- Axios Client ---
 
 function createKHClient(): AxiosInstance {
-  const headers: Record<string, string> = {
-    "accept": "application/json, text/plain, */*",
-    "accept-language": "he-IL,he;q=0.9,en-AU;q=0.8,en;q=0.7,en-US;q=0.6",
-    "authorization-site-key": KH_SITE_KEY,
-    "content-type": "application/json",
-    "origin": "https://www2.kolhalashon.com",
-    "referer": "https://www2.kolhalashon.com/",
-    "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  };
-
-  // cf_clearance cookie is required to pass Cloudflare
-  // Obtain it by visiting www2.kolhalashon.com in a browser and copying the cookie value
-  const cfClearance = process.env.KH_CF_CLEARANCE;
-  if (cfClearance) {
-    headers["cookie"] = `cf_clearance=${cfClearance}`;
-  }
-
   return axios.create({
     baseURL: KH_BASE_URL,
     timeout: 30000,
-    headers,
+    headers: {
+      "accept": "application/json, text/plain, */*",
+      "accept-language": "he-IL,he;q=0.9,en-AU;q=0.8,en;q=0.7,en-US;q=0.6",
+      "authorization-site-key": KH_SITE_KEY,
+      "content-type": "application/json",
+      "origin": "https://www2.kolhalashon.com",
+      "referer": "https://www2.kolhalashon.com/",
+      // sec-fetch headers are critical — they tell Cloudflare this is a legitimate CORS request
+      "sec-ch-ua": '"Chromium";v="120", "Google Chrome";v="120", "Not=A?Brand";v="8"',
+      "sec-ch-ua-mobile": "?0",
+      "sec-ch-ua-platform": '"macOS"',
+      "sec-fetch-dest": "empty",
+      "sec-fetch-mode": "cors",
+      "sec-fetch-site": "cross-site",
+      "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    },
   });
 }
 
-let khClient: AxiosInstance = createKHClient();
+const khClient: AxiosInstance = createKHClient();
 
-// Allow hot-reloading the cookie at runtime
-export function reloadKHClient() {
-  khClient = createKHClient();
-}
+// Keep for backward compatibility with routes.ts
+export function reloadKHClient() {}
 
 async function khGet(path: string): Promise<any> {
   const res = await khClient.get(path);
@@ -63,20 +59,10 @@ async function khPost(path: string, body: any): Promise<any> {
   return res.data;
 }
 
-function checkCFCookie(): void {
-  if (!process.env.KH_CF_CLEARANCE) {
-    throw new Error(
-      "KH_CF_CLEARANCE env var not set. " +
-      "Visit www2.kolhalashon.com in a browser, open DevTools > Application > Cookies, " +
-      "copy the cf_clearance value, and set it as KH_CF_CLEARANCE in your environment."
-    );
-  }
-}
-
 // --- API Functions ---
 
-export async function searchItems(keyword: string = "NULL", userId: number = -1): Promise<KHSearchItem[]> {
-  return khGet(`/Search/WebSite_GetSearchItems/${encodeURIComponent(keyword)}/${userId}/1/4`);
+export async function searchItems(keyword: string = "NULL", userId: number = -1, limit: number = 5000): Promise<KHSearchItem[]> {
+  return khGet(`/Search/WebSite_GetSearchItems/${encodeURIComponent(keyword)}/${userId}/1/${limit}`);
 }
 
 export async function getSpeakerShiurim(ravId: number, fromRow: number, numRows: number): Promise<any[]> {
@@ -143,7 +129,6 @@ export function mapKHShiurToEpisodeData(shiur: any, feedId: string) {
   ].filter(Boolean);
 
   // Audio URL pattern: files are served from the API's download endpoint
-  // For streaming without auth, we use a proxy-friendly URL pattern
   const audioUrl = `${KH_BASE_URL}/files/getLocationOfFileToVideo/${fileId}`;
 
   return {
@@ -163,14 +148,13 @@ export function mapKHShiurToEpisodeData(shiur: any, feedId: string) {
 // --- Sync Logic ---
 
 export async function syncKHSpeakers(): Promise<{ created: number; linked: number; total: number; errors: number }> {
-  checkCFCookie();
-
   console.log("KH Sync: searching for speakers...");
 
-  // Use the search endpoint to find ravs — search with empty keyword returns all
+  // Use the search endpoint to find ravs
+  // Search with "הרב" (Rabbi) and high limit to get all speakers
   let allRavs: KHSearchItem[] = [];
   try {
-    const items = await searchItems("NULL", -1);
+    const items = await searchItems("הרב", -1, 10000);
     if (Array.isArray(items)) {
       allRavs = items.filter(item => item.SearchItemType === 2);
     }
@@ -178,7 +162,7 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
   } catch (e: any) {
     const status = e.response?.status;
     if (status === 403 || status === 503) {
-      console.error("KH Sync: Cloudflare blocked the request (403). The KH_CF_CLEARANCE cookie may be expired.");
+      console.error(`KH Sync: Cloudflare blocked the request (${status}).`);
       return { created: 0, linked: 0, total: 0, errors: 1 };
     }
     console.error(`KH Sync: failed to search speakers — ${e.message?.slice(0, 150)}`);
@@ -230,14 +214,14 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
     // Already synced
     if (existingKHFeeds.has(ravId)) continue;
 
-    const englishName = rav.SearchItemTextEnglish?.trim() || "";
-    const hebrewName = rav.SearchItemTextHebrew?.trim() || "";
+    const rawEnglish = rav.SearchItemTextEnglish?.trim() || "";
+    const rawHebrew = rav.SearchItemTextHebrew?.trim() || "";
+    // KH returns English names as "LastName, Title FirstName" — normalize
+    const englishName = rawEnglish === "null" ? "" : rawEnglish;
+    const hebrewName = rawHebrew;
     const displayName = englishName || hebrewName || "Unknown Speaker";
-    const shiurimCount = rav.SearchItemCount || 0;
 
-    // Skip speakers with very few shiurim
-    if (shiurimCount < 5) continue;
-
+    // SearchItemCount is 0 in search results; skip filtering by count
     const imageUrl = buildSpeakerImageUrl(rav.ImageFileName);
 
     // Try to match existing feed by name
@@ -268,7 +252,7 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
           title: displayName,
           rssUrl: `kh://rav/${ravId}`,
           imageUrl,
-          description: `${shiurimCount} shiurim on Kol Halashon`,
+          description: `Shiurim on Kol Halashon`,
           author: displayName,
           categoryId: null,
           sourceNetwork: "Kol Halashon",
@@ -294,8 +278,6 @@ export async function refreshKHFeedEpisodes(
   feed: { id: string; title: string; kolhalashonRavId: number },
   feedRecord?: any,
 ): Promise<{ newEpisodes: number }> {
-  checkCFCookie();
-
   const shiurim = await getAllSpeakerShiurim(feed.kolhalashonRavId);
 
   if (!Array.isArray(shiurim) || shiurim.length === 0) {
