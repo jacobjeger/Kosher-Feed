@@ -7,7 +7,7 @@ import { getVitals, recordFeedResult } from "./feed-vitals";
 import { insertFeedSchema, insertCategorySchema } from "@shared/schema";
 import type { Feed } from "@shared/schema";
 import { syncTATSpeakers, refreshTATFeedEpisodes, fetchAllSpeakers } from "./torahanytime";
-import { syncAllDafAuthors, refreshAllDafFeedEpisodes } from "./alldaf";
+import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, OU_PLATFORMS, type OUPlatformKey } from "./alldaf";
 import multer from "multer";
 import path from "node:path";
 import fs from "node:fs";
@@ -54,12 +54,12 @@ async function onDemandRefreshFeed(feedId: string): Promise<void> {
       return;
     }
 
-    // AllDaf feed: refresh from AllDaf API
-    const isOnDemandAlldafUrl = feed.rssUrl.startsWith("alldaf://");
-    const onDemandAlldafId = (feed as any).alldafAuthorId ?? (isOnDemandAlldafUrl ? parseInt(feed.rssUrl.replace("alldaf://author/", ""), 10) || null : null);
-    if (onDemandAlldafId) {
-      await refreshAllDafFeedEpisodes({ id: feed.id, title: feed.title, alldafAuthorId: onDemandAlldafId });
-      if (!isOnDemandAlldafUrl) {
+    // OU Torah platform feed (AllDaf, AllMishnah, AllParsha)
+    const onDemandOU = detectOUPlatform(feed as any);
+    if (onDemandOU) {
+      await refreshOUFeedEpisodes(onDemandOU.platform, { id: feed.id, title: feed.title, authorId: onDemandOU.authorId });
+      const ouCfg = OU_PLATFORMS[onDemandOU.platform];
+      if (!feed.rssUrl.startsWith(ouCfg.urlScheme)) {
         const parsed = await parseFeed(feed.id, feed.rssUrl);
         if (parsed) {
           const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
@@ -69,8 +69,9 @@ async function onDemandRefreshFeed(feedId: string): Promise<void> {
       return;
     }
 
-    // Regular RSS feed (skip TAT/AllDaf-only URLs)
-    if (!feed.rssUrl || isOnDemandTatUrl || isOnDemandAlldafUrl) return;
+    // Regular RSS feed (skip TAT/OU-only URLs)
+    const isOUUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
+    if (!feed.rssUrl || isOnDemandTatUrl || isOUUrl) return;
     const parsed = await parseFeed(feed.id, feed.rssUrl);
     if (!parsed) {
       await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
@@ -378,16 +379,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalNew += tatResult.newEpisodes;
       }
 
-      // AllDaf refresh
-      const isAlldafFeedUrl = feed.rssUrl.startsWith("alldaf://");
-      const effectiveAlldafId = (feed as any).alldafAuthorId ?? (isAlldafFeedUrl ? parseInt(feed.rssUrl.replace("alldaf://author/", ""), 10) || null : null);
-      if (effectiveAlldafId) {
-        const alldafResult = await refreshAllDafFeedEpisodes({ id: feed.id, title: feed.title, alldafAuthorId: effectiveAlldafId });
-        totalNew += alldafResult.newEpisodes;
+      // OU Torah platform refresh (AllDaf, AllMishnah, AllParsha)
+      const ouDetected = detectOUPlatform(feed as any);
+      if (ouDetected) {
+        const ouResult = await refreshOUFeedEpisodes(ouDetected.platform, { id: feed.id, title: feed.title, authorId: ouDetected.authorId });
+        totalNew += ouResult.newEpisodes;
       }
 
-      // RSS refresh (skip for TAT-only and AllDaf-only feeds)
-      if (!isTatFeedUrl && !isAlldafFeedUrl) {
+      // RSS refresh (skip for TAT-only and OU-only feeds)
+      const isOUFeedUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
+      if (!isTatFeedUrl && !isOUFeedUrl) {
         const parsed = await parseFeed(feed.id, feed.rssUrl);
         if (parsed) {
           const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
@@ -429,15 +430,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const tatResult = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveTatId });
             totalNew += tatResult.newEpisodes;
           }
-          // AllDaf feed refresh
-          const isAlldafUrl = feed.rssUrl.startsWith("alldaf://");
-          const effectiveAlldafId = (feed as any).alldafAuthorId ?? (isAlldafUrl ? parseInt(feed.rssUrl.replace("alldaf://author/", ""), 10) || null : null);
-          if (effectiveAlldafId) {
-            const alldafResult = await refreshAllDafFeedEpisodes({ id: feed.id, title: feed.title, alldafAuthorId: effectiveAlldafId });
-            totalNew += alldafResult.newEpisodes;
+          // OU Torah platform refresh (AllDaf, AllMishnah, AllParsha)
+          const ouRefresh = detectOUPlatform(feed as any);
+          if (ouRefresh) {
+            const ouResult = await refreshOUFeedEpisodes(ouRefresh.platform, { id: feed.id, title: feed.title, authorId: ouRefresh.authorId });
+            totalNew += ouResult.newEpisodes;
           }
-          // RSS refresh (skip for TAT-only and AllDaf-only feeds)
-          if (!feed.rssUrl.startsWith("tat://") && !isAlldafUrl) {
+          // RSS refresh (skip for TAT-only and OU-only feeds)
+          const isOURssUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
+          if (!feed.rssUrl.startsWith("tat://") && !isOURssUrl) {
             const parsed = await parseFeed(feed.id, feed.rssUrl);
             if (!parsed) { await storage.updateFeed(feed.id, { lastFetchedAt: new Date() }); continue; }
             const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
@@ -1027,74 +1028,79 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // --- AllDaf Integration ---
+  // --- OU Torah Platform Integration (AllDaf, AllMishnah, AllParsha) ---
 
-  // Admin: Sync AllDaf authors (create/link feeds)
-  app.post("/api/admin/alldaf/sync-authors", adminAuth as any, async (_req: Request, res: Response) => {
-    try {
-      const result = await syncAllDafAuthors();
-      res.json(result);
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
+  // Generic endpoints for each OU platform
+  for (const cfg of Object.values(OU_PLATFORMS)) {
+    const platformRoute = cfg.key; // "alldaf", "allmishnah", "allparsha"
 
-  // Admin: Toggle all AllDaf feeds active/inactive
-  app.post("/api/admin/alldaf/toggle", adminAuth as any, async (req: Request, res: Response) => {
-    try {
-      const { enabled } = req.body;
-      if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) required" });
-      const allFeeds = await storage.getAllFeeds();
-      const alldafOnlyFeeds = allFeeds.filter(f => (f as any).alldafAuthorId != null && f.rssUrl.startsWith("alldaf://"));
-      let updated = 0;
-      for (const feed of alldafOnlyFeeds) {
-        if (feed.isActive !== enabled) {
-          await storage.updateFeed(feed.id, { isActive: enabled });
-          updated++;
-        }
+    // Sync authors
+    app.post(`/api/admin/${platformRoute}/sync-authors`, adminAuth as any, async (_req: Request, res: Response) => {
+      try {
+        const result = await syncOUPlatformAuthors(cfg.key);
+        res.json(result);
+      } catch (e: any) {
+        res.status(500).json({ error: e.message });
       }
-      res.json({ updated, enabled });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
+    });
 
-  // Admin: Get AllDaf status
-  app.get("/api/admin/alldaf/status", adminAuth as any, async (_req: Request, res: Response) => {
-    try {
-      const allFeeds = await storage.getAllFeeds();
-      const alldafFeeds = allFeeds.filter(f => (f as any).alldafAuthorId != null);
-      const alldafOnlyFeeds = alldafFeeds.filter(f => f.rssUrl.startsWith("alldaf://"));
-      const activeCount = alldafOnlyFeeds.filter(f => f.isActive).length;
-      const enabled = activeCount > 0;
-      res.json({ enabled, totalAllDafFeeds: alldafOnlyFeeds.length, activeAllDafFeeds: activeCount, mergedFeeds: alldafFeeds.length - alldafOnlyFeeds.length });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
+    // Toggle active/inactive
+    app.post(`/api/admin/${platformRoute}/toggle`, adminAuth as any, async (req: Request, res: Response) => {
+      try {
+        const { enabled } = req.body;
+        if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) required" });
+        const allFeeds = await storage.getAllFeeds();
+        const platformOnlyFeeds = allFeeds.filter(f => (f as any)[cfg.feedIdField] != null && f.rssUrl.startsWith(cfg.urlScheme));
+        let updated = 0;
+        for (const feed of platformOnlyFeeds) {
+          if (feed.isActive !== enabled) {
+            await storage.updateFeed(feed.id, { isActive: enabled });
+            updated++;
+          }
+        }
+        res.json({ updated, enabled });
+      } catch (e: any) {
+        res.status(500).json({ error: e.message });
+      }
+    });
 
-  // Admin: Link/unlink feed to AllDaf author
-  app.put("/api/admin/feeds/:id/alldaf-link", adminAuth as any, async (req: Request, res: Response) => {
-    try {
-      const { alldafAuthorId } = req.body;
-      if (!alldafAuthorId) return res.status(400).json({ error: "alldafAuthorId required" });
-      await storage.setAlldafAuthorId(req.params.id, alldafAuthorId);
-      const feed = await storage.getFeedById(req.params.id);
-      res.json(feed);
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
+    // Get status
+    app.get(`/api/admin/${platformRoute}/status`, adminAuth as any, async (_req: Request, res: Response) => {
+      try {
+        const allFeeds = await storage.getAllFeeds();
+        const platformFeeds = allFeeds.filter(f => (f as any)[cfg.feedIdField] != null);
+        const platformOnlyFeeds = platformFeeds.filter(f => f.rssUrl.startsWith(cfg.urlScheme));
+        const activeCount = platformOnlyFeeds.filter(f => f.isActive).length;
+        const enabled = activeCount > 0;
+        res.json({ enabled, totalFeeds: platformOnlyFeeds.length, activeFeeds: activeCount, mergedFeeds: platformFeeds.length - platformOnlyFeeds.length });
+      } catch (e: any) {
+        res.status(500).json({ error: e.message });
+      }
+    });
 
-  app.delete("/api/admin/feeds/:id/alldaf-link", adminAuth as any, async (req: Request, res: Response) => {
-    try {
-      await storage.setAlldafAuthorId(req.params.id, null as any);
-      const feed = await storage.getFeedById(req.params.id);
-      res.json(feed);
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
+    // Link/unlink feed to platform author
+    app.put(`/api/admin/feeds/:id/${platformRoute}-link`, adminAuth as any, async (req: Request, res: Response) => {
+      try {
+        const { authorId } = req.body;
+        if (!authorId) return res.status(400).json({ error: "authorId required" });
+        await storage.setOUAuthorId(req.params.id, cfg.feedIdField, authorId);
+        const feed = await storage.getFeedById(req.params.id);
+        res.json(feed);
+      } catch (e: any) {
+        res.status(500).json({ error: e.message });
+      }
+    });
+
+    app.delete(`/api/admin/feeds/:id/${platformRoute}-link`, adminAuth as any, async (req: Request, res: Response) => {
+      try {
+        await storage.setOUAuthorId(req.params.id, cfg.feedIdField, null);
+        const feed = await storage.getFeedById(req.params.id);
+        res.json(feed);
+      } catch (e: any) {
+        res.status(500).json({ error: e.message });
+      }
+    });
+  } // end OU platform loop
 
   // Admin: Merge two feeds (move episodes + subscribers from source into target, delete source)
   app.post("/api/admin/feeds/merge", adminAuth as any, async (req: Request, res: Response) => {
@@ -1108,12 +1114,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!source) return res.status(404).json({ error: "Source feed not found" });
       if (!target) return res.status(404).json({ error: "Target feed not found" });
 
-      // If source has tatSpeakerId/alldafAuthorId and target doesn't, carry it over
+      // Carry over platform IDs from source to target if target doesn't have them
       if (source.tatSpeakerId && !target.tatSpeakerId) {
         await storage.updateFeed(targetId, { tatSpeakerId: source.tatSpeakerId } as any);
       }
-      if ((source as any).alldafAuthorId && !(target as any).alldafAuthorId) {
-        await storage.setAlldafAuthorId(targetId, (source as any).alldafAuthorId);
+      for (const cfg of Object.values(OU_PLATFORMS)) {
+        if ((source as any)[cfg.feedIdField] && !(target as any)[cfg.feedIdField]) {
+          await storage.setOUAuthorId(targetId, cfg.feedIdField, (source as any)[cfg.feedIdField]);
+        }
       }
 
       const result = await storage.mergeFeeds(sourceId, targetId);
@@ -1795,12 +1803,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return;
         }
 
-        // Handle AllDaf feeds
-        const isForceAlldafUrl = feed.rssUrl.startsWith("alldaf://");
-        const forceAlldafId = (feed as any).alldafAuthorId ?? (isForceAlldafUrl ? parseInt(feed.rssUrl.replace("alldaf://author/", ""), 10) || null : null);
-        if (forceAlldafId) {
-          const alldafResult = await refreshAllDafFeedEpisodes({ id: feed.id, title: feed.title, alldafAuthorId: forceAlldafId });
-          res.json({ status: "ok", method: "alldaf", newEpisodes: alldafResult.newEpisodes, durationMs: Date.now() - start });
+        // Handle OU Torah platform feeds (AllDaf, AllMishnah, AllParsha)
+        const forceOU = detectOUPlatform(feed as any);
+        if (forceOU) {
+          const ouResult = await refreshOUFeedEpisodes(forceOU.platform, { id: feed.id, title: feed.title, authorId: forceOU.authorId });
+          res.json({ status: "ok", method: forceOU.platform, newEpisodes: ouResult.newEpisodes, durationMs: Date.now() - start });
           return;
         }
 

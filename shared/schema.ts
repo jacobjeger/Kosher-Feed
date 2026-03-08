@@ -28,6 +28,8 @@ export const feeds = pgTable("feeds", {
   sourceNetwork: text("source_network"),
   tatSpeakerId: integer("tat_speaker_id"),
   alldafAuthorId: integer("alldaf_author_id"),
+  allmishnahAuthorId: integer("allmishnah_author_id"),
+  allparshaAuthorId: integer("allparsha_author_id"),
 });
 
 export const episodes = pgTable("episodes", {

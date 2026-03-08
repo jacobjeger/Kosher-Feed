@@ -588,12 +588,42 @@
         <div id="alldafStatusArea" style="padding:4px 0 12px;color:#94a3b8;font-size:13px;">Loading...</div>
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
           <span style="font-size:14px;color:#e2e8f0;">Show AllDaf content</span>
-          <button id="alldafToggleBtn" class="toggle-btn off" onclick="toggleAllDaf()" title="Toggle AllDaf"></button>
+          <button id="alldafToggleBtn" class="toggle-btn off" onclick="toggleOUPlatform('alldaf')" title="Toggle AllDaf"></button>
         </div>
         <p style="font-size:12px;color:#64748b;margin:0;">When off, all AllDaf-only feeds are hidden from the app immediately. Merged feeds (RSS + AllDaf) are not affected.</p>
         <div style="margin-top:12px;">
-          <button class="btn btn-secondary btn-sm" onclick="syncAllDafAuthors()" id="alldafSyncBtn">Sync Authors Now</button>
+          <button class="btn btn-secondary btn-sm" onclick="syncOUPlatform('alldaf')" id="alldafSyncBtn">Sync Authors Now</button>
           <span id="alldafSyncStatus" style="font-size:12px;color:#64748b;margin-left:8px;"></span>
+        </div>
+      </div>
+      <div class="card" style="max-width:500px;margin-bottom:20px;">
+        <div class="card-header">
+          <h2>AllMishnah Integration</h2>
+        </div>
+        <div id="allmishnahStatusArea" style="padding:4px 0 12px;color:#94a3b8;font-size:13px;">Loading...</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+          <span style="font-size:14px;color:#e2e8f0;">Show AllMishnah content</span>
+          <button id="allmishnahToggleBtn" class="toggle-btn off" onclick="toggleOUPlatform('allmishnah')" title="Toggle AllMishnah"></button>
+        </div>
+        <p style="font-size:12px;color:#64748b;margin:0;">When off, all AllMishnah-only feeds are hidden. Merged feeds are not affected.</p>
+        <div style="margin-top:12px;">
+          <button class="btn btn-secondary btn-sm" onclick="syncOUPlatform('allmishnah')" id="allmishnahSyncBtn">Sync Authors Now</button>
+          <span id="allmishnahSyncStatus" style="font-size:12px;color:#64748b;margin-left:8px;"></span>
+        </div>
+      </div>
+      <div class="card" style="max-width:500px;margin-bottom:20px;">
+        <div class="card-header">
+          <h2>AllParsha Integration</h2>
+        </div>
+        <div id="allparshaStatusArea" style="padding:4px 0 12px;color:#94a3b8;font-size:13px;">Loading...</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+          <span style="font-size:14px;color:#e2e8f0;">Show AllParsha content</span>
+          <button id="allparshaToggleBtn" class="toggle-btn off" onclick="toggleOUPlatform('allparsha')" title="Toggle AllParsha"></button>
+        </div>
+        <p style="font-size:12px;color:#64748b;margin:0;">When off, all AllParsha-only feeds are hidden. Merged feeds are not affected.</p>
+        <div style="margin-top:12px;">
+          <button class="btn btn-secondary btn-sm" onclick="syncOUPlatform('allparsha')" id="allparshaSyncBtn">Sync Authors Now</button>
+          <span id="allparshaSyncStatus" style="font-size:12px;color:#64748b;margin-left:8px;"></span>
         </div>
       </div>
       <div class="card" style="max-width:500px;">
@@ -1028,7 +1058,7 @@ function filterFeeds(query) {
       ${bulkMode ? '<input type="checkbox" class="bulk-feed-cb" value="' + f.id + '" onchange="updateBulkCount()" style="width:18px;height:18px;accent-color:#3b82f6;flex-shrink:0;">' : ''}
       ${f.imageUrl ? '<img src="' + f.imageUrl + '" class="feed-img" onerror="this.style.display=\'none\'">' : '<div class="feed-img"></div>'}
       <div class="feed-info">
-        <div class="feed-title"><span class="health-tooltip health-dot ${healthInfo.cls}" data-tip="${esc(healthInfo.tip)}"></span>${esc(f.title)}${scheduledBadge}</div>
+        <div class="feed-title"><span class="health-tooltip health-dot ${healthInfo.cls}" data-tip="${esc(healthInfo.tip)}"></span>${esc(f.title)}${scheduledBadge}${getFeedSourceBadges(f)}</div>
         <div class="feed-meta">${esc(f.author || 'Unknown')} &bull; ${(f.categoryIds && f.categoryIds.length > 0) ? f.categoryIds.map(cid => categories.find(c => c.id === cid)?.name || '').filter(Boolean).join(', ') || 'Uncategorized' : (categories.find(c => c.id === f.categoryId)?.name || 'Uncategorized')}</div>
         <div class="feed-meta" style="font-size:11px;margin-top:2px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.rssUrl)}</div>
       </div>
@@ -1743,7 +1773,7 @@ function switchTab(tab, btn) {
   if (tab === 'pushtracker') { loadPushTokens(); loadNotificationHistory(); }
   if (tab === 'vitals') loadVitals();
   if (tab === 'announcements') loadAnnouncements();
-  if (tab === 'settings') { loadTATStatus(); loadAllDafStatus(); }
+  if (tab === 'settings') { loadTATStatus(); loadAllOUStatuses(); }
 }
 
 function formatDate(dateStr) {
@@ -2186,30 +2216,35 @@ async function syncTATSpeakers() {
   }
 }
 
-async function loadAllDafStatus() {
+// --- Generic OU Torah Platform Functions (AllDaf, AllMishnah, AllParsha) ---
+const ouPlatformLabels = { alldaf: 'AllDaf', allmishnah: 'AllMishnah', allparsha: 'AllParsha' };
+
+async function loadOUPlatformStatus(platform) {
+  const label = ouPlatformLabels[platform] || platform;
   try {
-    const data = await api('/api/admin/alldaf/status');
-    const btn = document.getElementById('alldafToggleBtn');
+    const data = await api('/api/admin/' + platform + '/status');
+    const btn = document.getElementById(platform + 'ToggleBtn');
     btn.className = 'toggle-btn ' + (data.enabled ? 'on' : 'off');
-    document.getElementById('alldafStatusArea').innerHTML =
-      '<strong style="color:#e2e8f0;">' + data.totalAllDafFeeds + '</strong> AllDaf-only feeds (' + data.activeAllDafFeeds + ' active)' +
+    document.getElementById(platform + 'StatusArea').innerHTML =
+      '<strong style="color:#e2e8f0;">' + data.totalFeeds + '</strong> ' + label + '-only feeds (' + data.activeFeeds + ' active)' +
       (data.mergedFeeds > 0 ? ' · <strong style="color:#e2e8f0;">' + data.mergedFeeds + '</strong> merged with RSS feeds' : '');
   } catch(e) {
-    document.getElementById('alldafStatusArea').textContent = 'Could not load status';
+    document.getElementById(platform + 'StatusArea').textContent = 'Could not load status';
   }
 }
 
-async function toggleAllDaf() {
-  const btn = document.getElementById('alldafToggleBtn');
+async function toggleOUPlatform(platform) {
+  const label = ouPlatformLabels[platform] || platform;
+  const btn = document.getElementById(platform + 'ToggleBtn');
   const currentlyOn = btn.classList.contains('on');
   const newState = !currentlyOn;
-  if (!newState && !confirm('This will hide all AllDaf feeds from the app immediately. Continue?')) return;
+  if (!newState && !confirm('This will hide all ' + label + ' feeds from the app immediately. Continue?')) return;
   try {
     btn.disabled = true;
-    const result = await api('/api/admin/alldaf/toggle', { method: 'POST', body: JSON.stringify({ enabled: newState }) });
+    const result = await api('/api/admin/' + platform + '/toggle', { method: 'POST', body: JSON.stringify({ enabled: newState }) });
     btn.className = 'toggle-btn ' + (newState ? 'on' : 'off');
-    showAlert((newState ? 'Enabled' : 'Disabled') + ' AllDaf — ' + result.updated + ' feeds updated');
-    loadAllDafStatus();
+    showAlert((newState ? 'Enabled' : 'Disabled') + ' ' + label + ' — ' + result.updated + ' feeds updated');
+    loadOUPlatformStatus(platform);
     loadFeeds();
     loadAnalytics();
   } catch(e) {
@@ -2219,15 +2254,16 @@ async function toggleAllDaf() {
   }
 }
 
-async function syncAllDafAuthors() {
-  const btn = document.getElementById('alldafSyncBtn');
-  const status = document.getElementById('alldafSyncStatus');
+async function syncOUPlatform(platform) {
+  const label = ouPlatformLabels[platform] || platform;
+  const btn = document.getElementById(platform + 'SyncBtn');
+  const status = document.getElementById(platform + 'SyncStatus');
   btn.disabled = true;
   status.textContent = 'Syncing authors...';
   try {
-    const result = await api('/api/admin/alldaf/sync-authors', { method: 'POST' });
+    const result = await api('/api/admin/' + platform + '/sync-authors', { method: 'POST' });
     status.innerHTML = '<span style="color:#22c55e;">Done — ' + result.created + ' created, ' + result.linked + ' linked, ' + result.total + ' total</span>';
-    loadAllDafStatus();
+    loadOUPlatformStatus(platform);
     loadFeeds();
     loadAnalytics();
   } catch(e) {
@@ -2235,6 +2271,12 @@ async function syncAllDafAuthors() {
   } finally {
     btn.disabled = false;
   }
+}
+
+function loadAllOUStatuses() {
+  loadOUPlatformStatus('alldaf');
+  loadOUPlatformStatus('allmishnah');
+  loadOUPlatformStatus('allparsha');
 }
 
 async function changePassword() {
@@ -2802,6 +2844,24 @@ async function forceSync(feedId, btn) {
 }
 
 // === Feature 11: Feed Health Indicators ===
+function getFeedSourceBadges(feed) {
+  let badges = '';
+  const badgeStyle = 'display:inline-block;font-size:9px;font-weight:600;padding:1px 5px;border-radius:4px;margin-left:6px;vertical-align:middle;';
+  if (feed.tatSpeakerId) badges += '<span style="' + badgeStyle + 'background:#7c3aed;color:#fff;">TAT</span>';
+  if (feed.rssUrl && feed.rssUrl.startsWith('tat://')) badges += '<span style="' + badgeStyle + 'background:#7c3aed;color:#fff;">TAT</span>';
+  if (feed.alldafAuthorId || (feed.rssUrl && feed.rssUrl.startsWith('alldaf://'))) badges += '<span style="' + badgeStyle + 'background:#2563eb;color:#fff;">AllDaf</span>';
+  if (feed.allmishnahAuthorId || (feed.rssUrl && feed.rssUrl.startsWith('allmishnah://'))) badges += '<span style="' + badgeStyle + 'background:#0891b2;color:#fff;">AllMishnah</span>';
+  if (feed.allparshaAuthorId || (feed.rssUrl && feed.rssUrl.startsWith('allparsha://'))) badges += '<span style="' + badgeStyle + 'background:#059669;color:#fff;">AllParsha</span>';
+  if (feed.sourceNetwork && !badges) {
+    const sn = feed.sourceNetwork;
+    if (sn === 'Torah Anytime') badges += '<span style="' + badgeStyle + 'background:#7c3aed;color:#fff;">TAT</span>';
+    else if (sn === 'AllDaf') badges += '<span style="' + badgeStyle + 'background:#2563eb;color:#fff;">AllDaf</span>';
+    else if (sn === 'AllMishnah') badges += '<span style="' + badgeStyle + 'background:#0891b2;color:#fff;">AllMishnah</span>';
+    else if (sn === 'AllParsha') badges += '<span style="' + badgeStyle + 'background:#059669;color:#fff;">AllParsha</span>';
+  }
+  return badges;
+}
+
 function getFeedHealthInfo(feed) {
   if (!feed.lastFetchedAt && !feed.etag) {
     return { cls: 'health-red', tip: 'Never fetched / no etag' };

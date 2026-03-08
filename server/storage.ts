@@ -154,7 +154,8 @@ export async function upsertTATEpisodes(feedId: string, episodeData: any[]): Pro
   return inserted;
 }
 
-export async function upsertAllDafEpisodes(feedId: string, episodeData: any[]): Promise<Episode[]> {
+// Generic upsert for OU Torah platform episodes (AllDaf, AllMishnah, AllParsha)
+export async function upsertOUEpisodes(feedId: string, episodeData: any[]): Promise<Episode[]> {
   if (episodeData.length === 0) return [];
   const inserted: Episode[] = [];
   for (const ep of episodeData) {
@@ -178,17 +179,16 @@ export async function upsertAllDafEpisodes(feedId: string, episodeData: any[]): 
   return inserted;
 }
 
-export async function setAlldafAuthorId(feedId: string, authorId: number): Promise<void> {
-  await db.update(feeds).set({ alldafAuthorId: authorId } as any).where(eq(feeds.id, feedId));
+// Backward-compatible alias
+export const upsertAllDafEpisodes = upsertOUEpisodes;
+
+export async function setOUAuthorId(feedId: string, field: string, authorId: number | null): Promise<void> {
+  await db.update(feeds).set({ [field]: authorId } as any).where(eq(feeds.id, feedId));
 }
 
-export async function getAllDafFeeds(): Promise<Feed[]> {
-  return db.select().from(feeds).where(
-    and(
-      sql`${feeds.alldafAuthorId} IS NOT NULL`,
-      eq(feeds.isActive, true),
-    )
-  );
+// Backward-compatible alias
+export async function setAlldafAuthorId(feedId: string, authorId: number): Promise<void> {
+  return setOUAuthorId(feedId, "alldafAuthorId", authorId);
 }
 
 export async function getTATFeeds(): Promise<Feed[]> {

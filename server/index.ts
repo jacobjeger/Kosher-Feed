@@ -11,7 +11,7 @@ import * as storage from "./storage";
 import { sendNewEpisodePushes } from "./push";
 import { startRefreshCycle, recordFeedResult, endRefreshCycle } from "./feed-vitals";
 import { refreshTATFeedEpisodes, syncTATSpeakers } from "./torahanytime";
-import { refreshAllDafFeedEpisodes } from "./alldaf";
+import { detectOUPlatform, refreshOUFeedEpisodes, OU_PLATFORMS } from "./alldaf";
 import * as fs from "fs";
 import * as path from "path";
 import pLimit from "p-limit";
@@ -402,7 +402,7 @@ export interface RefreshResult {
   episodesFound: number;
 }
 
-export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string; etag?: string | null; lastModifiedHeader?: string | null; tatSpeakerId?: number | null; alldafAuthorId?: number | null }): Promise<RefreshResult> {
+export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string; etag?: string | null; lastModifiedHeader?: string | null; tatSpeakerId?: number | null; alldafAuthorId?: number | null; allmishnahAuthorId?: number | null; allparshaAuthorId?: number | null }): Promise<RefreshResult> {
   const start = Date.now();
 
   // TAT feed: refresh from TorahAnytime API
@@ -414,12 +414,12 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
     return { newEpisodes: result.newEpisodes, method: 'stream', durationMs: Date.now() - start, episodesFound: result.newEpisodes };
   }
 
-  // AllDaf feed: refresh from AllDaf API
-  const isAlldafUrl = feed.rssUrl.startsWith("alldaf://");
-  const effectiveAlldafAuthorId = feed.alldafAuthorId ?? (isAlldafUrl ? parseInt(feed.rssUrl.replace("alldaf://author/", ""), 10) || null : null);
+  // OU Torah platform feed (AllDaf, AllMishnah, AllParsha): API-only URL
+  const ouPlatform = detectOUPlatform(feed as any);
+  const isOUUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
 
-  if (effectiveAlldafAuthorId && isAlldafUrl) {
-    const result = await refreshAllDafFeedEpisodes({ id: feed.id, title: feed.title, alldafAuthorId: effectiveAlldafAuthorId });
+  if (ouPlatform && isOUUrl) {
+    const result = await refreshOUFeedEpisodes(ouPlatform.platform, { id: feed.id, title: feed.title, authorId: ouPlatform.authorId });
     return { newEpisodes: result.newEpisodes, method: 'stream', durationMs: Date.now() - start, episodesFound: result.newEpisodes };
   }
 
@@ -430,15 +430,15 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
     });
   }
 
-  // Merged feed (has both RSS + AllDaf): refresh both
-  if (effectiveAlldafAuthorId) {
-    await refreshAllDafFeedEpisodes({ id: feed.id, title: feed.title, alldafAuthorId: effectiveAlldafAuthorId }).catch(e => {
-      console.log(`AllDaf refresh failed for merged feed ${feed.title}: ${(e as Error).message?.slice(0, 100)}`);
+  // Merged feed (has both RSS + OU platform): refresh both
+  if (ouPlatform && !isOUUrl) {
+    await refreshOUFeedEpisodes(ouPlatform.platform, { id: feed.id, title: feed.title, authorId: ouPlatform.authorId }).catch(e => {
+      console.log(`${OU_PLATFORMS[ouPlatform.platform].label} refresh failed for merged feed ${feed.title}: ${(e as Error).message?.slice(0, 100)}`);
     });
   }
 
-  // Skip RSS parsing for TAT-only or AllDaf-only URLs
-  if (isTatUrl || isAlldafUrl) {
+  // Skip RSS parsing for TAT-only or OU-only URLs
+  if (isTatUrl || isOUUrl) {
     return { newEpisodes: 0, method: 'stream', durationMs: Date.now() - start, episodesFound: 0 };
   }
 

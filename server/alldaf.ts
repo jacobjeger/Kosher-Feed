@@ -2,38 +2,71 @@ import axios from "axios";
 import * as storage from "./storage";
 import { sendNewEpisodePushes } from "./push";
 
-const ALLDAF_BASE_URL = "https://beta.alldaf.org/api/trpc";
+// --- Platform Configuration ---
+
+export type OUPlatformKey = "alldaf" | "allmishnah" | "allparsha";
+
+interface OUPlatformConfig {
+  key: OUPlatformKey;
+  label: string;            // Display name
+  platformParam: string;    // API platform filter value
+  baseUrl: string;          // tRPC base URL
+  urlScheme: string;        // e.g. "alldaf://author/"
+  guidPrefix: string;       // e.g. "alldaf-"
+  feedIdField: "alldafAuthorId" | "allmishnahAuthorId" | "allparshaAuthorId";
+}
+
+export const OU_PLATFORMS: Record<OUPlatformKey, OUPlatformConfig> = {
+  alldaf: {
+    key: "alldaf",
+    label: "AllDaf",
+    platformParam: "AllDaf",
+    baseUrl: "https://beta.alldaf.org/api/trpc",
+    urlScheme: "alldaf://author/",
+    guidPrefix: "alldaf-",
+    feedIdField: "alldafAuthorId",
+  },
+  allmishnah: {
+    key: "allmishnah",
+    label: "AllMishnah",
+    platformParam: "AllMishna",
+    baseUrl: "https://allmishnah.org/api/trpc",
+    urlScheme: "allmishnah://author/",
+    guidPrefix: "allmishnah-",
+    feedIdField: "allmishnahAuthorId",
+  },
+  allparsha: {
+    key: "allparsha",
+    label: "AllParsha",
+    platformParam: "AllParsha",
+    baseUrl: "https://allparsha.org/api/trpc",
+    urlScheme: "allparsha://author/",
+    guidPrefix: "allparsha-",
+    feedIdField: "allparshaAuthorId",
+  },
+};
+
 const DAILY_LEARNING_URL = "https://dailylearnings.outorah.org";
 const CLOUDINARY_BASE = "https://res.cloudinary.com/outorah/image/upload";
 
 // --- Types ---
 
-export interface AllDafAuthor {
+export interface OUAuthor {
   id: number;
   name: string;
   image: string | null;
   postCount: number;
 }
 
-export interface AllDafAuthorDetail {
-  id: number;
-  name: string;
-  image: string | null;
-  bio: string | null;
-  is_alldaf: boolean;
-  platform: string[];
-  postCount: number;
-}
-
-export interface AllDafPost {
+export interface OUPost {
   id: number;
   title: string;
-  mediaType: string; // "Audio" | "Video"
+  mediaType: string;
   mediaId: string | null;
   videoType: string | null;
   s3Url: string | null;
   hls_url: string | null;
-  duration: number; // seconds
+  duration: number;
   episodeNumber: number | null;
   topics: string[];
   hideVideoDownload: boolean;
@@ -43,18 +76,10 @@ export interface AllDafPost {
   pdf: string | null;
 }
 
-export interface AllDafSeries {
-  id: number;
-  name: string;
-  active: boolean;
-  platform: string[];
-  image?: string | null;
-}
-
 // --- API Client ---
 
-async function trpcGet(procedures: string, input: Record<string, any>): Promise<any[]> {
-  const res = await axios.get(`${ALLDAF_BASE_URL}/${procedures}`, {
+async function trpcGet(baseUrl: string, procedures: string, input: Record<string, any>): Promise<any[]> {
+  const res = await axios.get(`${baseUrl}/${procedures}`, {
     params: {
       batch: 1,
       input: JSON.stringify(input),
@@ -65,17 +90,18 @@ async function trpcGet(procedures: string, input: Record<string, any>): Promise<
   return res.data;
 }
 
-export async function fetchAllAuthors(take: number = 500): Promise<AllDafAuthor[]> {
-  const allAuthors: AllDafAuthor[] = [];
+export async function fetchAllAuthors(platform: OUPlatformKey, take: number = 500): Promise<OUAuthor[]> {
+  const cfg = OU_PLATFORMS[platform];
+  const allAuthors: OUAuthor[] = [];
   let skip = 0;
 
   while (true) {
-    const data = await trpcGet("authors.fetchList", {
+    const data = await trpcGet(cfg.baseUrl, "authors.fetchList", {
       "0": {
         sort: [{ field: "postsCount", direction: "desc" }],
         take,
         skip,
-        platform: "AllDaf",
+        platform: cfg.platformParam,
         search: "",
       },
     });
@@ -100,28 +126,15 @@ export async function fetchAllAuthors(take: number = 500): Promise<AllDafAuthor[
   return allAuthors;
 }
 
-export async function fetchAuthorDetail(authorId: number): Promise<AllDafAuthorDetail | null> {
-  const data = await trpcGet("authors.fetchById", {
-    "0": { id: authorId, platform: "AllDaf" },
-  });
-  return data[0]?.result?.data || null;
-}
-
-export async function fetchAuthorSeries(authorId: number): Promise<AllDafSeries[]> {
-  const data = await trpcGet("series.fetchListByAuthor", {
-    "0": { authorId, platform: "AllDaf" },
-  });
-  return data[0]?.result?.data || [];
-}
-
-export async function fetchAuthorPosts(authorId: number, limit: number = 50, skip: number = 0): Promise<{ records: AllDafPost[]; total?: number }> {
-  const data = await trpcGet("posts.fetchList", {
+export async function fetchAuthorPosts(platform: OUPlatformKey, authorId: number, limit: number = 50, skip: number = 0): Promise<{ records: OUPost[]; total?: number }> {
+  const cfg = OU_PLATFORMS[platform];
+  const data = await trpcGet(cfg.baseUrl, "posts.fetchList", {
     "0": {
       authorId,
       limit,
       take: limit,
       skip,
-      platform: "AllDaf",
+      platform: cfg.platformParam,
       filter: {},
     },
   });
@@ -129,13 +142,13 @@ export async function fetchAuthorPosts(authorId: number, limit: number = 50, ski
   return { records: result.records || [], total: result.total };
 }
 
-export async function fetchAllAuthorPosts(authorId: number): Promise<AllDafPost[]> {
-  const allPosts: AllDafPost[] = [];
+export async function fetchAllAuthorPosts(platform: OUPlatformKey, authorId: number): Promise<OUPost[]> {
+  const allPosts: OUPost[] = [];
   const limit = 50;
   let skip = 0;
 
   while (true) {
-    const { records } = await fetchAuthorPosts(authorId, limit, skip);
+    const { records } = await fetchAuthorPosts(platform, authorId, limit, skip);
     allPosts.push(...records);
 
     if (records.length < limit) break;
@@ -146,9 +159,23 @@ export async function fetchAllAuthorPosts(authorId: number): Promise<AllDafPost[
   return allPosts;
 }
 
+// --- Daily Learning Schedules ---
+
 export async function fetchDafForDay(date: string): Promise<{ masechta: string; daf: number } | null> {
   try {
     const res = await axios.get(`${DAILY_LEARNING_URL}/getDafForDay`, {
+      params: { date },
+      timeout: 10000,
+    });
+    return res.data || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchMishnaYomit(date: string): Promise<{ masechta: string; perek: number; mishna: number }[] | null> {
+  try {
+    const res = await axios.get(`${DAILY_LEARNING_URL}/MishnaYomit`, {
       params: { date },
       timeout: 10000,
     });
@@ -175,22 +202,15 @@ function buildAuthorImageUrl(image: string | null): string | null {
   return `${CLOUDINARY_BASE}/${image}`;
 }
 
-function getAudioUrl(post: AllDafPost): string | null {
-  // Direct S3 URL
+function getAudioUrl(post: OUPost): string | null {
   if (post.s3Url) return post.s3Url;
-
-  // Try to build S3 URL from series + post ID
   if (post.series?.id && post.id) {
     return `https://media.ou.org/torah/${post.series.id}/${post.id}/${post.id}.mp3`;
   }
-
-  // JWPlayer video — can use HLS manifest
   if (post.mediaId && post.videoType === "JwPlayer") {
     return `https://cdn.jwplayer.com/manifests/${post.mediaId}.m3u8`;
   }
-
   if (post.hls_url) return post.hls_url;
-
   return null;
 }
 
@@ -199,14 +219,14 @@ function normalizeName(name: string): string {
     .toLowerCase()
     .replace(/[''`]/g, "'")
     .replace(/\b(rabbi|rav|r\.|r'|rebbetzin|harav|hagaon|moreinu|dr\.?|mrs?\.?)\b/gi, "")
-    .replace(/\b(shiurim|shiur|lectures?|podcast|audio|video|series|classes?|torah|daf yomi|daf|gemara)\b/gi, "")
+    .replace(/\b(shiurim|shiur|lectures?|podcast|audio|video|series|classes?|torah|daf yomi|daf|gemara|mishnah?|parsha|parasha)\b/gi, "")
     .replace(/\b[a-z]\.\s*/gi, "")
     .replace(/[-–—]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-export function mapAllDafPostToEpisodeData(post: AllDafPost, feedId: string) {
+export function mapOUPostToEpisodeData(post: OUPost, feedId: string, guidPrefix: string) {
   const audioUrl = getAudioUrl(post);
   if (!audioUrl) return null;
 
@@ -221,37 +241,38 @@ export function mapAllDafPostToEpisodeData(post: AllDafPost, feedId: string) {
     audioUrl,
     duration: post.duration ? formatDuration(post.duration) : null,
     publishedAt: post.publishDate ? new Date(post.publishDate) : null,
-    guid: `alldaf-${post.id}`,
+    guid: `${guidPrefix}${post.id}`,
     imageUrl: post.series?.image ? buildAuthorImageUrl(post.series.image) : null,
     noDownload: post.hideVideoDownload || false,
   };
 }
 
-// --- Sync Logic ---
+// --- Generic Sync Logic ---
 
-export async function syncAllDafAuthors(): Promise<{ created: number; linked: number; total: number }> {
-  console.log("AllDaf Sync: fetching all authors...");
-  const authors = await fetchAllAuthors();
-  console.log(`AllDaf Sync: found ${authors.length} authors`);
+export async function syncOUPlatformAuthors(platform: OUPlatformKey): Promise<{ created: number; linked: number; total: number }> {
+  const cfg = OU_PLATFORMS[platform];
+  console.log(`${cfg.label} Sync: fetching all authors...`);
+  const authors = await fetchAllAuthors(platform);
+  console.log(`${cfg.label} Sync: found ${authors.length} authors`);
 
   const allFeeds = await storage.getAllFeeds();
-  const existingAllDafFeeds = new Map<number, string>();
+  const existingFeeds = new Map<number, string>();
   for (const feed of allFeeds) {
-    if ((feed as any).alldafAuthorId) {
-      existingAllDafFeeds.set((feed as any).alldafAuthorId, feed.id);
+    const authorId = (feed as any)[cfg.feedIdField];
+    if (authorId) {
+      existingFeeds.set(authorId, feed.id);
     }
-    // Also check rssUrl pattern
-    if (feed.rssUrl.startsWith("alldaf://author/")) {
-      const authorId = parseInt(feed.rssUrl.replace("alldaf://author/", ""), 10);
-      if (authorId) existingAllDafFeeds.set(authorId, feed.id);
+    if (feed.rssUrl.startsWith(cfg.urlScheme)) {
+      const id = parseInt(feed.rssUrl.replace(cfg.urlScheme, ""), 10);
+      if (id) existingFeeds.set(id, feed.id);
     }
   }
 
   // Build normalized name -> feed map for matching
   const feedsByNormalizedName = new Map<string, typeof allFeeds[0]>();
   for (const feed of allFeeds) {
-    if ((feed as any).alldafAuthorId) continue;
-    if (feed.rssUrl.startsWith("alldaf://")) continue;
+    if ((feed as any)[cfg.feedIdField]) continue;
+    if (feed.rssUrl.startsWith(cfg.urlScheme)) continue;
     if (feed.author) {
       feedsByNormalizedName.set(normalizeName(feed.author), feed);
     }
@@ -268,12 +289,11 @@ export async function syncAllDafAuthors(): Promise<{ created: number; linked: nu
 
   for (const author of authors) {
     if (author.postCount === 0) continue;
-    if (existingAllDafFeeds.has(author.id)) continue;
+    if (existingFeeds.has(author.id)) continue;
 
     const normalizedAuthorName = normalizeName(author.name);
     const photoUrl = buildAuthorImageUrl(author.image);
 
-    // Try to match existing feed by name
     let matchedFeed = feedsByNormalizedName.get(normalizedAuthorName);
     if (!matchedFeed && normalizedAuthorName.length >= 5) {
       for (const [normalizedFeedName, feed] of feedsByNormalizedName) {
@@ -286,61 +306,90 @@ export async function syncAllDafAuthors(): Promise<{ created: number; linked: nu
 
     if (matchedFeed) {
       await storage.updateFeed(matchedFeed.id, {
-        sourceNetwork: matchedFeed.sourceNetwork || "AllDaf",
+        sourceNetwork: matchedFeed.sourceNetwork || cfg.label,
       } as any);
-      // Store alldafAuthorId via the rssUrl approach won't work for merged feeds.
-      // We'll use a direct DB update for the alldafAuthorId column
-      await storage.setAlldafAuthorId(matchedFeed.id, author.id);
+      await storage.setOUAuthorId(matchedFeed.id, cfg.feedIdField, author.id);
       linked++;
-      console.log(`AllDaf Sync: linked "${author.name}" to existing feed "${matchedFeed.title}"`);
+      console.log(`${cfg.label} Sync: linked "${author.name}" to existing feed "${matchedFeed.title}"`);
     } else {
       try {
-        await storage.createFeed({
+        const newFeed = await storage.createFeed({
           title: author.name,
-          rssUrl: `alldaf://author/${author.id}`,
+          rssUrl: `${cfg.urlScheme}${author.id}`,
           imageUrl: photoUrl,
-          description: `${author.postCount} shiurim on AllDaf`,
+          description: `${author.postCount} shiurim on ${cfg.label}`,
           author: author.name,
           categoryId: null,
-          sourceNetwork: "AllDaf",
+          sourceNetwork: cfg.label,
         });
-        // Set alldafAuthorId on the newly created feed
-        const newFeed = (await storage.getAllFeeds()).find(f => f.rssUrl === `alldaf://author/${author.id}`);
-        if (newFeed) {
-          await storage.setAlldafAuthorId(newFeed.id, author.id);
-        }
+        await storage.setOUAuthorId(newFeed.id, cfg.feedIdField, author.id);
         created++;
       } catch (e: any) {
         if (!e.message?.includes("unique") && !e.message?.includes("duplicate")) {
-          console.error(`AllDaf Sync: failed to create feed for "${author.name}":`, e.message);
+          console.error(`${cfg.label} Sync: failed to create feed for "${author.name}":`, e.message);
         }
       }
     }
   }
 
-  console.log(`AllDaf Sync complete: ${created} created, ${linked} linked, ${authors.length} total authors`);
+  console.log(`${cfg.label} Sync complete: ${created} created, ${linked} linked, ${authors.length} total authors`);
   return { created, linked, total: authors.length };
 }
 
-// --- Episode Refresh for AllDaf Feeds ---
+// --- Generic Episode Refresh ---
 
-export async function refreshAllDafFeedEpisodes(feed: { id: string; title: string; alldafAuthorId: number }): Promise<{ newEpisodes: number }> {
-  const posts = await fetchAllAuthorPosts(feed.alldafAuthorId);
+export async function refreshOUFeedEpisodes(
+  platform: OUPlatformKey,
+  feed: { id: string; title: string; authorId: number },
+): Promise<{ newEpisodes: number }> {
+  const cfg = OU_PLATFORMS[platform];
+  const posts = await fetchAllAuthorPosts(platform, feed.authorId);
 
   const episodeData = posts
-    .map(p => mapAllDafPostToEpisodeData(p, feed.id))
+    .map(p => mapOUPostToEpisodeData(p, feed.id, cfg.guidPrefix))
     .filter((ep): ep is NonNullable<typeof ep> => ep !== null);
 
-  const inserted = await storage.upsertAllDafEpisodes(feed.id, episodeData);
+  const inserted = await storage.upsertOUEpisodes(feed.id, episodeData);
 
   await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
 
   if (inserted.length > 0) {
-    console.log(`AllDaf refresh: ${feed.title} — ${inserted.length} new episode(s)`);
+    console.log(`${cfg.label} refresh: ${feed.title} — ${inserted.length} new episode(s)`);
     for (const ep of inserted.slice(0, 3)) {
       sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
     }
   }
 
   return { newEpisodes: inserted.length };
+}
+
+// --- Convenience wrappers (backward-compatible) ---
+
+export async function syncAllDafAuthors() { return syncOUPlatformAuthors("alldaf"); }
+export async function syncAllMishnahAuthors() { return syncOUPlatformAuthors("allmishnah"); }
+export async function syncAllParshaAuthors() { return syncOUPlatformAuthors("allparsha"); }
+
+export async function refreshAllDafFeedEpisodes(feed: { id: string; title: string; alldafAuthorId: number }) {
+  return refreshOUFeedEpisodes("alldaf", { id: feed.id, title: feed.title, authorId: feed.alldafAuthorId });
+}
+export async function refreshAllMishnahFeedEpisodes(feed: { id: string; title: string; allmishnahAuthorId: number }) {
+  return refreshOUFeedEpisodes("allmishnah", { id: feed.id, title: feed.title, authorId: feed.allmishnahAuthorId });
+}
+export async function refreshAllParshaFeedEpisodes(feed: { id: string; title: string; allparshaAuthorId: number }) {
+  return refreshOUFeedEpisodes("allparsha", { id: feed.id, title: feed.title, authorId: feed.allparshaAuthorId });
+}
+
+// --- Helper to detect any OU platform from a feed ---
+
+export function detectOUPlatform(feed: { rssUrl: string; alldafAuthorId?: number | null; allmishnahAuthorId?: number | null; allparshaAuthorId?: number | null }): { platform: OUPlatformKey; authorId: number } | null {
+  for (const cfg of Object.values(OU_PLATFORMS)) {
+    const authorId = (feed as any)[cfg.feedIdField];
+    if (authorId) return { platform: cfg.key, authorId };
+
+    if (feed.rssUrl.startsWith(cfg.urlScheme)) {
+      const id = parseInt(feed.rssUrl.replace(cfg.urlScheme, ""), 10);
+      if (id) return { platform: cfg.key, authorId: id };
+    }
+  }
+  return null;
 }
