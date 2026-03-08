@@ -157,7 +157,8 @@ function normalizeName(name: string): string {
   return name
     .toLowerCase()
     .replace(/[''`]/g, "'")
-    .replace(/\b(rabbi|rav|r\.|r'|rebbetzin|harav|hagaon|moreinu)\b/gi, "")
+    .replace(/\b(rabbi|rav|r\.|r'|rebbetzin|harav|hagaon|moreinu|dr\.?|mrs?\.?)\b/gi, "")
+    .replace(/\b[a-z]\.\s*/gi, "") // Remove middle initials like "J."
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -197,12 +198,18 @@ export async function syncTATSpeakers(): Promise<{ created: number; linked: numb
     }
   }
 
-  // Build normalized name -> feed map for matching
-  const feedsByNormalizedAuthor = new Map<string, typeof allFeeds[0]>();
+  // Build normalized name -> feed map for matching (check both author and title)
+  const feedsByNormalizedName = new Map<string, typeof allFeeds[0]>();
   for (const feed of allFeeds) {
-    if (feed.author && !feed.tatSpeakerId) {
-      const normalized = normalizeName(feed.author);
-      feedsByNormalizedAuthor.set(normalized, feed);
+    if (feed.tatSpeakerId) continue;
+    if (feed.author) {
+      feedsByNormalizedName.set(normalizeName(feed.author), feed);
+    }
+    if (feed.title) {
+      const normalizedTitle = normalizeName(feed.title);
+      if (!feedsByNormalizedName.has(normalizedTitle)) {
+        feedsByNormalizedName.set(normalizedTitle, feed);
+      }
     }
   }
 
@@ -220,8 +227,13 @@ export async function syncTATSpeakers(): Promise<{ created: number; linked: numb
     const normalizedSpeakerName = normalizeName(speakerName);
     const photoUrl = buildSpeakerPhotoUrl(speaker);
 
-    // Try to match existing feed by name
-    const matchedFeed = feedsByNormalizedAuthor.get(normalizedSpeakerName);
+    // Try to match existing feed by name (exact normalized match, then last-name match)
+    let matchedFeed = feedsByNormalizedName.get(normalizedSpeakerName);
+    if (!matchedFeed && speaker.name_last) {
+      // Try matching by last name + first name (without title)
+      const lastFirst = normalizeName(`${speaker.name_first} ${speaker.name_last}`);
+      matchedFeed = feedsByNormalizedName.get(lastFirst);
+    }
 
     if (matchedFeed) {
       // Link existing feed to this TAT speaker

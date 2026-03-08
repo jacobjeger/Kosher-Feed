@@ -353,13 +353,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let totalNew = 0;
 
       // TAT refresh
-      if (feed.tatSpeakerId) {
-        const tatResult = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: feed.tatSpeakerId });
+      const isTatFeedUrl = feed.rssUrl.startsWith("tat://");
+      const effectiveSpeakerId = feed.tatSpeakerId ?? (isTatFeedUrl ? parseInt(feed.rssUrl.replace("tat://speaker/", ""), 10) || null : null);
+      if (effectiveSpeakerId) {
+        const tatResult = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveSpeakerId });
         totalNew += tatResult.newEpisodes;
       }
 
       // RSS refresh (skip for TAT-only feeds)
-      if (!feed.rssUrl.startsWith("tat://")) {
+      if (!isTatFeedUrl) {
         const parsed = await parseFeed(feed.id, feed.rssUrl);
         if (parsed) {
           const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
@@ -395,8 +397,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const feed of allFeeds) {
         try {
           // TAT feed refresh
-          if (feed.tatSpeakerId) {
-            const tatResult = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: feed.tatSpeakerId });
+          const isTatUrl = feed.rssUrl.startsWith("tat://");
+          const effectiveTatId = feed.tatSpeakerId ?? (isTatUrl ? parseInt(feed.rssUrl.replace("tat://speaker/", ""), 10) || null : null);
+          if (effectiveTatId) {
+            const tatResult = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveTatId });
             totalNew += tatResult.newEpisodes;
           }
           // RSS refresh (skip for TAT-only feeds)

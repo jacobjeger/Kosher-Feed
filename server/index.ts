@@ -405,16 +405,24 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
   const start = Date.now();
 
   // TAT feed: refresh from TorahAnytime API
-  if (feed.tatSpeakerId && feed.rssUrl.startsWith("tat://")) {
-    const result = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: feed.tatSpeakerId });
+  const isTatUrl = feed.rssUrl.startsWith("tat://");
+  const effectiveTatSpeakerId = feed.tatSpeakerId ?? (isTatUrl ? parseInt(feed.rssUrl.replace("tat://speaker/", ""), 10) || null : null);
+
+  if (effectiveTatSpeakerId && isTatUrl) {
+    const result = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveTatSpeakerId });
     return { newEpisodes: result.newEpisodes, method: 'stream', durationMs: Date.now() - start, episodesFound: result.newEpisodes };
   }
 
   // Merged feed (has both RSS + TAT): refresh both
-  if (feed.tatSpeakerId) {
-    await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: feed.tatSpeakerId }).catch(e => {
+  if (effectiveTatSpeakerId) {
+    await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveTatSpeakerId }).catch(e => {
       console.log(`TAT refresh failed for merged feed ${feed.title}: ${(e as Error).message?.slice(0, 100)}`);
     });
+  }
+
+  // Skip RSS parsing for TAT-only URLs
+  if (isTatUrl) {
+    return { newEpisodes: 0, method: 'stream', durationMs: Date.now() - start, episodesFound: 0 };
   }
 
   // RSS refresh
