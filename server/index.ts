@@ -646,6 +646,9 @@ function startAutoRefresh() {
 }
 
 (async () => {
+  // Run column migrations FIRST, before any routes or queries touch the DB
+  await ensureColumns();
+
   setupCors(app);
   app.use(compression());
   setupBodyParsing(app);
@@ -666,7 +669,7 @@ function startAutoRefresh() {
     },
     () => {
       log(`express server serving on port ${serverPort}`);
-      ensureColumns().then(() => seedIfEmpty()).catch((e) => console.error("Seed/migration error:", e));
+      seedIfEmpty().catch((e) => console.error("Seed error:", e));
       startAutoRefresh();
       // Sync TorahAnytime speakers in background after 15s
       setTimeout(() => {
