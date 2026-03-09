@@ -229,17 +229,16 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
     if (existingKHFeeds.has(ravId)) continue;
 
     const rawEnglish = rav.SearchItemTextEnglish?.trim() || "";
-    const rawHebrew = rav.SearchItemTextHebrew?.trim() || "";
     const englishName = rawEnglish === "null" ? "" : rawEnglish;
-    const hebrewName = rawHebrew;
-    const displayName = englishName || hebrewName || "Unknown Speaker";
+
+    // Skip speakers without an English name
+    if (!englishName) continue;
+
+    const displayName = englishName;
 
     const imageUrl = buildSpeakerImageUrl(rav.ImageFileName);
 
-    let matchedFeed = englishName ? feedsByNormalizedName.get(normalizeName(englishName)) : undefined;
-    if (!matchedFeed && hebrewName) {
-      matchedFeed = feedsByNormalizedName.get(normalizeName(hebrewName));
-    }
+    let matchedFeed = feedsByNormalizedName.get(normalizeName(englishName));
     // Only do substring matching if the normalized speaker name is long enough
     // to be meaningful (avoids matching short/empty names to everything)
     if (!matchedFeed && englishName.length >= 5) {
