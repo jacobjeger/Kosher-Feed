@@ -42,20 +42,34 @@ async function main() {
   console.log("Connected to database");
 
   const content = fs.readFileSync(sqlFile, "utf-8");
-  const lines = content.split("\n");
 
-  for (const table of IMPORT_TABLES) {
-    const statements = [];
+  // Parse SQL into complete statements (handles multi-line values with newlines in strings)
+  function extractStatements(content, table) {
+    const stmts = [];
     let deleteStmt = null;
+    let current = null;
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed === `DELETE FROM ${table};`) {
-        deleteStmt = trimmed;
-      } else if (trimmed.startsWith(`INSERT INTO ${table} `)) {
-        statements.push(trimmed);
+    for (const line of content.split("\n")) {
+      if (line.trim() === `DELETE FROM ${table};`) {
+        deleteStmt = line.trim();
+        continue;
+      }
+      if (line.startsWith(`INSERT INTO ${table} `)) {
+        current = line;
+      } else if (current !== null) {
+        current += "\n" + line;
+      }
+      // Check if current statement is complete (ends with );)
+      if (current !== null && current.trimEnd().endsWith(");")) {
+        stmts.push(current);
+        current = null;
       }
     }
+    return { stmts, deleteStmt };
+  }
+
+  for (const table of IMPORT_TABLES) {
+    const { stmts: statements, deleteStmt } = extractStatements(content, table);
 
     if (statements.length === 0) {
       console.log(`  ${table}: no data found, skipping`);
@@ -64,7 +78,7 @@ async function main() {
 
     console.log(`  ${table}: ${statements.length} rows...`);
 
-    // Delete existing data
+    // Delete existing data first
     if (deleteStmt) {
       try {
         await client.query(deleteStmt);
