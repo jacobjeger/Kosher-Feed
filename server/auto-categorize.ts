@@ -165,6 +165,8 @@ export function matchTopicToCategories(text: string): string[] {
 }
 
 // Main auto-categorization entry point
+// Only categorize feeds that are clearly dedicated to a single topic
+// (e.g. "Daf Yomi", "Parsha Shiur") — mixed-topic feeds stay uncategorized
 export async function autoCategorizeFeeds(): Promise<{ updated: number; skipped: number }> {
   log("Auto-categorize: starting...");
 
@@ -186,54 +188,84 @@ export async function autoCategorizeFeeds(): Promise<{ updated: number; skipped:
       continue;
     }
 
-    const voteCounts = new Map<string, number>();
-    const addVote = (slug: string, weight: number = 1) => {
-      voteCounts.set(slug, (voteCounts.get(slug) || 0) + weight);
-    };
-
-    // 1. Platform override (strong signal)
+    // 1. Platform override — these are definitively single-topic feeds
+    let platformCategory: string | null = null;
     for (const [prefix, slug] of Object.entries(PLATFORM_OVERRIDES)) {
       if (feed.rssUrl.startsWith(prefix)) {
-        addVote(slug, 10);
+        platformCategory = slug;
         break;
       }
     }
 
-    // 2. Match feed title + description (medium signal)
-    const feedText = [feed.title, feed.description].filter(Boolean).join(" ");
-    for (const slug of matchTopicToCategories(feedText)) {
-      addVote(slug, 3);
+    if (platformCategory) {
+      const catId = slugToId.get(platformCategory);
+      if (catId) {
+        await storage.setAutoFeedCategories(feed.id, [catId]);
+        updated++;
+      }
+      continue;
     }
 
-    // 3. Vote on recent episodes
+    // 2. Check feed title/description for a clear topic indicator
+    const feedText = [feed.title, feed.description].filter(Boolean).join(" ");
+    const feedTopicMatches = matchTopicToCategories(feedText);
+
+    // 3. Analyze episodes to see if the feed consistently covers one topic
     const episodes = await storage.getEpisodesByFeedPaginated(feed.id, 1, 20);
+
+    // Need at least 3 episodes to judge consistency
+    if (episodes.length < 3) {
+      // With very few episodes, only categorize if the feed title clearly indicates a topic
+      if (feedTopicMatches.length === 1) {
+        const catId = slugToId.get(feedTopicMatches[0]);
+        if (catId) {
+          await storage.setAutoFeedCategories(feed.id, [catId]);
+          updated++;
+        }
+      }
+      continue;
+    }
+
+    // Count how many episodes match each category
+    const episodeCategoryCounts = new Map<string, number>();
     for (const ep of episodes) {
       const epText = [ep.title, ep.description].filter(Boolean).join(" ");
-      for (const slug of matchTopicToCategories(epText)) {
-        addVote(slug, 1);
+      const epMatches = matchTopicToCategories(epText);
+      for (const slug of epMatches) {
+        episodeCategoryCounts.set(slug, (episodeCategoryCounts.get(slug) || 0) + 1);
       }
     }
 
-    if (voteCounts.size === 0) continue;
-
-    // Pick winners: sort by votes descending
-    const sorted = [...voteCounts.entries()].sort((a, b) => b[1] - a[1]);
-    const winners: string[] = [sorted[0][0]];
-
-    // Second category if it has >= 30% of episode count (minimum meaningful presence)
-    if (sorted.length > 1) {
-      const threshold = Math.max(episodes.length * 0.3, 2);
-      if (sorted[1][1] >= threshold) {
-        winners.push(sorted[1][0]);
+    // Find the dominant category — the one that appears in the most episodes
+    let bestSlug: string | null = null;
+    let bestCount = 0;
+    for (const [slug, count] of episodeCategoryCounts.entries()) {
+      if (count > bestCount) {
+        bestSlug = slug;
+        bestCount = count;
       }
     }
 
-    // Cap at 2 categories
-    const categoryIds = winners.slice(0, 2).map(slug => slugToId.get(slug)).filter(Boolean) as string[];
-    if (categoryIds.length === 0) continue;
+    if (!bestSlug) continue;
 
-    await storage.setAutoFeedCategories(feed.id, categoryIds);
-    updated++;
+    const consistencyRatio = bestCount / episodes.length;
+
+    // Only categorize if the feed is clearly dedicated to this topic:
+    // - If feed title matches the category: require 60%+ episode consistency
+    // - If only episodes match (no title match): require 80%+ episode consistency
+    const titleMatchesCategory = feedTopicMatches.includes(bestSlug);
+    const requiredConsistency = titleMatchesCategory ? 0.6 : 0.8;
+
+    if (consistencyRatio >= requiredConsistency) {
+      const catId = slugToId.get(bestSlug);
+      if (catId) {
+        await storage.setAutoFeedCategories(feed.id, [catId]);
+        updated++;
+      }
+    } else {
+      // Not consistent enough — clear any previous auto-categories
+      await storage.setAutoFeedCategories(feed.id, []);
+    }
   }
 
   log(`Auto-categorize: ${updated} feeds updated, ${skipped} skipped (manual categories)`);
