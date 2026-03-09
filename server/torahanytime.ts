@@ -195,11 +195,12 @@ export async function syncTATSpeakers(): Promise<{ created: number; linked: numb
   for (const feed of allFeeds) {
     if (feed.tatSpeakerId) continue;
     if (feed.author) {
-      feedsByNormalizedName.set(normalizeName(feed.author), feed);
+      const n = normalizeName(feed.author);
+      if (n.length >= 3) feedsByNormalizedName.set(n, feed);
     }
     if (feed.title) {
       const normalizedTitle = normalizeName(feed.title);
-      if (!feedsByNormalizedName.has(normalizedTitle)) {
+      if (normalizedTitle.length >= 3 && !feedsByNormalizedName.has(normalizedTitle)) {
         feedsByNormalizedName.set(normalizedTitle, feed);
       }
     }
@@ -228,10 +229,11 @@ export async function syncTATSpeakers(): Promise<{ created: number; linked: numb
       const firstLast = normalizeName(`${speaker.name_first} ${speaker.name_last}`);
       matchedFeed = feedsByNormalizedName.get(firstLast);
     }
-    // 3. Substring match: find any feed whose normalized name contains the speaker name
+    // 3. Substring match (both sides must be >= 5 chars to avoid false positives)
     if (!matchedFeed && normalizedSpeakerName.length >= 5) {
       for (const [normalizedFeedName, feed] of feedsByNormalizedName) {
-        if (normalizedFeedName.includes(normalizedSpeakerName) || normalizedSpeakerName.includes(normalizedFeedName)) {
+        if (normalizedFeedName.length >= 5 &&
+            (normalizedFeedName.includes(normalizedSpeakerName) || normalizedSpeakerName.includes(normalizedFeedName))) {
           matchedFeed = feed;
           break;
         }

@@ -264,11 +264,12 @@ export async function syncOUPlatformAuthors(platform: OUPlatformKey): Promise<{ 
     if ((feed as any)[cfg.feedIdField]) continue;
     if (feed.rssUrl.startsWith(cfg.urlScheme)) continue;
     if (feed.author) {
-      feedsByNormalizedName.set(normalizeName(feed.author), feed);
+      const n = normalizeName(feed.author);
+      if (n.length >= 3) feedsByNormalizedName.set(n, feed);
     }
     if (feed.title) {
       const normalizedTitle = normalizeName(feed.title);
-      if (!feedsByNormalizedName.has(normalizedTitle)) {
+      if (normalizedTitle.length >= 3 && !feedsByNormalizedName.has(normalizedTitle)) {
         feedsByNormalizedName.set(normalizedTitle, feed);
       }
     }
@@ -287,7 +288,8 @@ export async function syncOUPlatformAuthors(platform: OUPlatformKey): Promise<{ 
     let matchedFeed = feedsByNormalizedName.get(normalizedAuthorName);
     if (!matchedFeed && normalizedAuthorName.length >= 5) {
       for (const [normalizedFeedName, feed] of feedsByNormalizedName) {
-        if (normalizedFeedName.includes(normalizedAuthorName) || normalizedAuthorName.includes(normalizedFeedName)) {
+        if (normalizedFeedName.length >= 5 &&
+            (normalizedFeedName.includes(normalizedAuthorName) || normalizedAuthorName.includes(normalizedFeedName))) {
           matchedFeed = feed;
           break;
         }

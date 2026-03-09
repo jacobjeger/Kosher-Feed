@@ -263,19 +263,39 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
 
     const imageUrl = buildSpeakerImageUrl(rav.ImageFileName);
 
-    let matchedFeed = feedsByNormalizedName.get(normalizeName(englishName));
-    // Only do substring matching if the normalized speaker name is long enough
-    // to be meaningful (avoids matching short/empty names to everything)
-    if (!matchedFeed && englishName.length >= 5) {
-      const normalizedEN = normalizeName(englishName);
-      if (normalizedEN.length >= 5) {
+    // KH names are "LastName, Title FirstName" — normalize and also try "FirstName LastName"
+    const normalizedAsIs = normalizeName(englishName);
+    let normalizedFlipped = "";
+    const commaIdx = englishName.indexOf(",");
+    if (commaIdx > 0) {
+      const last = englishName.slice(0, commaIdx).trim();
+      const first = englishName.slice(commaIdx + 1).trim();
+      normalizedFlipped = normalizeName(`${first} ${last}`);
+    }
+
+    let matchedFeed = feedsByNormalizedName.get(normalizedAsIs);
+    if (!matchedFeed && normalizedFlipped) {
+      matchedFeed = feedsByNormalizedName.get(normalizedFlipped);
+    }
+    // Also try last name only for feeds that store author as just last name
+    if (!matchedFeed && commaIdx > 0) {
+      const lastOnly = normalizeName(englishName.slice(0, commaIdx).trim());
+      if (lastOnly.length >= 5) {
+        matchedFeed = feedsByNormalizedName.get(lastOnly);
+      }
+    }
+    // Substring matching as fallback — require both sides >= 5 chars
+    if (!matchedFeed) {
+      const candidates = [normalizedAsIs, normalizedFlipped].filter(n => n.length >= 5);
+      for (const normalized of candidates) {
         for (const [normalizedFeedName, feed] of feedsByNormalizedName) {
           if (normalizedFeedName.length >= 5 &&
-              (normalizedFeedName.includes(normalizedEN) || normalizedEN.includes(normalizedFeedName))) {
+              (normalizedFeedName.includes(normalized) || normalized.includes(normalizedFeedName))) {
             matchedFeed = feed;
             break;
           }
         }
+        if (matchedFeed) break;
       }
     }
 
