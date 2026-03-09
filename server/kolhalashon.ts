@@ -171,17 +171,32 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
   console.log("KH Sync: searching for speakers via proxy...");
 
   let allRavs: KHSearchItem[] = [];
-  try {
-    const items = await searchItems("הרב", -1, 10000);
-    if (Array.isArray(items)) {
-      allRavs = items.filter(item => item.SearchItemType === 2);
+  const ravMap = new Map<number, KHSearchItem>();
+
+  // Search with multiple terms to get comprehensive speaker coverage
+  // "NULL" returns all items, "הרב" catches rabbi-titled speakers
+  const searchTerms = ["NULL", "הרב", "רב"];
+  for (const term of searchTerms) {
+    try {
+      const items = await searchItems(term, -1, 10000);
+      if (Array.isArray(items)) {
+        for (const item of items) {
+          if (item.SearchItemType === 2 && item.SearchItemId && !ravMap.has(item.SearchItemId)) {
+            ravMap.set(item.SearchItemId, item);
+          }
+        }
+      }
+      console.log(`KH Sync: search "${term}" returned ${Array.isArray(items) ? items.filter(i => i.SearchItemType === 2).length : 0} ravs (${ravMap.size} unique total)`);
+    } catch (e: any) {
+      console.error(`KH Sync: search "${term}" failed — ${e.message?.slice(0, 200)}`);
     }
-    console.log(`KH Sync: found ${allRavs.length} ravs from search`);
-  } catch (e: any) {
-    const status = e.response?.status;
-    console.error(`KH Sync: failed to search speakers (${status || "?"}) — ${e.message?.slice(0, 200)}`);
-    return { created: 0, linked: 0, total: 0, errors: 1 };
+    // Small delay between searches
+    if (term !== searchTerms[searchTerms.length - 1]) {
+      await new Promise(r => setTimeout(r, 500));
+    }
   }
+  allRavs = Array.from(ravMap.values());
+  console.log(`KH Sync: found ${allRavs.length} unique ravs from all searches`);
 
   if (allRavs.length === 0) {
     console.log("KH Sync: no ravs found in search results");

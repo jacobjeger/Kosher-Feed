@@ -518,7 +518,27 @@
       <div class="card">
         <div class="card-header">
           <h2>Feed Audit Table</h2>
-          <button class="btn btn-primary btn-sm" onclick="loadVitals()">Refresh</button>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="text" id="vitalsSearchInput" placeholder="Search feeds..." oninput="filterVitalsAudit(this.value)" style="padding:8px 12px;font-size:13px;width:200px;">
+            <select id="vitalsSourceFilter" onchange="filterVitalsAudit(document.getElementById('vitalsSearchInput').value)" style="padding:8px 12px;font-size:13px;min-width:120px;">
+              <option value="">All Sources</option>
+              <option value="rss">RSS</option>
+              <option value="tat">TAT</option>
+              <option value="alldaf">AllDaf</option>
+              <option value="allmishnah">AllMishnah</option>
+              <option value="allparsha">AllParsha</option>
+              <option value="kh">KH</option>
+            </select>
+            <select id="vitalsStatusFilter" onchange="filterVitalsAudit(document.getElementById('vitalsSearchInput').value)" style="padding:8px 12px;font-size:13px;min-width:120px;">
+              <option value="">All Status</option>
+              <option value="stale">Stale (>2h)</option>
+              <option value="never">Never Fetched</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+            <span id="vitalsAuditCount" style="font-size:12px;color:#64748b;white-space:nowrap;"></span>
+            <button class="btn btn-primary btn-sm" onclick="loadVitals()">Refresh</button>
+          </div>
         </div>
         <div id="vitalsAuditTable"></div>
       </div>
@@ -727,6 +747,21 @@
             <tbody id="khSpeakerBody"></tbody>
           </table>
         </div>
+      </div>
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <h2>KH Feed Vitals</h2>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="text" id="khVitalsSearch" placeholder="Search..." oninput="filterKHVitals(this.value)" style="padding:8px 12px;font-size:13px;width:160px;">
+            <select id="khVitalsStatusFilter" onchange="filterKHVitals(document.getElementById('khVitalsSearch').value)" style="padding:8px 12px;font-size:13px;min-width:110px;">
+              <option value="">All</option>
+              <option value="stale">Stale (>2h)</option>
+              <option value="never">Never Fetched</option>
+            </select>
+            <span id="khVitalsCount" style="font-size:12px;color:#64748b;white-space:nowrap;"></span>
+          </div>
+        </div>
+        <div id="khVitalsTable" style="color:#94a3b8;font-size:13px;">Loading...</div>
       </div>
     </div>
 
@@ -1904,7 +1939,7 @@ function switchTab(tab, btn) {
   if (tab === 'pushtracker') { loadPushTokens(); loadNotificationHistory(); }
   if (tab === 'vitals') loadVitals();
   if (tab === 'announcements') loadAnnouncements();
-  if (tab === 'kolhalashon') { loadKHStatus(); loadKHSpeakers(); }
+  if (tab === 'kolhalashon') { loadKHStatus(); loadKHSpeakers(); loadKHVitals(); }
   if (tab === 'settings') { loadTATStatus(); loadAllOUStatuses(); loadMergers(); loadGlobalMergeHistory(); }
 }
 
@@ -3015,47 +3050,149 @@ function renderVitalsFailingFeeds(feeds) {
   document.getElementById('vitalsFailingTable').innerHTML = html;
 }
 
+let allVitalsFeeds = [];
+
 async function renderVitalsAuditTable() {
   try {
-    const feeds = await api('/api/feeds');
-    if (!feeds || feeds.length === 0) {
-      document.getElementById('vitalsAuditTable').innerHTML = '<div style="color:#64748b;font-size:13px;padding:12px;">No feeds found.</div>';
-      return;
-    }
-
-    let html = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
-    html += '<thead><tr style="border-bottom:1px solid #1e293b;color:#94a3b8;text-align:left;">';
-    html += '<th style="padding:8px;">Feed</th><th style="padding:8px;">Host</th><th style="padding:8px;">Status</th><th style="padding:8px;">Last Fetched</th><th style="padding:8px;">Cache Headers</th><th style="padding:8px;">Actions</th>';
-    html += '</tr></thead><tbody>';
-
-    feeds.forEach(f => {
-      let host = '';
-      try { host = new URL(f.rssUrl).hostname; } catch {}
-
-      const hasEtag = f.etag ? '✓' : '✗';
-      const hasLM = f.lastModifiedHeader ? '✓' : '✗';
-      const etagColor = f.etag ? '#22c55e' : '#64748b';
-      const lmColor = f.lastModifiedHeader ? '#22c55e' : '#64748b';
-
-      const lastFetched = f.lastFetchedAt ? timeAgo(new Date(f.lastFetchedAt)) : 'Never';
-      const statusColor = f.isActive ? '#22c55e' : '#ef4444';
-      const statusIcon = f.isActive ? '🟢' : '🔴';
-
-      html += `<tr style="border-bottom:1px solid #1e293b;" id="vitals-row-${f.id}">`;
-      html += `<td style="padding:8px;color:#f8fafc;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.title)}</td>`;
-      html += `<td style="padding:8px;color:#94a3b8;font-size:11px;">${esc(host)}</td>`;
-      html += `<td style="padding:8px;">${statusIcon}</td>`;
-      html += `<td style="padding:8px;color:#94a3b8;font-size:12px;">${lastFetched}</td>`;
-      html += `<td style="padding:8px;font-size:11px;"><span style="color:${etagColor};">ETag ${hasEtag}</span> <span style="color:${lmColor};">LM ${hasLM}</span></td>`;
-      html += `<td style="padding:8px;"><button class="btn btn-secondary btn-sm" onclick="forceSync('${f.id}', this)" style="font-size:11px;padding:4px 10px;">Force Sync</button> <span id="vitals-result-${f.id}" style="font-size:11px;margin-left:4px;"></span></td>`;
-      html += '</tr>';
-    });
-
-    html += '</tbody></table></div>';
-    document.getElementById('vitalsAuditTable').innerHTML = html;
+    allVitalsFeeds = await api('/api/admin/feeds');
+    filterVitalsAudit('');
   } catch (e) {
     document.getElementById('vitalsAuditTable').innerHTML = '<div class="alert alert-error">Failed to load feeds: ' + esc(e.message) + '</div>';
   }
+}
+
+function getVitalsFeedSource(f) {
+  if (f.kolhalashonRavId || (f.rssUrl && f.rssUrl.startsWith('kh://'))) return 'kh';
+  if (f.tatSpeakerId || (f.rssUrl && f.rssUrl.startsWith('tat://'))) return 'tat';
+  if (f.alldafAuthorId || (f.rssUrl && f.rssUrl.startsWith('alldaf://'))) return 'alldaf';
+  if (f.allmishnahAuthorId || (f.rssUrl && f.rssUrl.startsWith('allmishnah://'))) return 'allmishnah';
+  if (f.allparshaAuthorId || (f.rssUrl && f.rssUrl.startsWith('allparsha://'))) return 'allparsha';
+  return 'rss';
+}
+
+function getVitalsSourceLabel(src) {
+  const labels = { rss: 'RSS', tat: 'TAT', alldaf: 'AllDaf', allmishnah: 'AllMishnah', allparsha: 'AllParsha', kh: 'KH' };
+  return labels[src] || src;
+}
+
+function filterVitalsAudit(query) {
+  const q = (query || '').toLowerCase().trim();
+  const sourceFilter = document.getElementById('vitalsSourceFilter')?.value || '';
+  const statusFilter = document.getElementById('vitalsStatusFilter')?.value || '';
+
+  let feeds = allVitalsFeeds;
+  if (q) feeds = feeds.filter(f => f.title.toLowerCase().includes(q) || (f.author || '').toLowerCase().includes(q));
+  if (sourceFilter) feeds = feeds.filter(f => getVitalsFeedSource(f) === sourceFilter);
+  if (statusFilter === 'stale') feeds = feeds.filter(f => f.lastFetchedAt && (Date.now() - new Date(f.lastFetchedAt).getTime()) > 2 * 3600000);
+  else if (statusFilter === 'never') feeds = feeds.filter(f => !f.lastFetchedAt);
+  else if (statusFilter === 'active') feeds = feeds.filter(f => f.isActive);
+  else if (statusFilter === 'inactive') feeds = feeds.filter(f => !f.isActive);
+
+  const countEl = document.getElementById('vitalsAuditCount');
+  if (countEl) countEl.textContent = feeds.length === allVitalsFeeds.length ? `${feeds.length} feeds` : `${feeds.length} of ${allVitalsFeeds.length}`;
+
+  if (!feeds || feeds.length === 0) {
+    document.getElementById('vitalsAuditTable').innerHTML = '<div style="color:#64748b;font-size:13px;padding:12px;">No feeds match filters.</div>';
+    return;
+  }
+
+  let html = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
+  html += '<thead><tr style="border-bottom:1px solid #1e293b;color:#94a3b8;text-align:left;">';
+  html += '<th style="padding:8px;">Feed</th><th style="padding:8px;">Source</th><th style="padding:8px;">Host</th><th style="padding:8px;">Status</th><th style="padding:8px;">Last Fetched</th><th style="padding:8px;">Cache Headers</th><th style="padding:8px;">Actions</th>';
+  html += '</tr></thead><tbody>';
+
+  feeds.forEach(f => {
+    let host = '';
+    try { host = new URL(f.rssUrl).hostname; } catch { host = f.rssUrl?.slice(0, 20) || ''; }
+
+    const src = getVitalsFeedSource(f);
+    const srcColors = { rss: '#64748b', tat: '#7c3aed', alldaf: '#2563eb', allmishnah: '#0891b2', allparsha: '#059669', kh: '#b45309' };
+    const srcBadge = `<span style="display:inline-block;font-size:9px;font-weight:600;padding:2px 6px;border-radius:4px;background:${srcColors[src] || '#64748b'};color:#fff;">${getVitalsSourceLabel(src)}</span>`;
+
+    const hasEtag = f.etag ? '✓' : '✗';
+    const hasLM = f.lastModifiedHeader ? '✓' : '✗';
+    const etagColor = f.etag ? '#22c55e' : '#64748b';
+    const lmColor = f.lastModifiedHeader ? '#22c55e' : '#64748b';
+
+    const lastFetched = f.lastFetchedAt ? timeAgo(new Date(f.lastFetchedAt)) : 'Never';
+    const isStale = f.lastFetchedAt && (Date.now() - new Date(f.lastFetchedAt).getTime()) > 2 * 3600000;
+    const lastFetchedColor = !f.lastFetchedAt ? '#ef4444' : isStale ? '#eab308' : '#94a3b8';
+    const statusIcon = f.isActive ? '🟢' : '🔴';
+
+    html += `<tr style="border-bottom:1px solid #1e293b;" id="vitals-row-${f.id}">`;
+    html += `<td style="padding:8px;color:#f8fafc;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(f.title)}">${esc(f.title)}</td>`;
+    html += `<td style="padding:8px;">${srcBadge}</td>`;
+    html += `<td style="padding:8px;color:#94a3b8;font-size:11px;">${esc(host)}</td>`;
+    html += `<td style="padding:8px;">${statusIcon}</td>`;
+    html += `<td style="padding:8px;color:${lastFetchedColor};font-size:12px;">${lastFetched}</td>`;
+    html += `<td style="padding:8px;font-size:11px;"><span style="color:${etagColor};">ETag ${hasEtag}</span> <span style="color:${lmColor};">LM ${hasLM}</span></td>`;
+    html += `<td style="padding:8px;"><button class="btn btn-secondary btn-sm" onclick="forceSync('${f.id}', this)" style="font-size:11px;padding:4px 10px;">Force Sync</button> <span id="vitals-result-${f.id}" style="font-size:11px;margin-left:4px;"></span></td>`;
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  document.getElementById('vitalsAuditTable').innerHTML = html;
+}
+
+// ---- KH Vitals ----
+let allKHVitalsFeeds = [];
+
+function loadKHVitals() {
+  // Use the KH speakers data that's already loaded, plus use admin feeds for last-fetched info
+  if (!allVitalsFeeds.length) {
+    api('/api/admin/feeds').then(feeds => {
+      allVitalsFeeds = feeds;
+      buildKHVitals();
+    }).catch(() => {});
+  } else {
+    buildKHVitals();
+  }
+}
+
+function buildKHVitals() {
+  allKHVitalsFeeds = allVitalsFeeds.filter(f => f.kolhalashonRavId || (f.rssUrl && f.rssUrl.startsWith('kh://')));
+  filterKHVitals('');
+}
+
+function filterKHVitals(query) {
+  const q = (query || '').toLowerCase().trim();
+  const statusFilter = document.getElementById('khVitalsStatusFilter')?.value || '';
+
+  let feeds = allKHVitalsFeeds;
+  if (q) feeds = feeds.filter(f => f.title.toLowerCase().includes(q) || (f.author || '').toLowerCase().includes(q));
+  if (statusFilter === 'stale') feeds = feeds.filter(f => f.lastFetchedAt && (Date.now() - new Date(f.lastFetchedAt).getTime()) > 2 * 3600000);
+  else if (statusFilter === 'never') feeds = feeds.filter(f => !f.lastFetchedAt);
+
+  const countEl = document.getElementById('khVitalsCount');
+  if (countEl) countEl.textContent = feeds.length === allKHVitalsFeeds.length ? `${feeds.length} KH feeds` : `${feeds.length} of ${allKHVitalsFeeds.length}`;
+
+  const area = document.getElementById('khVitalsTable');
+  if (feeds.length === 0) {
+    area.innerHTML = '<div style="color:#64748b;font-size:13px;padding:12px;">No KH feeds match filters.</div>';
+    return;
+  }
+
+  let html = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
+  html += '<thead><tr style="border-bottom:1px solid #1e293b;color:#94a3b8;text-align:left;">';
+  html += '<th style="padding:8px;">Speaker</th><th style="padding:8px;">Status</th><th style="padding:8px;">Last Fetched</th><th style="padding:8px;">Actions</th>';
+  html += '</tr></thead><tbody>';
+
+  feeds.forEach(f => {
+    const lastFetched = f.lastFetchedAt ? timeAgo(new Date(f.lastFetchedAt)) : 'Never';
+    const isStale = f.lastFetchedAt && (Date.now() - new Date(f.lastFetchedAt).getTime()) > 2 * 3600000;
+    const lastFetchedColor = !f.lastFetchedAt ? '#ef4444' : isStale ? '#eab308' : '#94a3b8';
+    const statusIcon = f.isActive ? '🟢' : '🔴';
+
+    html += `<tr style="border-bottom:1px solid #1e293b;">`;
+    html += `<td style="padding:8px;color:#f8fafc;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.title)}</td>`;
+    html += `<td style="padding:8px;">${statusIcon}</td>`;
+    html += `<td style="padding:8px;color:${lastFetchedColor};font-size:12px;">${lastFetched}</td>`;
+    html += `<td style="padding:8px;"><button class="btn btn-secondary btn-sm" onclick="forceSync('${f.id}', this)" style="font-size:11px;padding:4px 10px;">Force Sync</button> <span id="vitals-result-${f.id}" style="font-size:11px;margin-left:4px;"></span></td>`;
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  area.innerHTML = html;
 }
 
 function timeAgo(date) {

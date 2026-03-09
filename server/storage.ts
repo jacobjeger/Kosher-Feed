@@ -30,6 +30,11 @@ export async function getActiveFeeds(): Promise<Feed[]> {
   return db.select().from(feeds).where(and(eq(feeds.isActive, true), eq(feeds.showInBrowse, true))).orderBy(feeds.title);
 }
 
+// All active feeds including those hidden from browse — used for sync/refresh
+export async function getAllActiveFeedsForSync(): Promise<Feed[]> {
+  return db.select().from(feeds).where(eq(feeds.isActive, true)).orderBy(feeds.title);
+}
+
 export async function getFeedsByCategory(categoryId: string): Promise<Feed[]> {
   return db.select().from(feeds).where(and(eq(feeds.categoryId, categoryId), eq(feeds.isActive, true))).orderBy(feeds.title);
 }

@@ -530,7 +530,7 @@ async function autoRefreshFeeds() {
   }
   isAutoRefreshing = true;
   try {
-    const allFeeds = await storage.getActiveFeeds();
+    const allFeeds = await storage.getAllActiveFeedsForSync();
     const now = new Date().toLocaleTimeString();
 
     const staleCutoff = new Date(Date.now() - FEED_REFRESH_INTERVAL);
