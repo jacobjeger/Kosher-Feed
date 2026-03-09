@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="45%" r="50%">
+      <stop offset="0%" stop-color="#d4d8dc"/>
+      <stop offset="70%" stop-color="#b8bcc0"/>
+      <stop offset="100%" stop-color="#a0a4a8"/>
+    </radialGradient>
+    <radialGradient id="inner" cx="50%" cy="45%" r="45%">
+      <stop offset="0%" stop-color="#3a5a7a"/>
+      <stop offset="100%" stop-color="#1a3050"/>
+    </radialGradient>
+  </defs>
+  <!-- Outer ring -->
+  <circle cx="100" cy="100" r="96" fill="url(#bg)" stroke="#888" stroke-width="1"/>
+  <!-- Inner circle -->
+  <circle cx="100" cy="100" r="78" fill="url(#inner)" stroke="#6a8aaa" stroke-width="1.5"/>
+  <!-- Phone icon -->
+  <g transform="translate(100,58)" fill="#c4a46a">
+    <rect x="-12" y="-14" width="24" height="28" rx="4" fill="none" stroke="#c4a46a" stroke-width="3"/>
+    <line x1="-6" y1="-6" x2="6" y2="-6" stroke="#c4a46a" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="-6" y1="0" x2="6" y2="0" stroke="#c4a46a" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="-6" y1="6" x2="6" y2="6" stroke="#c4a46a" stroke-width="2.5" stroke-linecap="round"/>
+  </g>
+  <!-- Hebrew text קול -->
+  <text x="100" y="115" text-anchor="middle" font-family="Arial, sans-serif" font-size="30" font-weight="bold" fill="#c4a46a" direction="rtl">קול</text>
+  <!-- Hebrew text הלשון -->
+  <text x="100" y="148" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#c4a46a" direction="rtl">הלשון</text>
+</svg>

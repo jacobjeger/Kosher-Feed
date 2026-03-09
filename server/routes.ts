@@ -17,6 +17,17 @@ import fs from "node:fs";
 
 const ON_DEMAND_STALE_MS = 5 * 60 * 1000;
 
+// Default logo for Kol Halashon feeds without a speaker image
+const KH_DEFAULT_LOGO_PATH = "/api/images/kol-halashon-logo.svg";
+
+function addKHDefaultImage(feed: any, baseUrl?: string): any {
+  if (!feed.imageUrl && feed.sourceNetwork === "Kol Halashon") {
+    const prefix = baseUrl || "";
+    return { ...feed, imageUrl: prefix + KH_DEFAULT_LOGO_PATH };
+  }
+  return feed;
+}
+
 // Resolve KH audio URLs through the proxy worker
 function resolveKHAudioUrl(audioUrl: string): { url: string; headers: Record<string, string> } {
   const headers: Record<string, string> = { "User-Agent": "ShiurPod/1.0" };
@@ -164,6 +175,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
+  // Serve static brand images (e.g. Kol Halashon logo)
+  app.get("/api/images/:name", (req: Request, res: Response) => {
+    const name = req.params.name?.replace(/[^a-zA-Z0-9._-]/g, "");
+    if (!name) return res.status(400).send("Invalid name");
+    const filePath = path.resolve(process.cwd(), "assets", "images", name);
+    if (!fs.existsSync(filePath)) return res.status(404).send("Not found");
+    const ext = path.extname(name).toLowerCase();
+    const mimeTypes: Record<string, string> = { ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
+    res.setHeader("Content-Type", mimeTypes[ext] || "application/octet-stream");
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    res.sendFile(filePath);
+  });
+
   app.post("/api/admin/login", async (req: Request, res: Response) => {
     try {
       const { username, password } = req.body;
@@ -223,13 +247,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Feeds
-  app.get("/api/feeds", async (_req: Request, res: Response) => {
+  app.get("/api/feeds", async (req: Request, res: Response) => {
     try {
+      const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
+      const host = req.header("x-forwarded-host") || req.get("host");
+      const baseUrl = `${protocol}://${host}`;
       const feedList = await storage.getActiveFeeds();
       const mappings = await storage.getAllFeedCategoryMappings();
       const feedsWithCategories = feedList.map(f => {
         const catIds = mappings.filter(m => m.feedId === f.id).map(m => m.categoryId);
-        return { ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) };
+        return addKHDefaultImage({ ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) }, baseUrl);
       });
       res.setHeader("Cache-Control", "public, max-age=60");
       res.json(feedsWithCategories);
@@ -252,6 +279,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Feed search (searches ALL active feeds including hidden-from-browse)
   app.get("/api/feeds/search", async (req: Request, res: Response) => {
     try {
+      const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
+      const host = req.header("x-forwarded-host") || req.get("host");
+      const baseUrl = `${protocol}://${host}`;
       const q = (req.query.q as string || "").trim();
       if (q.length < 2) return res.json([]);
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
@@ -259,7 +289,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const mappings = await storage.getAllFeedCategoryMappings();
       const enriched = results.map(f => {
         const catIds = mappings.filter(m => m.feedId === f.id).map(m => m.categoryId);
-        return { ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) };
+        return addKHDefaultImage({ ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) }, baseUrl);
       });
       res.setHeader("Cache-Control", "public, max-age=30");
       res.json(enriched);
@@ -270,23 +300,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/feeds/category/:categoryId", async (req: Request, res: Response) => {
     try {
+      const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
+      const host = req.header("x-forwarded-host") || req.get("host");
+      const baseUrl = `${protocol}://${host}`;
       const legacyFeeds = await storage.getFeedsByCategory(req.params.categoryId);
       const junctionFeeds = await storage.getFeedsByCategories(req.params.categoryId);
       const allFeedsMap = new Map<string, any>();
       for (const f of legacyFeeds) allFeedsMap.set(f.id, f);
       for (const f of junctionFeeds) allFeedsMap.set(f.id, f);
-      res.json(Array.from(allFeedsMap.values()));
+      res.json(Array.from(allFeedsMap.values()).map(f => addKHDefaultImage(f, baseUrl)));
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
   // Maggid Shiur - feeds grouped by author/speaker
-  app.get("/api/feeds/maggid-shiur", async (_req: Request, res: Response) => {
+  app.get("/api/feeds/maggid-shiur", async (req: Request, res: Response) => {
     try {
+      const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
+      const host = req.header("x-forwarded-host") || req.get("host");
+      const baseUrl = `${protocol}://${host}`;
       const grouped = await storage.getActiveFeedsGroupedByAuthor();
+      const enriched = grouped.map((g: any) => ({
+        ...g,
+        feeds: g.feeds.map((f: any) => addKHDefaultImage(f, baseUrl)),
+      }));
       res.setHeader("Cache-Control", "public, max-age=60");
-      res.json(grouped);
+      res.json(enriched);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -621,12 +661,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const recommendationCache = new Map<string, { data: Feed[]; ts: number }>();
   app.get("/api/recommendations/:deviceId", async (req: Request, res: Response) => {
     try {
+      const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
+      const host = req.header("x-forwarded-host") || req.get("host");
+      const baseUrl = `${protocol}://${host}`;
       const { deviceId } = req.params;
       const limit = parseInt(req.query.limit as string) || 10;
       const cached = recommendationCache.get(deviceId);
       if (cached && Date.now() - cached.ts < 5 * 60 * 1000) {
         res.setHeader("Cache-Control", "public, max-age=60");
-        return res.json(cached.data);
+        return res.json(cached.data.map((f: any) => addKHDefaultImage(f, baseUrl)));
       }
       const recs = await storage.getRecommendations(deviceId, limit);
       recommendationCache.set(deviceId, { data: recs, ts: Date.now() });
@@ -638,7 +681,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       res.setHeader("Cache-Control", "public, max-age=60");
-      res.json(recs);
+      res.json(recs.map((f: any) => addKHDefaultImage(f, baseUrl)));
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
