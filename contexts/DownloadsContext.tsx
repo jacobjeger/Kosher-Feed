@@ -16,7 +16,7 @@ const MAX_RETRY_COUNT = 2;
 
 // Rewrite KH direct audio URLs to go through our server proxy
 function resolveAudioUrl(audioUrl: string): string {
-  const khMatch = audioUrl.match(/https?:\/\/srv\.kolhalashon\.com\/api\/files\/getLocationOfFileToVideo\/(\d+)/);
+  const khMatch = audioUrl.match(/https?:\/\/srv\.kolhalashon\.com\/api\/files\/(?:GetMp3FileToPlay|getLocationOfFileToVideo)\/(\d+)/);
   if (khMatch) {
     const fileId = khMatch[1];
     return `${getApiUrl()}/api/audio/kh/${fileId}`;

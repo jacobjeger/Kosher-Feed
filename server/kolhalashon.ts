@@ -145,7 +145,7 @@ export function mapKHShiurToEpisodeData(shiur: any, feedId: string) {
     shiur.CatDescEnglish1 || shiur.CatDesc1,
   ].filter(Boolean);
 
-  const audioUrl = `${KH_API_BASE}/files/getLocationOfFileToVideo/${fileId}`;
+  const audioUrl = `${KH_API_BASE}/files/GetMp3FileToPlay/${fileId}`;
 
   return {
     feedId,

@@ -30,15 +30,15 @@ function addKHDefaultImage(feed: any, baseUrl?: string): any {
 
 // Resolve KH audio URLs through the proxy worker
 function resolveKHAudioUrl(audioUrl: string): { url: string; headers: Record<string, string> } {
-  const khMatch = audioUrl.match(/https?:\/\/srv\.kolhalashon\.com\/api\/files\/getLocationOfFileToVideo\/(\d+)/);
+  const khMatch = audioUrl.match(/https?:\/\/srv\.kolhalashon\.com\/api\/files\/(?:GetMp3FileToPlay|getLocationOfFileToVideo)\/(\d+)/);
   if (khMatch) {
     const fileId = khMatch[1];
     const headers = getKHHeaders();
     if (process.env.KH_PROXY_URL) {
       const proxyBase = process.env.KH_PROXY_URL.replace(/\/$/, "") + "/api";
-      return { url: `${proxyBase}/files/getLocationOfFileToVideo/${fileId}`, headers };
+      return { url: `${proxyBase}/files/GetMp3FileToPlay/${fileId}`, headers };
     }
-    return { url: audioUrl, headers };
+    return { url: `https://srv.kolhalashon.com/api/files/GetMp3FileToPlay/${fileId}`, headers };
   }
   return { url: audioUrl, headers: { "User-Agent": "ShiurPod/1.0" } };
 }
@@ -1014,119 +1014,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const fileId = req.params.fileId;
       if (!fileId || !/^\d+$/.test(fileId)) return res.status(400).json({ error: "Invalid file ID" });
 
-      const khPath = `/api/files/getLocationOfFileToVideo/${fileId}`;
-      const directUrl = `https://srv.kolhalashon.com${khPath}`;
+      // KH serves MP3 audio via: srv.kolhalashon.com/api/files/GetMp3FileToPlay/{fileId}
+      const khPath = `/api/files/GetMp3FileToPlay/${fileId}`;
+      const headers = getKHHeaders();
+      headers["accept"] = "*/*";
+
       const proxyUrl = process.env.KH_PROXY_URL;
-      const proxyApiUrl = proxyUrl ? `${proxyUrl.replace(/\/$/, "")}${khPath}` : null;
-
-      // Build browser-like headers (without JSON accept — we want the redirect/audio, not JSON)
-      const audioReqHeaders: Record<string, string> = {
-        "accept": "*/*",
-        "authorization-site-key": "Bearer 8ea2pe8",
-        "origin": "https://www2.kolhalashon.com",
-        "referer": "https://www2.kolhalashon.com/",
-        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      };
-      if (proxyUrl && process.env.KH_PROXY_KEY) {
-        audioReqHeaders["x-proxy-key"] = process.env.KH_PROXY_KEY;
-      }
-
-      // Try proxy first (if configured), then direct
-      let resolvedResp: globalThis.Response | null = null;
-      const urlsToTry = proxyApiUrl ? [proxyApiUrl, directUrl] : [directUrl];
+      const urlsToTry = proxyUrl
+        ? [`${proxyUrl.replace(/\/$/, "")}${khPath}`, `https://srv.kolhalashon.com${khPath}`]
+        : [`https://srv.kolhalashon.com${khPath}`];
 
       for (const url of urlsToTry) {
         try {
-          // First try with redirect: "manual" to capture redirect URL
-          const resp = await fetch(url, { headers: audioReqHeaders, redirect: "manual", signal: AbortSignal.timeout(15000) });
-          if (resp.status >= 300 && resp.status < 400) {
-            const location = resp.headers.get("location");
-            if (location) {
-              console.log(`KH audio: ${fileId} redirected to ${location.slice(0, 100)}`);
-              return res.redirect(location);
-            }
-          }
-          if (resp.ok) {
-            resolvedResp = resp;
-            break;
-          }
-          console.log(`KH audio: ${url} returned ${resp.status}`);
-        } catch (e: any) {
-          console.log(`KH audio: ${url} failed — ${e.message?.slice(0, 100)}`);
-        }
-      }
-
-      if (!resolvedResp) {
-        return res.status(502).json({ error: "Failed to resolve KH audio URL" });
-      }
-
-      const contentType = resolvedResp.headers.get("content-type") || "";
-
-      if (contentType.includes("audio") || contentType.includes("octet-stream")) {
-        // Direct audio stream
-        res.setHeader("Content-Type", contentType);
-        const contentLength = resolvedResp.headers.get("content-length");
-        if (contentLength) res.setHeader("Content-Length", contentLength);
-        res.setHeader("Accept-Ranges", "bytes");
-        res.setHeader("Cache-Control", "public, max-age=86400");
-
-        const reader = resolvedResp.body?.getReader();
-        if (!reader) return res.status(502).json({ error: "No stream" });
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (!res.writableEnded) res.write(Buffer.from(value));
-        }
-        res.end();
-        return;
-      }
-
-      // Parse response body — could be a URL string or JSON {"location":"path/file"}
-      const body = await resolvedResp.text();
-      let audioUrl: string | null = null;
-
-      // Try JSON parse for {"location":"42283/42283185"} format
-      try {
-        const json = JSON.parse(body);
-        if (json.location) {
-          // Construct full URL from relative location path
-          // KH serves files from their media server
-          audioUrl = `https://download.kolhalashon.com/${json.location}.mp3`;
-        }
-      } catch {
-        // Not JSON — treat as URL string
-        audioUrl = body.trim().replace(/^"|"$/g, "");
-      }
-
-      if (!audioUrl || (!audioUrl.startsWith("http") && !audioUrl.startsWith("/"))) {
-        console.log(`KH audio: cannot resolve URL for ${fileId}: ${body.slice(0, 200)}`);
-        return res.status(502).json({ error: "Cannot resolve KH audio URL" });
-      }
-
-      // Try the constructed URL; if it fails, try alternate CDN patterns
-      const cdnPatterns = audioUrl.startsWith("http") ? [audioUrl] : [`https://download.kolhalashon.com${audioUrl}`];
-
-      // Also try without .mp3 extension and with alternate domains
-      try {
-        const json = JSON.parse(body);
-        if (json.location) {
-          cdnPatterns.push(
-            `https://download.kolhalashon.com/${json.location}`,
-            `https://media2.kolhalashon.com/${json.location}.mp3`,
-            `https://media2.kolhalashon.com/${json.location}`,
-          );
-        }
-      } catch {}
-
-      for (const tryUrl of cdnPatterns) {
-        try {
           const rangeHeader = req.headers.range;
-          const hdrs: Record<string, string> = { "User-Agent": "ShiurPod/1.0" };
-          if (rangeHeader) hdrs["Range"] = rangeHeader;
+          const reqHeaders: Record<string, string> = { ...headers };
+          if (rangeHeader) reqHeaders["Range"] = rangeHeader;
 
-          const audioResp = await fetch(tryUrl, { headers: hdrs, redirect: "follow", signal: AbortSignal.timeout(15000) });
+          const audioResp = await fetch(url, {
+            headers: reqHeaders,
+            redirect: "follow",
+            signal: AbortSignal.timeout(30000),
+          });
+
           if (audioResp.ok || audioResp.status === 206) {
-            console.log(`KH audio: ${fileId} serving from ${tryUrl}`);
+            console.log(`KH audio: ${fileId} serving from ${url.includes("proxy") ? "proxy" : "direct"}`);
             res.status(audioResp.status);
             res.setHeader("Content-Type", audioResp.headers.get("content-type") || "audio/mpeg");
             const cl = audioResp.headers.get("content-length");
@@ -1146,13 +1057,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
             res.end();
             return;
           }
-          console.log(`KH audio: CDN ${tryUrl} returned ${audioResp.status}`);
+          console.log(`KH audio: ${url} returned ${audioResp.status}`);
         } catch (e: any) {
-          console.log(`KH audio: CDN ${tryUrl} failed — ${e.message?.slice(0, 80)}`);
+          console.log(`KH audio: ${url} failed — ${e.message?.slice(0, 100)}`);
         }
       }
 
-      return res.status(502).json({ error: "All KH audio CDN URLs failed" });
+      return res.status(502).json({ error: "Failed to fetch KH audio" });
     } catch (e: any) {
       console.error(`KH audio proxy error for ${req.params.fileId}:`, e.message);
       if (!res.headersSent) res.status(500).json({ error: e.message });
