@@ -69,7 +69,21 @@ function PodcastDetailScreenInner() {
   const inProgressIds = useMemo(() => new Set(Object.keys(positionsMap)), [positionsMap]);
 
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
-  const feed = useMemo(() => feedsQuery.data?.find(f => f.id === id), [feedsQuery.data, id]);
+  const feedFromList = useMemo(() => feedsQuery.data?.find(f => f.id === id), [feedsQuery.data, id]);
+
+  // Fallback: fetch individual feed if not in the browse list (e.g. KH feeds with showInBrowse=false)
+  const singleFeedQuery = useQuery<Feed>({
+    queryKey: [`/api/feeds/${id}`],
+    queryFn: async () => {
+      const baseUrl = getApiUrl();
+      const res = await fetch(`${baseUrl}/api/feeds/${id}`);
+      if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
+      return res.json();
+    },
+    enabled: !!id && feedsQuery.isFetched && !feedFromList,
+  });
+
+  const feed = feedFromList || singleFeedQuery.data;
 
   const episodesInfiniteQuery = useInfiniteQuery<PaginatedResponse>({
     queryKey: [`/api/feeds/${id}/episodes`, "paginated", sortOrder],
@@ -265,8 +279,8 @@ function PodcastDetailScreenInner() {
     return <EpisodeItem episode={item} feed={feed} isOnline={isOnline} />;
   }, [feed, isOnline]);
 
-  const feedError = feedsQuery.isError || episodesInfiniteQuery.isError;
-  const feedErrorMsg = feedsQuery.error?.message || episodesInfiniteQuery.error?.message || "";
+  const feedError = (feedsQuery.isError && singleFeedQuery.isError) || episodesInfiniteQuery.isError;
+  const feedErrorMsg = feedsQuery.error?.message || singleFeedQuery.error?.message || episodesInfiniteQuery.error?.message || "";
 
   const headerElement = useMemo(() => {
     if (feedError && !feed) {

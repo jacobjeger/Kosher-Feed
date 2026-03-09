@@ -336,6 +336,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ ok: true, ts: Date.now() });
   });
 
+  // Single feed by ID (works for all feeds regardless of showInBrowse)
+  app.get("/api/feeds/:id", async (req: Request, res: Response) => {
+    try {
+      const feed = await storage.getFeedById(req.params.id);
+      if (!feed) return res.status(404).json({ error: "Feed not found" });
+      const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
+      const host = req.header("x-forwarded-host") || req.get("host");
+      const baseUrl = `${protocol}://${host}`;
+      const mappings = await storage.getAllFeedCategoryMappings();
+      const catIds = mappings.filter(m => m.feedId === feed.id).map(m => m.categoryId);
+      res.json(addKHDefaultImage({ ...feed, categoryIds: catIds.length > 0 ? catIds : (feed.categoryId ? [feed.categoryId] : []) }, baseUrl));
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/feeds/:id/episodes", async (req: Request, res: Response) => {
     try {
       const feedId = req.params.id;
