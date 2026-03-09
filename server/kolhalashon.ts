@@ -189,8 +189,33 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
   }
 
   const allFeeds = await storage.getAllFeeds();
-  const existingKHFeeds = new Map<number, string>();
+
+  // Clean up: remove KH-created feeds with no English name (Hebrew-only)
+  // and unlink incorrectly linked feeds
+  const hasEnglishLetters = (s: string) => /[a-zA-Z]/.test(s);
+  let removed = 0;
+  let unlinked = 0;
   for (const feed of allFeeds) {
+    // Delete KH-created feeds (kh:// URL) that have no English in their title
+    if (feed.rssUrl.startsWith("kh://") && !hasEnglishLetters(feed.title)) {
+      await storage.deleteFeed(feed.id);
+      removed++;
+      continue;
+    }
+    // Unlink non-KH feeds that got incorrectly linked (have kolhalashonRavId but a real RSS URL)
+    if ((feed as any).kolhalashonRavId && !feed.rssUrl.startsWith("kh://")) {
+      await storage.setKHRavId(feed.id, null);
+      unlinked++;
+    }
+  }
+  if (removed || unlinked) {
+    console.log(`KH Sync: cleanup — removed ${removed} Hebrew-only feeds, unlinked ${unlinked} incorrectly linked feeds`);
+  }
+
+  // Re-fetch after cleanup
+  const cleanFeeds = await storage.getAllFeeds();
+  const existingKHFeeds = new Map<number, string>();
+  for (const feed of cleanFeeds) {
     if ((feed as any).kolhalashonRavId) {
       existingKHFeeds.set((feed as any).kolhalashonRavId, feed.id);
     }
@@ -200,8 +225,8 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
     }
   }
 
-  const feedsByNormalizedName = new Map<string, typeof allFeeds[0]>();
-  for (const feed of allFeeds) {
+  const feedsByNormalizedName = new Map<string, typeof cleanFeeds[0]>();
+  for (const feed of cleanFeeds) {
     if ((feed as any).kolhalashonRavId) continue;
     if (feed.rssUrl.startsWith("kh://")) continue;
     if (feed.author) {
@@ -283,8 +308,8 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
     }
   }
 
-  console.log(`KH Sync complete: ${created} created, ${linked} linked, ${allRavs.length} total ravs, ${errors} errors`);
-  return { created, linked, total: allRavs.length, errors };
+  console.log(`KH Sync complete: ${created} created, ${linked} linked, ${removed} removed, ${unlinked} unlinked, ${allRavs.length} total ravs, ${errors} errors`);
+  return { created, linked, removed, unlinked, total: allRavs.length, errors };
 }
 
 // --- Episode Refresh ---
