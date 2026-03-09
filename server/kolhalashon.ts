@@ -20,7 +20,7 @@ function getBaseUrl(): string {
   return KH_API_BASE;
 }
 
-function getHeaders(): Record<string, string> {
+export function getHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     "accept": "application/json, text/plain, */*",
     "content-type": "application/json",

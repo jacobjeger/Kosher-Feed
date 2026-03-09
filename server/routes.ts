@@ -10,7 +10,7 @@ import { db } from "./db";
 import { eq, desc } from "drizzle-orm";
 import { syncTATSpeakers, refreshTATFeedEpisodes, fetchAllSpeakers } from "./torahanytime";
 import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, OU_PLATFORMS, type OUPlatformKey } from "./alldaf";
-import { syncKHSpeakers, refreshKHFeedEpisodes, reloadKHClient } from "./kolhalashon";
+import { syncKHSpeakers, refreshKHFeedEpisodes, reloadKHClient, getHeaders as getKHHeaders } from "./kolhalashon";
 import multer from "multer";
 import path from "node:path";
 import fs from "node:fs";
@@ -30,16 +30,17 @@ function addKHDefaultImage(feed: any, baseUrl?: string): any {
 
 // Resolve KH audio URLs through the proxy worker
 function resolveKHAudioUrl(audioUrl: string): { url: string; headers: Record<string, string> } {
-  const headers: Record<string, string> = { "User-Agent": "ShiurPod/1.0" };
   const khMatch = audioUrl.match(/https?:\/\/srv\.kolhalashon\.com\/api\/files\/getLocationOfFileToVideo\/(\d+)/);
-  if (khMatch && process.env.KH_PROXY_URL) {
+  if (khMatch) {
     const fileId = khMatch[1];
-    const proxyBase = process.env.KH_PROXY_URL.replace(/\/$/, "") + "/api";
-    const url = `${proxyBase}/files/getLocationOfFileToVideo/${fileId}`;
-    if (process.env.KH_PROXY_KEY) headers["x-proxy-key"] = process.env.KH_PROXY_KEY;
-    return { url, headers };
+    const headers = getKHHeaders();
+    if (process.env.KH_PROXY_URL) {
+      const proxyBase = process.env.KH_PROXY_URL.replace(/\/$/, "") + "/api";
+      return { url: `${proxyBase}/files/getLocationOfFileToVideo/${fileId}`, headers };
+    }
+    return { url: audioUrl, headers };
   }
-  return { url: audioUrl, headers };
+  return { url: audioUrl, headers: { "User-Agent": "ShiurPod/1.0" } };
 }
 
 function detectSourceNetwork(rssUrl: string): string | null {
@@ -1017,10 +1018,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const baseUrl = proxyUrl ? proxyUrl.replace(/\/$/, "") + "/api" : "https://srv.kolhalashon.com/api";
       const khUrl = `${baseUrl}/files/getLocationOfFileToVideo/${fileId}`;
 
-      const headers: Record<string, string> = { "User-Agent": "ShiurPod/1.0" };
-      if (proxyUrl && process.env.KH_PROXY_KEY) {
-        headers["x-proxy-key"] = process.env.KH_PROXY_KEY;
-      }
+      // Use the same headers as the KH client (includes authorization-site-key)
+      const headers = getKHHeaders();
 
       // First resolve the redirect to get the actual audio URL
       const redirectResp = await fetch(khUrl, { headers, redirect: "follow" });
