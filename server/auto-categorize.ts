@@ -14,7 +14,7 @@ export const CANONICAL_CATEGORIES: { name: string; slug: string }[] = [
   { name: "Chassidus", slug: "chassidus" },
   { name: "Hashkafa", slug: "hashkafa" },
   { name: "Tefillah", slug: "tefillah" },
-  { name: "Holidays", slug: "holidays" },
+  { name: "Yomim Tovim", slug: "yomim-tovim" },
 ];
 
 // Keywords mapped to category slugs (all lowercase for matching)
@@ -117,8 +117,8 @@ const CATEGORY_KEYWORDS: Record<string, string[]> = {
     "kriat shema", "shema", "pesukei dezimra", "pesukei d'zimra",
     "hallel", "birkas hamazon", "birkat hamazon", "bentching",
   ],
-  holidays: [
-    "holidays", "yom tov", "chag", "chagim",
+  "yomim-tovim": [
+    "yomim tovim", "holidays", "yom tov", "chag", "chagim",
     "rosh hashana", "rosh hashanah", "yom kippur",
     "sukkos", "sukkot", "succos", "succot",
     "simchas torah", "simchat torah", "shemini atzeres", "shemini atzeret",
