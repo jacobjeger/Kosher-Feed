@@ -278,9 +278,12 @@ export async function syncOUPlatformAuthors(platform: OUPlatformKey): Promise<{ 
   let created = 0;
   let linked = 0;
 
+  const isWomanName = (s: string) => /\b(rebbetzin|rabbanit|mrs\.?|ms\.?|miss)\b/i.test(s);
+
   for (const author of authors) {
     if (author.postCount === 0) continue;
     if (existingFeeds.has(author.id)) continue;
+    if (isWomanName(author.name)) continue;
 
     const normalizedAuthorName = normalizeName(author.name);
     const photoUrl = buildAuthorImageUrl(author.image);
