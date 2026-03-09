@@ -719,9 +719,19 @@ export async function setFeedCategories(feedId: string, categoryIds: string[]): 
 export async function ensureCanonicalCategories(cats: { name: string; slug: string }[]): Promise<Map<string, string>> {
   const existing = await getAllCategories();
   const slugToId = new Map<string, string>();
-  for (const c of existing) slugToId.set(c.slug, c.id);
+  const nameToRow = new Map<string, Category>();
+  for (const c of existing) {
+    slugToId.set(c.slug, c.id);
+    nameToRow.set(c.name, c);
+  }
   for (const cat of cats) {
-    if (!slugToId.has(cat.slug)) {
+    if (slugToId.has(cat.slug)) continue;
+    // If a category with this name already exists under a different slug, update its slug
+    const byName = nameToRow.get(cat.name);
+    if (byName) {
+      await db.update(categories).set({ slug: cat.slug }).where(eq(categories.id, byName.id));
+      slugToId.set(cat.slug, byName.id);
+    } else {
       const created = await createCategory(cat);
       slugToId.set(cat.slug, created.id);
     }
