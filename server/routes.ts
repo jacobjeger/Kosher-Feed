@@ -17,6 +17,20 @@ import fs from "node:fs";
 
 const ON_DEMAND_STALE_MS = 5 * 60 * 1000;
 
+// Resolve KH audio URLs through the proxy worker
+function resolveKHAudioUrl(audioUrl: string): { url: string; headers: Record<string, string> } {
+  const headers: Record<string, string> = { "User-Agent": "ShiurPod/1.0" };
+  const khMatch = audioUrl.match(/https?:\/\/srv\.kolhalashon\.com\/api\/files\/getLocationOfFileToVideo\/(\d+)/);
+  if (khMatch && process.env.KH_PROXY_URL) {
+    const fileId = khMatch[1];
+    const proxyBase = process.env.KH_PROXY_URL.replace(/\/$/, "") + "/api";
+    const url = `${proxyBase}/files/getLocationOfFileToVideo/${fileId}`;
+    if (process.env.KH_PROXY_KEY) headers["x-proxy-key"] = process.env.KH_PROXY_KEY;
+    return { url, headers };
+  }
+  return { url: audioUrl, headers };
+}
+
 function detectSourceNetwork(rssUrl: string): string | null {
   try {
     const hostname = new URL(rssUrl).hostname.toLowerCase();
@@ -904,8 +918,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const safeTitle = (episode.title || "episode").replace(/[^a-zA-Z0-9 _-]/g, "").replace(/\s+/g, "_").substring(0, 100);
       const filename = safeAuthor ? `${safeAuthor}_-_${safeTitle}.mp3` : `${safeTitle}.mp3`;
 
-      const audioResp = await fetch(episode.audioUrl, {
-        headers: { "User-Agent": "ShiurPod/1.0" },
+      const resolved = resolveKHAudioUrl(episode.audioUrl);
+      const audioResp = await fetch(resolved.url, {
+        headers: resolved.headers,
         redirect: "follow",
       });
 
@@ -928,6 +943,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.end();
       };
       await pump();
+    } catch (e: any) {
+      if (!res.headersSent) res.status(500).json({ error: e.message });
+    }
+  });
+
+  // KH audio proxy — resolves the getLocationOfFileToVideo redirect through the KH proxy
+  app.get("/api/audio/kh/:fileId", async (req: Request, res: Response) => {
+    try {
+      const fileId = req.params.fileId;
+      if (!fileId || !/^\d+$/.test(fileId)) return res.status(400).json({ error: "Invalid file ID" });
+
+      const proxyUrl = process.env.KH_PROXY_URL;
+      const baseUrl = proxyUrl ? proxyUrl.replace(/\/$/, "") + "/api" : "https://srv.kolhalashon.com/api";
+      const khUrl = `${baseUrl}/files/getLocationOfFileToVideo/${fileId}`;
+
+      const headers: Record<string, string> = { "User-Agent": "ShiurPod/1.0" };
+      if (proxyUrl && process.env.KH_PROXY_KEY) {
+        headers["x-proxy-key"] = process.env.KH_PROXY_KEY;
+      }
+
+      // First resolve the redirect to get the actual audio URL
+      const redirectResp = await fetch(khUrl, { headers, redirect: "follow" });
+      if (!redirectResp.ok) return res.status(502).json({ error: "Failed to fetch KH audio" });
+
+      // Check if it returned a URL string or binary audio
+      const contentType = redirectResp.headers.get("content-type") || "";
+
+      if (contentType.includes("audio") || contentType.includes("octet-stream")) {
+        // Direct audio stream
+        res.setHeader("Content-Type", contentType);
+        const contentLength = redirectResp.headers.get("content-length");
+        if (contentLength) res.setHeader("Content-Length", contentLength);
+        res.setHeader("Accept-Ranges", "bytes");
+        res.setHeader("Cache-Control", "public, max-age=86400");
+
+        const reader = redirectResp.body?.getReader();
+        if (!reader) return res.status(502).json({ error: "No stream" });
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (!res.writableEnded) res.write(Buffer.from(value));
+        }
+        res.end();
+      } else {
+        // The response might be a URL string or JSON with a redirect URL
+        const body = await redirectResp.text();
+        const audioUrl = body.trim().replace(/^"|"$/g, "");
+
+        if (!audioUrl || !audioUrl.startsWith("http")) {
+          return res.status(502).json({ error: "Invalid audio URL from KH" });
+        }
+
+        // Fetch the actual audio file
+        const rangeHeader = req.headers.range;
+        const audioHeaders: Record<string, string> = { "User-Agent": "ShiurPod/1.0" };
+        if (rangeHeader) audioHeaders["Range"] = rangeHeader;
+
+        const audioResp = await fetch(audioUrl, { headers: audioHeaders, redirect: "follow" });
+        if (!audioResp.ok && audioResp.status !== 206) return res.status(502).json({ error: "Failed to fetch audio file" });
+
+        res.status(audioResp.status);
+        res.setHeader("Content-Type", audioResp.headers.get("content-type") || "audio/mpeg");
+        const cl = audioResp.headers.get("content-length");
+        if (cl) res.setHeader("Content-Length", cl);
+        const cr = audioResp.headers.get("content-range");
+        if (cr) res.setHeader("Content-Range", cr);
+        res.setHeader("Accept-Ranges", "bytes");
+        res.setHeader("Cache-Control", "public, max-age=86400");
+
+        const reader = audioResp.body?.getReader();
+        if (!reader) return res.status(502).json({ error: "No stream" });
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (!res.writableEnded) res.write(Buffer.from(value));
+        }
+        res.end();
+      }
     } catch (e: any) {
       if (!res.headersSent) res.status(500).json({ error: e.message });
     }

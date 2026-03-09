@@ -13,6 +13,16 @@ let expoAudioModule: any = null;
 let createAudioPlayerFn: any = null;
 let setAudioModeAsyncFn: any = null;
 
+// Rewrite KH direct audio URLs to go through our server proxy
+function resolveAudioUrl(audioUrl: string): string {
+  const khMatch = audioUrl.match(/https?:\/\/srv\.kolhalashon\.com\/api\/files\/getLocationOfFileToVideo\/(\d+)/);
+  if (khMatch) {
+    const fileId = khMatch[1];
+    return `${getApiUrl()}/api/audio/kh/${fileId}`;
+  }
+  return audioUrl;
+}
+
 if (Platform.OS !== "web") {
   try {
     const expoAudio = require("expo-audio");
@@ -581,7 +591,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           audioRef.current.pause();
           audioRef.current.src = "";
         }
-        const audio = new Audio(episode.audioUrl);
+        const audio = new Audio(resolveAudioUrl(episode.audioUrl));
         audio.playbackRate = feedSpeed;
         audio.volume = boostEnabled ? BOOST_VOLUME : NORMAL_VOLUME;
         audio.preload = "auto";
@@ -615,7 +625,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
             try { oldPlayer.remove(); } catch {}
           }
 
-          const player = createAudioPlayerFn(episode.audioUrl, {
+          const player = createAudioPlayerFn(resolveAudioUrl(episode.audioUrl), {
             updateInterval: 500,
           });
           nativePlayerRef.current = player;
@@ -912,7 +922,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         if (Platform.OS === "web") {
           const audio = new Audio();
           audio.preload = "auto";
-          audio.src = result.episode.audioUrl;
+          audio.src = resolveAudioUrl(result.episode.audioUrl);
           if (preBufferRef.current) {
             preBufferRef.current.src = "";
           }
