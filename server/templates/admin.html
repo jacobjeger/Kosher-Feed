@@ -641,6 +641,14 @@
           <span id="khSyncStatus" style="font-size:12px;color:#64748b;margin-left:8px;"></span>
         </div>
       </div>
+      <div class="card" style="max-width:900px;margin-bottom:20px;">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <h2>Merged Feeds</h2>
+          <button class="btn btn-secondary btn-sm" onclick="loadMergers()" id="mergersRefreshBtn">Refresh</button>
+        </div>
+        <p style="font-size:12px;color:#64748b;margin:0 0 12px;">Feeds pulling content from multiple platforms. You can unlink a platform to stop merging.</p>
+        <div id="mergersArea" style="color:#94a3b8;font-size:13px;">Loading...</div>
+      </div>
       <div class="card" style="max-width:500px;">
         <div class="card-header">
           <h2>Change Password</h2>
@@ -1788,7 +1796,7 @@ function switchTab(tab, btn) {
   if (tab === 'pushtracker') { loadPushTokens(); loadNotificationHistory(); }
   if (tab === 'vitals') loadVitals();
   if (tab === 'announcements') loadAnnouncements();
-  if (tab === 'settings') { loadTATStatus(); loadAllOUStatuses(); loadKHStatus(); }
+  if (tab === 'settings') { loadTATStatus(); loadAllOUStatuses(); loadKHStatus(); loadMergers(); }
 }
 
 function formatDate(dateStr) {
@@ -2347,6 +2355,66 @@ async function syncKHSpeakers() {
     status.innerHTML = '<span style="color:#ef4444;">Error: ' + e.message + '</span>';
   } finally {
     btn.disabled = false;
+  }
+}
+
+async function loadMergers() {
+  const area = document.getElementById('mergersArea');
+  area.innerHTML = 'Loading...';
+  try {
+    const mergers = await api('/api/admin/mergers');
+    if (!mergers || mergers.length === 0) {
+      area.innerHTML = '<p style="color:#64748b;">No merged feeds found.</p>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="border-bottom:1px solid #334155;text-align:left;">';
+    html += '<th style="padding:8px 6px;color:#94a3b8;">Feed</th>';
+    html += '<th style="padding:8px 6px;color:#94a3b8;">Platforms</th>';
+    html += '<th style="padding:8px 6px;color:#94a3b8;">Actions</th>';
+    html += '</tr></thead><tbody>';
+    for (const m of mergers) {
+      html += '<tr style="border-bottom:1px solid #1e293b;">';
+      html += '<td style="padding:8px 6px;">';
+      html += '<div style="display:flex;align-items:center;gap:8px;">';
+      if (m.imageUrl) html += '<img src="' + m.imageUrl + '" style="width:32px;height:32px;border-radius:4px;object-fit:cover;" onerror="this.style.display=\'none\'">';
+      html += '<div><strong style="color:#e2e8f0;">' + (m.title || 'Untitled') + '</strong>';
+      if (m.author) html += '<br><span style="color:#64748b;font-size:11px;">' + m.author + '</span>';
+      html += '</div></div></td>';
+      html += '<td style="padding:8px 6px;">';
+      for (const p of m.platforms) {
+        const colors = { 'RSS': '#3b82f6', 'Torah Anytime': '#8b5cf6', 'AllDaf': '#f59e0b', 'AllMishnah': '#10b981', 'AllParsha': '#06b6d4', 'Kol Halashon': '#ec4899' };
+        const c = colors[p] || '#94a3b8';
+        html += '<span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;margin:2px;background:' + c + '22;color:' + c + ';border:1px solid ' + c + '44;">' + p + '</span>';
+      }
+      html += '</td>';
+      html += '<td style="padding:8px 6px;">';
+      for (const p of m.platforms) {
+        if (p === 'RSS') continue;
+        html += '<button class="btn btn-secondary" style="font-size:11px;padding:2px 8px;margin:2px;" onclick="unlinkPlatform(\'' + m.id + '\',\'' + p + '\',this)">Unlink ' + p + '</button>';
+      }
+      html += '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    area.innerHTML = html;
+  } catch (e) {
+    area.innerHTML = '<span style="color:#ef4444;">Failed to load: ' + e.message + '</span>';
+  }
+}
+
+async function unlinkPlatform(feedId, platform, btn) {
+  if (!confirm('Unlink "' + platform + '" from this feed? The feed will no longer pull episodes from that platform.')) return;
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    await api('/api/admin/feeds/' + feedId + '/unlink-platform', { method: 'POST', body: JSON.stringify({ platform }) });
+    showAlert('Unlinked ' + platform);
+    loadMergers();
+  } catch (e) {
+    showAlert('Failed: ' + e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = 'Unlink ' + platform;
   }
 }
 
