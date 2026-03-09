@@ -299,30 +299,10 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
       normalizedFlipped = normalizeName(`${first} ${last}`);
     }
 
+    // Only match on exact normalized names — no substring matching
     let matchedFeed = feedsByNormalizedName.get(normalizedAsIs);
     if (!matchedFeed && normalizedFlipped) {
       matchedFeed = feedsByNormalizedName.get(normalizedFlipped);
-    }
-    // Also try last name only for feeds that store author as just last name
-    if (!matchedFeed && commaIdx > 0) {
-      const lastOnly = normalizeName(englishName.slice(0, commaIdx).trim());
-      if (lastOnly.length >= 5) {
-        matchedFeed = feedsByNormalizedName.get(lastOnly);
-      }
-    }
-    // Substring matching as fallback — require both sides >= 5 chars
-    if (!matchedFeed) {
-      const candidates = [normalizedAsIs, normalizedFlipped].filter(n => n.length >= 5);
-      for (const normalized of candidates) {
-        for (const [normalizedFeedName, feed] of feedsByNormalizedName) {
-          if (normalizedFeedName.length >= 5 &&
-              (normalizedFeedName.includes(normalized) || normalized.includes(normalizedFeedName))) {
-            matchedFeed = feed;
-            break;
-          }
-        }
-        if (matchedFeed) break;
-      }
     }
 
     if (matchedFeed) {
