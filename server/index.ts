@@ -15,6 +15,7 @@ import { startRefreshCycle, recordFeedResult, endRefreshCycle } from "./feed-vit
 import { refreshTATFeedEpisodes, syncTATSpeakers, fetchAllSpeakers } from "./torahanytime";
 import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, fetchAuthorById, OU_PLATFORMS, type OUPlatformKey } from "./alldaf";
 import { refreshKHFeedEpisodes, syncKHSpeakers } from "./kolhalashon";
+import { autoCategorizeFeeds } from "./auto-categorize";
 import * as fs from "fs";
 import * as path from "path";
 import pLimit from "p-limit";
@@ -37,6 +38,7 @@ async function ensureColumns() {
     { column: "kolhalashon_rav_id", type: "INTEGER" },
     { column: "kolhalashon_file_id", type: "INTEGER", table: "episodes" },
     { column: "show_in_browse", type: "BOOLEAN DEFAULT true NOT NULL" },
+    { column: "auto_assigned", type: "BOOLEAN DEFAULT false NOT NULL", table: "feed_categories" },
   ];
   for (const col of columnsToAdd) {
     const table = (col as any).table || "feeds";
@@ -790,6 +792,13 @@ async function syncAllPlatformSpeakers(): Promise<void> {
 
   // Final cleanup: remove any women feeds that the syncs may have created
   await removeWomenFeeds().catch(e => log(`Post-sync women removal error: ${e.message}`));
+
+  // Auto-categorize feeds based on episode topics and feed metadata
+  try {
+    await autoCategorizeFeeds();
+  } catch (e: any) {
+    log(`Auto-categorize error: ${e.message}`);
+  }
 
   log("Full speaker sync complete.");
 }

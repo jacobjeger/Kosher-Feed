@@ -158,6 +158,7 @@ export const feedCategories = pgTable("feed_categories", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   feedId: varchar("feed_id").references(() => feeds.id, { onDelete: "cascade" }).notNull(),
   categoryId: varchar("category_id").references(() => categories.id, { onDelete: "cascade" }).notNull(),
+  autoAssigned: boolean("auto_assigned").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("feed_categories_feed_cat_idx").on(table.feedId, table.categoryId),

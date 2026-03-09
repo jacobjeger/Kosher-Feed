@@ -716,6 +716,38 @@ export async function setFeedCategories(feedId: string, categoryIds: string[]): 
   }
 }
 
+export async function ensureCanonicalCategories(cats: { name: string; slug: string }[]): Promise<Map<string, string>> {
+  const existing = await getAllCategories();
+  const slugToId = new Map<string, string>();
+  for (const c of existing) slugToId.set(c.slug, c.id);
+  for (const cat of cats) {
+    if (!slugToId.has(cat.slug)) {
+      const created = await createCategory(cat);
+      slugToId.set(cat.slug, created.id);
+    }
+  }
+  return slugToId;
+}
+
+export async function feedHasManualCategories(feedId: string): Promise<boolean> {
+  const rows = await db.select({ id: feedCategories.id }).from(feedCategories)
+    .where(and(eq(feedCategories.feedId, feedId), eq(feedCategories.autoAssigned, false)))
+    .limit(1);
+  return rows.length > 0;
+}
+
+export async function setAutoFeedCategories(feedId: string, categoryIds: string[]): Promise<void> {
+  // Delete only auto-assigned rows for this feed
+  await db.delete(feedCategories).where(and(eq(feedCategories.feedId, feedId), eq(feedCategories.autoAssigned, true)));
+  if (categoryIds.length > 0) {
+    await db.insert(feedCategories).values(categoryIds.map(categoryId => ({
+      feedId,
+      categoryId,
+      autoAssigned: true,
+    }))).onConflictDoNothing();
+  }
+}
+
 export async function getFeedsByCategories(categoryId: string): Promise<Feed[]> {
   const rows = await db.select({ feedId: feedCategories.feedId }).from(feedCategories).where(eq(feedCategories.categoryId, categoryId));
   if (rows.length === 0) return [];
