@@ -13,7 +13,7 @@ import * as storage from "./storage";
 import { sendNewEpisodePushes } from "./push";
 import { startRefreshCycle, recordFeedResult, endRefreshCycle } from "./feed-vitals";
 import { refreshTATFeedEpisodes, syncTATSpeakers, fetchAllSpeakers } from "./torahanytime";
-import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, OU_PLATFORMS } from "./alldaf";
+import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, fetchAuthorById, OU_PLATFORMS, type OUPlatformKey } from "./alldaf";
 import { refreshKHFeedEpisodes, syncKHSpeakers } from "./kolhalashon";
 import * as fs from "fs";
 import * as path from "path";
@@ -796,15 +796,19 @@ async function syncAllPlatformSpeakers(): Promise<void> {
 
 // Pull speaker bios from TAT API and update feed descriptions
 async function updateSpeakerBios(): Promise<number> {
-  log("Updating speaker bios from TAT...");
+  log("Updating speaker bios from TAT and OU platforms...");
   const speakers = await fetchAllSpeakers();
   const allFeeds = await storage.getAllFeeds();
+
+  const isPlaceholder = (desc: string | null | undefined): boolean => {
+    const d = desc?.trim() || "";
+    return !d || d === "Shiurim on Kol Halashon" || /^\d+ shiurim on /.test(d);
+  };
 
   // Build map of tatSpeakerId -> speaker with bio
   const speakersWithBio = new Map<number, string>();
   for (const s of speakers) {
     if (s.desc && s.desc.trim().length > 10) {
-      // Strip HTML tags for clean text bio
       const cleanBio = s.desc.replace(/<[^>]+>/g, "").trim();
       if (cleanBio.length > 10) {
         speakersWithBio.set(s.id, cleanBio);
@@ -813,23 +817,44 @@ async function updateSpeakerBios(): Promise<number> {
   }
 
   let updated = 0;
+
   for (const feed of allFeeds) {
-    if (!feed.tatSpeakerId) continue;
-    const bio = speakersWithBio.get(feed.tatSpeakerId);
-    if (!bio) continue;
+    if (!isPlaceholder(feed.description)) continue;
 
-    // Only update if current description is empty or a generic placeholder
-    const currentDesc = feed.description?.trim() || "";
-    const isPlaceholder = !currentDesc
-      || currentDesc === "Shiurim on Kol Halashon"
-      || /^\d+ shiurim on /.test(currentDesc);
+    // Try TAT bio first
+    if (feed.tatSpeakerId) {
+      const bio = speakersWithBio.get(feed.tatSpeakerId);
+      if (bio) {
+        await storage.updateFeed(feed.id, { description: bio } as any);
+        updated++;
+        continue;
+      }
+    }
 
-    if (isPlaceholder) {
-      await storage.updateFeed(feed.id, { description: bio } as any);
-      updated++;
+    // Try OU bio (fetch detail for each OU-linked feed missing a bio)
+    const ouFields: { field: string; platform: OUPlatformKey }[] = [
+      { field: "alldafAuthorId", platform: "alldaf" },
+      { field: "allmishnahAuthorId", platform: "allmishnah" },
+      { field: "allparshaAuthorId", platform: "allparsha" },
+    ];
+    for (const { field, platform } of ouFields) {
+      const authorId = (feed as any)[field];
+      if (!authorId) continue;
+      try {
+        const detail = await fetchAuthorById(platform, authorId);
+        if (detail?.bio) {
+          const cleanBio = detail.bio.replace(/<[^>]+>/g, "").trim();
+          if (cleanBio.length > 10) {
+            await storage.updateFeed(feed.id, { description: cleanBio } as any);
+            updated++;
+            break;
+          }
+        }
+      } catch {}
+      await new Promise(r => setTimeout(r, 100));
     }
   }
-  if (updated > 0) log(`Updated ${updated} feed bios from TAT`);
+  if (updated > 0) log(`Updated ${updated} feed bios from TAT/OU`);
   return updated;
 }
 
