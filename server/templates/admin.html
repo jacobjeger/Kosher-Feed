@@ -291,6 +291,16 @@
             <option value="inactive">Inactive</option>
             <option value="featured">Featured</option>
           </select>
+          <select id="feedSourceFilter" onchange="filterFeeds(document.getElementById('feedSearchInput').value)" style="width:auto;padding:10px 14px;font-size:13px;min-width:130px;">
+            <option value="">All Sources</option>
+            <option value="rss">RSS Only</option>
+            <option value="tat">Torah Anytime</option>
+            <option value="alldaf">AllDaf</option>
+            <option value="allmishnah">AllMishnah</option>
+            <option value="allparsha">AllParsha</option>
+            <option value="kh">Kol Halashon</option>
+            <option value="merged">Merged (multi-source)</option>
+          </select>
           <select id="feedSortSelect" onchange="filterFeeds(document.getElementById('feedSearchInput').value)" style="width:auto;padding:10px 14px;font-size:13px;min-width:130px;">
             <option value="title">Sort: Title</option>
             <option value="episodes">Sort: Episodes</option>
@@ -1109,6 +1119,16 @@ function filterFeeds(query) {
     filtered = filtered.filter(f => !f.isActive);
   } else if (statusFilter === 'featured') {
     filtered = filtered.filter(f => f.isFeatured);
+  }
+
+  const sourceFilter = document.getElementById('feedSourceFilter')?.value || '';
+  if (sourceFilter) {
+    filtered = filtered.filter(f => {
+      const sources = getFeedSources(f);
+      if (sourceFilter === 'merged') return sources.length > 1;
+      if (sourceFilter === 'rss') return sources.length === 1 && sources[0] === 'rss';
+      return sources.includes(sourceFilter);
+    });
   }
 
   const countLabel = document.getElementById('feedCountLabel');
@@ -3072,6 +3092,17 @@ async function forceSync(feedId, btn) {
 }
 
 // === Feature 11: Feed Health Indicators ===
+function getFeedSources(feed) {
+  const sources = [];
+  if (feed.tatSpeakerId || (feed.rssUrl && feed.rssUrl.startsWith('tat://'))) sources.push('tat');
+  if (feed.alldafAuthorId || (feed.rssUrl && feed.rssUrl.startsWith('alldaf://'))) sources.push('alldaf');
+  if (feed.allmishnahAuthorId || (feed.rssUrl && feed.rssUrl.startsWith('allmishnah://'))) sources.push('allmishnah');
+  if (feed.allparshaAuthorId || (feed.rssUrl && feed.rssUrl.startsWith('allparsha://'))) sources.push('allparsha');
+  if (feed.kolhalashonRavId || (feed.rssUrl && feed.rssUrl.startsWith('kh://'))) sources.push('kh');
+  if (sources.length === 0 || (feed.rssUrl && !feed.rssUrl.match(/^(tat|alldaf|allmishnah|allparsha|kh):\/\//))) sources.push('rss');
+  return sources;
+}
+
 function getFeedSourceBadges(feed) {
   let badges = '';
   const badgeStyle = 'display:inline-block;font-size:9px;font-weight:600;padding:1px 5px;border-radius:4px;margin-left:6px;vertical-align:middle;';
