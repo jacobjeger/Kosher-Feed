@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals, queueItems, notificationTaps } from "@shared/schema";
+import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals, queueItems, notificationTaps, feedMergeHistory } from "@shared/schema";
 import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor, NotificationPreference, Announcement, AnnouncementDismissal, NotificationTap } from "@shared/schema";
 import { eq, and, desc, asc, inArray, sql, count, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
@@ -27,6 +27,11 @@ export async function getFeedById(feedId: string): Promise<Feed | undefined> {
 }
 
 export async function getActiveFeeds(): Promise<Feed[]> {
+  return db.select().from(feeds).where(and(eq(feeds.isActive, true), eq(feeds.showInBrowse, true))).orderBy(feeds.title);
+}
+
+// All active feeds including those hidden from browse — used for sync/refresh
+export async function getAllActiveFeedsForSync(): Promise<Feed[]> {
   return db.select().from(feeds).where(eq(feeds.isActive, true)).orderBy(feeds.title);
 }
 
@@ -39,13 +44,47 @@ export async function createFeed(data: InsertFeed): Promise<Feed> {
   return feed;
 }
 
-export async function updateFeed(id: string, data: Partial<InsertFeed & { isActive: boolean; lastFetchedAt: Date; etag: string | null; lastModifiedHeader: string | null; sourceNetwork: string | null; tatSpeakerId: number | null }>): Promise<Feed> {
+export async function updateFeed(id: string, data: Partial<InsertFeed & { isActive: boolean; lastFetchedAt: Date; etag: string | null; lastModifiedHeader: string | null; sourceNetwork: string | null; tatSpeakerId: number | null; showInBrowse: boolean }>): Promise<Feed> {
   const [feed] = await db.update(feeds).set(data).where(eq(feeds.id, id)).returning();
   return feed;
 }
 
 export async function deleteFeed(id: string): Promise<void> {
   await db.delete(feeds).where(eq(feeds.id, id));
+}
+
+export async function mergeFeeds(sourceId: string, targetId: string): Promise<{ episodesMoved: number; subscriptionsMoved: number }> {
+  // Move episodes from source to target (skip duplicates by guid)
+  const sourceEps = await db.select().from(episodes).where(eq(episodes.feedId, sourceId));
+  const targetEps = await db.select().from(episodes).where(eq(episodes.feedId, targetId));
+  const targetGuids = new Set(targetEps.map(e => e.guid).filter(Boolean));
+
+  let episodesMoved = 0;
+  for (const ep of sourceEps) {
+    if (ep.guid && targetGuids.has(ep.guid)) continue;
+    await db.update(episodes).set({ feedId: targetId }).where(eq(episodes.id, ep.id));
+    episodesMoved++;
+  }
+
+  // Move subscriptions from source to target (skip duplicates by deviceId)
+  const sourceSubs = await db.select().from(subscriptions).where(eq(subscriptions.feedId, sourceId));
+  const targetSubs = await db.select().from(subscriptions).where(eq(subscriptions.feedId, targetId));
+  const targetDevices = new Set(targetSubs.map(s => s.deviceId));
+
+  let subscriptionsMoved = 0;
+  for (const sub of sourceSubs) {
+    if (targetDevices.has(sub.deviceId)) {
+      await db.delete(subscriptions).where(eq(subscriptions.id, sub.id));
+    } else {
+      await db.update(subscriptions).set({ feedId: targetId }).where(eq(subscriptions.id, sub.id));
+      subscriptionsMoved++;
+    }
+  }
+
+  // Delete the source feed (remaining episodes/subscriptions cascade)
+  await db.delete(feeds).where(eq(feeds.id, sourceId));
+
+  return { episodesMoved, subscriptionsMoved };
 }
 
 export async function getEpisodeById(episodeId: string): Promise<Episode | undefined> {
@@ -72,24 +111,50 @@ export async function getLatestEpisodes(limit: number = 50): Promise<Episode[]> 
   return db.select().from(episodes).orderBy(desc(episodes.publishedAt)).limit(limit);
 }
 
+export async function episodeExistsByGuid(feedId: string, guid: string): Promise<boolean> {
+  const [row] = await db.select({ id: episodes.id }).from(episodes)
+    .where(and(eq(episodes.feedId, feedId), eq(episodes.guid, guid)))
+    .limit(1);
+  return !!row;
+}
+
 export async function upsertEpisodes(feedId: string, episodeData: Partial<Episode>[]): Promise<Episode[]> {
   if (episodeData.length === 0) return [];
   const inserted: Episode[] = [];
-  for (const ep of episodeData) {
+  const CHUNK = 50;
+  for (let i = 0; i < episodeData.length; i += CHUNK) {
+    const chunk = episodeData.slice(i, i + CHUNK);
     try {
-      const [result] = await db.insert(episodes).values({
-        feedId: ep.feedId || feedId,
-        title: ep.title!,
-        description: ep.description,
-        audioUrl: ep.audioUrl!,
-        duration: ep.duration,
-        publishedAt: ep.publishedAt as any,
-        guid: ep.guid!,
-        imageUrl: ep.imageUrl,
-      }).onConflictDoNothing().returning();
-      if (result) inserted.push(result);
+      const results = await db.insert(episodes).values(
+        chunk.map(ep => ({
+          feedId: ep.feedId || feedId,
+          title: ep.title!,
+          description: ep.description,
+          audioUrl: ep.audioUrl!,
+          duration: ep.duration,
+          publishedAt: ep.publishedAt as any,
+          guid: ep.guid!,
+          imageUrl: ep.imageUrl,
+        }))
+      ).onConflictDoNothing().returning();
+      inserted.push(...results);
     } catch (e) {
-      // skip duplicates
+      // Fallback to individual inserts if batch fails
+      for (const ep of chunk) {
+        try {
+          const [result] = await db.insert(episodes).values({
+            feedId: ep.feedId || feedId,
+            title: ep.title!,
+            description: ep.description,
+            audioUrl: ep.audioUrl!,
+            duration: ep.duration,
+            publishedAt: ep.publishedAt as any,
+            guid: ep.guid!,
+            imageUrl: ep.imageUrl,
+          }).onConflictDoNothing().returning();
+          if (result) inserted.push(result);
+        } catch (_) {}
+      }
     }
   }
   return inserted;
@@ -98,26 +163,122 @@ export async function upsertEpisodes(feedId: string, episodeData: Partial<Episod
 export async function upsertTATEpisodes(feedId: string, episodeData: any[]): Promise<Episode[]> {
   if (episodeData.length === 0) return [];
   const inserted: Episode[] = [];
-  for (const ep of episodeData) {
+  const CHUNK = 50;
+  for (let i = 0; i < episodeData.length; i += CHUNK) {
+    const chunk = episodeData.slice(i, i + CHUNK);
     try {
-      const [result] = await db.insert(episodes).values({
-        feedId: ep.feedId,
-        title: ep.title,
-        description: ep.description,
-        audioUrl: ep.audioUrl,
-        duration: ep.duration,
-        publishedAt: ep.publishedAt,
-        guid: ep.guid,
-        imageUrl: ep.imageUrl,
-        tatLectureId: ep.tatLectureId,
-        noDownload: ep.noDownload || false,
-      }).onConflictDoNothing().returning();
-      if (result) inserted.push(result);
+      const results = await db.insert(episodes).values(
+        chunk.map(ep => ({
+          feedId: ep.feedId,
+          title: ep.title,
+          description: ep.description,
+          audioUrl: ep.audioUrl,
+          duration: ep.duration,
+          publishedAt: ep.publishedAt,
+          guid: ep.guid,
+          imageUrl: ep.imageUrl,
+          tatLectureId: ep.tatLectureId,
+          noDownload: ep.noDownload || false,
+        }))
+      ).onConflictDoNothing().returning();
+      inserted.push(...results);
     } catch (e) {
-      // skip duplicates
+      for (const ep of chunk) {
+        try {
+          const [result] = await db.insert(episodes).values({
+            feedId: ep.feedId, title: ep.title, description: ep.description,
+            audioUrl: ep.audioUrl, duration: ep.duration, publishedAt: ep.publishedAt,
+            guid: ep.guid, imageUrl: ep.imageUrl, tatLectureId: ep.tatLectureId,
+            noDownload: ep.noDownload || false,
+          }).onConflictDoNothing().returning();
+          if (result) inserted.push(result);
+        } catch (_) {}
+      }
     }
   }
   return inserted;
+}
+
+// Generic upsert for OU Torah platform episodes (AllDaf, AllMishnah, AllParsha)
+export async function upsertOUEpisodes(feedId: string, episodeData: any[]): Promise<Episode[]> {
+  if (episodeData.length === 0) return [];
+  const inserted: Episode[] = [];
+  const CHUNK = 50;
+  for (let i = 0; i < episodeData.length; i += CHUNK) {
+    const chunk = episodeData.slice(i, i + CHUNK);
+    try {
+      const results = await db.insert(episodes).values(
+        chunk.map(ep => ({
+          feedId: ep.feedId, title: ep.title, description: ep.description,
+          audioUrl: ep.audioUrl, duration: ep.duration, publishedAt: ep.publishedAt,
+          guid: ep.guid, imageUrl: ep.imageUrl, noDownload: ep.noDownload || false,
+        }))
+      ).onConflictDoNothing().returning();
+      inserted.push(...results);
+    } catch (e) {
+      for (const ep of chunk) {
+        try {
+          const [result] = await db.insert(episodes).values({
+            feedId: ep.feedId, title: ep.title, description: ep.description,
+            audioUrl: ep.audioUrl, duration: ep.duration, publishedAt: ep.publishedAt,
+            guid: ep.guid, imageUrl: ep.imageUrl, noDownload: ep.noDownload || false,
+          }).onConflictDoNothing().returning();
+          if (result) inserted.push(result);
+        } catch (_) {}
+      }
+    }
+  }
+  return inserted;
+}
+
+// Backward-compatible alias
+export const upsertAllDafEpisodes = upsertOUEpisodes;
+
+export async function setOUAuthorId(feedId: string, field: string, authorId: number | null): Promise<void> {
+  await db.update(feeds).set({ [field]: authorId } as any).where(eq(feeds.id, feedId));
+}
+
+// Backward-compatible alias
+export async function setAlldafAuthorId(feedId: string, authorId: number): Promise<void> {
+  return setOUAuthorId(feedId, "alldafAuthorId", authorId);
+}
+
+// Kol Halashon episode upsert
+export async function upsertKHEpisodes(feedId: string, episodeData: any[]): Promise<Episode[]> {
+  if (episodeData.length === 0) return [];
+  const inserted: Episode[] = [];
+  const CHUNK = 50;
+  for (let i = 0; i < episodeData.length; i += CHUNK) {
+    const chunk = episodeData.slice(i, i + CHUNK);
+    try {
+      const results = await db.insert(episodes).values(
+        chunk.map(ep => ({
+          feedId: ep.feedId, title: ep.title, description: ep.description,
+          audioUrl: ep.audioUrl, duration: ep.duration, publishedAt: ep.publishedAt,
+          guid: ep.guid, imageUrl: ep.imageUrl,
+          kolhalashonFileId: ep.kolhalashonFileId, noDownload: ep.noDownload || false,
+        }))
+      ).onConflictDoNothing().returning();
+      inserted.push(...results);
+    } catch (e) {
+      for (const ep of chunk) {
+        try {
+          const [result] = await db.insert(episodes).values({
+            feedId: ep.feedId, title: ep.title, description: ep.description,
+            audioUrl: ep.audioUrl, duration: ep.duration, publishedAt: ep.publishedAt,
+            guid: ep.guid, imageUrl: ep.imageUrl,
+            kolhalashonFileId: ep.kolhalashonFileId, noDownload: ep.noDownload || false,
+          }).onConflictDoNothing().returning();
+          if (result) inserted.push(result);
+        } catch (_) {}
+      }
+    }
+  }
+  return inserted;
+}
+
+export async function setKHRavId(feedId: string, ravId: number | null): Promise<void> {
+  await db.update(feeds).set({ kolhalashonRavId: ravId } as any).where(eq(feeds.id, feedId));
 }
 
 export async function getTATFeeds(): Promise<Feed[]> {
@@ -559,11 +720,11 @@ export async function getFeedsByCategories(categoryId: string): Promise<Feed[]> 
   const rows = await db.select({ feedId: feedCategories.feedId }).from(feedCategories).where(eq(feedCategories.categoryId, categoryId));
   if (rows.length === 0) return [];
   const feedIds = rows.map(r => r.feedId);
-  return db.select().from(feeds).where(and(inArray(feeds.id, feedIds), eq(feeds.isActive, true))).orderBy(feeds.title);
+  return db.select().from(feeds).where(and(inArray(feeds.id, feedIds), eq(feeds.isActive, true), eq(feeds.showInBrowse, true))).orderBy(feeds.title);
 }
 
 export async function getActiveFeedsGroupedByAuthor(): Promise<{ author: string; feeds: Feed[]; imageUrl?: string | null; bio?: string | null; profileId?: string }[]> {
-  const allActive = await db.select().from(feeds).where(eq(feeds.isActive, true)).orderBy(feeds.author, feeds.title);
+  const allActive = await db.select().from(feeds).where(and(eq(feeds.isActive, true), eq(feeds.showInBrowse, true))).orderBy(feeds.author, feeds.title);
   const profiles = await db.select().from(maggidShiurim);
   const profileMap = new Map<string, MaggidShiur>();
   for (const p of profiles) profileMap.set(p.name.toLowerCase(), p);
@@ -1201,4 +1362,194 @@ export async function getNotificationTapStats(days: number = 30) {
   }
 
   return { total, byType, recentTaps: taps.slice(0, 50) };
+}
+
+// ---- New functions for admin stats, KH management, source breakdown ----
+
+export async function getAllFeedStats(): Promise<Map<string, { episodeCount: number; subscriberCount: number; listenCount: number }>> {
+  const epCounts = await db
+    .select({ feedId: episodes.feedId, cnt: count(episodes.id) })
+    .from(episodes)
+    .groupBy(episodes.feedId);
+
+  const subCounts = await db
+    .select({ feedId: subscriptions.feedId, cnt: count(subscriptions.id) })
+    .from(subscriptions)
+    .groupBy(subscriptions.feedId);
+
+  const listenCounts = await db
+    .select({ feedId: episodes.feedId, cnt: count(episodeListens.id) })
+    .from(episodeListens)
+    .innerJoin(episodes, eq(episodeListens.episodeId, episodes.id))
+    .groupBy(episodes.feedId);
+
+  const result = new Map<string, { episodeCount: number; subscriberCount: number; listenCount: number }>();
+
+  for (const row of epCounts) {
+    if (!result.has(row.feedId)) result.set(row.feedId, { episodeCount: 0, subscriberCount: 0, listenCount: 0 });
+    result.get(row.feedId)!.episodeCount = Number(row.cnt);
+  }
+  for (const row of subCounts) {
+    if (!result.has(row.feedId)) result.set(row.feedId, { episodeCount: 0, subscriberCount: 0, listenCount: 0 });
+    result.get(row.feedId)!.subscriberCount = Number(row.cnt);
+  }
+  for (const row of listenCounts) {
+    if (!result.has(row.feedId)) result.set(row.feedId, { episodeCount: 0, subscriberCount: 0, listenCount: 0 });
+    result.get(row.feedId)!.listenCount = Number(row.cnt);
+  }
+
+  return result;
+}
+
+export async function getKHSpeakerStats() {
+  const allFeeds = await db.select().from(feeds).where(sql`${feeds.kolhalashonRavId} IS NOT NULL`);
+  const stats = await getAllFeedStats();
+
+  return allFeeds.map(f => {
+    const s = stats.get(f.id) || { episodeCount: 0, subscriberCount: 0, listenCount: 0 };
+    const platforms: string[] = [];
+    if (f.rssUrl && !f.rssUrl.startsWith("tat://") && !f.rssUrl.startsWith("kh://") && !f.rssUrl.startsWith("alldaf://") && !f.rssUrl.startsWith("allmishnah://") && !f.rssUrl.startsWith("allparsha://")) {
+      platforms.push("RSS");
+    }
+    if (f.tatSpeakerId) platforms.push("Torah Anytime");
+    if (f.alldafAuthorId) platforms.push("AllDaf");
+    if (f.allmishnahAuthorId) platforms.push("AllMishnah");
+    if (f.allparshaAuthorId) platforms.push("AllParsha");
+    if (f.kolhalashonRavId) platforms.push("Kol Halashon");
+
+    return {
+      id: f.id,
+      title: f.title,
+      author: f.author,
+      imageUrl: f.imageUrl,
+      kolhalashonRavId: f.kolhalashonRavId,
+      isActive: f.isActive,
+      showInBrowse: f.showInBrowse,
+      episodeCount: s.episodeCount,
+      subscriberCount: s.subscriberCount,
+      listenCount: s.listenCount,
+      isMerged: platforms.length > 1,
+      platforms,
+    };
+  }).sort((a, b) => b.listenCount - a.listenCount);
+}
+
+export async function getSourceBreakdown() {
+  const allFeeds = await db.select().from(feeds);
+  const stats = await getAllFeedStats();
+
+  const sources: Record<string, { feedCount: number; episodeCount: number }> = {
+    "RSS": { feedCount: 0, episodeCount: 0 },
+    "Torah Anytime": { feedCount: 0, episodeCount: 0 },
+    "AllDaf": { feedCount: 0, episodeCount: 0 },
+    "AllMishnah": { feedCount: 0, episodeCount: 0 },
+    "AllParsha": { feedCount: 0, episodeCount: 0 },
+    "Kol Halashon": { feedCount: 0, episodeCount: 0 },
+  };
+
+  for (const f of allFeeds) {
+    // Classify by primary source — check platform IDs (not just URL scheme)
+    // so merged feeds are counted under their platform too
+    let source = "RSS";
+    if (f.kolhalashonRavId && f.rssUrl.startsWith("kh://")) source = "Kol Halashon";
+    else if (f.tatSpeakerId && f.rssUrl.startsWith("tat://")) source = "Torah Anytime";
+    else if (f.alldafAuthorId) source = "AllDaf";
+    else if (f.allmishnahAuthorId) source = "AllMishnah";
+    else if (f.allparshaAuthorId) source = "AllParsha";
+    else if (f.tatSpeakerId) source = "Torah Anytime";
+    else if (f.kolhalashonRavId) source = "Kol Halashon";
+
+    if (!sources[source]) sources[source] = { feedCount: 0, episodeCount: 0 };
+    sources[source].feedCount++;
+    const s = stats.get(f.id);
+    if (s) sources[source].episodeCount += s.episodeCount;
+  }
+
+  const sourceList = Object.entries(sources)
+    .map(([name, data]) => ({ name, ...data }))
+    .filter(s => s.feedCount > 0);
+
+  return {
+    sources: sourceList,
+    totalFeeds: allFeeds.length,
+    totalEpisodes: sourceList.reduce((sum, s) => sum + s.episodeCount, 0),
+  };
+}
+
+export async function searchFeeds(query: string, limit: number = 50): Promise<Feed[]> {
+  const pattern = `%${query}%`;
+  return db.select().from(feeds)
+    .where(and(
+      eq(feeds.isActive, true),
+      sql`(${feeds.title} ILIKE ${pattern} OR ${feeds.author} ILIKE ${pattern})`
+    ))
+    .orderBy(feeds.title)
+    .limit(limit);
+}
+
+export async function recomputeKHBrowseVisibility(): Promise<number> {
+  // Get all KH-only feeds
+  const khFeeds = await db.select({ id: feeds.id }).from(feeds).where(sql`${feeds.rssUrl} LIKE 'kh://rav/%'`);
+  if (khFeeds.length === 0) return 0;
+
+  const khIds = khFeeds.map(f => f.id);
+
+  // Get subscriber counts for KH feeds
+  const subCounts = await db
+    .select({ feedId: subscriptions.feedId, cnt: count(subscriptions.id) })
+    .from(subscriptions)
+    .where(inArray(subscriptions.feedId, khIds))
+    .groupBy(subscriptions.feedId);
+  const subMap = new Map(subCounts.map(s => [s.feedId, Number(s.cnt)]));
+
+  // Get listen counts for KH feeds
+  const listenCounts = await db
+    .select({ feedId: episodes.feedId, cnt: count(episodeListens.id) })
+    .from(episodeListens)
+    .innerJoin(episodes, eq(episodeListens.episodeId, episodes.id))
+    .where(inArray(episodes.feedId, khIds))
+    .groupBy(episodes.feedId);
+  const listenMap = new Map(listenCounts.map(s => [s.feedId, Number(s.cnt)]));
+
+  // Rank by popularity: subscribers * 10 + listens
+  const ranked = khIds.map(id => ({
+    id,
+    score: (subMap.get(id) || 0) * 10 + (listenMap.get(id) || 0),
+  })).sort((a, b) => b.score - a.score);
+
+  const top100Ids = new Set(ranked.slice(0, 100).map(r => r.id));
+  const showIds = ranked.filter(r => top100Ids.has(r.id)).map(r => r.id);
+  const hideIds = ranked.filter(r => !top100Ids.has(r.id)).map(r => r.id);
+
+  let updated = 0;
+  if (showIds.length > 0) {
+    const result = await db.update(feeds).set({ showInBrowse: true }).where(and(inArray(feeds.id, showIds), eq(feeds.showInBrowse, false)));
+    updated += (result as any).rowCount || 0;
+  }
+  if (hideIds.length > 0) {
+    const result = await db.update(feeds).set({ showInBrowse: false }).where(and(inArray(feeds.id, hideIds), eq(feeds.showInBrowse, true)));
+    updated += (result as any).rowCount || 0;
+  }
+
+  console.log(`KH browse visibility recomputed: ${showIds.length} shown, ${hideIds.length} hidden, ${updated} changed`);
+  return updated;
+}
+
+export async function getAllMergeHistory() {
+  const history = await db.select({
+    id: feedMergeHistory.id,
+    targetFeedId: feedMergeHistory.targetFeedId,
+    sourceFeedTitle: feedMergeHistory.sourceFeedTitle,
+    sourceFeedAuthor: feedMergeHistory.sourceFeedAuthor,
+    sourceFeedRssUrl: feedMergeHistory.sourceFeedRssUrl,
+    episodesMoved: feedMergeHistory.episodesMoved,
+    subscriptionsMoved: feedMergeHistory.subscriptionsMoved,
+    mergedAt: feedMergeHistory.mergedAt,
+    targetFeedTitle: feeds.title,
+    targetFeedAuthor: feeds.author,
+  })
+    .from(feedMergeHistory)
+    .leftJoin(feeds, eq(feedMergeHistory.targetFeedId, feeds.id))
+    .orderBy(desc(feedMergeHistory.mergedAt));
+  return history;
 }

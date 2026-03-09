@@ -10,6 +10,7 @@ import type { Feed } from "@/lib/types";
 import { router } from "expo-router";
 import { lightHaptic } from "@/lib/haptics";
 import { safeGoBack } from "@/lib/safe-back";
+import { getApiUrl } from "@/lib/query-client";
 
 const ShiurRow = React.memo(function ShiurRow({ feed, colors }: { feed: Feed; colors: any }) {
   return (
@@ -48,14 +49,41 @@ export default function AllShiurimScreen() {
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
   const allFeeds = feedsQuery.data || [];
 
+  // Server-side search to find feeds hidden from browse (e.g. KH feeds)
+  const serverSearchQuery = useQuery<Feed[]>({
+    queryKey: ["/api/feeds/search", search],
+    queryFn: async () => {
+      const baseUrl = getApiUrl();
+      const url = new URL("/api/feeds/search", baseUrl);
+      url.searchParams.set("q", search.trim());
+      url.searchParams.set("limit", "30");
+      const res = await fetch(url.toString());
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: search.trim().length >= 2,
+  });
+
   const sortedFeeds = useMemo(() => {
     const sorted = [...allFeeds].sort((a, b) => a.title.localeCompare(b.title));
     if (!search.trim()) return sorted;
     const q = search.toLowerCase().trim();
-    return sorted.filter(
+    const localFiltered = sorted.filter(
       f => f.title.toLowerCase().includes(q) || (f.author && f.author.toLowerCase().includes(q))
     );
-  }, [allFeeds, search]);
+    // Merge server results for hidden feeds
+    const serverResults = serverSearchQuery.data || [];
+    if (serverResults.length === 0) return localFiltered;
+    const seen = new Set(localFiltered.map(f => f.id));
+    const merged = [...localFiltered];
+    for (const f of serverResults) {
+      if (!seen.has(f.id)) {
+        merged.push(f);
+        seen.add(f.id);
+      }
+    }
+    return merged;
+  }, [allFeeds, search, serverSearchQuery.data]);
 
   const renderItem = useCallback(({ item }: { item: Feed }) => (
     <ShiurRow feed={item} colors={colors} />

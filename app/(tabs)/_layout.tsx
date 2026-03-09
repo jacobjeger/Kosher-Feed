@@ -40,6 +40,10 @@ function WebNavBar() {
     { label: "Favorites", route: "/favorites", icon: "star" as const },
   ];
 
+  const rightNavItems = [
+    { label: "Settings", route: "/settings", icon: "settings-outline" as const },
+  ];
+
   const isActive = (route: string) => {
     if (route === "/") return pathname === "/" || pathname === "/index";
     return pathname === route;
@@ -49,7 +53,7 @@ function WebNavBar() {
     <View style={[webStyles.navBar, { backgroundColor: isDark ? "#0f172a" : "#ffffff", borderBottomColor: isDark ? "#1e293b" : "#e2e8f0" }]}>
       <View style={webStyles.navInner}>
         <Pressable onPress={() => router.push("/")} style={webStyles.logoArea}>
-          <View style={[webStyles.logoIcon, { backgroundColor: colors.accent }]}>
+          <View style={[webStyles.logoIcon, { backgroundColor: isDark ? colors.accent : "#1a2a3a" }]}>
             <Ionicons name="radio" size={18} color="#fff" />
           </View>
           <Text style={[webStyles.logoText, { color: colors.text }]}>ShiurPod</Text>
@@ -62,11 +66,18 @@ function WebNavBar() {
               <Pressable
                 key={item.route}
                 onPress={() => router.push(item.route as any)}
-                style={[
+                style={({ hovered }: any) => [
                   webStyles.navLink,
                   active && { borderBottomColor: colors.accent, borderBottomWidth: 2 },
+                  hovered && !active && { backgroundColor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)" },
                 ]}
               >
+                <Ionicons
+                  name={item.icon}
+                  size={16}
+                  color={active ? colors.accent : colors.textSecondary}
+                  style={{ marginRight: 6 }}
+                />
                 <Text
                   style={[
                     webStyles.navLinkText,
@@ -80,7 +91,23 @@ function WebNavBar() {
           })}
         </View>
 
-        <View style={{ width: 120 }} />
+        <View style={webStyles.rightNav}>
+          {rightNavItems.map((item) => {
+            const active = isActive(item.route);
+            return (
+              <Pressable
+                key={item.route}
+                onPress={() => router.push(item.route as any)}
+                style={({ hovered }: any) => [
+                  webStyles.rightNavBtn,
+                  { backgroundColor: hovered ? (isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)") : "transparent" },
+                ]}
+              >
+                <Ionicons name={item.icon as any} size={20} color={active ? colors.accent : colors.textSecondary} />
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
     </View>
   );
@@ -192,15 +219,16 @@ const webStyles = StyleSheet.create({
     borderBottomWidth: 1,
     paddingHorizontal: 24,
     zIndex: 100,
+    ...(Platform.OS === "web" ? { boxShadow: "0 1px 3px rgba(0,0,0,0.04)" as any } : {}),
   },
   navInner: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    maxWidth: 900,
+    maxWidth: 960,
     marginHorizontal: "auto" as any,
     width: "100%" as any,
-    height: 60,
+    height: 64,
   },
   logoArea: {
     flexDirection: "row",
@@ -208,31 +236,48 @@ const webStyles = StyleSheet.create({
     gap: 10,
   },
   logoIcon: {
-    width: 34,
-    height: 34,
+    width: 36,
+    height: 36,
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
   },
   logoText: {
     fontSize: 20,
-    fontWeight: "700" as const,
+    fontWeight: "800" as const,
     letterSpacing: -0.5,
   },
   navLinks: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 4,
   },
   navLink: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
     paddingHorizontal: 16,
     paddingVertical: 18,
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
+    borderRadius: 8,
+    ...(Platform.OS === "web" ? { transition: "background-color 0.15s ease" as any, cursor: "pointer" as any } : {}),
   },
   navLinkText: {
-    fontSize: 15,
-    fontWeight: "500" as const,
+    fontSize: 14,
+    fontWeight: "600" as const,
+  },
+  rightNav: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 4,
+  },
+  rightNavBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    ...(Platform.OS === "web" ? { transition: "background-color 0.15s ease" as any, cursor: "pointer" as any } : {}),
   },
   miniPlayerWeb: {
     position: "fixed" as any,

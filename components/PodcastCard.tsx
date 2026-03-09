@@ -164,6 +164,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     overflow: "hidden",
+    ...(Platform.OS === "web" ? { transition: "transform 0.2s ease, box-shadow 0.2s ease" as any, cursor: "pointer" as any } : {}),
   },
   featuredImage: {
     width: "100%" as any,
@@ -213,6 +214,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: "hidden",
     marginBottom: 10,
+    ...(Platform.OS === "web" ? { transition: "transform 0.2s ease, box-shadow 0.2s ease" as any, cursor: "pointer" as any } : {}),
   },
   mediumImage: {
     width: 80,
@@ -234,15 +236,16 @@ const styles = StyleSheet.create({
   },
 
   smallContainer: {
-    width: 130,
+    width: Platform.OS === "web" ? 150 : 130,
     marginRight: 12,
     borderRadius: 14,
     borderWidth: 1,
     overflow: "hidden",
+    ...(Platform.OS === "web" ? { transition: "transform 0.2s ease, box-shadow 0.2s ease" as any, cursor: "pointer" as any } : {}),
   },
   smallImage: {
     width: "100%" as any,
-    height: 120,
+    height: Platform.OS === "web" ? 140 : 120,
   },
   smallInfo: {
     padding: 10,
@@ -251,7 +254,7 @@ const styles = StyleSheet.create({
   smallTitle: {
     fontSize: 13,
     fontWeight: "600" as const,
-    lineHeight: 16,
+    lineHeight: 17,
   },
   smallAuthor: {
     fontSize: 11,

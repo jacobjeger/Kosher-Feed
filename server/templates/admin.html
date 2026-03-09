@@ -207,11 +207,17 @@
       <button class="tab" onclick="switchTab('pushtracker', this)">Push Tracker</button>
       <button class="tab" onclick="switchTab('vitals', this)">Feed Vitals</button>
       <button class="tab" onclick="switchTab('announcements', this)">Announcements</button>
+      <button class="tab" onclick="switchTab('kolhalashon', this)">Kol Halashon</button>
       <button class="tab" onclick="switchTab('settings', this)">Settings</button>
     </div>
 
     <div id="analyticsTab">
       <div class="stats" id="statsArea"></div>
+
+      <div class="card" style="margin-bottom:16px;">
+        <div class="card-header"><h2>Content Sources</h2></div>
+        <div id="sourceBreakdownArea" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:12px;"></div>
+      </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
         <div class="card" style="grid-column:1/3;">
@@ -284,6 +290,23 @@
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
             <option value="featured">Featured</option>
+          </select>
+          <select id="feedSourceFilter" onchange="filterFeeds(document.getElementById('feedSearchInput').value)" style="width:auto;padding:10px 14px;font-size:13px;min-width:130px;">
+            <option value="">All Sources</option>
+            <option value="rss">RSS Only</option>
+            <option value="tat">Torah Anytime</option>
+            <option value="alldaf">AllDaf</option>
+            <option value="allmishnah">AllMishnah</option>
+            <option value="allparsha">AllParsha</option>
+            <option value="kh">Kol Halashon</option>
+            <option value="merged">Merged (multi-source)</option>
+          </select>
+          <select id="feedSortSelect" onchange="filterFeeds(document.getElementById('feedSearchInput').value)" style="width:auto;padding:10px 14px;font-size:13px;min-width:130px;">
+            <option value="title">Sort: Title</option>
+            <option value="episodes">Sort: Episodes</option>
+            <option value="subscribers">Sort: Subscribers</option>
+            <option value="listens">Sort: Listens</option>
+            <option value="newest">Sort: Newest</option>
           </select>
           <span id="feedCountLabel" style="font-size:12px;color:#64748b;white-space:nowrap;"></span>
         </div>
@@ -495,7 +518,27 @@
       <div class="card">
         <div class="card-header">
           <h2>Feed Audit Table</h2>
-          <button class="btn btn-primary btn-sm" onclick="loadVitals()">Refresh</button>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="text" id="vitalsSearchInput" placeholder="Search feeds..." oninput="filterVitalsAudit(this.value)" style="padding:8px 12px;font-size:13px;width:200px;">
+            <select id="vitalsSourceFilter" onchange="filterVitalsAudit(document.getElementById('vitalsSearchInput').value)" style="padding:8px 12px;font-size:13px;min-width:120px;">
+              <option value="">All Sources</option>
+              <option value="rss">RSS</option>
+              <option value="tat">TAT</option>
+              <option value="alldaf">AllDaf</option>
+              <option value="allmishnah">AllMishnah</option>
+              <option value="allparsha">AllParsha</option>
+              <option value="kh">KH</option>
+            </select>
+            <select id="vitalsStatusFilter" onchange="filterVitalsAudit(document.getElementById('vitalsSearchInput').value)" style="padding:8px 12px;font-size:13px;min-width:120px;">
+              <option value="">All Status</option>
+              <option value="stale">Stale (>2h)</option>
+              <option value="never">Never Fetched</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+            <span id="vitalsAuditCount" style="font-size:12px;color:#64748b;white-space:nowrap;"></span>
+            <button class="btn btn-primary btn-sm" onclick="loadVitals()">Refresh</button>
+          </div>
         </div>
         <div id="vitalsAuditTable"></div>
       </div>
@@ -581,6 +624,67 @@
           <span id="tatSyncStatus" style="font-size:12px;color:#64748b;margin-left:8px;"></span>
         </div>
       </div>
+      <div class="card" style="max-width:500px;margin-bottom:20px;">
+        <div class="card-header">
+          <h2>AllDaf Integration</h2>
+        </div>
+        <div id="alldafStatusArea" style="padding:4px 0 12px;color:#94a3b8;font-size:13px;">Loading...</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+          <span style="font-size:14px;color:#e2e8f0;">Show AllDaf content</span>
+          <button id="alldafToggleBtn" class="toggle-btn off" onclick="toggleOUPlatform('alldaf')" title="Toggle AllDaf"></button>
+        </div>
+        <p style="font-size:12px;color:#64748b;margin:0;">When off, all AllDaf-only feeds are hidden from the app immediately. Merged feeds (RSS + AllDaf) are not affected.</p>
+        <div style="margin-top:12px;">
+          <button class="btn btn-secondary btn-sm" onclick="syncOUPlatform('alldaf')" id="alldafSyncBtn">Sync Authors Now</button>
+          <span id="alldafSyncStatus" style="font-size:12px;color:#64748b;margin-left:8px;"></span>
+        </div>
+      </div>
+      <div class="card" style="max-width:500px;margin-bottom:20px;">
+        <div class="card-header">
+          <h2>AllMishnah Integration</h2>
+        </div>
+        <div id="allmishnahStatusArea" style="padding:4px 0 12px;color:#94a3b8;font-size:13px;">Loading...</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+          <span style="font-size:14px;color:#e2e8f0;">Show AllMishnah content</span>
+          <button id="allmishnahToggleBtn" class="toggle-btn off" onclick="toggleOUPlatform('allmishnah')" title="Toggle AllMishnah"></button>
+        </div>
+        <p style="font-size:12px;color:#64748b;margin:0;">When off, all AllMishnah-only feeds are hidden. Merged feeds are not affected.</p>
+        <div style="margin-top:12px;">
+          <button class="btn btn-secondary btn-sm" onclick="syncOUPlatform('allmishnah')" id="allmishnahSyncBtn">Sync Authors Now</button>
+          <span id="allmishnahSyncStatus" style="font-size:12px;color:#64748b;margin-left:8px;"></span>
+        </div>
+      </div>
+      <div class="card" style="max-width:500px;margin-bottom:20px;">
+        <div class="card-header">
+          <h2>AllParsha Integration</h2>
+        </div>
+        <div id="allparshaStatusArea" style="padding:4px 0 12px;color:#94a3b8;font-size:13px;">Loading...</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+          <span style="font-size:14px;color:#e2e8f0;">Show AllParsha content</span>
+          <button id="allparshaToggleBtn" class="toggle-btn off" onclick="toggleOUPlatform('allparsha')" title="Toggle AllParsha"></button>
+        </div>
+        <p style="font-size:12px;color:#64748b;margin:0;">When off, all AllParsha-only feeds are hidden. Merged feeds are not affected.</p>
+        <div style="margin-top:12px;">
+          <button class="btn btn-secondary btn-sm" onclick="syncOUPlatform('allparsha')" id="allparshaSyncBtn">Sync Authors Now</button>
+          <span id="allparshaSyncStatus" style="font-size:12px;color:#64748b;margin-left:8px;"></span>
+        </div>
+      </div>
+      <div class="card" style="max-width:900px;margin-bottom:20px;">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <h2>Merge History</h2>
+          <button class="btn btn-secondary btn-sm" onclick="loadGlobalMergeHistory()">Refresh</button>
+        </div>
+        <p style="font-size:12px;color:#64748b;margin:0 0 12px;">Complete history of all feed merges.</p>
+        <div id="globalMergeHistoryArea" style="color:#94a3b8;font-size:13px;">Loading...</div>
+      </div>
+      <div class="card" style="max-width:900px;margin-bottom:20px;">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <h2>Merged Feeds</h2>
+          <button class="btn btn-secondary btn-sm" onclick="loadMergers()" id="mergersRefreshBtn">Refresh</button>
+        </div>
+        <p style="font-size:12px;color:#64748b;margin:0 0 12px;">Feeds pulling content from multiple platforms. You can unlink a platform to stop merging.</p>
+        <div id="mergersArea" style="color:#94a3b8;font-size:13px;">Loading...</div>
+      </div>
       <div class="card" style="max-width:500px;">
         <div class="card-header">
           <h2>Change Password</h2>
@@ -599,6 +703,65 @@
           <input type="password" id="confirmPassword">
         </div>
         <button class="btn btn-primary" onclick="changePassword()">Update Password</button>
+      </div>
+    </div>
+
+    <div id="kolhalashonTab" class="hidden">
+      <div class="card" style="max-width:500px;margin-bottom:20px;">
+        <div class="card-header">
+          <h2>Kol Halashon Integration</h2>
+        </div>
+        <div id="khStatusArea" style="padding:4px 0 12px;color:#94a3b8;font-size:13px;">Loading...</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+          <span style="font-size:14px;color:#e2e8f0;">Show Kol Halashon content</span>
+          <button id="khToggleBtn" class="toggle-btn off" onclick="toggleKH()" title="Toggle Kol Halashon"></button>
+        </div>
+        <p style="font-size:12px;color:#64748b;margin:0;">When off, all Kol Halashon-only feeds are hidden. Merged feeds are not affected.</p>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button class="btn btn-secondary btn-sm" onclick="syncKHSpeakers()" id="khSyncBtn">Sync Speakers Now</button>
+          <button class="btn btn-primary btn-sm" onclick="recomputeKHVisibility()">Recompute Top 100</button>
+          <span id="khSyncStatus" style="font-size:12px;color:#64748b;margin-left:8px;"></span>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <h2>KH Speakers</h2>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="text" id="khSpeakerSearch" placeholder="Search speakers..." oninput="filterKHSpeakers(this.value)" style="padding:8px 12px;font-size:13px;width:200px;">
+            <span id="khSpeakerCount" style="font-size:12px;color:#64748b;white-space:nowrap;"></span>
+          </div>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="feed-table" id="khSpeakerTable">
+            <thead>
+              <tr>
+                <th style="cursor:pointer;" onclick="sortKHSpeakers('title')">Speaker <span id="khSort_title"></span></th>
+                <th style="cursor:pointer;text-align:right;" onclick="sortKHSpeakers('episodeCount')">Shiurim <span id="khSort_episodeCount"></span></th>
+                <th style="cursor:pointer;text-align:right;" onclick="sortKHSpeakers('subscriberCount')">Subscribers <span id="khSort_subscriberCount"></span></th>
+                <th style="cursor:pointer;text-align:right;" onclick="sortKHSpeakers('listenCount')">Listens <span id="khSort_listenCount"></span></th>
+                <th style="text-align:center;">Browse</th>
+                <th style="text-align:center;">Active</th>
+                <th>Platforms</th>
+              </tr>
+            </thead>
+            <tbody id="khSpeakerBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <h2>KH Feed Vitals</h2>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="text" id="khVitalsSearch" placeholder="Search..." oninput="filterKHVitals(this.value)" style="padding:8px 12px;font-size:13px;width:160px;">
+            <select id="khVitalsStatusFilter" onchange="filterKHVitals(document.getElementById('khVitalsSearch').value)" style="padding:8px 12px;font-size:13px;min-width:110px;">
+              <option value="">All</option>
+              <option value="stale">Stale (>2h)</option>
+              <option value="never">Never Fetched</option>
+            </select>
+            <span id="khVitalsCount" style="font-size:12px;color:#64748b;white-space:nowrap;"></span>
+          </div>
+        </div>
+        <div id="khVitalsTable" style="color:#94a3b8;font-size:13px;">Loading...</div>
       </div>
     </div>
 
@@ -697,6 +860,7 @@ async function loadAnalytics() {
     renderFeedPerformance();
     if (enhanced) renderEnhancedStats();
     loadListenerAnalytics();
+    loadSourceBreakdown();
   } catch(e) {
     console.error('Analytics error:', e);
   }
@@ -992,12 +1156,30 @@ function filterFeeds(query) {
     filtered = filtered.filter(f => f.isFeatured);
   }
 
+  const sourceFilter = document.getElementById('feedSourceFilter')?.value || '';
+  if (sourceFilter) {
+    filtered = filtered.filter(f => {
+      const sources = getFeedSources(f);
+      if (sourceFilter === 'merged') return sources.length > 1;
+      if (sourceFilter === 'rss') return sources.length === 1 && sources[0] === 'rss';
+      return sources.includes(sourceFilter);
+    });
+  }
+
   const countLabel = document.getElementById('feedCountLabel');
   if (countLabel) {
     countLabel.textContent = filtered.length === allAdminFeeds.length
       ? `${allAdminFeeds.length} feeds`
       : `${filtered.length} of ${allAdminFeeds.length}`;
   }
+
+  // Apply sorting
+  const sortBy = document.getElementById('feedSortSelect')?.value || 'title';
+  if (sortBy === 'episodes') filtered.sort((a, b) => (b.episodeCount || 0) - (a.episodeCount || 0));
+  else if (sortBy === 'subscribers') filtered.sort((a, b) => (b.subscriberCount || 0) - (a.subscriberCount || 0));
+  else if (sortBy === 'listens') filtered.sort((a, b) => (b.listenCount || 0) - (a.listenCount || 0));
+  else if (sortBy === 'newest') filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  else filtered.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
 
   if (filtered.length === 0) {
     list.innerHTML = allAdminFeeds.length === 0
@@ -1013,9 +1195,9 @@ function filterFeeds(query) {
       ${bulkMode ? '<input type="checkbox" class="bulk-feed-cb" value="' + f.id + '" onchange="updateBulkCount()" style="width:18px;height:18px;accent-color:#3b82f6;flex-shrink:0;">' : ''}
       ${f.imageUrl ? '<img src="' + f.imageUrl + '" class="feed-img" onerror="this.style.display=\'none\'">' : '<div class="feed-img"></div>'}
       <div class="feed-info">
-        <div class="feed-title"><span class="health-tooltip health-dot ${healthInfo.cls}" data-tip="${esc(healthInfo.tip)}"></span>${esc(f.title)}${scheduledBadge}</div>
+        <div class="feed-title"><span class="health-tooltip health-dot ${healthInfo.cls}" data-tip="${esc(healthInfo.tip)}"></span>${esc(f.title)}${scheduledBadge}${getFeedSourceBadges(f)}</div>
         <div class="feed-meta">${esc(f.author || 'Unknown')} &bull; ${(f.categoryIds && f.categoryIds.length > 0) ? f.categoryIds.map(cid => categories.find(c => c.id === cid)?.name || '').filter(Boolean).join(', ') || 'Uncategorized' : (categories.find(c => c.id === f.categoryId)?.name || 'Uncategorized')}</div>
-        <div class="feed-meta" style="font-size:11px;margin-top:2px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.rssUrl)}</div>
+        <div class="feed-meta" style="font-size:11px;margin-top:2px;color:#3b82f6;">Episodes: ${f.episodeCount || 0} &bull; Subscribers: ${f.subscriberCount || 0} &bull; Listens: ${f.listenCount || 0}</div>
       </div>
       <button class="toggle-btn ${f.isActive ? 'on' : 'off'}" onclick="toggleFeedActive('${f.id}', ${!f.isActive})" title="${f.isActive ? 'Active' : 'Inactive'}"></button>
       <button class="featured-star ${f.isFeatured ? 'featured' : ''}" onclick="toggleFeedFeatured('${f.id}', ${!f.isFeatured})" title="${f.isFeatured ? 'Featured' : 'Not Featured'}">&#9733;</button>
@@ -1023,6 +1205,7 @@ function filterFeeds(query) {
         <button class="btn btn-secondary btn-sm" onclick="viewEpisodes('${f.id}')">Episodes</button>
         <button class="btn btn-secondary btn-sm" onclick="editFeed('${f.id}')">Edit</button>
         <button class="btn btn-secondary btn-sm" onclick="refreshFeed('${f.id}')">Refresh</button>
+        <button class="btn btn-secondary btn-sm" onclick="showMergeModal('${f.id}')" title="Merge into another feed">Merge</button>
         <button class="btn btn-danger btn-sm" onclick="deleteFeed('${f.id}')">Remove</button>
       </div>
     </div>`;
@@ -1279,6 +1462,79 @@ async function deleteCategory(id) {
   }
 }
 
+function showMergeModal(sourceId) {
+  const source = allAdminFeeds.find(f => f.id === sourceId);
+  if (!source) return;
+  const otherFeeds = allAdminFeeds.filter(f => f.id !== sourceId);
+
+  document.getElementById('modalContent').innerHTML = `
+    <h2>Merge Feed</h2>
+    <p style="color:#94a3b8;font-size:13px;margin-bottom:12px;">Merge <strong style="color:#e2e8f0;">${esc(source.title)}</strong> into another feed. All episodes and subscribers will be moved to the target, and this feed will be deleted.</p>
+    <div class="form-group">
+      <label>Target Feed</label>
+      <input type="text" id="mergeSearch" placeholder="Search feeds..." oninput="filterMergeTargets('${sourceId}')">
+    </div>
+    <div id="mergeTargetList" style="max-height:300px;overflow-y:auto;border:1px solid #1e293b;border-radius:8px;background:#0f172a;">
+      ${otherFeeds.slice(0, 50).map(f => `
+        <div class="merge-target-item" data-id="${f.id}" onclick="selectMergeTarget(this, '${f.id}')" style="padding:10px 12px;cursor:pointer;border-bottom:1px solid #1e293b;display:flex;align-items:center;gap:10px;">
+          ${f.imageUrl ? '<img src="' + f.imageUrl + '" style="width:32px;height:32px;border-radius:6px;object-fit:cover;" onerror="this.style.display=\'none\'">' : ''}
+          <div>
+            <div style="color:#e2e8f0;font-size:13px;">${esc(f.title)}</div>
+            <div style="color:#64748b;font-size:11px;">${esc(f.author || '')} &bull; ${esc(f.rssUrl)}</div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+    <input type="hidden" id="mergeTargetId" value="">
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" id="mergeBtn" onclick="executeMerge('${sourceId}')" disabled>Merge</button>
+    </div>
+  `;
+  document.getElementById('modalOverlay').classList.remove('hidden');
+}
+
+function filterMergeTargets(sourceId) {
+  const query = document.getElementById('mergeSearch').value.toLowerCase().trim();
+  const otherFeeds = allAdminFeeds.filter(f => f.id !== sourceId);
+  const filtered = query ? otherFeeds.filter(f => (f.title || '').toLowerCase().includes(query) || (f.author || '').toLowerCase().includes(query)) : otherFeeds;
+  const list = document.getElementById('mergeTargetList');
+  const selectedId = document.getElementById('mergeTargetId').value;
+  list.innerHTML = filtered.slice(0, 50).map(f => `
+    <div class="merge-target-item ${f.id === selectedId ? 'selected' : ''}" data-id="${f.id}" onclick="selectMergeTarget(this, '${f.id}')" style="padding:10px 12px;cursor:pointer;border-bottom:1px solid #1e293b;display:flex;align-items:center;gap:10px;${f.id === selectedId ? 'background:#1e3a5f;' : ''}">
+      ${f.imageUrl ? '<img src="' + f.imageUrl + '" style="width:32px;height:32px;border-radius:6px;object-fit:cover;" onerror="this.style.display=\'none\'">' : ''}
+      <div>
+        <div style="color:#e2e8f0;font-size:13px;">${esc(f.title)}</div>
+        <div style="color:#64748b;font-size:11px;">${esc(f.author || '')} &bull; ${esc(f.rssUrl)}</div>
+      </div>
+    </div>
+  `).join('') || '<p style="color:#64748b;text-align:center;padding:16px;">No matching feeds</p>';
+}
+
+function selectMergeTarget(el, targetId) {
+  document.querySelectorAll('.merge-target-item').forEach(i => { i.style.background = ''; i.classList.remove('selected'); });
+  el.style.background = '#1e3a5f';
+  el.classList.add('selected');
+  document.getElementById('mergeTargetId').value = targetId;
+  document.getElementById('mergeBtn').disabled = false;
+}
+
+async function executeMerge(sourceId) {
+  const targetId = document.getElementById('mergeTargetId').value;
+  if (!targetId) return;
+  const source = allAdminFeeds.find(f => f.id === sourceId);
+  const target = allAdminFeeds.find(f => f.id === targetId);
+  if (!confirm(`Merge "${source?.title}" into "${target?.title}"?\n\nAll episodes and subscribers will be moved. The source feed will be deleted. This cannot be undone.`)) return;
+  try {
+    const data = await api('/api/admin/feeds/merge', { method: 'POST', body: JSON.stringify({ sourceId, targetId }) });
+    closeModal();
+    showAlert(`Merged! ${data.episodesMoved} episodes and ${data.subscriptionsMoved} subscribers moved.`);
+    await loadFeeds();
+  } catch (e) {
+    showAlert(e.message, 'error');
+  }
+}
+
 async function refreshFeed(id) {
   try {
     const data = await api(`/api/admin/feeds/${id}/refresh`, { method: 'POST' });
@@ -1485,14 +1741,43 @@ async function editFeed(id) {
       <div class="form-group"><label>Categories</label><div style="max-height:180px;overflow-y:auto;padding:8px;border:1px solid #1e293b;border-radius:8px;background:#0f172a;">${catCheckboxes || '<span style="color:#94a3b8;">No categories created yet</span>'}</div></div>
       <div class="form-group"><label>Description</label><textarea id="editDesc">${esc(feed.description || '')}</textarea></div>
       <div class="form-group"><label>Scheduled Publish Date</label><input type="datetime-local" id="editScheduledPublish" value="${feed.scheduledPublishAt ? new Date(feed.scheduledPublishAt).toISOString().slice(0,16) : ''}"><p style="font-size:11px;color:#64748b;margin-top:4px;">Leave blank for immediate publish. Set a date to schedule this feed.</p></div>
+      <div class="form-group" id="mergeHistorySection" style="display:none;">
+        <label>Merge History</label>
+        <div id="mergeHistoryList" style="padding:8px;border:1px solid #1e293b;border-radius:8px;background:#0f172a;max-height:200px;overflow-y:auto;"></div>
+      </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;">
         <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
         <button class="btn btn-primary" onclick="saveFeedEdit('${id}')">Save Changes</button>
       </div>
     `;
     document.getElementById('modalOverlay').classList.remove('hidden');
+    loadMergeHistory('${id}');
   } catch(e) {
     showAlert(e.message, 'error');
+  }
+}
+
+async function loadMergeHistory(feedId) {
+  try {
+    const history = await api('/api/admin/feeds/' + feedId + '/merge-history');
+    if (!history || history.length === 0) return;
+    const section = document.getElementById('mergeHistorySection');
+    const list = document.getElementById('mergeHistoryList');
+    section.style.display = '';
+    list.innerHTML = history.map(h => {
+      const date = new Date(h.mergedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      return '<div style="padding:8px 0;border-bottom:1px solid #1e293b;font-size:13px;">'
+        + '<div style="color:#e2e8f0;font-weight:600;">' + esc(h.sourceFeedTitle) + '</div>'
+        + '<div style="color:#94a3b8;font-size:11px;margin-top:2px;">'
+        + (h.sourceFeedAuthor ? esc(h.sourceFeedAuthor) + ' &bull; ' : '')
+        + h.episodesMoved + ' episodes, ' + h.subscriptionsMoved + ' subscribers moved'
+        + ' &bull; ' + date
+        + '</div>'
+        + (h.sourceFeedRssUrl ? '<div style="color:#64748b;font-size:10px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(h.sourceFeedRssUrl) + '</div>' : '')
+        + '</div>';
+    }).join('');
+  } catch(e) {
+    // silently ignore — old feeds won't have history
   }
 }
 
@@ -1642,7 +1927,7 @@ async function deleteSpeaker(id) {
 function switchTab(tab, btn) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
-  ['analytics','feeds','categories','speakers','errors','feedback','messages','apk','sponsors','pushtracker','vitals','announcements','settings'].forEach(t => {
+  ['analytics','feeds','categories','speakers','errors','feedback','messages','apk','sponsors','pushtracker','vitals','announcements','kolhalashon','settings'].forEach(t => {
     document.getElementById(t + 'Tab').classList.toggle('hidden', tab !== t);
   });
   if (tab === 'speakers') loadSpeakers();
@@ -1654,7 +1939,8 @@ function switchTab(tab, btn) {
   if (tab === 'pushtracker') { loadPushTokens(); loadNotificationHistory(); }
   if (tab === 'vitals') loadVitals();
   if (tab === 'announcements') loadAnnouncements();
-  if (tab === 'settings') loadTATStatus();
+  if (tab === 'kolhalashon') { loadKHStatus(); loadKHSpeakers(); loadKHVitals(); }
+  if (tab === 'settings') { loadTATStatus(); loadAllOUStatuses(); loadMergers(); loadGlobalMergeHistory(); }
 }
 
 function formatDate(dateStr) {
@@ -2094,6 +2380,185 @@ async function syncTATSpeakers() {
     status.innerHTML = '<span style="color:#ef4444;">Error: ' + e.message + '</span>';
   } finally {
     btn.disabled = false;
+  }
+}
+
+// --- Generic OU Torah Platform Functions (AllDaf, AllMishnah, AllParsha) ---
+const ouPlatformLabels = { alldaf: 'AllDaf', allmishnah: 'AllMishnah', allparsha: 'AllParsha' };
+
+async function loadOUPlatformStatus(platform) {
+  const label = ouPlatformLabels[platform] || platform;
+  try {
+    const data = await api('/api/admin/' + platform + '/status');
+    const btn = document.getElementById(platform + 'ToggleBtn');
+    btn.className = 'toggle-btn ' + (data.enabled ? 'on' : 'off');
+    document.getElementById(platform + 'StatusArea').innerHTML =
+      '<strong style="color:#e2e8f0;">' + data.totalFeeds + '</strong> ' + label + '-only feeds (' + data.activeFeeds + ' active)' +
+      (data.mergedFeeds > 0 ? ' · <strong style="color:#e2e8f0;">' + data.mergedFeeds + '</strong> merged with RSS feeds' : '');
+  } catch(e) {
+    document.getElementById(platform + 'StatusArea').textContent = 'Could not load status';
+  }
+}
+
+async function toggleOUPlatform(platform) {
+  const label = ouPlatformLabels[platform] || platform;
+  const btn = document.getElementById(platform + 'ToggleBtn');
+  const currentlyOn = btn.classList.contains('on');
+  const newState = !currentlyOn;
+  if (!newState && !confirm('This will hide all ' + label + ' feeds from the app immediately. Continue?')) return;
+  try {
+    btn.disabled = true;
+    const result = await api('/api/admin/' + platform + '/toggle', { method: 'POST', body: JSON.stringify({ enabled: newState }) });
+    btn.className = 'toggle-btn ' + (newState ? 'on' : 'off');
+    showAlert((newState ? 'Enabled' : 'Disabled') + ' ' + label + ' — ' + result.updated + ' feeds updated');
+    loadOUPlatformStatus(platform);
+    loadFeeds();
+    loadAnalytics();
+  } catch(e) {
+    showAlert('Failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function syncOUPlatform(platform) {
+  const label = ouPlatformLabels[platform] || platform;
+  const btn = document.getElementById(platform + 'SyncBtn');
+  const status = document.getElementById(platform + 'SyncStatus');
+  btn.disabled = true;
+  status.textContent = 'Syncing authors...';
+  try {
+    const result = await api('/api/admin/' + platform + '/sync-authors', { method: 'POST' });
+    status.innerHTML = '<span style="color:#22c55e;">Done — ' + result.created + ' created, ' + result.linked + ' linked, ' + result.total + ' total</span>';
+    loadOUPlatformStatus(platform);
+    loadFeeds();
+    loadAnalytics();
+  } catch(e) {
+    status.innerHTML = '<span style="color:#ef4444;">Error: ' + e.message + '</span>';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function loadAllOUStatuses() {
+  loadOUPlatformStatus('alldaf');
+  loadOUPlatformStatus('allmishnah');
+  loadOUPlatformStatus('allparsha');
+}
+
+// --- Kol Halashon Functions ---
+async function loadKHStatus() {
+  try {
+    const data = await api('/api/admin/kh/status');
+    const btn = document.getElementById('khToggleBtn');
+    btn.className = 'toggle-btn ' + (data.enabled ? 'on' : 'off');
+    const proxyStatus = data.hasProxy
+      ? '<span style="color:#22c55e;">Proxy: Connected</span>'
+      : '<span style="color:#ef4444;">Proxy: Not configured — set KH_PROXY_URL</span>';
+    document.getElementById('khStatusArea').innerHTML =
+      proxyStatus + ' · ' +
+      '<strong style="color:#e2e8f0;">' + data.totalKHFeeds + '</strong> KH-only feeds (' + data.activeKHFeeds + ' active)' +
+      (data.mergedFeeds > 0 ? ' · <strong style="color:#e2e8f0;">' + data.mergedFeeds + '</strong> merged with other feeds' : '');
+  } catch(e) {
+    document.getElementById('khStatusArea').textContent = 'Could not load status';
+  }
+}
+
+async function toggleKH() {
+  const btn = document.getElementById('khToggleBtn');
+  const currentlyOn = btn.classList.contains('on');
+  const newState = !currentlyOn;
+  if (!newState && !confirm('This will hide all Kol Halashon feeds from the app immediately. Continue?')) return;
+  try {
+    btn.disabled = true;
+    const result = await api('/api/admin/kh/toggle', { method: 'POST', body: JSON.stringify({ enabled: newState }) });
+    btn.className = 'toggle-btn ' + (newState ? 'on' : 'off');
+    showAlert((newState ? 'Enabled' : 'Disabled') + ' Kol Halashon — ' + result.updated + ' feeds updated');
+    loadKHStatus();
+    loadFeeds();
+    loadAnalytics();
+  } catch(e) {
+    showAlert('Failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function syncKHSpeakers() {
+  const btn = document.getElementById('khSyncBtn');
+  const status = document.getElementById('khSyncStatus');
+  btn.disabled = true;
+  status.textContent = 'Syncing speakers...';
+  try {
+    const result = await api('/api/admin/kh/sync-speakers', { method: 'POST' });
+    status.innerHTML = '<span style="color:#22c55e;">Done — ' + result.created + ' created, ' + result.linked + ' linked, ' + result.total + ' total' + (result.errors > 0 ? ', ' + result.errors + ' errors' : '') + '</span>';
+    loadKHStatus();
+    loadFeeds();
+    loadAnalytics();
+  } catch(e) {
+    status.innerHTML = '<span style="color:#ef4444;">Error: ' + e.message + '</span>';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function loadMergers() {
+  const area = document.getElementById('mergersArea');
+  area.innerHTML = 'Loading...';
+  try {
+    const mergers = await api('/api/admin/mergers');
+    if (!mergers || mergers.length === 0) {
+      area.innerHTML = '<p style="color:#64748b;">No merged feeds found.</p>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="border-bottom:1px solid #334155;text-align:left;">';
+    html += '<th style="padding:8px 6px;color:#94a3b8;">Feed</th>';
+    html += '<th style="padding:8px 6px;color:#94a3b8;">Platforms</th>';
+    html += '<th style="padding:8px 6px;color:#94a3b8;">Actions</th>';
+    html += '</tr></thead><tbody>';
+    for (const m of mergers) {
+      html += '<tr style="border-bottom:1px solid #1e293b;">';
+      html += '<td style="padding:8px 6px;">';
+      html += '<div style="display:flex;align-items:center;gap:8px;">';
+      if (m.imageUrl) html += '<img src="' + m.imageUrl + '" style="width:32px;height:32px;border-radius:4px;object-fit:cover;" onerror="this.style.display=\'none\'">';
+      html += '<div><strong style="color:#e2e8f0;">' + (m.title || 'Untitled') + '</strong>';
+      if (m.author) html += '<br><span style="color:#64748b;font-size:11px;">' + m.author + '</span>';
+      html += '</div></div></td>';
+      html += '<td style="padding:8px 6px;">';
+      for (const p of m.platforms) {
+        const colors = { 'RSS': '#3b82f6', 'Torah Anytime': '#8b5cf6', 'AllDaf': '#f59e0b', 'AllMishnah': '#10b981', 'AllParsha': '#06b6d4', 'Kol Halashon': '#ec4899' };
+        const c = colors[p] || '#94a3b8';
+        html += '<span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;margin:2px;background:' + c + '22;color:' + c + ';border:1px solid ' + c + '44;">' + p + '</span>';
+      }
+      html += '</td>';
+      html += '<td style="padding:8px 6px;">';
+      for (const p of m.platforms) {
+        if (p === 'RSS') continue;
+        html += '<button class="btn btn-secondary" style="font-size:11px;padding:2px 8px;margin:2px;" onclick="unlinkPlatform(\'' + m.id + '\',\'' + p + '\',this)">Unlink ' + p + '</button>';
+      }
+      html += '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    area.innerHTML = html;
+  } catch (e) {
+    area.innerHTML = '<span style="color:#ef4444;">Failed to load: ' + e.message + '</span>';
+  }
+}
+
+async function unlinkPlatform(feedId, platform, btn) {
+  if (!confirm('Unlink "' + platform + '" from this feed? The feed will no longer pull episodes from that platform.')) return;
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    await api('/api/admin/feeds/' + feedId + '/unlink-platform', { method: 'POST', body: JSON.stringify({ platform }) });
+    showAlert('Unlinked ' + platform);
+    loadMergers();
+  } catch (e) {
+    showAlert('Failed: ' + e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = 'Unlink ' + platform;
   }
 }
 
@@ -2585,47 +3050,149 @@ function renderVitalsFailingFeeds(feeds) {
   document.getElementById('vitalsFailingTable').innerHTML = html;
 }
 
+let allVitalsFeeds = [];
+
 async function renderVitalsAuditTable() {
   try {
-    const feeds = await api('/api/feeds');
-    if (!feeds || feeds.length === 0) {
-      document.getElementById('vitalsAuditTable').innerHTML = '<div style="color:#64748b;font-size:13px;padding:12px;">No feeds found.</div>';
-      return;
-    }
-
-    let html = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
-    html += '<thead><tr style="border-bottom:1px solid #1e293b;color:#94a3b8;text-align:left;">';
-    html += '<th style="padding:8px;">Feed</th><th style="padding:8px;">Host</th><th style="padding:8px;">Status</th><th style="padding:8px;">Last Fetched</th><th style="padding:8px;">Cache Headers</th><th style="padding:8px;">Actions</th>';
-    html += '</tr></thead><tbody>';
-
-    feeds.forEach(f => {
-      let host = '';
-      try { host = new URL(f.rssUrl).hostname; } catch {}
-
-      const hasEtag = f.etag ? '✓' : '✗';
-      const hasLM = f.lastModifiedHeader ? '✓' : '✗';
-      const etagColor = f.etag ? '#22c55e' : '#64748b';
-      const lmColor = f.lastModifiedHeader ? '#22c55e' : '#64748b';
-
-      const lastFetched = f.lastFetchedAt ? timeAgo(new Date(f.lastFetchedAt)) : 'Never';
-      const statusColor = f.isActive ? '#22c55e' : '#ef4444';
-      const statusIcon = f.isActive ? '🟢' : '🔴';
-
-      html += `<tr style="border-bottom:1px solid #1e293b;" id="vitals-row-${f.id}">`;
-      html += `<td style="padding:8px;color:#f8fafc;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.title)}</td>`;
-      html += `<td style="padding:8px;color:#94a3b8;font-size:11px;">${esc(host)}</td>`;
-      html += `<td style="padding:8px;">${statusIcon}</td>`;
-      html += `<td style="padding:8px;color:#94a3b8;font-size:12px;">${lastFetched}</td>`;
-      html += `<td style="padding:8px;font-size:11px;"><span style="color:${etagColor};">ETag ${hasEtag}</span> <span style="color:${lmColor};">LM ${hasLM}</span></td>`;
-      html += `<td style="padding:8px;"><button class="btn btn-secondary btn-sm" onclick="forceSync('${f.id}', this)" style="font-size:11px;padding:4px 10px;">Force Sync</button> <span id="vitals-result-${f.id}" style="font-size:11px;margin-left:4px;"></span></td>`;
-      html += '</tr>';
-    });
-
-    html += '</tbody></table></div>';
-    document.getElementById('vitalsAuditTable').innerHTML = html;
+    allVitalsFeeds = await api('/api/admin/feeds');
+    filterVitalsAudit('');
   } catch (e) {
     document.getElementById('vitalsAuditTable').innerHTML = '<div class="alert alert-error">Failed to load feeds: ' + esc(e.message) + '</div>';
   }
+}
+
+function getVitalsFeedSource(f) {
+  if (f.kolhalashonRavId || (f.rssUrl && f.rssUrl.startsWith('kh://'))) return 'kh';
+  if (f.tatSpeakerId || (f.rssUrl && f.rssUrl.startsWith('tat://'))) return 'tat';
+  if (f.alldafAuthorId || (f.rssUrl && f.rssUrl.startsWith('alldaf://'))) return 'alldaf';
+  if (f.allmishnahAuthorId || (f.rssUrl && f.rssUrl.startsWith('allmishnah://'))) return 'allmishnah';
+  if (f.allparshaAuthorId || (f.rssUrl && f.rssUrl.startsWith('allparsha://'))) return 'allparsha';
+  return 'rss';
+}
+
+function getVitalsSourceLabel(src) {
+  const labels = { rss: 'RSS', tat: 'TAT', alldaf: 'AllDaf', allmishnah: 'AllMishnah', allparsha: 'AllParsha', kh: 'KH' };
+  return labels[src] || src;
+}
+
+function filterVitalsAudit(query) {
+  const q = (query || '').toLowerCase().trim();
+  const sourceFilter = document.getElementById('vitalsSourceFilter')?.value || '';
+  const statusFilter = document.getElementById('vitalsStatusFilter')?.value || '';
+
+  let feeds = allVitalsFeeds;
+  if (q) feeds = feeds.filter(f => f.title.toLowerCase().includes(q) || (f.author || '').toLowerCase().includes(q));
+  if (sourceFilter) feeds = feeds.filter(f => getVitalsFeedSource(f) === sourceFilter);
+  if (statusFilter === 'stale') feeds = feeds.filter(f => f.lastFetchedAt && (Date.now() - new Date(f.lastFetchedAt).getTime()) > 2 * 3600000);
+  else if (statusFilter === 'never') feeds = feeds.filter(f => !f.lastFetchedAt);
+  else if (statusFilter === 'active') feeds = feeds.filter(f => f.isActive);
+  else if (statusFilter === 'inactive') feeds = feeds.filter(f => !f.isActive);
+
+  const countEl = document.getElementById('vitalsAuditCount');
+  if (countEl) countEl.textContent = feeds.length === allVitalsFeeds.length ? `${feeds.length} feeds` : `${feeds.length} of ${allVitalsFeeds.length}`;
+
+  if (!feeds || feeds.length === 0) {
+    document.getElementById('vitalsAuditTable').innerHTML = '<div style="color:#64748b;font-size:13px;padding:12px;">No feeds match filters.</div>';
+    return;
+  }
+
+  let html = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
+  html += '<thead><tr style="border-bottom:1px solid #1e293b;color:#94a3b8;text-align:left;">';
+  html += '<th style="padding:8px;">Feed</th><th style="padding:8px;">Source</th><th style="padding:8px;">Host</th><th style="padding:8px;">Status</th><th style="padding:8px;">Last Fetched</th><th style="padding:8px;">Cache Headers</th><th style="padding:8px;">Actions</th>';
+  html += '</tr></thead><tbody>';
+
+  feeds.forEach(f => {
+    let host = '';
+    try { host = new URL(f.rssUrl).hostname; } catch { host = f.rssUrl?.slice(0, 20) || ''; }
+
+    const src = getVitalsFeedSource(f);
+    const srcColors = { rss: '#64748b', tat: '#7c3aed', alldaf: '#2563eb', allmishnah: '#0891b2', allparsha: '#059669', kh: '#b45309' };
+    const srcBadge = `<span style="display:inline-block;font-size:9px;font-weight:600;padding:2px 6px;border-radius:4px;background:${srcColors[src] || '#64748b'};color:#fff;">${getVitalsSourceLabel(src)}</span>`;
+
+    const hasEtag = f.etag ? '✓' : '✗';
+    const hasLM = f.lastModifiedHeader ? '✓' : '✗';
+    const etagColor = f.etag ? '#22c55e' : '#64748b';
+    const lmColor = f.lastModifiedHeader ? '#22c55e' : '#64748b';
+
+    const lastFetched = f.lastFetchedAt ? timeAgo(new Date(f.lastFetchedAt)) : 'Never';
+    const isStale = f.lastFetchedAt && (Date.now() - new Date(f.lastFetchedAt).getTime()) > 2 * 3600000;
+    const lastFetchedColor = !f.lastFetchedAt ? '#ef4444' : isStale ? '#eab308' : '#94a3b8';
+    const statusIcon = f.isActive ? '🟢' : '🔴';
+
+    html += `<tr style="border-bottom:1px solid #1e293b;" id="vitals-row-${f.id}">`;
+    html += `<td style="padding:8px;color:#f8fafc;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(f.title)}">${esc(f.title)}</td>`;
+    html += `<td style="padding:8px;">${srcBadge}</td>`;
+    html += `<td style="padding:8px;color:#94a3b8;font-size:11px;">${esc(host)}</td>`;
+    html += `<td style="padding:8px;">${statusIcon}</td>`;
+    html += `<td style="padding:8px;color:${lastFetchedColor};font-size:12px;">${lastFetched}</td>`;
+    html += `<td style="padding:8px;font-size:11px;"><span style="color:${etagColor};">ETag ${hasEtag}</span> <span style="color:${lmColor};">LM ${hasLM}</span></td>`;
+    html += `<td style="padding:8px;"><button class="btn btn-secondary btn-sm" onclick="forceSync('${f.id}', this)" style="font-size:11px;padding:4px 10px;">Force Sync</button> <span id="vitals-result-${f.id}" style="font-size:11px;margin-left:4px;"></span></td>`;
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  document.getElementById('vitalsAuditTable').innerHTML = html;
+}
+
+// ---- KH Vitals ----
+let allKHVitalsFeeds = [];
+
+function loadKHVitals() {
+  // Use the KH speakers data that's already loaded, plus use admin feeds for last-fetched info
+  if (!allVitalsFeeds.length) {
+    api('/api/admin/feeds').then(feeds => {
+      allVitalsFeeds = feeds;
+      buildKHVitals();
+    }).catch(() => {});
+  } else {
+    buildKHVitals();
+  }
+}
+
+function buildKHVitals() {
+  allKHVitalsFeeds = allVitalsFeeds.filter(f => f.kolhalashonRavId || (f.rssUrl && f.rssUrl.startsWith('kh://')));
+  filterKHVitals('');
+}
+
+function filterKHVitals(query) {
+  const q = (query || '').toLowerCase().trim();
+  const statusFilter = document.getElementById('khVitalsStatusFilter')?.value || '';
+
+  let feeds = allKHVitalsFeeds;
+  if (q) feeds = feeds.filter(f => f.title.toLowerCase().includes(q) || (f.author || '').toLowerCase().includes(q));
+  if (statusFilter === 'stale') feeds = feeds.filter(f => f.lastFetchedAt && (Date.now() - new Date(f.lastFetchedAt).getTime()) > 2 * 3600000);
+  else if (statusFilter === 'never') feeds = feeds.filter(f => !f.lastFetchedAt);
+
+  const countEl = document.getElementById('khVitalsCount');
+  if (countEl) countEl.textContent = feeds.length === allKHVitalsFeeds.length ? `${feeds.length} KH feeds` : `${feeds.length} of ${allKHVitalsFeeds.length}`;
+
+  const area = document.getElementById('khVitalsTable');
+  if (feeds.length === 0) {
+    area.innerHTML = '<div style="color:#64748b;font-size:13px;padding:12px;">No KH feeds match filters.</div>';
+    return;
+  }
+
+  let html = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
+  html += '<thead><tr style="border-bottom:1px solid #1e293b;color:#94a3b8;text-align:left;">';
+  html += '<th style="padding:8px;">Speaker</th><th style="padding:8px;">Status</th><th style="padding:8px;">Last Fetched</th><th style="padding:8px;">Actions</th>';
+  html += '</tr></thead><tbody>';
+
+  feeds.forEach(f => {
+    const lastFetched = f.lastFetchedAt ? timeAgo(new Date(f.lastFetchedAt)) : 'Never';
+    const isStale = f.lastFetchedAt && (Date.now() - new Date(f.lastFetchedAt).getTime()) > 2 * 3600000;
+    const lastFetchedColor = !f.lastFetchedAt ? '#ef4444' : isStale ? '#eab308' : '#94a3b8';
+    const statusIcon = f.isActive ? '🟢' : '🔴';
+
+    html += `<tr style="border-bottom:1px solid #1e293b;">`;
+    html += `<td style="padding:8px;color:#f8fafc;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(f.title)}</td>`;
+    html += `<td style="padding:8px;">${statusIcon}</td>`;
+    html += `<td style="padding:8px;color:${lastFetchedColor};font-size:12px;">${lastFetched}</td>`;
+    html += `<td style="padding:8px;"><button class="btn btn-secondary btn-sm" onclick="forceSync('${f.id}', this)" style="font-size:11px;padding:4px 10px;">Force Sync</button> <span id="vitals-result-${f.id}" style="font-size:11px;margin-left:4px;"></span></td>`;
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  area.innerHTML = html;
 }
 
 function timeAgo(date) {
@@ -2662,6 +3229,37 @@ async function forceSync(feedId, btn) {
 }
 
 // === Feature 11: Feed Health Indicators ===
+function getFeedSources(feed) {
+  const sources = [];
+  if (feed.tatSpeakerId || (feed.rssUrl && feed.rssUrl.startsWith('tat://'))) sources.push('tat');
+  if (feed.alldafAuthorId || (feed.rssUrl && feed.rssUrl.startsWith('alldaf://'))) sources.push('alldaf');
+  if (feed.allmishnahAuthorId || (feed.rssUrl && feed.rssUrl.startsWith('allmishnah://'))) sources.push('allmishnah');
+  if (feed.allparshaAuthorId || (feed.rssUrl && feed.rssUrl.startsWith('allparsha://'))) sources.push('allparsha');
+  if (feed.kolhalashonRavId || (feed.rssUrl && feed.rssUrl.startsWith('kh://'))) sources.push('kh');
+  if (sources.length === 0 || (feed.rssUrl && !feed.rssUrl.match(/^(tat|alldaf|allmishnah|allparsha|kh):\/\//))) sources.push('rss');
+  return sources;
+}
+
+function getFeedSourceBadges(feed) {
+  let badges = '';
+  const badgeStyle = 'display:inline-block;font-size:9px;font-weight:600;padding:1px 5px;border-radius:4px;margin-left:6px;vertical-align:middle;';
+  if (feed.tatSpeakerId) badges += '<span style="' + badgeStyle + 'background:#7c3aed;color:#fff;">TAT</span>';
+  if (feed.rssUrl && feed.rssUrl.startsWith('tat://')) badges += '<span style="' + badgeStyle + 'background:#7c3aed;color:#fff;">TAT</span>';
+  if (feed.alldafAuthorId || (feed.rssUrl && feed.rssUrl.startsWith('alldaf://'))) badges += '<span style="' + badgeStyle + 'background:#2563eb;color:#fff;">AllDaf</span>';
+  if (feed.allmishnahAuthorId || (feed.rssUrl && feed.rssUrl.startsWith('allmishnah://'))) badges += '<span style="' + badgeStyle + 'background:#0891b2;color:#fff;">AllMishnah</span>';
+  if (feed.allparshaAuthorId || (feed.rssUrl && feed.rssUrl.startsWith('allparsha://'))) badges += '<span style="' + badgeStyle + 'background:#059669;color:#fff;">AllParsha</span>';
+  if (feed.kolhalashonRavId || (feed.rssUrl && feed.rssUrl.startsWith('kh://'))) badges += '<span style="' + badgeStyle + 'background:#b45309;color:#fff;">KH</span>';
+  if (feed.sourceNetwork && !badges) {
+    const sn = feed.sourceNetwork;
+    if (sn === 'Torah Anytime') badges += '<span style="' + badgeStyle + 'background:#7c3aed;color:#fff;">TAT</span>';
+    else if (sn === 'AllDaf') badges += '<span style="' + badgeStyle + 'background:#2563eb;color:#fff;">AllDaf</span>';
+    else if (sn === 'AllMishnah') badges += '<span style="' + badgeStyle + 'background:#0891b2;color:#fff;">AllMishnah</span>';
+    else if (sn === 'AllParsha') badges += '<span style="' + badgeStyle + 'background:#059669;color:#fff;">AllParsha</span>';
+    else if (sn === 'Kol Halashon') badges += '<span style="' + badgeStyle + 'background:#b45309;color:#fff;">KH</span>';
+  }
+  return badges;
+}
+
 function getFeedHealthInfo(feed) {
   if (!feed.lastFetchedAt && !feed.etag) {
     return { cls: 'health-red', tip: 'Never fetched / no etag' };
@@ -3012,6 +3610,146 @@ async function deleteAnnouncement(id) {
     await api('/api/admin/announcements/' + id, { method: 'DELETE' });
     showAlert('Announcement deleted');
     loadAnnouncements();
+  } catch(e) {
+    showAlert(e.message, 'error');
+  }
+}
+
+// ---- Source Breakdown ----
+async function loadSourceBreakdown() {
+  try {
+    const data = await api('/api/admin/analytics/sources');
+    const area = document.getElementById('sourceBreakdownArea');
+    const colors = { 'RSS': '#3b82f6', 'Torah Anytime': '#8b5cf6', 'AllDaf': '#059669', 'AllMishnah': '#d97706', 'AllParsha': '#ec4899', 'Kol Halashon': '#06b6d4' };
+    area.innerHTML = data.sources.map(s => `
+      <div style="background:#151c2c;border:1px solid #1e293b;border-radius:12px;padding:16px;">
+        <div style="font-size:11px;color:${colors[s.name] || '#64748b'};font-weight:600;text-transform:uppercase;margin-bottom:4px;">${esc(s.name)}</div>
+        <div style="font-size:24px;font-weight:700;color:#f8fafc;">${s.feedCount.toLocaleString()}</div>
+        <div style="font-size:11px;color:#64748b;">feeds</div>
+        <div style="font-size:18px;font-weight:600;color:#cbd5e1;margin-top:4px;">${s.episodeCount.toLocaleString()}</div>
+        <div style="font-size:11px;color:#64748b;">episodes</div>
+      </div>
+    `).join('') + `
+      <div style="background:#151c2c;border:1px solid #3b82f6;border-radius:12px;padding:16px;">
+        <div style="font-size:11px;color:#3b82f6;font-weight:600;text-transform:uppercase;margin-bottom:4px;">TOTAL</div>
+        <div style="font-size:24px;font-weight:700;color:#f8fafc;">${data.totalFeeds.toLocaleString()}</div>
+        <div style="font-size:11px;color:#64748b;">feeds</div>
+        <div style="font-size:18px;font-weight:600;color:#cbd5e1;margin-top:4px;">${data.totalEpisodes.toLocaleString()}</div>
+        <div style="font-size:11px;color:#64748b;">episodes</div>
+      </div>
+    `;
+  } catch(e) {
+    console.error('Source breakdown error:', e);
+  }
+}
+
+// ---- Global Merge History ----
+async function loadGlobalMergeHistory() {
+  try {
+    const history = await api('/api/admin/merge-history');
+    const area = document.getElementById('globalMergeHistoryArea');
+    if (!history || history.length === 0) {
+      area.innerHTML = '<p style="color:#64748b;font-size:13px;">No merges recorded yet.</p>';
+      return;
+    }
+    area.innerHTML = '<table class="feed-table" style="margin-bottom:0;"><thead><tr><th>Date</th><th>Source Feed</th><th>Target Feed</th><th style="text-align:right;">Episodes</th><th style="text-align:right;">Subs</th></tr></thead><tbody>' +
+      history.map(h => {
+        const date = new Date(h.mergedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        return `<tr>
+          <td style="white-space:nowrap;">${date}</td>
+          <td><strong>${esc(h.sourceFeedTitle)}</strong>${h.sourceFeedAuthor ? '<br><span style="font-size:11px;color:#64748b;">' + esc(h.sourceFeedAuthor) + '</span>' : ''}</td>
+          <td>${h.targetFeedTitle ? '<strong>' + esc(h.targetFeedTitle) + '</strong>' : '<span style="color:#ef4444;">Deleted</span>'}</td>
+          <td style="text-align:right;">${h.episodesMoved}</td>
+          <td style="text-align:right;">${h.subscriptionsMoved}</td>
+        </tr>`;
+      }).join('') + '</tbody></table>';
+  } catch(e) {
+    console.error('Merge history error:', e);
+  }
+}
+
+// ---- KH Speaker Management ----
+let allKHSpeakers = [];
+let khSortField = 'listenCount';
+let khSortDir = -1;
+
+async function loadKHSpeakers() {
+  try {
+    allKHSpeakers = await api('/api/admin/kh/speakers');
+    renderKHSpeakers();
+  } catch(e) {
+    console.error('KH speakers error:', e);
+  }
+}
+
+function sortKHSpeakers(field) {
+  if (khSortField === field) {
+    khSortDir *= -1;
+  } else {
+    khSortField = field;
+    khSortDir = field === 'title' ? 1 : -1;
+  }
+  // Update sort indicators
+  ['title','episodeCount','subscriberCount','listenCount'].forEach(f => {
+    const el = document.getElementById('khSort_' + f);
+    if (el) el.textContent = f === khSortField ? (khSortDir > 0 ? '▲' : '▼') : '';
+  });
+  renderKHSpeakers();
+}
+
+function filterKHSpeakers(query) {
+  renderKHSpeakers(query);
+}
+
+function renderKHSpeakers(searchQuery) {
+  const q = (searchQuery || document.getElementById('khSpeakerSearch')?.value || '').toLowerCase().trim();
+  let speakers = allKHSpeakers;
+  if (q) {
+    speakers = speakers.filter(s => (s.title || '').toLowerCase().includes(q) || (s.author || '').toLowerCase().includes(q));
+  }
+
+  // Sort
+  speakers = [...speakers].sort((a, b) => {
+    if (khSortField === 'title') return khSortDir * (a.title || '').localeCompare(b.title || '');
+    return khSortDir * ((a[khSortField] || 0) - (b[khSortField] || 0));
+  });
+
+  const countEl = document.getElementById('khSpeakerCount');
+  if (countEl) countEl.textContent = speakers.length === allKHSpeakers.length ? `${allKHSpeakers.length} speakers` : `${speakers.length} of ${allKHSpeakers.length}`;
+
+  const tbody = document.getElementById('khSpeakerBody');
+  if (speakers.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#64748b;padding:20px;">No KH speakers found.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = speakers.map(s => `<tr>
+    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(s.title)}">${esc(s.title)}</td>
+    <td style="text-align:right;">${s.episodeCount.toLocaleString()}</td>
+    <td style="text-align:right;">${s.subscriberCount.toLocaleString()}</td>
+    <td style="text-align:right;">${s.listenCount.toLocaleString()}</td>
+    <td style="text-align:center;"><button class="toggle-btn ${s.showInBrowse ? 'on' : 'off'}" onclick="toggleKHBrowse('${s.id}', ${!s.showInBrowse})" title="${s.showInBrowse ? 'Visible in browse' : 'Hidden from browse'}"></button></td>
+    <td style="text-align:center;"><button class="toggle-btn ${s.isActive ? 'on' : 'off'}" onclick="toggleFeedActive('${s.id}', ${!s.isActive}); setTimeout(loadKHSpeakers, 500);" title="${s.isActive ? 'Active' : 'Inactive'}"></button></td>
+    <td>${s.platforms.map(p => '<span style="display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;background:#1e293b;color:#94a3b8;margin:1px;">' + esc(p) + '</span>').join('')}${s.isMerged ? ' <span style="color:#d97706;font-size:10px;">merged</span>' : ''}</td>
+  </tr>`).join('');
+}
+
+async function toggleKHBrowse(feedId, value) {
+  try {
+    await api('/api/admin/feeds/' + feedId, { method: 'PUT', body: JSON.stringify({ showInBrowse: value }) });
+    const speaker = allKHSpeakers.find(s => s.id === feedId);
+    if (speaker) speaker.showInBrowse = value;
+    renderKHSpeakers();
+  } catch(e) {
+    showAlert(e.message, 'error');
+  }
+}
+
+async function recomputeKHVisibility() {
+  try {
+    const result = await api('/api/admin/kh/recompute-visibility', { method: 'POST' });
+    showAlert(result.message);
+    loadKHSpeakers();
   } catch(e) {
     showAlert(e.message, 'error');
   }

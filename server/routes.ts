@@ -4,14 +4,32 @@ import * as storage from "./storage";
 import { parseFeed } from "./rss";
 import { sendNewEpisodePushes, sendCustomPush, checkPushReceipts } from "./push";
 import { getVitals, recordFeedResult } from "./feed-vitals";
-import { insertFeedSchema, insertCategorySchema } from "@shared/schema";
+import { insertFeedSchema, insertCategorySchema, feedMergeHistory } from "@shared/schema";
 import type { Feed } from "@shared/schema";
+import { db } from "./db";
+import { eq, desc } from "drizzle-orm";
 import { syncTATSpeakers, refreshTATFeedEpisodes, fetchAllSpeakers } from "./torahanytime";
+import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, OU_PLATFORMS, type OUPlatformKey } from "./alldaf";
+import { syncKHSpeakers, refreshKHFeedEpisodes, reloadKHClient } from "./kolhalashon";
 import multer from "multer";
 import path from "node:path";
 import fs from "node:fs";
 
 const ON_DEMAND_STALE_MS = 5 * 60 * 1000;
+
+// Resolve KH audio URLs through the proxy worker
+function resolveKHAudioUrl(audioUrl: string): { url: string; headers: Record<string, string> } {
+  const headers: Record<string, string> = { "User-Agent": "ShiurPod/1.0" };
+  const khMatch = audioUrl.match(/https?:\/\/srv\.kolhalashon\.com\/api\/files\/getLocationOfFileToVideo\/(\d+)/);
+  if (khMatch && process.env.KH_PROXY_URL) {
+    const fileId = khMatch[1];
+    const proxyBase = process.env.KH_PROXY_URL.replace(/\/$/, "") + "/api";
+    const url = `${proxyBase}/files/getLocationOfFileToVideo/${fileId}`;
+    if (process.env.KH_PROXY_KEY) headers["x-proxy-key"] = process.env.KH_PROXY_KEY;
+    return { url, headers };
+  }
+  return { url: audioUrl, headers };
+}
 
 function detectSourceNetwork(rssUrl: string): string | null {
   try {
@@ -38,10 +56,12 @@ async function onDemandRefreshFeed(feedId: string): Promise<void> {
     console.log(`On-demand refresh: ${feed.title} (last fetched ${feed.lastFetchedAt ? Math.round((Date.now() - lastFetched) / 60000) + 'm ago' : 'never'})`);
 
     // TAT feed: refresh from TorahAnytime API
-    if (feed.tatSpeakerId) {
-      await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: feed.tatSpeakerId });
+    const isOnDemandTatUrl = feed.rssUrl.startsWith("tat://");
+    const onDemandTatId = feed.tatSpeakerId ?? (isOnDemandTatUrl ? parseInt(feed.rssUrl.replace("tat://speaker/", ""), 10) || null : null);
+    if (onDemandTatId) {
+      await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: onDemandTatId });
       // Also refresh RSS if this is a merged feed (has real RSS URL)
-      if (!feed.rssUrl.startsWith("tat://")) {
+      if (!isOnDemandTatUrl) {
         const parsed = await parseFeed(feed.id, feed.rssUrl);
         if (parsed) {
           const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
@@ -51,8 +71,39 @@ async function onDemandRefreshFeed(feedId: string): Promise<void> {
       return;
     }
 
-    // Regular RSS feed
-    if (!feed.rssUrl) return;
+    // OU Torah platform feed (AllDaf, AllMishnah, AllParsha)
+    const onDemandOU = detectOUPlatform(feed as any);
+    if (onDemandOU) {
+      await refreshOUFeedEpisodes(onDemandOU.platform, { id: feed.id, title: feed.title, authorId: onDemandOU.authorId }, feed);
+      const ouCfg = OU_PLATFORMS[onDemandOU.platform];
+      if (!feed.rssUrl.startsWith(ouCfg.urlScheme)) {
+        const parsed = await parseFeed(feed.id, feed.rssUrl);
+        if (parsed) {
+          const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
+          await storage.upsertEpisodes(feed.id, episodeData);
+        }
+      }
+      return;
+    }
+
+    // Kol Halashon feed
+    const isKhUrl = feed.rssUrl.startsWith("kh://");
+    const onDemandKhId = (feed as any).kolhalashonRavId ?? (isKhUrl ? parseInt(feed.rssUrl.replace("kh://rav/", ""), 10) || null : null);
+    if (onDemandKhId) {
+      await refreshKHFeedEpisodes({ id: feed.id, title: feed.title, kolhalashonRavId: onDemandKhId }, feed);
+      if (!isKhUrl) {
+        const parsed = await parseFeed(feed.id, feed.rssUrl);
+        if (parsed) {
+          const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
+          await storage.upsertEpisodes(feed.id, episodeData);
+        }
+      }
+      return;
+    }
+
+    // Regular RSS feed (skip TAT/OU/KH-only URLs)
+    const isOUUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
+    if (!feed.rssUrl || isOnDemandTatUrl || isOUUrl || isKhUrl) return;
     const parsed = await parseFeed(feed.id, feed.rssUrl);
     if (!parsed) {
       await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
@@ -198,6 +249,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Feed search (searches ALL active feeds including hidden-from-browse)
+  app.get("/api/feeds/search", async (req: Request, res: Response) => {
+    try {
+      const q = (req.query.q as string || "").trim();
+      if (q.length < 2) return res.json([]);
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const results = await storage.searchFeeds(q, limit);
+      const mappings = await storage.getAllFeedCategoryMappings();
+      const enriched = results.map(f => {
+        const catIds = mappings.filter(m => m.feedId === f.id).map(m => m.categoryId);
+        return { ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) };
+      });
+      res.setHeader("Cache-Control", "public, max-age=30");
+      res.json(enriched);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/feeds/category/:categoryId", async (req: Request, res: Response) => {
     try {
       const legacyFeeds = await storage.getFeedsByCategory(req.params.categoryId);
@@ -277,9 +347,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const feedList = await storage.getAllFeeds();
       const mappings = await storage.getAllFeedCategoryMappings();
+      const feedStats = await storage.getAllFeedStats();
       const feedsWithCategories = feedList.map(f => {
         const catIds = mappings.filter(m => m.feedId === f.id).map(m => m.categoryId);
-        return { ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) };
+        const stats = feedStats.get(f.id) || { episodeCount: 0, subscriberCount: 0, listenCount: 0 };
+        return { ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []), ...stats };
       });
       res.json(feedsWithCategories);
     } catch (e: any) {
@@ -360,8 +432,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalNew += tatResult.newEpisodes;
       }
 
-      // RSS refresh (skip for TAT-only feeds)
-      if (!isTatFeedUrl) {
+      // OU Torah platform refresh (AllDaf, AllMishnah, AllParsha)
+      const ouDetected = detectOUPlatform(feed as any);
+      if (ouDetected) {
+        const ouResult = await refreshOUFeedEpisodes(ouDetected.platform, { id: feed.id, title: feed.title, authorId: ouDetected.authorId });
+        totalNew += ouResult.newEpisodes;
+      }
+
+      // KH refresh
+      const isKhFeedUrl = feed.rssUrl.startsWith("kh://");
+      const effectiveKhId = (feed as any).kolhalashonRavId ?? (isKhFeedUrl ? parseInt(feed.rssUrl.replace("kh://rav/", ""), 10) || null : null);
+      if (effectiveKhId) {
+        const khResult = await refreshKHFeedEpisodes({ id: feed.id, title: feed.title, kolhalashonRavId: effectiveKhId }, feed);
+        totalNew += khResult.newEpisodes;
+      }
+
+      // RSS refresh (skip for TAT-only, OU-only, and KH-only feeds)
+      const isOUFeedUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
+      if (!isTatFeedUrl && !isOUFeedUrl && !isKhFeedUrl) {
         const parsed = await parseFeed(feed.id, feed.rssUrl);
         if (parsed) {
           const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
@@ -403,8 +491,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const tatResult = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveTatId });
             totalNew += tatResult.newEpisodes;
           }
-          // RSS refresh (skip for TAT-only feeds)
-          if (!feed.rssUrl.startsWith("tat://")) {
+          // OU Torah platform refresh (AllDaf, AllMishnah, AllParsha)
+          const ouRefresh = detectOUPlatform(feed as any);
+          if (ouRefresh) {
+            const ouResult = await refreshOUFeedEpisodes(ouRefresh.platform, { id: feed.id, title: feed.title, authorId: ouRefresh.authorId });
+            totalNew += ouResult.newEpisodes;
+          }
+          // KH feed refresh
+          const isKhRssUrl = feed.rssUrl.startsWith("kh://");
+          const bulkKhId = (feed as any).kolhalashonRavId ?? (isKhRssUrl ? parseInt(feed.rssUrl.replace("kh://rav/", ""), 10) || null : null);
+          if (bulkKhId) {
+            const khResult = await refreshKHFeedEpisodes({ id: feed.id, title: feed.title, kolhalashonRavId: bulkKhId }, feed);
+            totalNew += khResult.newEpisodes;
+          }
+          // RSS refresh (skip for TAT-only, OU-only, and KH-only feeds)
+          const isOURssUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
+          if (!feed.rssUrl.startsWith("tat://") && !isOURssUrl && !isKhRssUrl) {
             const parsed = await parseFeed(feed.id, feed.rssUrl);
             if (!parsed) { await storage.updateFeed(feed.id, { lastFetchedAt: new Date() }); continue; }
             const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
@@ -816,8 +918,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const safeTitle = (episode.title || "episode").replace(/[^a-zA-Z0-9 _-]/g, "").replace(/\s+/g, "_").substring(0, 100);
       const filename = safeAuthor ? `${safeAuthor}_-_${safeTitle}.mp3` : `${safeTitle}.mp3`;
 
-      const audioResp = await fetch(episode.audioUrl, {
-        headers: { "User-Agent": "ShiurPod/1.0" },
+      const resolved = resolveKHAudioUrl(episode.audioUrl);
+      const audioResp = await fetch(resolved.url, {
+        headers: resolved.headers,
         redirect: "follow",
       });
 
@@ -840,6 +943,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.end();
       };
       await pump();
+    } catch (e: any) {
+      if (!res.headersSent) res.status(500).json({ error: e.message });
+    }
+  });
+
+  // KH audio proxy — resolves the getLocationOfFileToVideo redirect through the KH proxy
+  app.get("/api/audio/kh/:fileId", async (req: Request, res: Response) => {
+    try {
+      const fileId = req.params.fileId;
+      if (!fileId || !/^\d+$/.test(fileId)) return res.status(400).json({ error: "Invalid file ID" });
+
+      const proxyUrl = process.env.KH_PROXY_URL;
+      const baseUrl = proxyUrl ? proxyUrl.replace(/\/$/, "") + "/api" : "https://srv.kolhalashon.com/api";
+      const khUrl = `${baseUrl}/files/getLocationOfFileToVideo/${fileId}`;
+
+      const headers: Record<string, string> = { "User-Agent": "ShiurPod/1.0" };
+      if (proxyUrl && process.env.KH_PROXY_KEY) {
+        headers["x-proxy-key"] = process.env.KH_PROXY_KEY;
+      }
+
+      // First resolve the redirect to get the actual audio URL
+      const redirectResp = await fetch(khUrl, { headers, redirect: "follow" });
+      if (!redirectResp.ok) return res.status(502).json({ error: "Failed to fetch KH audio" });
+
+      // Check if it returned a URL string or binary audio
+      const contentType = redirectResp.headers.get("content-type") || "";
+
+      if (contentType.includes("audio") || contentType.includes("octet-stream")) {
+        // Direct audio stream
+        res.setHeader("Content-Type", contentType);
+        const contentLength = redirectResp.headers.get("content-length");
+        if (contentLength) res.setHeader("Content-Length", contentLength);
+        res.setHeader("Accept-Ranges", "bytes");
+        res.setHeader("Cache-Control", "public, max-age=86400");
+
+        const reader = redirectResp.body?.getReader();
+        if (!reader) return res.status(502).json({ error: "No stream" });
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (!res.writableEnded) res.write(Buffer.from(value));
+        }
+        res.end();
+      } else {
+        // The response might be a URL string or JSON with a redirect URL
+        const body = await redirectResp.text();
+        const audioUrl = body.trim().replace(/^"|"$/g, "");
+
+        if (!audioUrl || !audioUrl.startsWith("http")) {
+          return res.status(502).json({ error: "Invalid audio URL from KH" });
+        }
+
+        // Fetch the actual audio file
+        const rangeHeader = req.headers.range;
+        const audioHeaders: Record<string, string> = { "User-Agent": "ShiurPod/1.0" };
+        if (rangeHeader) audioHeaders["Range"] = rangeHeader;
+
+        const audioResp = await fetch(audioUrl, { headers: audioHeaders, redirect: "follow" });
+        if (!audioResp.ok && audioResp.status !== 206) return res.status(502).json({ error: "Failed to fetch audio file" });
+
+        res.status(audioResp.status);
+        res.setHeader("Content-Type", audioResp.headers.get("content-type") || "audio/mpeg");
+        const cl = audioResp.headers.get("content-length");
+        if (cl) res.setHeader("Content-Length", cl);
+        const cr = audioResp.headers.get("content-range");
+        if (cr) res.setHeader("Content-Range", cr);
+        res.setHeader("Accept-Ranges", "bytes");
+        res.setHeader("Cache-Control", "public, max-age=86400");
+
+        const reader = audioResp.body?.getReader();
+        if (!reader) return res.status(502).json({ error: "No stream" });
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (!res.writableEnded) res.write(Buffer.from(value));
+        }
+        res.end();
+      }
     } catch (e: any) {
       if (!res.headersSent) res.status(500).json({ error: e.message });
     }
@@ -989,6 +1170,327 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const feed = await storage.updateFeed(req.params.id, { tatSpeakerId: null } as any);
       res.json(feed);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // --- OU Torah Platform Integration (AllDaf, AllMishnah, AllParsha) ---
+
+  // Generic endpoints for each OU platform
+  for (const cfg of Object.values(OU_PLATFORMS)) {
+    const platformRoute = cfg.key; // "alldaf", "allmishnah", "allparsha"
+
+    // Sync authors
+    app.post(`/api/admin/${platformRoute}/sync-authors`, adminAuth as any, async (_req: Request, res: Response) => {
+      try {
+        const result = await syncOUPlatformAuthors(cfg.key);
+        res.json(result);
+      } catch (e: any) {
+        res.status(500).json({ error: e.message });
+      }
+    });
+
+    // Toggle active/inactive
+    app.post(`/api/admin/${platformRoute}/toggle`, adminAuth as any, async (req: Request, res: Response) => {
+      try {
+        const { enabled } = req.body;
+        if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) required" });
+        const allFeeds = await storage.getAllFeeds();
+        const platformOnlyFeeds = allFeeds.filter(f => (f as any)[cfg.feedIdField] != null && f.rssUrl.startsWith(cfg.urlScheme));
+        let updated = 0;
+        for (const feed of platformOnlyFeeds) {
+          if (feed.isActive !== enabled) {
+            await storage.updateFeed(feed.id, { isActive: enabled });
+            updated++;
+          }
+        }
+        res.json({ updated, enabled });
+      } catch (e: any) {
+        res.status(500).json({ error: e.message });
+      }
+    });
+
+    // Get status
+    app.get(`/api/admin/${platformRoute}/status`, adminAuth as any, async (_req: Request, res: Response) => {
+      try {
+        const allFeeds = await storage.getAllFeeds();
+        const platformFeeds = allFeeds.filter(f => (f as any)[cfg.feedIdField] != null);
+        const platformOnlyFeeds = platformFeeds.filter(f => f.rssUrl.startsWith(cfg.urlScheme));
+        const activeCount = platformOnlyFeeds.filter(f => f.isActive).length;
+        const enabled = activeCount > 0;
+        res.json({ enabled, totalFeeds: platformOnlyFeeds.length, activeFeeds: activeCount, mergedFeeds: platformFeeds.length - platformOnlyFeeds.length });
+      } catch (e: any) {
+        res.status(500).json({ error: e.message });
+      }
+    });
+
+    // Link/unlink feed to platform author
+    app.put(`/api/admin/feeds/:id/${platformRoute}-link`, adminAuth as any, async (req: Request, res: Response) => {
+      try {
+        const { authorId } = req.body;
+        if (!authorId) return res.status(400).json({ error: "authorId required" });
+        await storage.setOUAuthorId(req.params.id, cfg.feedIdField, authorId);
+        const feed = await storage.getFeedById(req.params.id);
+        res.json(feed);
+      } catch (e: any) {
+        res.status(500).json({ error: e.message });
+      }
+    });
+
+    app.delete(`/api/admin/feeds/:id/${platformRoute}-link`, adminAuth as any, async (req: Request, res: Response) => {
+      try {
+        await storage.setOUAuthorId(req.params.id, cfg.feedIdField, null);
+        const feed = await storage.getFeedById(req.params.id);
+        res.json(feed);
+      } catch (e: any) {
+        res.status(500).json({ error: e.message });
+      }
+    });
+  } // end OU platform loop
+
+  // --- Kol Halashon Integration ---
+
+  // Admin: Sync KH speakers
+  app.post("/api/admin/kh/sync-speakers", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const result = await syncKHSpeakers();
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Toggle all KH feeds active/inactive
+  app.post("/api/admin/kh/toggle", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { enabled } = req.body;
+      if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) required" });
+      const allFeeds = await storage.getAllFeeds();
+      const khOnlyFeeds = allFeeds.filter(f => (f as any).kolhalashonRavId != null && f.rssUrl.startsWith("kh://"));
+      let updated = 0;
+      for (const feed of khOnlyFeeds) {
+        if (feed.isActive !== enabled) {
+          await storage.updateFeed(feed.id, { isActive: enabled });
+          updated++;
+        }
+      }
+      res.json({ updated, enabled });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Get KH status
+  app.get("/api/admin/kh/status", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const allFeeds = await storage.getAllFeeds();
+      const khFeeds = allFeeds.filter(f => (f as any).kolhalashonRavId != null);
+      const khOnlyFeeds = khFeeds.filter(f => f.rssUrl.startsWith("kh://"));
+      const activeCount = khOnlyFeeds.filter(f => f.isActive).length;
+      const enabled = activeCount > 0;
+      res.json({
+        enabled,
+        totalKHFeeds: khOnlyFeeds.length,
+        activeKHFeeds: activeCount,
+        mergedFeeds: khFeeds.length - khOnlyFeeds.length,
+        hasProxy: !!process.env.KH_PROXY_URL,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Link/unlink feed to KH rav
+  app.put("/api/admin/feeds/:id/kh-link", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { kolhalashonRavId } = req.body;
+      if (!kolhalashonRavId) return res.status(400).json({ error: "kolhalashonRavId required" });
+      await storage.setKHRavId(req.params.id, kolhalashonRavId);
+      const feed = await storage.getFeedById(req.params.id);
+      res.json(feed);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/admin/feeds/:id/kh-link", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      await storage.setKHRavId(req.params.id, null);
+      const feed = await storage.getFeedById(req.params.id);
+      res.json(feed);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Merge two feeds (move episodes + subscribers from source into target, delete source)
+  app.post("/api/admin/feeds/merge", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { sourceId, targetId } = req.body;
+      if (!sourceId || !targetId) return res.status(400).json({ error: "sourceId and targetId required" });
+      if (sourceId === targetId) return res.status(400).json({ error: "Cannot merge a feed into itself" });
+
+      const source = await storage.getFeedById(sourceId);
+      const target = await storage.getFeedById(targetId);
+      if (!source) return res.status(404).json({ error: "Source feed not found" });
+      if (!target) return res.status(404).json({ error: "Target feed not found" });
+
+      // Carry over platform IDs from source to target if target doesn't have them
+      if (source.tatSpeakerId && !target.tatSpeakerId) {
+        await storage.updateFeed(targetId, { tatSpeakerId: source.tatSpeakerId } as any);
+      }
+      for (const cfg of Object.values(OU_PLATFORMS)) {
+        if ((source as any)[cfg.feedIdField] && !(target as any)[cfg.feedIdField]) {
+          await storage.setOUAuthorId(targetId, cfg.feedIdField, (source as any)[cfg.feedIdField]);
+        }
+      }
+      if ((source as any).kolhalashonRavId && !(target as any).kolhalashonRavId) {
+        await storage.setKHRavId(targetId, (source as any).kolhalashonRavId);
+      }
+
+      const result = await storage.mergeFeeds(sourceId, targetId);
+
+      // Record merge history
+      await db.insert(feedMergeHistory).values({
+        targetFeedId: targetId,
+        sourceFeedTitle: source.title,
+        sourceFeedAuthor: source.author || null,
+        sourceFeedRssUrl: source.rssUrl || null,
+        episodesMoved: result.episodesMoved,
+        subscriptionsMoved: result.subscriptionsMoved,
+      });
+
+      console.log(`Feed merge: "${source.title}" -> "${target.title}" (${result.episodesMoved} episodes, ${result.subscriptionsMoved} subscriptions moved)`);
+      res.json({
+        message: `Merged "${source.title}" into "${target.title}"`,
+        sourceFeed: source.title,
+        targetFeed: target.title,
+        ...result,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Get all merged/linked feeds (feeds with multiple platform sources)
+  app.get("/api/admin/mergers", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const allFeeds = await storage.getAllFeeds();
+      const merged = allFeeds
+        .map(f => {
+          const platforms: string[] = [];
+          if (f.rssUrl && !f.rssUrl.startsWith("tat://") && !f.rssUrl.startsWith("kh://") && !Object.values(OU_PLATFORMS).some(c => f.rssUrl.startsWith(c.urlScheme))) {
+            platforms.push("RSS");
+          }
+          if (f.tatSpeakerId) platforms.push("Torah Anytime");
+          if (f.alldafAuthorId) platforms.push("AllDaf");
+          if (f.allmishnahAuthorId) platforms.push("AllMishnah");
+          if (f.allparshaAuthorId) platforms.push("AllParsha");
+          if ((f as any).kolhalashonRavId) platforms.push("Kol Halashon");
+          if (platforms.length < 2) return null;
+          return {
+            id: f.id,
+            title: f.title,
+            author: f.author,
+            rssUrl: f.rssUrl,
+            imageUrl: f.imageUrl,
+            platforms,
+            tatSpeakerId: f.tatSpeakerId,
+            alldafAuthorId: f.alldafAuthorId,
+            allmishnahAuthorId: f.allmishnahAuthorId,
+            allparshaAuthorId: f.allparshaAuthorId,
+            kolhalashonRavId: (f as any).kolhalashonRavId,
+          };
+        })
+        .filter(Boolean);
+      res.json(merged);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Get merge history for a specific feed
+  app.get("/api/admin/feeds/:id/merge-history", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const history = await db.select().from(feedMergeHistory)
+        .where(eq(feedMergeHistory.targetFeedId, req.params.id))
+        .orderBy(desc(feedMergeHistory.mergedAt));
+      res.json(history);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Get ALL merge history (global view)
+  app.get("/api/admin/merge-history", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const history = await storage.getAllMergeHistory();
+      res.json(history);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Get KH speaker stats
+  app.get("/api/admin/kh/speakers", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const speakers = await storage.getKHSpeakerStats();
+      res.json(speakers);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Get source breakdown analytics
+  app.get("/api/admin/analytics/sources", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const breakdown = await storage.getSourceBreakdown();
+      res.json(breakdown);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Recompute KH browse visibility
+  app.post("/api/admin/kh/recompute-visibility", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const updated = await storage.recomputeKHBrowseVisibility();
+      res.json({ updated, message: `Recomputed KH browse visibility, ${updated} feeds changed` });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Unlink a specific platform from a feed
+  app.post("/api/admin/feeds/:id/unlink-platform", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { platform } = req.body;
+      const feedId = req.params.id;
+      const feed = await storage.getFeedById(feedId);
+      if (!feed) return res.status(404).json({ error: "Feed not found" });
+
+      switch (platform) {
+        case "Torah Anytime":
+          await storage.updateFeed(feedId, { tatSpeakerId: null } as any);
+          break;
+        case "AllDaf":
+          await storage.setOUAuthorId(feedId, "alldafAuthorId", null);
+          break;
+        case "AllMishnah":
+          await storage.setOUAuthorId(feedId, "allmishnahAuthorId", null);
+          break;
+        case "AllParsha":
+          await storage.setOUAuthorId(feedId, "allparshaAuthorId", null);
+          break;
+        case "Kol Halashon":
+          await storage.setKHRavId(feedId, null);
+          break;
+        default:
+          return res.status(400).json({ error: "Unknown platform: " + platform });
+      }
+      console.log(`Unlinked "${platform}" from feed "${feed.title}"`);
+      res.json({ ok: true, unlinked: platform, feedTitle: feed.title });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -1651,6 +2153,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const start = Date.now();
       try {
+        // Handle TAT feeds
+        const isForceTatUrl = feed.rssUrl.startsWith("tat://");
+        const forceTatId = feed.tatSpeakerId ?? (isForceTatUrl ? parseInt(feed.rssUrl.replace("tat://speaker/", ""), 10) || null : null);
+        if (forceTatId) {
+          const tatResult = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: forceTatId });
+          res.json({ status: "ok", method: "tat", newEpisodes: tatResult.newEpisodes, durationMs: Date.now() - start });
+          return;
+        }
+
+        // Handle OU Torah platform feeds (AllDaf, AllMishnah, AllParsha)
+        const forceOU = detectOUPlatform(feed as any);
+        if (forceOU) {
+          const ouResult = await refreshOUFeedEpisodes(forceOU.platform, { id: feed.id, title: feed.title, authorId: forceOU.authorId });
+          res.json({ status: "ok", method: forceOU.platform, newEpisodes: ouResult.newEpisodes, durationMs: Date.now() - start });
+          return;
+        }
+
+        // Handle KH feeds
+        const isForceKhUrl = feed.rssUrl.startsWith("kh://");
+        const forceKhId = (feed as any).kolhalashonRavId ?? (isForceKhUrl ? parseInt(feed.rssUrl.replace("kh://rav/", ""), 10) || null : null);
+        if (forceKhId) {
+          const khResult = await refreshKHFeedEpisodes({ id: feed.id, title: feed.title, kolhalashonRavId: forceKhId }, feed);
+          res.json({ status: "ok", method: "kh", newEpisodes: khResult.newEpisodes, durationMs: Date.now() - start });
+          return;
+        }
+
         const parsed = await parseFeed(feed.id, feed.rssUrl, {
           etag: feed.etag,
           lastModified: feed.lastModifiedHeader,

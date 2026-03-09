@@ -6,11 +6,15 @@ import type { Request, Response, NextFunction } from "express";
 import compression from "compression";
 import { registerRoutes } from "./routes";
 import { seedIfEmpty } from "./seed";
+import { db } from "./db";
+import { sql } from "drizzle-orm";
 import { parseFeed, preResolveHostnames } from "./rss";
 import * as storage from "./storage";
 import { sendNewEpisodePushes } from "./push";
 import { startRefreshCycle, recordFeedResult, endRefreshCycle } from "./feed-vitals";
 import { refreshTATFeedEpisodes, syncTATSpeakers } from "./torahanytime";
+import { detectOUPlatform, refreshOUFeedEpisodes, OU_PLATFORMS } from "./alldaf";
+import { refreshKHFeedEpisodes, syncKHSpeakers } from "./kolhalashon";
 import * as fs from "fs";
 import * as path from "path";
 import pLimit from "p-limit";
@@ -21,6 +25,29 @@ const log = console.log;
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
+  }
+}
+
+async function ensureColumns() {
+  // Add missing columns that drizzle-kit push hasn't run for yet
+  const columnsToAdd = [
+    { column: "alldaf_author_id", type: "INTEGER" },
+    { column: "allmishnah_author_id", type: "INTEGER" },
+    { column: "allparsha_author_id", type: "INTEGER" },
+    { column: "kolhalashon_rav_id", type: "INTEGER" },
+    { column: "kolhalashon_file_id", type: "INTEGER", table: "episodes" },
+    { column: "show_in_browse", type: "BOOLEAN DEFAULT true NOT NULL" },
+  ];
+  for (const col of columnsToAdd) {
+    const table = (col as any).table || "feeds";
+    try {
+      await db.execute(sql.raw(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${col.column} ${col.type}`));
+    } catch (e: any) {
+      // Column might already exist (older PG without IF NOT EXISTS)
+      if (!e.message?.includes("already exists")) {
+        console.error(`Migration: failed to add ${col.column} to ${table}:`, e.message);
+      }
+    }
   }
 }
 
@@ -401,7 +428,7 @@ export interface RefreshResult {
   episodesFound: number;
 }
 
-export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string; etag?: string | null; lastModifiedHeader?: string | null; tatSpeakerId?: number | null }): Promise<RefreshResult> {
+export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string; etag?: string | null; lastModifiedHeader?: string | null; tatSpeakerId?: number | null; alldafAuthorId?: number | null; allmishnahAuthorId?: number | null; allparshaAuthorId?: number | null; kolhalashonRavId?: number | null }): Promise<RefreshResult> {
   const start = Date.now();
 
   // TAT feed: refresh from TorahAnytime API
@@ -413,15 +440,47 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
     return { newEpisodes: result.newEpisodes, method: 'stream', durationMs: Date.now() - start, episodesFound: result.newEpisodes };
   }
 
+  // OU Torah platform feed (AllDaf, AllMishnah, AllParsha): API-only URL
+  const ouPlatform = detectOUPlatform(feed as any);
+  const isOUUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
+
+  if (ouPlatform && isOUUrl) {
+    const result = await refreshOUFeedEpisodes(ouPlatform.platform, { id: feed.id, title: feed.title, authorId: ouPlatform.authorId }, feed);
+    return { newEpisodes: result.newEpisodes, method: 'stream', durationMs: Date.now() - start, episodesFound: result.newEpisodes };
+  }
+
+  // KH feed: refresh from Kol Halashon API
+  const isKhUrl = feed.rssUrl.startsWith("kh://");
+  const effectiveKhRavId = feed.kolhalashonRavId ?? (isKhUrl ? parseInt(feed.rssUrl.replace("kh://rav/", ""), 10) || null : null);
+
+  if (effectiveKhRavId && isKhUrl) {
+    const result = await refreshKHFeedEpisodes({ id: feed.id, title: feed.title, kolhalashonRavId: effectiveKhRavId }, feed);
+    return { newEpisodes: result.newEpisodes, method: 'stream', durationMs: Date.now() - start, episodesFound: result.newEpisodes };
+  }
+
   // Merged feed (has both RSS + TAT): refresh both
   if (effectiveTatSpeakerId) {
-    await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveTatSpeakerId }).catch(e => {
+    await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveTatSpeakerId }, feed).catch(e => {
       console.log(`TAT refresh failed for merged feed ${feed.title}: ${(e as Error).message?.slice(0, 100)}`);
     });
   }
 
-  // Skip RSS parsing for TAT-only URLs
-  if (isTatUrl) {
+  // Merged feed (has both RSS + OU platform): refresh both
+  if (ouPlatform && !isOUUrl) {
+    await refreshOUFeedEpisodes(ouPlatform.platform, { id: feed.id, title: feed.title, authorId: ouPlatform.authorId }, feed).catch(e => {
+      console.log(`${OU_PLATFORMS[ouPlatform.platform].label} refresh failed for merged feed ${feed.title}: ${(e as Error).message?.slice(0, 100)}`);
+    });
+  }
+
+  // Merged feed (has both RSS + KH): refresh both
+  if (effectiveKhRavId && !isKhUrl) {
+    await refreshKHFeedEpisodes({ id: feed.id, title: feed.title, kolhalashonRavId: effectiveKhRavId }, feed).catch(e => {
+      console.log(`KH refresh failed for merged feed ${feed.title}: ${(e as Error).message?.slice(0, 100)}`);
+    });
+  }
+
+  // Skip RSS parsing for TAT-only, OU-only, or KH-only URLs
+  if (isTatUrl || isOUUrl || isKhUrl) {
     return { newEpisodes: 0, method: 'stream', durationMs: Date.now() - start, episodesFound: 0 };
   }
 
@@ -464,6 +523,30 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
 
 let isAutoRefreshing = false;
 
+// Feed type classification for concurrency and stale intervals
+function getFeedType(feed: { rssUrl: string }): 'rss' | 'tat' | 'ou' | 'kh' {
+  if (feed.rssUrl.startsWith("kh://")) return 'kh';
+  if (feed.rssUrl.startsWith("tat://")) return 'tat';
+  if (feed.rssUrl.startsWith("alldaf://") || feed.rssUrl.startsWith("allmishnah://") || feed.rssUrl.startsWith("allparsha://")) return 'ou';
+  return 'rss';
+}
+
+// Tiered stale intervals: RSS 1h, TAT/OU 2h, KH 4h
+const STALE_INTERVALS: Record<string, number> = {
+  rss: 60 * 60 * 1000,       // 1 hour
+  tat: 2 * 60 * 60 * 1000,   // 2 hours
+  ou:  2 * 60 * 60 * 1000,   // 2 hours
+  kh:  4 * 60 * 60 * 1000,   // 4 hours
+};
+
+// Concurrency per feed type
+const CONCURRENCY: Record<string, number> = {
+  rss: 5,
+  tat: 8,
+  ou:  8,
+  kh:  15,
+};
+
 async function autoRefreshFeeds() {
   if (isAutoRefreshing) {
     log(`Auto-refresh: skipping — previous cycle still running`);
@@ -471,11 +554,16 @@ async function autoRefreshFeeds() {
   }
   isAutoRefreshing = true;
   try {
-    const allFeeds = await storage.getActiveFeeds();
+    const allFeeds = await storage.getAllActiveFeedsForSync();
     const now = new Date().toLocaleTimeString();
 
-    const staleCutoff = new Date(Date.now() - FEED_REFRESH_INTERVAL);
-    const staleFeeds = allFeeds.filter(f => !f.lastFetchedAt || new Date(f.lastFetchedAt) < staleCutoff);
+    // Tiered stale check per feed type
+    const staleFeeds = allFeeds.filter(f => {
+      const type = getFeedType(f);
+      const interval = STALE_INTERVALS[type] || STALE_INTERVALS.rss;
+      const cutoff = new Date(Date.now() - interval);
+      return !f.lastFetchedAt || new Date(f.lastFetchedAt) < cutoff;
+    });
 
     if (staleFeeds.length === 0) {
       log(`Auto-refresh [${now}]: all ${allFeeds.length} feed(s) are fresh, skipping`);
@@ -483,9 +571,21 @@ async function autoRefreshFeeds() {
       return;
     }
 
-    await preResolveHostnames(staleFeeds.filter(f => !f.rssUrl.startsWith("tat://")).map(f => f.rssUrl));
+    // Pre-resolve hostnames for RSS feeds only
+    const rssFeeds = staleFeeds.filter(f => getFeedType(f) === 'rss');
+    if (rssFeeds.length > 0) {
+      await preResolveHostnames(rssFeeds.map(f => f.rssUrl));
+    }
 
-    log(`Auto-refresh [${now}]: refreshing ${staleFeeds.length} stale feed(s) out of ${allFeeds.length} total (3 concurrent)...`);
+    // Group feeds by type for different concurrency levels
+    const feedsByType: Record<string, typeof staleFeeds> = { rss: [], tat: [], ou: [], kh: [] };
+    for (const f of staleFeeds) {
+      feedsByType[getFeedType(f)].push(f);
+    }
+
+    const typeCounts = Object.entries(feedsByType).filter(([, v]) => v.length > 0).map(([k, v]) => `${k}:${v.length}`).join(', ');
+    log(`Auto-refresh [${now}]: refreshing ${staleFeeds.length} stale feed(s) out of ${allFeeds.length} total [${typeCounts}]`);
+
     let totalNew = 0;
     let failures = 0;
     let successes = 0;
@@ -493,56 +593,65 @@ async function autoRefreshFeeds() {
     let completed = 0;
 
     startRefreshCycle(staleFeeds.length);
-    const limit = pLimit(3);
 
-    const tasks = staleFeeds.map((feed) =>
-      limit(async () => {
-        const feedStart = Date.now();
-        try {
-          await new Promise(r => setTimeout(r, Math.random() * 300));
-          const result = await withTimeout(refreshOneFeed(feed), 120000, feed.title);
-          totalNew += result.newEpisodes;
-          successes++;
-          completed++;
+    // Process each feed type with its own concurrency limit, all pools in parallel
+    const processPool = (feeds: typeof staleFeeds, concurrency: number) => {
+      const limiter = pLimit(concurrency);
+      return feeds.map(feed =>
+        limiter(async () => {
+          const feedStart = Date.now();
+          try {
+            const result = await withTimeout(refreshOneFeed(feed), 120000, feed.title);
+            totalNew += result.newEpisodes;
+            successes++;
+            completed++;
 
-          recordFeedResult({
-            feedId: feed.id,
-            feedTitle: feed.title,
-            method: result.method,
-            success: true,
-            durationMs: result.durationMs,
-            episodesFound: result.episodesFound,
-            newEpisodes: result.newEpisodes,
-            timestamp: Date.now(),
-          });
+            recordFeedResult({
+              feedId: feed.id,
+              feedTitle: feed.title,
+              method: result.method,
+              success: true,
+              durationMs: result.durationMs,
+              episodesFound: result.episodesFound,
+              newEpisodes: result.newEpisodes,
+              timestamp: Date.now(),
+            });
 
-          if (result.newEpisodes > 0) {
-            log(`  [${completed}/${staleFeeds.length}] ${feed.title}: +${result.newEpisodes} new (${result.method}, ${result.durationMs}ms)`);
-          } else if (result.method === 'cached') {
-            skipped304++;
+            if (result.newEpisodes > 0) {
+              log(`  [${completed}/${staleFeeds.length}] ${feed.title}: +${result.newEpisodes} new (${result.method}, ${result.durationMs}ms)`);
+            } else if (result.method === 'cached') {
+              skipped304++;
+            }
+          } catch (e) {
+            failures++;
+            completed++;
+            const errMsg = (e as Error)?.message || String(e);
+            log(`  [${completed}/${staleFeeds.length}] ${feed.title}: FAIL — ${errMsg.slice(0, 120)}`);
+
+            recordFeedResult({
+              feedId: feed.id,
+              feedTitle: feed.title,
+              method: 'stream',
+              success: false,
+              durationMs: Date.now() - feedStart,
+              episodesFound: 0,
+              newEpisodes: 0,
+              error: errMsg.slice(0, 200),
+              timestamp: Date.now(),
+            });
           }
-        } catch (e) {
-          failures++;
-          completed++;
-          const errMsg = (e as Error)?.message || String(e);
-          log(`  [${completed}/${staleFeeds.length}] ${feed.title}: FAIL — ${errMsg.slice(0, 120)}`);
+        })
+      );
+    };
 
-          recordFeedResult({
-            feedId: feed.id,
-            feedTitle: feed.title,
-            method: 'stream',
-            success: false,
-            durationMs: Date.now() - feedStart,
-            episodesFound: 0,
-            newEpisodes: 0,
-            error: errMsg.slice(0, 200),
-            timestamp: Date.now(),
-          });
-        }
-      })
-    );
+    const allTasks = [
+      ...processPool(feedsByType.rss, CONCURRENCY.rss),
+      ...processPool(feedsByType.tat, CONCURRENCY.tat),
+      ...processPool(feedsByType.ou, CONCURRENCY.ou),
+      ...processPool(feedsByType.kh, CONCURRENCY.kh),
+    ];
 
-    await Promise.all(tasks);
+    await Promise.all(allTasks);
     endRefreshCycle();
 
     log(`Auto-refresh [${now}] complete: ${successes} ok (${skipped304} cached/304), ${failures} failed, ${totalNew} new episode(s), across ${staleFeeds.length} stale feed(s)`);
@@ -608,6 +717,9 @@ function startAutoRefresh() {
 }
 
 (async () => {
+  // Run column migrations FIRST, before any routes or queries touch the DB
+  await ensureColumns();
+
   setupCors(app);
   app.use(compression());
   setupBodyParsing(app);
@@ -634,6 +746,16 @@ function startAutoRefresh() {
       setTimeout(() => {
         syncTATSpeakers().catch(e => console.error("TAT initial sync error:", e.message));
       }, 15000);
+      // Sync Kol Halashon speakers in background after 30s (auto-solves CF challenge via Playwright)
+      setTimeout(() => {
+        syncKHSpeakers()
+          .then(() => storage.recomputeKHBrowseVisibility().catch(e => console.error("KH recompute error:", e.message)))
+          .catch(e => console.error("KH initial sync error:", e.message));
+      }, 30000);
+      // Recompute KH browse visibility every 6 hours
+      setInterval(() => {
+        storage.recomputeKHBrowseVisibility().catch(e => console.error("KH recompute error:", e.message));
+      }, 6 * 60 * 60 * 1000);
     },
   );
 })();
