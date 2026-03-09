@@ -171,16 +171,17 @@ export async function autoCategorizeFeeds(): Promise<{ updated: number; skipped:
   // Ensure all canonical categories exist, get slug->id map
   const slugToId = await storage.ensureCanonicalCategories(CANONICAL_CATEGORIES);
 
-  const allFeeds = await storage.getAllFeeds();
+  const allFeeds = await storage.getActiveFeeds();
+
+  // Batch-load all feed IDs that have manual categories to avoid N+1
+  const manualFeedIds = await storage.getFeedIdsWithManualCategories();
+
   let updated = 0;
   let skipped = 0;
 
   for (const feed of allFeeds) {
-    if (!feed.isActive) continue;
-
     // Skip feeds with manual categories
-    const hasManual = await storage.feedHasManualCategories(feed.id);
-    if (hasManual) {
+    if (manualFeedIds.has(feed.id)) {
       skipped++;
       continue;
     }
@@ -191,11 +192,9 @@ export async function autoCategorizeFeeds(): Promise<{ updated: number; skipped:
     };
 
     // 1. Platform override (strong signal)
-    let platformSlug: string | null = null;
     for (const [prefix, slug] of Object.entries(PLATFORM_OVERRIDES)) {
       if (feed.rssUrl.startsWith(prefix)) {
-        platformSlug = slug;
-        addVote(slug, 10); // Strong weight for platform override
+        addVote(slug, 10);
         break;
       }
     }
@@ -219,16 +218,12 @@ export async function autoCategorizeFeeds(): Promise<{ updated: number; skipped:
 
     // Pick winners: sort by votes descending
     const sorted = [...voteCounts.entries()].sort((a, b) => b[1] - a[1]);
-    const topSlug = sorted[0][0];
-    const topVotes = sorted[0][1];
-
-    const winners: string[] = [topSlug];
+    const winners: string[] = [sorted[0][0]];
 
     // Second category if it has >= 30% of episode count (minimum meaningful presence)
     if (sorted.length > 1) {
-      const secondVotes = sorted[1][1];
       const threshold = Math.max(episodes.length * 0.3, 2);
-      if (secondVotes >= threshold) {
+      if (sorted[1][1] >= threshold) {
         winners.push(sorted[1][0]);
       }
     }

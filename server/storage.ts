@@ -729,11 +729,10 @@ export async function ensureCanonicalCategories(cats: { name: string; slug: stri
   return slugToId;
 }
 
-export async function feedHasManualCategories(feedId: string): Promise<boolean> {
-  const rows = await db.select({ id: feedCategories.id }).from(feedCategories)
-    .where(and(eq(feedCategories.feedId, feedId), eq(feedCategories.autoAssigned, false)))
-    .limit(1);
-  return rows.length > 0;
+export async function getFeedIdsWithManualCategories(): Promise<Set<string>> {
+  const rows = await db.select({ feedId: feedCategories.feedId }).from(feedCategories)
+    .where(eq(feedCategories.autoAssigned, false));
+  return new Set(rows.map(r => r.feedId));
 }
 
 export async function setAutoFeedCategories(feedId: string, categoryIds: string[]): Promise<void> {
