@@ -539,12 +539,12 @@ const STALE_INTERVALS: Record<string, number> = {
   kh:  4 * 60 * 60 * 1000,   // 4 hours
 };
 
-// Concurrency per feed type
+// Concurrency per feed type (keep total across all types ≤ pool max to avoid DB exhaustion)
 const CONCURRENCY: Record<string, number> = {
-  rss: 5,
-  tat: 8,
-  ou:  8,
-  kh:  15,
+  rss: 3,
+  tat: 4,
+  ou:  3,
+  kh:  5,
 };
 
 async function autoRefreshFeeds() {
