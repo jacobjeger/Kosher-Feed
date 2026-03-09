@@ -7,7 +7,7 @@ import { getVitals, recordFeedResult } from "./feed-vitals";
 import { insertFeedSchema, insertCategorySchema } from "@shared/schema";
 import type { Feed } from "@shared/schema";
 import { syncTATSpeakers, refreshTATFeedEpisodes, fetchAllSpeakers } from "./torahanytime";
-import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, OU_PLATFORMS, type OUPlatformKey, setOUAuthorId } from "./alldaf";
+import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, OU_PLATFORMS, type OUPlatformKey } from "./alldaf";
 import { syncKHSpeakers, refreshKHFeedEpisodes, reloadKHClient } from "./kolhalashon";
 import multer from "multer";
 import path from "node:path";
@@ -1296,13 +1296,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await storage.updateFeed(feedId, { tatSpeakerId: null } as any);
           break;
         case "AllDaf":
-          await setOUAuthorId(feedId, "alldafAuthorId", null);
+          await storage.setOUAuthorId(feedId, "alldafAuthorId", null);
           break;
         case "AllMishnah":
-          await setOUAuthorId(feedId, "allmishnahAuthorId", null);
+          await storage.setOUAuthorId(feedId, "allmishnahAuthorId", null);
           break;
         case "AllParsha":
-          await setOUAuthorId(feedId, "allparshaAuthorId", null);
+          await storage.setOUAuthorId(feedId, "allparshaAuthorId", null);
           break;
         case "Kol Halashon":
           await storage.setKHRavId(feedId, null);
