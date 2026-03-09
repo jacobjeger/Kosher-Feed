@@ -1163,6 +1163,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalKHFeeds: khOnlyFeeds.length,
         activeKHFeeds: activeCount,
         mergedFeeds: khFeeds.length - khOnlyFeeds.length,
+        hasProxy: !!process.env.KH_PROXY_URL,
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });

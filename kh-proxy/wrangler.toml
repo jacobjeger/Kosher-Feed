@@ -1,0 +1,7 @@
+name = "kh-proxy"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+# Set PROXY_KEY via: npx wrangler secret put PROXY_KEY
+# Then set KH_PROXY_KEY env var on your Railway server to match

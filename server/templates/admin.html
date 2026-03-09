@@ -2300,7 +2300,11 @@ async function loadKHStatus() {
     const data = await api('/api/admin/kh/status');
     const btn = document.getElementById('khToggleBtn');
     btn.className = 'toggle-btn ' + (data.enabled ? 'on' : 'off');
+    const proxyStatus = data.hasProxy
+      ? '<span style="color:#22c55e;">Proxy: Connected</span>'
+      : '<span style="color:#ef4444;">Proxy: Not configured — set KH_PROXY_URL</span>';
     document.getElementById('khStatusArea').innerHTML =
+      proxyStatus + ' · ' +
       '<strong style="color:#e2e8f0;">' + data.totalKHFeeds + '</strong> KH-only feeds (' + data.activeKHFeeds + ' active)' +
       (data.mergedFeeds > 0 ? ' · <strong style="color:#e2e8f0;">' + data.mergedFeeds + '</strong> merged with other feeds' : '');
   } catch(e) {
