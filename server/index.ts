@@ -36,6 +36,7 @@ async function ensureColumns() {
     { column: "allparsha_author_id", type: "INTEGER" },
     { column: "kolhalashon_rav_id", type: "INTEGER" },
     { column: "kolhalashon_file_id", type: "INTEGER", table: "episodes" },
+    { column: "show_in_browse", type: "BOOLEAN DEFAULT true NOT NULL" },
   ];
   for (const col of columnsToAdd) {
     const table = (col as any).table || "feeds";
@@ -697,8 +698,14 @@ function startAutoRefresh() {
       }, 15000);
       // Sync Kol Halashon speakers in background after 30s (auto-solves CF challenge via Playwright)
       setTimeout(() => {
-        syncKHSpeakers().catch(e => console.error("KH initial sync error:", e.message));
+        syncKHSpeakers()
+          .then(() => storage.recomputeKHBrowseVisibility().catch(e => console.error("KH recompute error:", e.message)))
+          .catch(e => console.error("KH initial sync error:", e.message));
       }, 30000);
+      // Recompute KH browse visibility every 6 hours
+      setInterval(() => {
+        storage.recomputeKHBrowseVisibility().catch(e => console.error("KH recompute error:", e.message));
+      }, 6 * 60 * 60 * 1000);
     },
   );
 })();

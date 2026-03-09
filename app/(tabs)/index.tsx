@@ -431,6 +431,37 @@ function HomeScreenInner() {
 
   const searchedEpisodes = episodeSearchQuery.data || [];
 
+  // Server-side feed search to find feeds hidden from browse (e.g. KH feeds)
+  const feedSearchQuery = useQuery<Feed[]>({
+    queryKey: ["/api/feeds/search", searchQuery],
+    queryFn: async () => {
+      const baseUrl = getApiUrl();
+      const url = new URL("/api/feeds/search", baseUrl);
+      url.searchParams.set("q", searchQuery.trim());
+      url.searchParams.set("limit", "30");
+      const res = await fetch(url.toString());
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: searchQuery.trim().length >= 2,
+  });
+
+  // Merge local + server feed search results (dedup by id)
+  const mergedSearchResults = useMemo(() => {
+    const localResults = searchResults;
+    const serverResults = feedSearchQuery.data || [];
+    if (serverResults.length === 0) return localResults;
+    const seen = new Set(localResults.map(f => f.id));
+    const merged = [...localResults];
+    for (const f of serverResults) {
+      if (!seen.has(f.id)) {
+        merged.push(f);
+        seen.add(f.id);
+      }
+    }
+    return merged;
+  }, [searchResults, feedSearchQuery.data]);
+
   const isSearching = searchQuery.trim().length > 0;
 
   const isWeb = Platform.OS === "web";
@@ -530,7 +561,7 @@ function HomeScreenInner() {
       {isSearching && (
         <SearchSection
           searchQuery={searchQuery}
-          searchResults={searchResults}
+          searchResults={mergedSearchResults}
           searchedEpisodes={searchedEpisodes}
           speakerSearchResults={speakerSearchResults}
           isSearchLoading={episodeSearchQuery.isLoading}

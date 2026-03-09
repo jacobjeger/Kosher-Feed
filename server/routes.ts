@@ -235,6 +235,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Feed search (searches ALL active feeds including hidden-from-browse)
+  app.get("/api/feeds/search", async (req: Request, res: Response) => {
+    try {
+      const q = (req.query.q as string || "").trim();
+      if (q.length < 2) return res.json([]);
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const results = await storage.searchFeeds(q, limit);
+      const mappings = await storage.getAllFeedCategoryMappings();
+      const enriched = results.map(f => {
+        const catIds = mappings.filter(m => m.feedId === f.id).map(m => m.categoryId);
+        return { ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) };
+      });
+      res.setHeader("Cache-Control", "public, max-age=30");
+      res.json(enriched);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/feeds/category/:categoryId", async (req: Request, res: Response) => {
     try {
       const legacyFeeds = await storage.getFeedsByCategory(req.params.categoryId);
@@ -314,9 +333,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const feedList = await storage.getAllFeeds();
       const mappings = await storage.getAllFeedCategoryMappings();
+      const feedStats = await storage.getAllFeedStats();
       const feedsWithCategories = feedList.map(f => {
         const catIds = mappings.filter(m => m.feedId === f.id).map(m => m.categoryId);
-        return { ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) };
+        const stats = feedStats.get(f.id) || { episodeCount: 0, subscriberCount: 0, listenCount: 0 };
+        return { ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []), ...stats };
       });
       res.json(feedsWithCategories);
     } catch (e: any) {
@@ -1303,6 +1324,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .where(eq(feedMergeHistory.targetFeedId, req.params.id))
         .orderBy(desc(feedMergeHistory.mergedAt));
       res.json(history);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Get ALL merge history (global view)
+  app.get("/api/admin/merge-history", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const history = await storage.getAllMergeHistory();
+      res.json(history);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Get KH speaker stats
+  app.get("/api/admin/kh/speakers", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const speakers = await storage.getKHSpeakerStats();
+      res.json(speakers);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Get source breakdown analytics
+  app.get("/api/admin/analytics/sources", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const breakdown = await storage.getSourceBreakdown();
+      res.json(breakdown);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Recompute KH browse visibility
+  app.post("/api/admin/kh/recompute-visibility", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const updated = await storage.recomputeKHBrowseVisibility();
+      res.json({ updated, message: `Recomputed KH browse visibility, ${updated} feeds changed` });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

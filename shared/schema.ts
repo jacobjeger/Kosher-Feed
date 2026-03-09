@@ -31,6 +31,7 @@ export const feeds = pgTable("feeds", {
   allmishnahAuthorId: integer("allmishnah_author_id"),
   allparshaAuthorId: integer("allparsha_author_id"),
   kolhalashonRavId: integer("kolhalashon_rav_id"),
+  showInBrowse: boolean("show_in_browse").default(true).notNull(),
 });
 
 export const episodes = pgTable("episodes", {
@@ -205,6 +206,7 @@ export const insertFeedSchema = createInsertSchema(feeds).pick({
   sourceNetwork: true,
   tatSpeakerId: true,
   kolhalashonRavId: true,
+  showInBrowse: true,
 });
 
 export const insertCategorySchema = createInsertSchema(categories).pick({

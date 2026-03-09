@@ -317,6 +317,7 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
           categoryId: null,
           sourceNetwork: "Kol Halashon",
           kolhalashonRavId: ravId,
+          showInBrowse: false,
         });
         created++;
       } catch (e: any) {
