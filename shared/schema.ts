@@ -302,3 +302,16 @@ export const notificationTaps = pgTable("notification_taps", {
 });
 
 export type NotificationTap = typeof notificationTaps.$inferSelect;
+
+export const feedMergeHistory = pgTable("feed_merge_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  targetFeedId: varchar("target_feed_id").references(() => feeds.id, { onDelete: "cascade" }).notNull(),
+  sourceFeedTitle: text("source_feed_title").notNull(),
+  sourceFeedAuthor: text("source_feed_author"),
+  sourceFeedRssUrl: text("source_feed_rss_url"),
+  episodesMoved: integer("episodes_moved").default(0).notNull(),
+  subscriptionsMoved: integer("subscriptions_moved").default(0).notNull(),
+  mergedAt: timestamp("merged_at").defaultNow().notNull(),
+});
+
+export type FeedMergeHistory = typeof feedMergeHistory.$inferSelect;

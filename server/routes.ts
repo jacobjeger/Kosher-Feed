@@ -4,8 +4,10 @@ import * as storage from "./storage";
 import { parseFeed } from "./rss";
 import { sendNewEpisodePushes, sendCustomPush, checkPushReceipts } from "./push";
 import { getVitals, recordFeedResult } from "./feed-vitals";
-import { insertFeedSchema, insertCategorySchema } from "@shared/schema";
+import { insertFeedSchema, insertCategorySchema, feedMergeHistory } from "@shared/schema";
 import type { Feed } from "@shared/schema";
+import { db } from "./db";
+import { eq, desc } from "drizzle-orm";
 import { syncTATSpeakers, refreshTATFeedEpisodes, fetchAllSpeakers } from "./torahanytime";
 import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, OU_PLATFORMS, type OUPlatformKey } from "./alldaf";
 import { syncKHSpeakers, refreshKHFeedEpisodes, reloadKHClient } from "./kolhalashon";
@@ -1234,6 +1236,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const result = await storage.mergeFeeds(sourceId, targetId);
+
+      // Record merge history
+      await db.insert(feedMergeHistory).values({
+        targetFeedId: targetId,
+        sourceFeedTitle: source.title,
+        sourceFeedAuthor: source.author || null,
+        sourceFeedRssUrl: source.rssUrl || null,
+        episodesMoved: result.episodesMoved,
+        subscriptionsMoved: result.subscriptionsMoved,
+      });
+
       console.log(`Feed merge: "${source.title}" -> "${target.title}" (${result.episodesMoved} episodes, ${result.subscriptionsMoved} subscriptions moved)`);
       res.json({
         message: `Merged "${source.title}" into "${target.title}"`,
@@ -1278,6 +1291,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })
         .filter(Boolean);
       res.json(merged);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Get merge history for a specific feed
+  app.get("/api/admin/feeds/:id/merge-history", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const history = await db.select().from(feedMergeHistory)
+        .where(eq(feedMergeHistory.targetFeedId, req.params.id))
+        .orderBy(desc(feedMergeHistory.mergedAt));
+      res.json(history);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

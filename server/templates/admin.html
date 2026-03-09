@@ -1627,14 +1627,43 @@ async function editFeed(id) {
       <div class="form-group"><label>Categories</label><div style="max-height:180px;overflow-y:auto;padding:8px;border:1px solid #1e293b;border-radius:8px;background:#0f172a;">${catCheckboxes || '<span style="color:#94a3b8;">No categories created yet</span>'}</div></div>
       <div class="form-group"><label>Description</label><textarea id="editDesc">${esc(feed.description || '')}</textarea></div>
       <div class="form-group"><label>Scheduled Publish Date</label><input type="datetime-local" id="editScheduledPublish" value="${feed.scheduledPublishAt ? new Date(feed.scheduledPublishAt).toISOString().slice(0,16) : ''}"><p style="font-size:11px;color:#64748b;margin-top:4px;">Leave blank for immediate publish. Set a date to schedule this feed.</p></div>
+      <div class="form-group" id="mergeHistorySection" style="display:none;">
+        <label>Merge History</label>
+        <div id="mergeHistoryList" style="padding:8px;border:1px solid #1e293b;border-radius:8px;background:#0f172a;max-height:200px;overflow-y:auto;"></div>
+      </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;">
         <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
         <button class="btn btn-primary" onclick="saveFeedEdit('${id}')">Save Changes</button>
       </div>
     `;
     document.getElementById('modalOverlay').classList.remove('hidden');
+    loadMergeHistory('${id}');
   } catch(e) {
     showAlert(e.message, 'error');
+  }
+}
+
+async function loadMergeHistory(feedId) {
+  try {
+    const history = await api('/api/admin/feeds/' + feedId + '/merge-history');
+    if (!history || history.length === 0) return;
+    const section = document.getElementById('mergeHistorySection');
+    const list = document.getElementById('mergeHistoryList');
+    section.style.display = '';
+    list.innerHTML = history.map(h => {
+      const date = new Date(h.mergedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      return '<div style="padding:8px 0;border-bottom:1px solid #1e293b;font-size:13px;">'
+        + '<div style="color:#e2e8f0;font-weight:600;">' + esc(h.sourceFeedTitle) + '</div>'
+        + '<div style="color:#94a3b8;font-size:11px;margin-top:2px;">'
+        + (h.sourceFeedAuthor ? esc(h.sourceFeedAuthor) + ' &bull; ' : '')
+        + h.episodesMoved + ' episodes, ' + h.subscriptionsMoved + ' subscribers moved'
+        + ' &bull; ' + date
+        + '</div>'
+        + (h.sourceFeedRssUrl ? '<div style="color:#64748b;font-size:10px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(h.sourceFeedRssUrl) + '</div>' : '')
+        + '</div>';
+    }).join('');
+  } catch(e) {
+    // silently ignore — old feeds won't have history
   }
 }
 
