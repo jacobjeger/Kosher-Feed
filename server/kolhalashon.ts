@@ -205,11 +205,14 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
     if ((feed as any).kolhalashonRavId) continue;
     if (feed.rssUrl.startsWith("kh://")) continue;
     if (feed.author) {
-      feedsByNormalizedName.set(normalizeName(feed.author), feed);
+      const normalizedAuthor = normalizeName(feed.author);
+      if (normalizedAuthor.length >= 3) {
+        feedsByNormalizedName.set(normalizedAuthor, feed);
+      }
     }
     if (feed.title) {
       const normalizedTitle = normalizeName(feed.title);
-      if (!feedsByNormalizedName.has(normalizedTitle)) {
+      if (normalizedTitle.length >= 3 && !feedsByNormalizedName.has(normalizedTitle)) {
         feedsByNormalizedName.set(normalizedTitle, feed);
       }
     }
@@ -237,12 +240,17 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
     if (!matchedFeed && hebrewName) {
       matchedFeed = feedsByNormalizedName.get(normalizeName(hebrewName));
     }
+    // Only do substring matching if the normalized speaker name is long enough
+    // to be meaningful (avoids matching short/empty names to everything)
     if (!matchedFeed && englishName.length >= 5) {
       const normalizedEN = normalizeName(englishName);
-      for (const [normalizedFeedName, feed] of feedsByNormalizedName) {
-        if (normalizedFeedName.includes(normalizedEN) || normalizedEN.includes(normalizedFeedName)) {
-          matchedFeed = feed;
-          break;
+      if (normalizedEN.length >= 5) {
+        for (const [normalizedFeedName, feed] of feedsByNormalizedName) {
+          if (normalizedFeedName.length >= 5 &&
+              (normalizedFeedName.includes(normalizedEN) || normalizedEN.includes(normalizedFeedName))) {
+            matchedFeed = feed;
+            break;
+          }
         }
       }
     }
