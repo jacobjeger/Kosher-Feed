@@ -247,6 +247,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/admin/auto-categorize", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const { autoCategorizeFeeds } = await import("./auto-categorize");
+      await autoCategorizeFeeds();
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Feeds
   app.get("/api/feeds", async (req: Request, res: Response) => {
     try {
