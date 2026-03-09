@@ -1008,28 +1008,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // KH audio proxy — resolves the getLocationOfFileToVideo redirect through the KH proxy
+  // KH audio proxy — resolves the getLocationOfFileToVideo redirect and streams audio
   app.get("/api/audio/kh/:fileId", async (req: Request, res: Response) => {
     try {
       const fileId = req.params.fileId;
       if (!fileId || !/^\d+$/.test(fileId)) return res.status(400).json({ error: "Invalid file ID" });
 
+      const khHeaders = getKHHeaders();
+      const directUrl = `https://srv.kolhalashon.com/api/files/getLocationOfFileToVideo/${fileId}`;
       const proxyUrl = process.env.KH_PROXY_URL;
-      const baseUrl = proxyUrl ? proxyUrl.replace(/\/$/, "") + "/api" : "https://srv.kolhalashon.com/api";
-      const khUrl = `${baseUrl}/files/getLocationOfFileToVideo/${fileId}`;
+      const proxyApiUrl = proxyUrl ? `${proxyUrl.replace(/\/$/, "")}/api/files/getLocationOfFileToVideo/${fileId}` : null;
 
-      // Use the same headers as the KH client (includes authorization-site-key)
-      const headers = getKHHeaders();
+      // Try to resolve the audio URL — first via proxy, then direct
+      let redirectResp: globalThis.Response | null = null;
+      const urlsToTry = proxyApiUrl ? [proxyApiUrl, directUrl] : [directUrl];
 
-      // First resolve the redirect to get the actual audio URL
-      const redirectResp = await fetch(khUrl, { headers, redirect: "follow" });
-      if (!redirectResp.ok) return res.status(502).json({ error: "Failed to fetch KH audio" });
+      for (const url of urlsToTry) {
+        try {
+          const resp = await fetch(url, { headers: khHeaders, redirect: "follow", signal: AbortSignal.timeout(15000) });
+          if (resp.ok) {
+            redirectResp = resp;
+            break;
+          }
+          console.log(`KH audio: ${url} returned ${resp.status}`);
+        } catch (e: any) {
+          console.log(`KH audio: ${url} failed — ${e.message?.slice(0, 100)}`);
+        }
+      }
+
+      if (!redirectResp) {
+        return res.status(502).json({ error: "Failed to resolve KH audio URL" });
+      }
 
       // Check if it returned a URL string or binary audio
       const contentType = redirectResp.headers.get("content-type") || "";
 
       if (contentType.includes("audio") || contentType.includes("octet-stream")) {
-        // Direct audio stream
+        // Direct audio stream from KH
         res.setHeader("Content-Type", contentType);
         const contentLength = redirectResp.headers.get("content-length");
         if (contentLength) res.setHeader("Content-Length", contentLength);
@@ -1045,41 +1060,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         res.end();
       } else {
-        // The response might be a URL string or JSON with a redirect URL
+        // KH returned a URL to the actual audio file — redirect the client there
         const body = await redirectResp.text();
         const audioUrl = body.trim().replace(/^"|"$/g, "");
 
         if (!audioUrl || !audioUrl.startsWith("http")) {
+          console.log(`KH audio: invalid URL response for ${fileId}: ${body.slice(0, 200)}`);
           return res.status(502).json({ error: "Invalid audio URL from KH" });
         }
 
-        // Fetch the actual audio file
-        const rangeHeader = req.headers.range;
-        const audioHeaders: Record<string, string> = { "User-Agent": "ShiurPod/1.0" };
-        if (rangeHeader) audioHeaders["Range"] = rangeHeader;
-
-        const audioResp = await fetch(audioUrl, { headers: audioHeaders, redirect: "follow" });
-        if (!audioResp.ok && audioResp.status !== 206) return res.status(502).json({ error: "Failed to fetch audio file" });
-
-        res.status(audioResp.status);
-        res.setHeader("Content-Type", audioResp.headers.get("content-type") || "audio/mpeg");
-        const cl = audioResp.headers.get("content-length");
-        if (cl) res.setHeader("Content-Length", cl);
-        const cr = audioResp.headers.get("content-range");
-        if (cr) res.setHeader("Content-Range", cr);
-        res.setHeader("Accept-Ranges", "bytes");
-        res.setHeader("Cache-Control", "public, max-age=86400");
-
-        const reader = audioResp.body?.getReader();
-        if (!reader) return res.status(502).json({ error: "No stream" });
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (!res.writableEnded) res.write(Buffer.from(value));
-        }
-        res.end();
+        // 302 redirect to the actual CDN audio URL — avoids proxying the entire stream
+        res.redirect(audioUrl);
       }
     } catch (e: any) {
+      console.error(`KH audio proxy error for ${req.params.fileId}:`, e.message);
       if (!res.headersSent) res.status(500).json({ error: e.message });
     }
   });
