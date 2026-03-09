@@ -1008,26 +1008,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // KH audio proxy — resolves the getLocationOfFileToVideo redirect and streams audio
+  // KH audio proxy — resolves the getLocationOfFileToVideo and streams/redirects audio
   app.get("/api/audio/kh/:fileId", async (req: Request, res: Response) => {
     try {
       const fileId = req.params.fileId;
       if (!fileId || !/^\d+$/.test(fileId)) return res.status(400).json({ error: "Invalid file ID" });
 
-      const khHeaders = getKHHeaders();
-      const directUrl = `https://srv.kolhalashon.com/api/files/getLocationOfFileToVideo/${fileId}`;
+      const khPath = `/api/files/getLocationOfFileToVideo/${fileId}`;
+      const directUrl = `https://srv.kolhalashon.com${khPath}`;
       const proxyUrl = process.env.KH_PROXY_URL;
-      const proxyApiUrl = proxyUrl ? `${proxyUrl.replace(/\/$/, "")}/api/files/getLocationOfFileToVideo/${fileId}` : null;
+      const proxyApiUrl = proxyUrl ? `${proxyUrl.replace(/\/$/, "")}${khPath}` : null;
 
-      // Try to resolve the audio URL — first via proxy, then direct
-      let redirectResp: globalThis.Response | null = null;
+      // Build browser-like headers (without JSON accept — we want the redirect/audio, not JSON)
+      const audioReqHeaders: Record<string, string> = {
+        "accept": "*/*",
+        "authorization-site-key": "Bearer 8ea2pe8",
+        "origin": "https://www2.kolhalashon.com",
+        "referer": "https://www2.kolhalashon.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      };
+      if (proxyUrl && process.env.KH_PROXY_KEY) {
+        audioReqHeaders["x-proxy-key"] = process.env.KH_PROXY_KEY;
+      }
+
+      // Try proxy first (if configured), then direct
+      let resolvedResp: globalThis.Response | null = null;
       const urlsToTry = proxyApiUrl ? [proxyApiUrl, directUrl] : [directUrl];
 
       for (const url of urlsToTry) {
         try {
-          const resp = await fetch(url, { headers: khHeaders, redirect: "follow", signal: AbortSignal.timeout(15000) });
+          // First try with redirect: "manual" to capture redirect URL
+          const resp = await fetch(url, { headers: audioReqHeaders, redirect: "manual", signal: AbortSignal.timeout(15000) });
+          if (resp.status >= 300 && resp.status < 400) {
+            const location = resp.headers.get("location");
+            if (location) {
+              console.log(`KH audio: ${fileId} redirected to ${location.slice(0, 100)}`);
+              return res.redirect(location);
+            }
+          }
           if (resp.ok) {
-            redirectResp = resp;
+            resolvedResp = resp;
             break;
           }
           console.log(`KH audio: ${url} returned ${resp.status}`);
@@ -1036,22 +1056,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      if (!redirectResp) {
+      if (!resolvedResp) {
         return res.status(502).json({ error: "Failed to resolve KH audio URL" });
       }
 
-      // Check if it returned a URL string or binary audio
-      const contentType = redirectResp.headers.get("content-type") || "";
+      const contentType = resolvedResp.headers.get("content-type") || "";
 
       if (contentType.includes("audio") || contentType.includes("octet-stream")) {
-        // Direct audio stream from KH
+        // Direct audio stream
         res.setHeader("Content-Type", contentType);
-        const contentLength = redirectResp.headers.get("content-length");
+        const contentLength = resolvedResp.headers.get("content-length");
         if (contentLength) res.setHeader("Content-Length", contentLength);
         res.setHeader("Accept-Ranges", "bytes");
         res.setHeader("Cache-Control", "public, max-age=86400");
 
-        const reader = redirectResp.body?.getReader();
+        const reader = resolvedResp.body?.getReader();
         if (!reader) return res.status(502).json({ error: "No stream" });
         while (true) {
           const { done, value } = await reader.read();
@@ -1059,19 +1078,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (!res.writableEnded) res.write(Buffer.from(value));
         }
         res.end();
-      } else {
-        // KH returned a URL to the actual audio file — redirect the client there
-        const body = await redirectResp.text();
-        const audioUrl = body.trim().replace(/^"|"$/g, "");
-
-        if (!audioUrl || !audioUrl.startsWith("http")) {
-          console.log(`KH audio: invalid URL response for ${fileId}: ${body.slice(0, 200)}`);
-          return res.status(502).json({ error: "Invalid audio URL from KH" });
-        }
-
-        // 302 redirect to the actual CDN audio URL — avoids proxying the entire stream
-        res.redirect(audioUrl);
+        return;
       }
+
+      // Parse response body — could be a URL string or JSON {"location":"path/file"}
+      const body = await resolvedResp.text();
+      let audioUrl: string | null = null;
+
+      // Try JSON parse for {"location":"42283/42283185"} format
+      try {
+        const json = JSON.parse(body);
+        if (json.location) {
+          // Construct full URL from relative location path
+          // KH serves files from their media server
+          audioUrl = `https://download.kolhalashon.com/${json.location}.mp3`;
+        }
+      } catch {
+        // Not JSON — treat as URL string
+        audioUrl = body.trim().replace(/^"|"$/g, "");
+      }
+
+      if (!audioUrl || (!audioUrl.startsWith("http") && !audioUrl.startsWith("/"))) {
+        console.log(`KH audio: cannot resolve URL for ${fileId}: ${body.slice(0, 200)}`);
+        return res.status(502).json({ error: "Cannot resolve KH audio URL" });
+      }
+
+      // Try the constructed URL; if it fails, try alternate CDN patterns
+      const cdnPatterns = audioUrl.startsWith("http") ? [audioUrl] : [`https://download.kolhalashon.com${audioUrl}`];
+
+      // Also try without .mp3 extension and with alternate domains
+      try {
+        const json = JSON.parse(body);
+        if (json.location) {
+          cdnPatterns.push(
+            `https://download.kolhalashon.com/${json.location}`,
+            `https://media2.kolhalashon.com/${json.location}.mp3`,
+            `https://media2.kolhalashon.com/${json.location}`,
+          );
+        }
+      } catch {}
+
+      for (const tryUrl of cdnPatterns) {
+        try {
+          const rangeHeader = req.headers.range;
+          const hdrs: Record<string, string> = { "User-Agent": "ShiurPod/1.0" };
+          if (rangeHeader) hdrs["Range"] = rangeHeader;
+
+          const audioResp = await fetch(tryUrl, { headers: hdrs, redirect: "follow", signal: AbortSignal.timeout(15000) });
+          if (audioResp.ok || audioResp.status === 206) {
+            console.log(`KH audio: ${fileId} serving from ${tryUrl}`);
+            res.status(audioResp.status);
+            res.setHeader("Content-Type", audioResp.headers.get("content-type") || "audio/mpeg");
+            const cl = audioResp.headers.get("content-length");
+            if (cl) res.setHeader("Content-Length", cl);
+            const cr = audioResp.headers.get("content-range");
+            if (cr) res.setHeader("Content-Range", cr);
+            res.setHeader("Accept-Ranges", "bytes");
+            res.setHeader("Cache-Control", "public, max-age=86400");
+
+            const reader = audioResp.body?.getReader();
+            if (!reader) return res.status(502).json({ error: "No stream" });
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              if (!res.writableEnded) res.write(Buffer.from(value));
+            }
+            res.end();
+            return;
+          }
+          console.log(`KH audio: CDN ${tryUrl} returned ${audioResp.status}`);
+        } catch (e: any) {
+          console.log(`KH audio: CDN ${tryUrl} failed — ${e.message?.slice(0, 80)}`);
+        }
+      }
+
+      return res.status(502).json({ error: "All KH audio CDN URLs failed" });
     } catch (e: any) {
       console.error(`KH audio proxy error for ${req.params.fileId}:`, e.message);
       if (!res.headersSent) res.status(500).json({ error: e.message });
