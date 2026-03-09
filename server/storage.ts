@@ -1388,12 +1388,16 @@ export async function getSourceBreakdown() {
   };
 
   for (const f of allFeeds) {
+    // Classify by primary source — check platform IDs (not just URL scheme)
+    // so merged feeds are counted under their platform too
     let source = "RSS";
-    if (f.rssUrl.startsWith("tat://") && f.tatSpeakerId) source = "Torah Anytime";
-    else if (f.rssUrl.startsWith("alldaf://") && f.alldafAuthorId) source = "AllDaf";
-    else if (f.rssUrl.startsWith("allmishnah://") && f.allmishnahAuthorId) source = "AllMishnah";
-    else if (f.rssUrl.startsWith("allparsha://") && f.allparshaAuthorId) source = "AllParsha";
-    else if (f.rssUrl.startsWith("kh://") && f.kolhalashonRavId) source = "Kol Halashon";
+    if (f.kolhalashonRavId && f.rssUrl.startsWith("kh://")) source = "Kol Halashon";
+    else if (f.tatSpeakerId && f.rssUrl.startsWith("tat://")) source = "Torah Anytime";
+    else if (f.alldafAuthorId) source = "AllDaf";
+    else if (f.allmishnahAuthorId) source = "AllMishnah";
+    else if (f.allparshaAuthorId) source = "AllParsha";
+    else if (f.tatSpeakerId) source = "Torah Anytime";
+    else if (f.kolhalashonRavId) source = "Kol Halashon";
 
     if (!sources[source]) sources[source] = { feedCount: 0, episodeCount: 0 };
     sources[source].feedCount++;
