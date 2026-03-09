@@ -39,8 +39,8 @@ interface TrendingEpisode extends Episode {
 }
 
 const screenWidth = Dimensions.get("window").width;
-const CAROUSEL_WIDTH = Platform.OS === "web" ? Math.min(screenWidth - 40, 860) : screenWidth - 40;
-const CAROUSEL_HEIGHT = Platform.OS === "web" ? 260 : 180;
+const CAROUSEL_WIDTH = Platform.OS === "web" ? Math.min(screenWidth - 40, 920) : screenWidth - 40;
+const CAROUSEL_HEIGHT = Platform.OS === "web" ? 280 : 180;
 const AUTO_SCROLL_INTERVAL = 5000;
 
 const FeaturedCarousel = React.memo(function FeaturedCarousel({ feeds, colors }: { feeds: Feed[]; colors: any }) {
@@ -635,7 +635,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   webContentWrap: {
-    maxWidth: 900,
+    maxWidth: 960,
     marginHorizontal: "auto" as any,
     width: "100%" as any,
   },
@@ -675,6 +675,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: "hidden",
     position: "relative" as const,
+    ...(Platform.OS === "web" ? { boxShadow: "0 4px 24px rgba(0,0,0,0.12)" as any } : {}),
   },
   carouselImage: {
     width: "100%" as any,
@@ -741,15 +742,17 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     borderRadius: 14,
     borderWidth: 2,
-    height: 46,
+    height: 48,
     marginBottom: 20,
+    ...(Platform.OS === "web" ? { transition: "border-color 0.2s ease, box-shadow 0.2s ease" as any } : {}),
   },
   searchInput: {
     flex: 1,
     fontSize: 15,
     paddingHorizontal: 10,
     paddingVertical: 0,
-    height: 46,
+    height: 48,
+    ...(Platform.OS === "web" ? { outlineStyle: "none" as any } : {}),
   },
   searchClear: {
     padding: 10,

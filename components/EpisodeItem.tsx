@@ -411,10 +411,11 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
-    marginBottom: 6,
+    marginBottom: 8,
     overflow: "hidden",
+    ...(Platform.OS === "web" ? { transition: "box-shadow 0.2s ease" as any } : {}),
   },
   mainRow: {
     flexDirection: "row",
