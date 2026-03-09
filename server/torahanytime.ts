@@ -278,6 +278,19 @@ export async function syncTATSpeakers(): Promise<{ created: number; linked: numb
 // --- Episode Refresh for TAT Feeds ---
 
 export async function refreshTATFeedEpisodes(feed: { id: string; title: string; tatSpeakerId: number }, feedRecord?: any): Promise<{ newEpisodes: number }> {
+  // Quick check: fetch first page to see if newest lecture already exists
+  const { lectures: firstPage } = await fetchSpeakerLectures(feed.tatSpeakerId, 5, 0);
+  if (firstPage.length > 0) {
+    const newest = firstPage[0];
+    if (newest?.id) {
+      const exists = await storage.episodeExistsByGuid(feed.id, `tat-${newest.id}`);
+      if (exists) {
+        await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
+        return { newEpisodes: 0 };
+      }
+    }
+  }
+
   const lectures = await fetchAllSpeakerLectures(feed.tatSpeakerId);
 
   // Filter out private and inactive lectures

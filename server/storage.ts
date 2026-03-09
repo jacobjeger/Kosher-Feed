@@ -111,24 +111,50 @@ export async function getLatestEpisodes(limit: number = 50): Promise<Episode[]> 
   return db.select().from(episodes).orderBy(desc(episodes.publishedAt)).limit(limit);
 }
 
+export async function episodeExistsByGuid(feedId: string, guid: string): Promise<boolean> {
+  const [row] = await db.select({ id: episodes.id }).from(episodes)
+    .where(and(eq(episodes.feedId, feedId), eq(episodes.guid, guid)))
+    .limit(1);
+  return !!row;
+}
+
 export async function upsertEpisodes(feedId: string, episodeData: Partial<Episode>[]): Promise<Episode[]> {
   if (episodeData.length === 0) return [];
   const inserted: Episode[] = [];
-  for (const ep of episodeData) {
+  const CHUNK = 50;
+  for (let i = 0; i < episodeData.length; i += CHUNK) {
+    const chunk = episodeData.slice(i, i + CHUNK);
     try {
-      const [result] = await db.insert(episodes).values({
-        feedId: ep.feedId || feedId,
-        title: ep.title!,
-        description: ep.description,
-        audioUrl: ep.audioUrl!,
-        duration: ep.duration,
-        publishedAt: ep.publishedAt as any,
-        guid: ep.guid!,
-        imageUrl: ep.imageUrl,
-      }).onConflictDoNothing().returning();
-      if (result) inserted.push(result);
+      const results = await db.insert(episodes).values(
+        chunk.map(ep => ({
+          feedId: ep.feedId || feedId,
+          title: ep.title!,
+          description: ep.description,
+          audioUrl: ep.audioUrl!,
+          duration: ep.duration,
+          publishedAt: ep.publishedAt as any,
+          guid: ep.guid!,
+          imageUrl: ep.imageUrl,
+        }))
+      ).onConflictDoNothing().returning();
+      inserted.push(...results);
     } catch (e) {
-      // skip duplicates
+      // Fallback to individual inserts if batch fails
+      for (const ep of chunk) {
+        try {
+          const [result] = await db.insert(episodes).values({
+            feedId: ep.feedId || feedId,
+            title: ep.title!,
+            description: ep.description,
+            audioUrl: ep.audioUrl!,
+            duration: ep.duration,
+            publishedAt: ep.publishedAt as any,
+            guid: ep.guid!,
+            imageUrl: ep.imageUrl,
+          }).onConflictDoNothing().returning();
+          if (result) inserted.push(result);
+        } catch (_) {}
+      }
     }
   }
   return inserted;
@@ -137,23 +163,37 @@ export async function upsertEpisodes(feedId: string, episodeData: Partial<Episod
 export async function upsertTATEpisodes(feedId: string, episodeData: any[]): Promise<Episode[]> {
   if (episodeData.length === 0) return [];
   const inserted: Episode[] = [];
-  for (const ep of episodeData) {
+  const CHUNK = 50;
+  for (let i = 0; i < episodeData.length; i += CHUNK) {
+    const chunk = episodeData.slice(i, i + CHUNK);
     try {
-      const [result] = await db.insert(episodes).values({
-        feedId: ep.feedId,
-        title: ep.title,
-        description: ep.description,
-        audioUrl: ep.audioUrl,
-        duration: ep.duration,
-        publishedAt: ep.publishedAt,
-        guid: ep.guid,
-        imageUrl: ep.imageUrl,
-        tatLectureId: ep.tatLectureId,
-        noDownload: ep.noDownload || false,
-      }).onConflictDoNothing().returning();
-      if (result) inserted.push(result);
+      const results = await db.insert(episodes).values(
+        chunk.map(ep => ({
+          feedId: ep.feedId,
+          title: ep.title,
+          description: ep.description,
+          audioUrl: ep.audioUrl,
+          duration: ep.duration,
+          publishedAt: ep.publishedAt,
+          guid: ep.guid,
+          imageUrl: ep.imageUrl,
+          tatLectureId: ep.tatLectureId,
+          noDownload: ep.noDownload || false,
+        }))
+      ).onConflictDoNothing().returning();
+      inserted.push(...results);
     } catch (e) {
-      // skip duplicates
+      for (const ep of chunk) {
+        try {
+          const [result] = await db.insert(episodes).values({
+            feedId: ep.feedId, title: ep.title, description: ep.description,
+            audioUrl: ep.audioUrl, duration: ep.duration, publishedAt: ep.publishedAt,
+            guid: ep.guid, imageUrl: ep.imageUrl, tatLectureId: ep.tatLectureId,
+            noDownload: ep.noDownload || false,
+          }).onConflictDoNothing().returning();
+          if (result) inserted.push(result);
+        } catch (_) {}
+      }
     }
   }
   return inserted;
@@ -163,22 +203,29 @@ export async function upsertTATEpisodes(feedId: string, episodeData: any[]): Pro
 export async function upsertOUEpisodes(feedId: string, episodeData: any[]): Promise<Episode[]> {
   if (episodeData.length === 0) return [];
   const inserted: Episode[] = [];
-  for (const ep of episodeData) {
+  const CHUNK = 50;
+  for (let i = 0; i < episodeData.length; i += CHUNK) {
+    const chunk = episodeData.slice(i, i + CHUNK);
     try {
-      const [result] = await db.insert(episodes).values({
-        feedId: ep.feedId,
-        title: ep.title,
-        description: ep.description,
-        audioUrl: ep.audioUrl,
-        duration: ep.duration,
-        publishedAt: ep.publishedAt,
-        guid: ep.guid,
-        imageUrl: ep.imageUrl,
-        noDownload: ep.noDownload || false,
-      }).onConflictDoNothing().returning();
-      if (result) inserted.push(result);
+      const results = await db.insert(episodes).values(
+        chunk.map(ep => ({
+          feedId: ep.feedId, title: ep.title, description: ep.description,
+          audioUrl: ep.audioUrl, duration: ep.duration, publishedAt: ep.publishedAt,
+          guid: ep.guid, imageUrl: ep.imageUrl, noDownload: ep.noDownload || false,
+        }))
+      ).onConflictDoNothing().returning();
+      inserted.push(...results);
     } catch (e) {
-      // skip duplicates
+      for (const ep of chunk) {
+        try {
+          const [result] = await db.insert(episodes).values({
+            feedId: ep.feedId, title: ep.title, description: ep.description,
+            audioUrl: ep.audioUrl, duration: ep.duration, publishedAt: ep.publishedAt,
+            guid: ep.guid, imageUrl: ep.imageUrl, noDownload: ep.noDownload || false,
+          }).onConflictDoNothing().returning();
+          if (result) inserted.push(result);
+        } catch (_) {}
+      }
     }
   }
   return inserted;
@@ -200,23 +247,31 @@ export async function setAlldafAuthorId(feedId: string, authorId: number): Promi
 export async function upsertKHEpisodes(feedId: string, episodeData: any[]): Promise<Episode[]> {
   if (episodeData.length === 0) return [];
   const inserted: Episode[] = [];
-  for (const ep of episodeData) {
+  const CHUNK = 50;
+  for (let i = 0; i < episodeData.length; i += CHUNK) {
+    const chunk = episodeData.slice(i, i + CHUNK);
     try {
-      const [result] = await db.insert(episodes).values({
-        feedId: ep.feedId,
-        title: ep.title,
-        description: ep.description,
-        audioUrl: ep.audioUrl,
-        duration: ep.duration,
-        publishedAt: ep.publishedAt,
-        guid: ep.guid,
-        imageUrl: ep.imageUrl,
-        kolhalashonFileId: ep.kolhalashonFileId,
-        noDownload: ep.noDownload || false,
-      }).onConflictDoNothing().returning();
-      if (result) inserted.push(result);
+      const results = await db.insert(episodes).values(
+        chunk.map(ep => ({
+          feedId: ep.feedId, title: ep.title, description: ep.description,
+          audioUrl: ep.audioUrl, duration: ep.duration, publishedAt: ep.publishedAt,
+          guid: ep.guid, imageUrl: ep.imageUrl,
+          kolhalashonFileId: ep.kolhalashonFileId, noDownload: ep.noDownload || false,
+        }))
+      ).onConflictDoNothing().returning();
+      inserted.push(...results);
     } catch (e) {
-      // skip duplicates
+      for (const ep of chunk) {
+        try {
+          const [result] = await db.insert(episodes).values({
+            feedId: ep.feedId, title: ep.title, description: ep.description,
+            audioUrl: ep.audioUrl, duration: ep.duration, publishedAt: ep.publishedAt,
+            guid: ep.guid, imageUrl: ep.imageUrl,
+            kolhalashonFileId: ep.kolhalashonFileId, noDownload: ep.noDownload || false,
+          }).onConflictDoNothing().returning();
+          if (result) inserted.push(result);
+        } catch (_) {}
+      }
     }
   }
   return inserted;

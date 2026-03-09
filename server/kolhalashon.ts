@@ -121,7 +121,7 @@ export async function getAllSpeakerShiurim(ravId: number, maxShiurim: number = 1
     allShiurim.push(...batch);
     if (batch.length < pageSize) break;
     fromRow += pageSize;
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 50));
   }
 
   return allShiurim;
@@ -208,11 +208,18 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
   // Clean up: remove KH-created feeds with no English name (Hebrew-only)
   // and unlink incorrectly linked feeds
   const hasEnglishLetters = (s: string) => /[a-zA-Z]/.test(s);
+  const isWomanSpeaker = (s: string) => /\b(rebbetzin|rabbanit|mrs\.?|ms\.?|miss)\b/i.test(s);
   let removed = 0;
   let unlinked = 0;
   for (const feed of allFeeds) {
     // Delete KH-created feeds (kh:// URL) that have no English in their title
     if (feed.rssUrl.startsWith("kh://") && !hasEnglishLetters(feed.title)) {
+      await storage.deleteFeed(feed.id);
+      removed++;
+      continue;
+    }
+    // Delete KH-created feeds for women speakers
+    if (feed.rssUrl.startsWith("kh://") && isWomanSpeaker(feed.title)) {
       await storage.deleteFeed(feed.id);
       removed++;
       continue;
@@ -273,6 +280,10 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
 
     // Skip speakers without an English name
     if (!englishName) continue;
+
+    // Skip women speakers (Rebbetzin, Mrs., Rabbanit, etc.)
+    const lowerName = englishName.toLowerCase();
+    if (/\b(rebbetzin|rabbanit|mrs\.?|ms\.?|miss)\b/i.test(englishName)) continue;
 
     const displayName = englishName;
 
@@ -358,6 +369,25 @@ export async function refreshKHFeedEpisodes(
     return { newEpisodes: 0 };
   }
 
+  // Quick check: fetch first page only to see if there's anything new
+  const firstPage = await getSpeakerShiurim(feed.kolhalashonRavId, 0, 24);
+  if (!Array.isArray(firstPage) || firstPage.length === 0) {
+    await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
+    return { newEpisodes: 0 };
+  }
+
+  // Check if the newest episode already exists — if so, skip full pagination
+  const newestShiur = firstPage[0];
+  const newestFileId = newestShiur?.FileId || newestShiur?.FileID;
+  if (newestFileId) {
+    const exists = await storage.episodeExistsByGuid(feed.id, `kh-${newestFileId}`);
+    if (exists) {
+      await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
+      return { newEpisodes: 0 };
+    }
+  }
+
+  // New content detected — do full pagination
   const shiurim = await getAllSpeakerShiurim(feed.kolhalashonRavId);
 
   if (!Array.isArray(shiurim) || shiurim.length === 0) {

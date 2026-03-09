@@ -523,6 +523,30 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
 
 let isAutoRefreshing = false;
 
+// Feed type classification for concurrency and stale intervals
+function getFeedType(feed: { rssUrl: string }): 'rss' | 'tat' | 'ou' | 'kh' {
+  if (feed.rssUrl.startsWith("kh://")) return 'kh';
+  if (feed.rssUrl.startsWith("tat://")) return 'tat';
+  if (feed.rssUrl.startsWith("alldaf://") || feed.rssUrl.startsWith("allmishnah://") || feed.rssUrl.startsWith("allparsha://")) return 'ou';
+  return 'rss';
+}
+
+// Tiered stale intervals: RSS 1h, TAT/OU 2h, KH 4h
+const STALE_INTERVALS: Record<string, number> = {
+  rss: 60 * 60 * 1000,       // 1 hour
+  tat: 2 * 60 * 60 * 1000,   // 2 hours
+  ou:  2 * 60 * 60 * 1000,   // 2 hours
+  kh:  4 * 60 * 60 * 1000,   // 4 hours
+};
+
+// Concurrency per feed type
+const CONCURRENCY: Record<string, number> = {
+  rss: 5,
+  tat: 8,
+  ou:  8,
+  kh:  15,
+};
+
 async function autoRefreshFeeds() {
   if (isAutoRefreshing) {
     log(`Auto-refresh: skipping — previous cycle still running`);
@@ -533,8 +557,13 @@ async function autoRefreshFeeds() {
     const allFeeds = await storage.getAllActiveFeedsForSync();
     const now = new Date().toLocaleTimeString();
 
-    const staleCutoff = new Date(Date.now() - FEED_REFRESH_INTERVAL);
-    const staleFeeds = allFeeds.filter(f => !f.lastFetchedAt || new Date(f.lastFetchedAt) < staleCutoff);
+    // Tiered stale check per feed type
+    const staleFeeds = allFeeds.filter(f => {
+      const type = getFeedType(f);
+      const interval = STALE_INTERVALS[type] || STALE_INTERVALS.rss;
+      const cutoff = new Date(Date.now() - interval);
+      return !f.lastFetchedAt || new Date(f.lastFetchedAt) < cutoff;
+    });
 
     if (staleFeeds.length === 0) {
       log(`Auto-refresh [${now}]: all ${allFeeds.length} feed(s) are fresh, skipping`);
@@ -542,9 +571,21 @@ async function autoRefreshFeeds() {
       return;
     }
 
-    await preResolveHostnames(staleFeeds.filter(f => !f.rssUrl.startsWith("tat://") && !f.rssUrl.startsWith("kh://")).map(f => f.rssUrl));
+    // Pre-resolve hostnames for RSS feeds only
+    const rssFeeds = staleFeeds.filter(f => getFeedType(f) === 'rss');
+    if (rssFeeds.length > 0) {
+      await preResolveHostnames(rssFeeds.map(f => f.rssUrl));
+    }
 
-    log(`Auto-refresh [${now}]: refreshing ${staleFeeds.length} stale feed(s) out of ${allFeeds.length} total (3 concurrent)...`);
+    // Group feeds by type for different concurrency levels
+    const feedsByType: Record<string, typeof staleFeeds> = { rss: [], tat: [], ou: [], kh: [] };
+    for (const f of staleFeeds) {
+      feedsByType[getFeedType(f)].push(f);
+    }
+
+    const typeCounts = Object.entries(feedsByType).filter(([, v]) => v.length > 0).map(([k, v]) => `${k}:${v.length}`).join(', ');
+    log(`Auto-refresh [${now}]: refreshing ${staleFeeds.length} stale feed(s) out of ${allFeeds.length} total [${typeCounts}]`);
+
     let totalNew = 0;
     let failures = 0;
     let successes = 0;
@@ -552,56 +593,65 @@ async function autoRefreshFeeds() {
     let completed = 0;
 
     startRefreshCycle(staleFeeds.length);
-    const limit = pLimit(3);
 
-    const tasks = staleFeeds.map((feed) =>
-      limit(async () => {
-        const feedStart = Date.now();
-        try {
-          await new Promise(r => setTimeout(r, Math.random() * 300));
-          const result = await withTimeout(refreshOneFeed(feed), 120000, feed.title);
-          totalNew += result.newEpisodes;
-          successes++;
-          completed++;
+    // Process each feed type with its own concurrency limit, all pools in parallel
+    const processPool = (feeds: typeof staleFeeds, concurrency: number) => {
+      const limiter = pLimit(concurrency);
+      return feeds.map(feed =>
+        limiter(async () => {
+          const feedStart = Date.now();
+          try {
+            const result = await withTimeout(refreshOneFeed(feed), 120000, feed.title);
+            totalNew += result.newEpisodes;
+            successes++;
+            completed++;
 
-          recordFeedResult({
-            feedId: feed.id,
-            feedTitle: feed.title,
-            method: result.method,
-            success: true,
-            durationMs: result.durationMs,
-            episodesFound: result.episodesFound,
-            newEpisodes: result.newEpisodes,
-            timestamp: Date.now(),
-          });
+            recordFeedResult({
+              feedId: feed.id,
+              feedTitle: feed.title,
+              method: result.method,
+              success: true,
+              durationMs: result.durationMs,
+              episodesFound: result.episodesFound,
+              newEpisodes: result.newEpisodes,
+              timestamp: Date.now(),
+            });
 
-          if (result.newEpisodes > 0) {
-            log(`  [${completed}/${staleFeeds.length}] ${feed.title}: +${result.newEpisodes} new (${result.method}, ${result.durationMs}ms)`);
-          } else if (result.method === 'cached') {
-            skipped304++;
+            if (result.newEpisodes > 0) {
+              log(`  [${completed}/${staleFeeds.length}] ${feed.title}: +${result.newEpisodes} new (${result.method}, ${result.durationMs}ms)`);
+            } else if (result.method === 'cached') {
+              skipped304++;
+            }
+          } catch (e) {
+            failures++;
+            completed++;
+            const errMsg = (e as Error)?.message || String(e);
+            log(`  [${completed}/${staleFeeds.length}] ${feed.title}: FAIL — ${errMsg.slice(0, 120)}`);
+
+            recordFeedResult({
+              feedId: feed.id,
+              feedTitle: feed.title,
+              method: 'stream',
+              success: false,
+              durationMs: Date.now() - feedStart,
+              episodesFound: 0,
+              newEpisodes: 0,
+              error: errMsg.slice(0, 200),
+              timestamp: Date.now(),
+            });
           }
-        } catch (e) {
-          failures++;
-          completed++;
-          const errMsg = (e as Error)?.message || String(e);
-          log(`  [${completed}/${staleFeeds.length}] ${feed.title}: FAIL — ${errMsg.slice(0, 120)}`);
+        })
+      );
+    };
 
-          recordFeedResult({
-            feedId: feed.id,
-            feedTitle: feed.title,
-            method: 'stream',
-            success: false,
-            durationMs: Date.now() - feedStart,
-            episodesFound: 0,
-            newEpisodes: 0,
-            error: errMsg.slice(0, 200),
-            timestamp: Date.now(),
-          });
-        }
-      })
-    );
+    const allTasks = [
+      ...processPool(feedsByType.rss, CONCURRENCY.rss),
+      ...processPool(feedsByType.tat, CONCURRENCY.tat),
+      ...processPool(feedsByType.ou, CONCURRENCY.ou),
+      ...processPool(feedsByType.kh, CONCURRENCY.kh),
+    ];
 
-    await Promise.all(tasks);
+    await Promise.all(allTasks);
     endRefreshCycle();
 
     log(`Auto-refresh [${now}] complete: ${successes} ok (${skipped304} cached/304), ${failures} failed, ${totalNew} new episode(s), across ${staleFeeds.length} stale feed(s)`);

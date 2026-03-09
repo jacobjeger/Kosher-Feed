@@ -336,6 +336,20 @@ export async function refreshOUFeedEpisodes(
   feedRecord?: any,
 ): Promise<{ newEpisodes: number }> {
   const cfg = OU_PLATFORMS[platform];
+
+  // Quick check: fetch first page to see if newest post already exists
+  const { records: firstPage } = await fetchAuthorPosts(platform, feed.authorId, 5, 0);
+  if (firstPage.length > 0) {
+    const newest = firstPage[0];
+    if (newest?.id) {
+      const exists = await storage.episodeExistsByGuid(feed.id, `${cfg.guidPrefix}${newest.id}`);
+      if (exists) {
+        await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
+        return { newEpisodes: 0 };
+      }
+    }
+  }
+
   const posts = await fetchAllAuthorPosts(platform, feed.authorId);
 
   let episodeData = posts
