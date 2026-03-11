@@ -7,6 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import PodcastCard from "@/components/PodcastCard";
 import EpisodeItem from "@/components/EpisodeItem";
 import Colors from "@/constants/colors";
+import { router } from "expo-router";
 import { getDeviceId } from "@/lib/device-id";
 import { getApiUrl, queryClient } from "@/lib/query-client";
 import type { Feed, Episode } from "@/lib/types";
@@ -168,11 +169,19 @@ function FollowingScreenInner() {
       }}
       ListEmptyComponent={() => (
         <View style={styles.emptyState}>
-          <Ionicons name="heart-outline" size={64} color={colors.textSecondary} />
+          <View style={[styles.emptyIconBadge, { backgroundColor: colors.accentLight }]}>
+            <Ionicons name="heart-outline" size={36} color={colors.accent} />
+          </View>
           <Text style={[styles.emptyTitle, { color: colors.text }]}>No Subscriptions Yet</Text>
           <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
             Follow shiurim from the Home tab to see their latest episodes here.
           </Text>
+          <Pressable
+            onPress={() => router.push("/(tabs)/")}
+            style={[styles.emptyBtn, { backgroundColor: colors.accent }]}
+          >
+            <Text style={styles.emptyBtnText}>Browse Shiurim</Text>
+          </Pressable>
         </View>
       )}
     />
@@ -230,6 +239,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
     lineHeight: 20,
+  },
+  emptyIconBadge: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    marginBottom: 4,
+  },
+  emptyBtn: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  emptyBtnText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600" as const,
   },
   errorState: {
     alignItems: "center",

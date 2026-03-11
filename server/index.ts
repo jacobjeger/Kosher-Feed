@@ -12,9 +12,10 @@ import { parseFeed, preResolveHostnames } from "./rss";
 import * as storage from "./storage";
 import { sendNewEpisodePushes } from "./push";
 import { startRefreshCycle, recordFeedResult, endRefreshCycle } from "./feed-vitals";
-import { refreshTATFeedEpisodes, syncTATSpeakers } from "./torahanytime";
-import { detectOUPlatform, refreshOUFeedEpisodes, OU_PLATFORMS } from "./alldaf";
+import { refreshTATFeedEpisodes, syncTATSpeakers, fetchAllSpeakers } from "./torahanytime";
+import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, fetchAuthorById, OU_PLATFORMS, type OUPlatformKey } from "./alldaf";
 import { refreshKHFeedEpisodes, syncKHSpeakers } from "./kolhalashon";
+import { autoCategorizeFeeds } from "./auto-categorize";
 import * as fs from "fs";
 import * as path from "path";
 import pLimit from "p-limit";
@@ -37,6 +38,7 @@ async function ensureColumns() {
     { column: "kolhalashon_rav_id", type: "INTEGER" },
     { column: "kolhalashon_file_id", type: "INTEGER", table: "episodes" },
     { column: "show_in_browse", type: "BOOLEAN DEFAULT true NOT NULL" },
+    { column: "auto_assigned", type: "BOOLEAN DEFAULT false NOT NULL", table: "feed_categories" },
   ];
   for (const col of columnsToAdd) {
     const table = (col as any).table || "feeds";
@@ -539,12 +541,12 @@ const STALE_INTERVALS: Record<string, number> = {
   kh:  4 * 60 * 60 * 1000,   // 4 hours
 };
 
-// Concurrency per feed type
+// Concurrency per feed type (keep total across all types ≤ pool max to avoid DB exhaustion)
 const CONCURRENCY: Record<string, number> = {
-  rss: 5,
-  tat: 8,
-  ou:  8,
-  kh:  15,
+  rss: 3,
+  tat: 4,
+  ou:  3,
+  kh:  5,
 };
 
 async function autoRefreshFeeds() {
@@ -706,6 +708,165 @@ async function networkSanityCheck() {
   }
 }
 
+const SPEAKER_SYNC_INTERVAL = 3 * 24 * 60 * 60 * 1000; // 3 days
+
+// Remove all women/female speaker feeds and prevent re-addition
+async function removeWomenFeeds(): Promise<number> {
+  log("Removing women speaker feeds...");
+  const allFeeds = await storage.getAllFeeds();
+  const isWomanName = (s: string) => /\b(rebbetzin|rabbanit|mrs\.?|ms\.?|miss)\b/i.test(s);
+
+  // Get female TAT speaker IDs
+  let femaleTATIds = new Set<number>();
+  try {
+    const speakers = await fetchAllSpeakers();
+    femaleTATIds = new Set(speakers.filter(s => s.female).map(s => s.id));
+  } catch (e: any) {
+    log(`Warning: could not fetch TAT speakers for gender filter: ${e.message}`);
+  }
+
+  let removed = 0;
+  for (const feed of allFeeds) {
+    let isWoman = false;
+
+    // TAT: check female flag from API
+    if (feed.tatSpeakerId && femaleTATIds.has(feed.tatSpeakerId)) {
+      isWoman = true;
+    }
+
+    // All platforms: check name patterns
+    if (!isWoman && (isWomanName(feed.title) || (feed.author && isWomanName(feed.author)))) {
+      isWoman = true;
+    }
+
+    if (isWoman) {
+      await storage.deleteFeed(feed.id);
+      removed++;
+      log(`Removed woman speaker feed: "${feed.title}" (${feed.sourceNetwork || 'unknown'})`);
+    }
+  }
+  if (removed > 0) log(`Removed ${removed} women speaker feeds`);
+  return removed;
+}
+
+// Sync speakers across all platforms (TAT, KH, OU)
+async function syncAllPlatformSpeakers(): Promise<void> {
+  log("Starting full speaker sync across all platforms...");
+
+  // First remove any women feeds that may have slipped through
+  await removeWomenFeeds().catch(e => log(`Women feed removal error: ${e.message}`));
+
+  // TAT
+  try {
+    const tatResult = await syncTATSpeakers();
+    log(`TAT speaker sync: ${tatResult.created} created, ${tatResult.linked} linked`);
+  } catch (e: any) {
+    log(`TAT speaker sync error: ${e.message}`);
+  }
+
+  // KH
+  try {
+    const khResult = await syncKHSpeakers();
+    log(`KH speaker sync: ${khResult.created} created, ${khResult.linked} linked`);
+    await storage.recomputeKHBrowseVisibility().catch(e => log(`KH recompute error: ${e.message}`));
+  } catch (e: any) {
+    log(`KH speaker sync error: ${e.message}`);
+  }
+
+  // OU platforms (AllDaf, AllMishnah, AllParsha)
+  for (const cfg of Object.values(OU_PLATFORMS)) {
+    try {
+      const result = await syncOUPlatformAuthors(cfg.key);
+      log(`${cfg.label} speaker sync: ${result.created} created, ${result.linked} linked`);
+    } catch (e: any) {
+      log(`${cfg.label} speaker sync error: ${e.message}`);
+    }
+  }
+
+  // Update bios from TAT for any feeds missing descriptions
+  try {
+    await updateSpeakerBios();
+  } catch (e: any) {
+    log(`Bio update error: ${e.message}`);
+  }
+
+  // Final cleanup: remove any women feeds that the syncs may have created
+  await removeWomenFeeds().catch(e => log(`Post-sync women removal error: ${e.message}`));
+
+  // Auto-categorize feeds based on episode topics and feed metadata
+  try {
+    await autoCategorizeFeeds();
+  } catch (e: any) {
+    log(`Auto-categorize error: ${e.message}`);
+  }
+
+  log("Full speaker sync complete.");
+}
+
+// Pull speaker bios from TAT API and update feed descriptions
+async function updateSpeakerBios(): Promise<number> {
+  log("Updating speaker bios from TAT and OU platforms...");
+  const speakers = await fetchAllSpeakers();
+  const allFeeds = await storage.getAllFeeds();
+
+  const isPlaceholder = (desc: string | null | undefined): boolean => {
+    const d = desc?.trim() || "";
+    return !d || d === "Shiurim on Kol Halashon" || /^\d+ shiurim on /.test(d);
+  };
+
+  // Build map of tatSpeakerId -> speaker with bio
+  const speakersWithBio = new Map<number, string>();
+  for (const s of speakers) {
+    if (s.desc && s.desc.trim().length > 10) {
+      const cleanBio = s.desc.replace(/<[^>]+>/g, "").trim();
+      if (cleanBio.length > 10) {
+        speakersWithBio.set(s.id, cleanBio);
+      }
+    }
+  }
+
+  let updated = 0;
+
+  for (const feed of allFeeds) {
+    if (!isPlaceholder(feed.description)) continue;
+
+    // Try TAT bio first
+    if (feed.tatSpeakerId) {
+      const bio = speakersWithBio.get(feed.tatSpeakerId);
+      if (bio) {
+        await storage.updateFeed(feed.id, { description: bio } as any);
+        updated++;
+        continue;
+      }
+    }
+
+    // Try OU bio (fetch detail for each OU-linked feed missing a bio)
+    const ouFields: { field: string; platform: OUPlatformKey }[] = [
+      { field: "alldafAuthorId", platform: "alldaf" },
+      { field: "allmishnahAuthorId", platform: "allmishnah" },
+      { field: "allparshaAuthorId", platform: "allparsha" },
+    ];
+    for (const { field, platform } of ouFields) {
+      const authorId = (feed as any)[field];
+      if (!authorId) continue;
+      try {
+        const detail = await fetchAuthorById(platform, authorId);
+        if (detail?.bio) {
+          const cleanBio = detail.bio.replace(/<[^>]+>/g, "").trim();
+          if (cleanBio.length > 10) {
+            await storage.updateFeed(feed.id, { description: cleanBio } as any);
+            updated++;
+            break;
+          }
+        }
+      } catch {}
+      await new Promise(r => setTimeout(r, 100));
+    }
+  }
+  if (updated > 0) log(`Updated ${updated} feed bios from TAT/OU`);
+  return updated;
+}
+
 function startAutoRefresh() {
   log(`Auto-refresh enabled: checking feeds every ${FEED_REFRESH_INTERVAL / 60000} minutes (sequential, retry on timeout)`);
   setInterval(autoRefreshFeeds, FEED_REFRESH_INTERVAL);
@@ -742,16 +903,13 @@ function startAutoRefresh() {
       log(`express server serving on port ${serverPort}`);
       seedIfEmpty().catch((e) => console.error("Seed error:", e));
       startAutoRefresh();
-      // Sync TorahAnytime speakers in background after 15s
+      // Full speaker sync on startup (after 15s delay) and then every 3 days
       setTimeout(() => {
-        syncTATSpeakers().catch(e => console.error("TAT initial sync error:", e.message));
+        syncAllPlatformSpeakers().catch(e => console.error("Initial speaker sync error:", e.message));
       }, 15000);
-      // Sync Kol Halashon speakers in background after 30s (auto-solves CF challenge via Playwright)
-      setTimeout(() => {
-        syncKHSpeakers()
-          .then(() => storage.recomputeKHBrowseVisibility().catch(e => console.error("KH recompute error:", e.message)))
-          .catch(e => console.error("KH initial sync error:", e.message));
-      }, 30000);
+      setInterval(() => {
+        syncAllPlatformSpeakers().catch(e => console.error("Periodic speaker sync error:", e.message));
+      }, SPEAKER_SYNC_INTERVAL);
       // Recompute KH browse visibility every 6 hours
       setInterval(() => {
         storage.recomputeKHBrowseVisibility().catch(e => console.error("KH recompute error:", e.message));

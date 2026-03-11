@@ -225,7 +225,7 @@ const webStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    maxWidth: 960,
+    maxWidth: 1080,
     marginHorizontal: "auto" as any,
     width: "100%" as any,
     height: 64,
@@ -260,7 +260,7 @@ const webStyles = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
     borderRadius: 8,
-    ...(Platform.OS === "web" ? { transition: "background-color 0.15s ease" as any, cursor: "pointer" as any } : {}),
+    ...(Platform.OS === "web" ? { transition: "all 0.2s ease" as any, cursor: "pointer" as any } : {}),
   },
   navLinkText: {
     fontSize: 14,

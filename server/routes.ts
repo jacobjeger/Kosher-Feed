@@ -10,25 +10,37 @@ import { db } from "./db";
 import { eq, desc } from "drizzle-orm";
 import { syncTATSpeakers, refreshTATFeedEpisodes, fetchAllSpeakers } from "./torahanytime";
 import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, OU_PLATFORMS, type OUPlatformKey } from "./alldaf";
-import { syncKHSpeakers, refreshKHFeedEpisodes, reloadKHClient } from "./kolhalashon";
+import { syncKHSpeakers, refreshKHFeedEpisodes, reloadKHClient, getHeaders as getKHHeaders } from "./kolhalashon";
 import multer from "multer";
 import path from "node:path";
 import fs from "node:fs";
 
 const ON_DEMAND_STALE_MS = 5 * 60 * 1000;
 
+// Default logo for Kol Halashon feeds without a speaker image
+const KH_DEFAULT_LOGO_PATH = "/api/images/kol-halashon-logo.svg";
+
+function addKHDefaultImage(feed: any, baseUrl?: string): any {
+  if (!feed.imageUrl && feed.sourceNetwork === "Kol Halashon") {
+    const prefix = baseUrl || "";
+    return { ...feed, imageUrl: prefix + KH_DEFAULT_LOGO_PATH };
+  }
+  return feed;
+}
+
 // Resolve KH audio URLs through the proxy worker
 function resolveKHAudioUrl(audioUrl: string): { url: string; headers: Record<string, string> } {
-  const headers: Record<string, string> = { "User-Agent": "ShiurPod/1.0" };
-  const khMatch = audioUrl.match(/https?:\/\/srv\.kolhalashon\.com\/api\/files\/getLocationOfFileToVideo\/(\d+)/);
-  if (khMatch && process.env.KH_PROXY_URL) {
+  const khMatch = audioUrl.match(/https?:\/\/srv\.kolhalashon\.com\/api\/files\/(?:GetMp3FileToPlay|getLocationOfFileToVideo)\/(\d+)/);
+  if (khMatch) {
     const fileId = khMatch[1];
-    const proxyBase = process.env.KH_PROXY_URL.replace(/\/$/, "") + "/api";
-    const url = `${proxyBase}/files/getLocationOfFileToVideo/${fileId}`;
-    if (process.env.KH_PROXY_KEY) headers["x-proxy-key"] = process.env.KH_PROXY_KEY;
-    return { url, headers };
+    const headers = getKHHeaders();
+    if (process.env.KH_PROXY_URL) {
+      const proxyBase = process.env.KH_PROXY_URL.replace(/\/$/, "") + "/api";
+      return { url: `${proxyBase}/files/GetMp3FileToPlay/${fileId}`, headers };
+    }
+    return { url: `https://srv.kolhalashon.com/api/files/GetMp3FileToPlay/${fileId}`, headers };
   }
-  return { url: audioUrl, headers };
+  return { url: audioUrl, headers: { "User-Agent": "ShiurPod/1.0" } };
 }
 
 function detectSourceNetwork(rssUrl: string): string | null {
@@ -164,6 +176,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
+  // Serve static brand images (e.g. Kol Halashon logo)
+  app.get("/api/images/:name", (req: Request, res: Response) => {
+    const name = req.params.name?.replace(/[^a-zA-Z0-9._-]/g, "");
+    if (!name) return res.status(400).send("Invalid name");
+    const filePath = path.resolve(process.cwd(), "assets", "images", name);
+    if (!fs.existsSync(filePath)) return res.status(404).send("Not found");
+    const ext = path.extname(name).toLowerCase();
+    const mimeTypes: Record<string, string> = { ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
+    res.setHeader("Content-Type", mimeTypes[ext] || "application/octet-stream");
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    res.sendFile(filePath);
+  });
+
   app.post("/api/admin/login", async (req: Request, res: Response) => {
     try {
       const { username, password } = req.body;
@@ -222,14 +247,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Feeds
-  app.get("/api/feeds", async (_req: Request, res: Response) => {
+  app.post("/api/admin/auto-categorize", adminAuth as any, async (_req: Request, res: Response) => {
     try {
+      const { autoCategorizeFeeds } = await import("./auto-categorize");
+      await autoCategorizeFeeds();
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Feeds
+  app.get("/api/feeds", async (req: Request, res: Response) => {
+    try {
+      const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
+      const host = req.header("x-forwarded-host") || req.get("host");
+      const baseUrl = `${protocol}://${host}`;
       const feedList = await storage.getActiveFeeds();
       const mappings = await storage.getAllFeedCategoryMappings();
       const feedsWithCategories = feedList.map(f => {
         const catIds = mappings.filter(m => m.feedId === f.id).map(m => m.categoryId);
-        return { ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) };
+        return addKHDefaultImage({ ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) }, baseUrl);
       });
       res.setHeader("Cache-Control", "public, max-age=60");
       res.json(feedsWithCategories);
@@ -252,6 +290,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Feed search (searches ALL active feeds including hidden-from-browse)
   app.get("/api/feeds/search", async (req: Request, res: Response) => {
     try {
+      const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
+      const host = req.header("x-forwarded-host") || req.get("host");
+      const baseUrl = `${protocol}://${host}`;
       const q = (req.query.q as string || "").trim();
       if (q.length < 2) return res.json([]);
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
@@ -259,7 +300,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const mappings = await storage.getAllFeedCategoryMappings();
       const enriched = results.map(f => {
         const catIds = mappings.filter(m => m.feedId === f.id).map(m => m.categoryId);
-        return { ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) };
+        return addKHDefaultImage({ ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) }, baseUrl);
       });
       res.setHeader("Cache-Control", "public, max-age=30");
       res.json(enriched);
@@ -270,23 +311,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/feeds/category/:categoryId", async (req: Request, res: Response) => {
     try {
+      const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
+      const host = req.header("x-forwarded-host") || req.get("host");
+      const baseUrl = `${protocol}://${host}`;
       const legacyFeeds = await storage.getFeedsByCategory(req.params.categoryId);
       const junctionFeeds = await storage.getFeedsByCategories(req.params.categoryId);
       const allFeedsMap = new Map<string, any>();
       for (const f of legacyFeeds) allFeedsMap.set(f.id, f);
       for (const f of junctionFeeds) allFeedsMap.set(f.id, f);
-      res.json(Array.from(allFeedsMap.values()));
+      res.json(Array.from(allFeedsMap.values()).map(f => addKHDefaultImage(f, baseUrl)));
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
   // Maggid Shiur - feeds grouped by author/speaker
-  app.get("/api/feeds/maggid-shiur", async (_req: Request, res: Response) => {
+  app.get("/api/feeds/maggid-shiur", async (req: Request, res: Response) => {
     try {
+      const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
+      const host = req.header("x-forwarded-host") || req.get("host");
+      const baseUrl = `${protocol}://${host}`;
       const grouped = await storage.getActiveFeedsGroupedByAuthor();
+      const enriched = grouped.map((g: any) => ({
+        ...g,
+        feeds: g.feeds.map((f: any) => addKHDefaultImage(f, baseUrl)),
+      }));
       res.setHeader("Cache-Control", "public, max-age=60");
-      res.json(grouped);
+      res.json(enriched);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -294,6 +345,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/ping", (_req: Request, res: Response) => {
     res.json({ ok: true, ts: Date.now() });
+  });
+
+  // Single feed by ID (works for all feeds regardless of showInBrowse)
+  app.get("/api/feeds/:id", async (req: Request, res: Response) => {
+    try {
+      const feed = await storage.getFeedById(req.params.id);
+      if (!feed) return res.status(404).json({ error: "Feed not found" });
+      const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
+      const host = req.header("x-forwarded-host") || req.get("host");
+      const baseUrl = `${protocol}://${host}`;
+      const mappings = await storage.getAllFeedCategoryMappings();
+      const catIds = mappings.filter(m => m.feedId === feed.id).map(m => m.categoryId);
+      res.json(addKHDefaultImage({ ...feed, categoryIds: catIds.length > 0 ? catIds : (feed.categoryId ? [feed.categoryId] : []) }, baseUrl));
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   app.get("/api/feeds/:id/episodes", async (req: Request, res: Response) => {
@@ -621,12 +688,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const recommendationCache = new Map<string, { data: Feed[]; ts: number }>();
   app.get("/api/recommendations/:deviceId", async (req: Request, res: Response) => {
     try {
+      const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
+      const host = req.header("x-forwarded-host") || req.get("host");
+      const baseUrl = `${protocol}://${host}`;
       const { deviceId } = req.params;
       const limit = parseInt(req.query.limit as string) || 10;
       const cached = recommendationCache.get(deviceId);
       if (cached && Date.now() - cached.ts < 5 * 60 * 1000) {
         res.setHeader("Cache-Control", "public, max-age=60");
-        return res.json(cached.data);
+        return res.json(cached.data.map((f: any) => addKHDefaultImage(f, baseUrl)));
       }
       const recs = await storage.getRecommendations(deviceId, limit);
       recommendationCache.set(deviceId, { data: recs, ts: Date.now() });
@@ -638,7 +708,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       res.setHeader("Cache-Control", "public, max-age=60");
-      res.json(recs);
+      res.json(recs.map((f: any) => addKHDefaultImage(f, baseUrl)));
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -948,80 +1018,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // KH audio proxy — resolves the getLocationOfFileToVideo redirect through the KH proxy
+  // KH audio proxy — resolves the getLocationOfFileToVideo and streams/redirects audio
   app.get("/api/audio/kh/:fileId", async (req: Request, res: Response) => {
     try {
       const fileId = req.params.fileId;
       if (!fileId || !/^\d+$/.test(fileId)) return res.status(400).json({ error: "Invalid file ID" });
 
+      // KH serves MP3 audio via: srv.kolhalashon.com/api/files/GetMp3FileToPlay/{fileId}
+      const khPath = `/api/files/GetMp3FileToPlay/${fileId}`;
+      const headers = getKHHeaders();
+      headers["accept"] = "*/*";
+
       const proxyUrl = process.env.KH_PROXY_URL;
-      const baseUrl = proxyUrl ? proxyUrl.replace(/\/$/, "") + "/api" : "https://srv.kolhalashon.com/api";
-      const khUrl = `${baseUrl}/files/getLocationOfFileToVideo/${fileId}`;
+      const urlsToTry = proxyUrl
+        ? [`${proxyUrl.replace(/\/$/, "")}${khPath}`, `https://srv.kolhalashon.com${khPath}`]
+        : [`https://srv.kolhalashon.com${khPath}`];
 
-      const headers: Record<string, string> = { "User-Agent": "ShiurPod/1.0" };
-      if (proxyUrl && process.env.KH_PROXY_KEY) {
-        headers["x-proxy-key"] = process.env.KH_PROXY_KEY;
+      for (const url of urlsToTry) {
+        try {
+          const rangeHeader = req.headers.range;
+          const reqHeaders: Record<string, string> = { ...headers };
+          if (rangeHeader) reqHeaders["Range"] = rangeHeader;
+
+          const audioResp = await fetch(url, {
+            headers: reqHeaders,
+            redirect: "follow",
+            signal: AbortSignal.timeout(30000),
+          });
+
+          if (audioResp.ok || audioResp.status === 206) {
+            console.log(`KH audio: ${fileId} serving from ${url.includes("proxy") ? "proxy" : "direct"}`);
+            res.status(audioResp.status);
+            res.setHeader("Content-Type", audioResp.headers.get("content-type") || "audio/mpeg");
+            const cl = audioResp.headers.get("content-length");
+            if (cl) res.setHeader("Content-Length", cl);
+            const cr = audioResp.headers.get("content-range");
+            if (cr) res.setHeader("Content-Range", cr);
+            res.setHeader("Accept-Ranges", "bytes");
+            res.setHeader("Cache-Control", "public, max-age=86400");
+
+            const reader = audioResp.body?.getReader();
+            if (!reader) return res.status(502).json({ error: "No stream" });
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              if (!res.writableEnded) res.write(Buffer.from(value));
+            }
+            res.end();
+            return;
+          }
+          console.log(`KH audio: ${url} returned ${audioResp.status}`);
+        } catch (e: any) {
+          console.log(`KH audio: ${url} failed — ${e.message?.slice(0, 100)}`);
+        }
       }
 
-      // First resolve the redirect to get the actual audio URL
-      const redirectResp = await fetch(khUrl, { headers, redirect: "follow" });
-      if (!redirectResp.ok) return res.status(502).json({ error: "Failed to fetch KH audio" });
-
-      // Check if it returned a URL string or binary audio
-      const contentType = redirectResp.headers.get("content-type") || "";
-
-      if (contentType.includes("audio") || contentType.includes("octet-stream")) {
-        // Direct audio stream
-        res.setHeader("Content-Type", contentType);
-        const contentLength = redirectResp.headers.get("content-length");
-        if (contentLength) res.setHeader("Content-Length", contentLength);
-        res.setHeader("Accept-Ranges", "bytes");
-        res.setHeader("Cache-Control", "public, max-age=86400");
-
-        const reader = redirectResp.body?.getReader();
-        if (!reader) return res.status(502).json({ error: "No stream" });
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (!res.writableEnded) res.write(Buffer.from(value));
-        }
-        res.end();
-      } else {
-        // The response might be a URL string or JSON with a redirect URL
-        const body = await redirectResp.text();
-        const audioUrl = body.trim().replace(/^"|"$/g, "");
-
-        if (!audioUrl || !audioUrl.startsWith("http")) {
-          return res.status(502).json({ error: "Invalid audio URL from KH" });
-        }
-
-        // Fetch the actual audio file
-        const rangeHeader = req.headers.range;
-        const audioHeaders: Record<string, string> = { "User-Agent": "ShiurPod/1.0" };
-        if (rangeHeader) audioHeaders["Range"] = rangeHeader;
-
-        const audioResp = await fetch(audioUrl, { headers: audioHeaders, redirect: "follow" });
-        if (!audioResp.ok && audioResp.status !== 206) return res.status(502).json({ error: "Failed to fetch audio file" });
-
-        res.status(audioResp.status);
-        res.setHeader("Content-Type", audioResp.headers.get("content-type") || "audio/mpeg");
-        const cl = audioResp.headers.get("content-length");
-        if (cl) res.setHeader("Content-Length", cl);
-        const cr = audioResp.headers.get("content-range");
-        if (cr) res.setHeader("Content-Range", cr);
-        res.setHeader("Accept-Ranges", "bytes");
-        res.setHeader("Cache-Control", "public, max-age=86400");
-
-        const reader = audioResp.body?.getReader();
-        if (!reader) return res.status(502).json({ error: "No stream" });
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (!res.writableEnded) res.write(Buffer.from(value));
-        }
-        res.end();
-      }
+      return res.status(502).json({ error: "Failed to fetch KH audio" });
     } catch (e: any) {
+      console.error(`KH audio proxy error for ${req.params.fileId}:`, e.message);
       if (!res.headersSent) res.status(500).json({ error: e.message });
     }
   });

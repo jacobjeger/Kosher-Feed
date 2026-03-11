@@ -7,6 +7,7 @@ import { filterCrossSourceDuplicates, isMergedFeed } from "./episode-dedup";
 // KH API base URL
 const KH_API_BASE = "https://srv.kolhalashon.com/api";
 
+
 // When KH_PROXY_URL is set, route requests through the Cloudflare Worker proxy
 // This bypasses Cloudflare's IP-based blocking on cloud hosting providers
 function getBaseUrl(): string {
@@ -19,7 +20,7 @@ function getBaseUrl(): string {
   return KH_API_BASE;
 }
 
-function getHeaders(): Record<string, string> {
+export function getHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     "accept": "application/json, text/plain, */*",
     "content-type": "application/json",
@@ -144,7 +145,7 @@ export function mapKHShiurToEpisodeData(shiur: any, feedId: string) {
     shiur.CatDescEnglish1 || shiur.CatDesc1,
   ].filter(Boolean);
 
-  const audioUrl = `${KH_API_BASE}/files/getLocationOfFileToVideo/${fileId}`;
+  const audioUrl = `${KH_API_BASE}/files/GetMp3FileToPlay/${fileId}`;
 
   return {
     feedId,

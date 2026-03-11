@@ -60,6 +60,11 @@ export interface OUAuthor {
   postCount: number;
 }
 
+export interface OUAuthorDetail extends OUAuthor {
+  bio: string | null;
+  gender: string | null;
+}
+
 export interface OUPost {
   id: number;
   title: string;
@@ -126,6 +131,27 @@ export async function fetchAllAuthors(platform: OUPlatformKey, take: number = 50
   }
 
   return allAuthors;
+}
+
+export async function fetchAuthorById(platform: OUPlatformKey, authorId: number): Promise<OUAuthorDetail | null> {
+  const cfg = OU_PLATFORMS[platform];
+  try {
+    const data = await trpcGet(cfg.baseUrl, "authors.fetchById", {
+      "0": { id: authorId, platform: cfg.platformParam },
+    });
+    const author = data[0]?.result?.data;
+    if (!author) return null;
+    return {
+      id: author.id,
+      name: author.name,
+      image: author.image || null,
+      postCount: author.postCount || 0,
+      bio: author.bio || null,
+      gender: author.gender || null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchAuthorPosts(platform: OUPlatformKey, authorId: number, limit: number = 50, skip: number = 0): Promise<{ records: OUPost[]; total?: number }> {
@@ -278,12 +304,20 @@ export async function syncOUPlatformAuthors(platform: OUPlatformKey): Promise<{ 
   let created = 0;
   let linked = 0;
 
+  const isWomanName = (s: string) => /\b(rebbetzin|rabbanit|mrs\.?|ms\.?|miss)\b/i.test(s);
+
   for (const author of authors) {
     if (author.postCount === 0) continue;
     if (existingFeeds.has(author.id)) continue;
+    if (isWomanName(author.name)) continue;
+
+    // Fetch full author detail for bio and gender
+    const detail = await fetchAuthorById(platform, author.id);
+    if (detail?.gender?.toLowerCase() === "female") continue;
 
     const normalizedAuthorName = normalizeName(author.name);
     const photoUrl = buildAuthorImageUrl(author.image);
+    const bio = detail?.bio ? detail.bio.replace(/<[^>]+>/g, "").trim() : null;
 
     let matchedFeed = feedsByNormalizedName.get(normalizedAuthorName);
     if (!matchedFeed && normalizedAuthorName.length >= 5) {
@@ -297,19 +331,28 @@ export async function syncOUPlatformAuthors(platform: OUPlatformKey): Promise<{ 
     }
 
     if (matchedFeed) {
-      await storage.updateFeed(matchedFeed.id, {
+      const updates: Record<string, any> = {
         sourceNetwork: matchedFeed.sourceNetwork || cfg.label,
-      } as any);
+      };
+      // Update bio if we have one and the feed's description is empty/placeholder
+      if (bio && bio.length > 10) {
+        const curDesc = matchedFeed.description?.trim() || "";
+        if (!curDesc || /^\d+ shiurim on /.test(curDesc) || curDesc === "Shiurim on Kol Halashon") {
+          updates.description = bio;
+        }
+      }
+      await storage.updateFeed(matchedFeed.id, updates as any);
       await storage.setOUAuthorId(matchedFeed.id, cfg.feedIdField, author.id);
       linked++;
       console.log(`${cfg.label} Sync: linked "${author.name}" to existing feed "${matchedFeed.title}"`);
     } else {
       try {
+        const description = (bio && bio.length > 10) ? bio : `${author.postCount} shiurim on ${cfg.label}`;
         const newFeed = await storage.createFeed({
           title: author.name,
           rssUrl: `${cfg.urlScheme}${author.id}`,
           imageUrl: photoUrl,
-          description: `${author.postCount} shiurim on ${cfg.label}`,
+          description,
           author: author.name,
           categoryId: null,
           sourceNetwork: cfg.label,
@@ -322,6 +365,8 @@ export async function syncOUPlatformAuthors(platform: OUPlatformKey): Promise<{ 
         }
       }
     }
+    // Small delay between author detail fetches
+    await new Promise(r => setTimeout(r, 100));
   }
 
   console.log(`${cfg.label} Sync complete: ${created} created, ${linked} linked, ${authors.length} total authors`);

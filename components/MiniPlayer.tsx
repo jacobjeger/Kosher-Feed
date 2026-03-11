@@ -1,6 +1,7 @@
 import React from "react";
 import { View, Text, Pressable, StyleSheet, Platform, ActivityIndicator } from "react-native";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import Animated, { FadeInDown, FadeOutDown, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
+import { LinearGradient } from "expo-linear-gradient";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
@@ -30,15 +31,28 @@ export default function MiniPlayer() {
   const progress = isNaN(rawProgress) ? 0 : Math.min(rawProgress, 1);
 
   const enteringAnimation = !isWeb ? FadeInDown.duration(300).springify() : undefined;
+  const exitingAnimation = !isWeb ? FadeOutDown.duration(200) : undefined;
+  const pressScale = useSharedValue(1);
+  const pressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pressScale.value }],
+  }));
 
   return (
-    <Animated.View entering={enteringAnimation}>
+    <Animated.View entering={enteringAnimation} exiting={exitingAnimation} style={pressStyle}>
       <Pressable
         style={[styles.container, { backgroundColor: colors.playerBg }]}
         onPress={() => router.push("/player")}
+        onPressIn={() => { pressScale.value = withSpring(0.98, { damping: 15 }); }}
+        onPressOut={() => { pressScale.value = withSpring(1, { damping: 15 }); }}
       >
         <View style={[styles.progressBar, { backgroundColor: "rgba(255,255,255,0.08)" }]}>
-          <View style={[styles.progressFill, { width: `${progress * 100}%`, backgroundColor: colors.playerAccent }, isWeb ? { transition: 'width 0.3s ease' } as any : undefined]} />
+          <LinearGradient
+            colors={[colors.gradientStart, colors.gradientEnd]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={[styles.progressFill, { width: `${progress * 100}%` }, isWeb ? { transition: 'width 0.3s ease' } as any : undefined]}
+          />
+          <View style={[styles.progressDot, { left: `${progress * 100}%`, backgroundColor: colors.gradientEnd }]} />
         </View>
 
         <View style={styles.content}>
@@ -128,10 +142,12 @@ const styles = StyleSheet.create({
     ...Platform.select({
       web: {
         boxShadow: "0 -2px 16px rgba(0,0,0,0.3)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
         maxWidth: 900,
         marginHorizontal: "auto" as any,
         width: "calc(100% - 24px)" as any,
-      },
+      } as any,
       ios: {
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 4 },
@@ -147,6 +163,14 @@ const styles = StyleSheet.create({
   progressFill: {
     height: "100%" as any,
     borderRadius: 2,
+  },
+  progressDot: {
+    position: "absolute" as const,
+    top: -2,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    marginLeft: -4,
   },
   content: {
     flexDirection: "row",

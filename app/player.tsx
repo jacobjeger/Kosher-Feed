@@ -4,11 +4,13 @@ import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { BlurView } from "expo-blur";
 import { router } from "expo-router";
 import { safeGoBack } from "@/lib/safe-back";
 import Slider from "@react-native-community/slider";
 import { useAudioPlayer, usePlaybackPosition } from "@/contexts/AudioPlayerContext";
 import Colors from "@/constants/colors";
+import { cardShadow } from "@/constants/shadows";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import { getBookmarks, addBookmark, removeBookmark, type Bookmark } from "@/lib/bookmarks";
 import { useSettings } from "@/contexts/SettingsContext";
@@ -247,19 +249,42 @@ export default function PlayerScreen() {
       </View>
 
       <View style={[styles.artworkContainer, isSmallScreen && styles.artworkContainerSmall]}>
-        <RNAnimated.View 
+        {currentFeed.imageUrl && (
+          <View style={styles.artworkGlow}>
+            {Platform.OS === "web" ? (
+              <Image
+                source={{ uri: currentFeed.imageUrl }}
+                style={[styles.artworkGlowImage, { maxWidth: artworkMaxSize * 1.3 }]}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+              />
+            ) : (
+              <BlurView intensity={60} style={StyleSheet.absoluteFill}>
+                <Image
+                  source={{ uri: currentFeed.imageUrl }}
+                  style={[styles.artworkGlowImage, { maxWidth: artworkMaxSize * 1.3 }]}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                />
+              </BlurView>
+            )}
+          </View>
+        )}
+        <RNAnimated.View
           {...panResponder.panHandlers}
           style={{ transform: [{ translateX: swipeAnim }] }}
         >
           {currentFeed.imageUrl ? (
-            <Image
-              source={{ uri: currentFeed.imageUrl }}
-              style={[styles.artwork, { maxWidth: artworkMaxSize }]}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-              recyclingKey={currentFeed.imageUrl}
-              transition={0}
-            />
+            <View style={[{ borderRadius: 16 }, cardShadow("lg", colors.shadowColor)]}>
+              <Image
+                source={{ uri: currentFeed.imageUrl }}
+                style={[styles.artwork, { maxWidth: artworkMaxSize }]}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                recyclingKey={currentFeed.imageUrl}
+                transition={0}
+              />
+            </View>
           ) : (
             <View style={[styles.artwork, { maxWidth: artworkMaxSize, backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
               <Ionicons name="mic" size={isSmallScreen ? 48 : 80} color={colors.textSecondary} />
@@ -509,6 +534,19 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 60,
   },
+  artworkGlow: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    opacity: 0.3,
+    overflow: "hidden",
+    ...(Platform.OS === "web" ? { filter: "blur(40px)" } as any : {}),
+  },
+  artworkGlowImage: {
+    width: "100%" as any,
+    aspectRatio: 1,
+    borderRadius: 16,
+  },
   artwork: {
     width: "100%" as any,
     maxWidth: 220,
@@ -560,7 +598,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 16,
+    gap: 20,
     paddingHorizontal: 24,
     paddingBottom: 10,
   },

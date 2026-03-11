@@ -1,7 +1,7 @@
 import React from "react";
-import { View, Text, FlatList, StyleSheet, Platform } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { View, FlatList, StyleSheet, Platform } from "react-native";
 import PodcastCard from "@/components/PodcastCard";
+import SectionHeader from "./SectionHeader";
 import type { Feed } from "@/lib/types";
 
 interface Props {
@@ -14,10 +14,7 @@ export default React.memo(function RecommendedSection({ feeds, colors }: Props) 
 
   return (
     <View style={styles.section}>
-      <View style={styles.sectionHeaderRow}>
-        <Ionicons name="sparkles" size={18} color={colors.accent} />
-        <Text style={[styles.sectionTitle, { color: colors.text, paddingHorizontal: 0 }]}>Recommended for You</Text>
-      </View>
+      <SectionHeader title="Recommended for You" icon="sparkles" colors={colors} />
       <FlatList
         horizontal
         data={feeds}
@@ -36,19 +33,6 @@ export default React.memo(function RecommendedSection({ feeds, colors }: Props) 
 
 const styles = StyleSheet.create({
   section: {
-    marginBottom: 22,
-  },
-  sectionHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 20,
-    marginBottom: 14,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: "700" as const,
-    paddingHorizontal: 20,
-    marginBottom: 10,
+    marginBottom: 28,
   },
 });
