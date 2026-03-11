@@ -7,6 +7,7 @@ import { useDownloads } from "@/contexts/DownloadsContext";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { usePlayedEpisodes } from "@/contexts/PlayedEpisodesContext";
 import { usePositions } from "@/contexts/PositionsContext";
+import { router } from "expo-router";
 import Colors from "@/constants/colors";
 import type { DownloadedEpisode, Feed } from "@/lib/types";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
@@ -162,11 +163,19 @@ function DownloadsScreenInner() {
       renderItem={({ item }) => <DownloadItem item={item} />}
       ListEmptyComponent={() => (
         <View style={styles.emptyState}>
-          <Ionicons name="cloud-download-outline" size={64} color={colors.textSecondary} />
+          <View style={[styles.emptyIconBadge, { backgroundColor: colors.accentLight }]}>
+            <Ionicons name="cloud-download-outline" size={36} color={colors.accent} />
+          </View>
           <Text style={[styles.emptyTitle, { color: colors.text }]}>No Downloads</Text>
           <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
             Download episodes to listen offline. Tap the download icon on any episode.
           </Text>
+          <Pressable
+            onPress={() => router.push("/(tabs)/")}
+            style={[styles.emptyBtn, { backgroundColor: colors.accent }]}
+          >
+            <Text style={styles.emptyBtnText}>Browse Shiurim</Text>
+          </Pressable>
         </View>
       )}
     />
@@ -266,5 +275,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
     lineHeight: 20,
+  },
+  emptyIconBadge: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    marginBottom: 4,
+  },
+  emptyBtn: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  emptyBtnText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600" as const,
   },
 });

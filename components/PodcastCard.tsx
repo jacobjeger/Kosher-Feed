@@ -4,6 +4,7 @@ import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
+import { cardShadow } from "@/constants/shadows";
 import type { Feed } from "@/lib/types";
 import { router } from "expo-router";
 
@@ -162,8 +163,9 @@ const styles = StyleSheet.create({
   featuredContainer: {
     marginRight: 16,
     borderRadius: 16,
-    borderWidth: 1,
+    borderWidth: Platform.OS === "web" ? 0 : 1,
     overflow: "hidden",
+    ...cardShadow("md"),
     ...(Platform.OS === "web" ? { transition: "transform 0.2s ease, box-shadow 0.2s ease" as any, cursor: "pointer" as any } : {}),
   },
   featuredImage: {
@@ -211,9 +213,10 @@ const styles = StyleSheet.create({
   mediumContainer: {
     flexDirection: "row",
     borderRadius: 14,
-    borderWidth: 1,
+    borderWidth: Platform.OS === "web" ? 0 : 1,
     overflow: "hidden",
     marginBottom: 10,
+    ...cardShadow("sm"),
     ...(Platform.OS === "web" ? { transition: "transform 0.2s ease, box-shadow 0.2s ease" as any, cursor: "pointer" as any } : {}),
   },
   mediumImage: {
@@ -239,8 +242,9 @@ const styles = StyleSheet.create({
     width: Platform.OS === "web" ? 150 : 130,
     marginRight: 12,
     borderRadius: 14,
-    borderWidth: 1,
+    borderWidth: Platform.OS === "web" ? 0 : 1,
     overflow: "hidden",
+    ...cardShadow("sm"),
     ...(Platform.OS === "web" ? { transition: "transform 0.2s ease, box-shadow 0.2s ease" as any, cursor: "pointer" as any } : {}),
   },
   smallImage: {

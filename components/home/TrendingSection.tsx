@@ -2,6 +2,7 @@ import React from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import SectionHeader from "./SectionHeader";
 import type { Feed, Episode } from "@/lib/types";
 
 interface TrendingEpisode extends Episode {
@@ -49,10 +50,7 @@ export default React.memo(function TrendingSection({ items, colors, onPlay }: Pr
 
   return (
     <View style={styles.section}>
-      <View style={styles.sectionHeaderRow}>
-        <Ionicons name="flame" size={18} color="#f59e0b" />
-        <Text style={[styles.sectionTitle, { color: colors.text, paddingHorizontal: 0 }]}>Trending</Text>
-      </View>
+      <SectionHeader title="Trending" icon="flame" iconColor="#f59e0b" colors={colors} />
       <View style={{ paddingHorizontal: 20 }}>
         {items.map(({ episode, feed }, index) => (
           <TrendingEpisodeCard
@@ -71,20 +69,7 @@ export default React.memo(function TrendingSection({ items, colors, onPlay }: Pr
 
 const styles = StyleSheet.create({
   section: {
-    marginBottom: 22,
-  },
-  sectionHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 20,
-    marginBottom: 14,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: "700" as const,
-    paddingHorizontal: 20,
-    marginBottom: 10,
+    marginBottom: 28,
   },
   trendingCard: {
     flexDirection: "row",

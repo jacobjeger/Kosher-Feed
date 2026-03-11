@@ -1,6 +1,7 @@
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, StyleSheet } from "react-native";
 import EpisodeItem from "@/components/EpisodeItem";
+import SectionHeader from "./SectionHeader";
 import type { Feed, Episode } from "@/lib/types";
 
 interface Props {
@@ -14,7 +15,7 @@ export default React.memo(function RecentlyListenedSection({ items, colors, isOn
 
   return (
     <View style={styles.section}>
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>Recently Listened</Text>
+      <SectionHeader title="Recently Listened" colors={colors} />
       <View style={{ paddingHorizontal: 20 }}>
         {items.map(({ episode, feed }) => (
           <EpisodeItem key={episode.id} episode={episode} feed={feed} showFeedTitle isOnline={isOnline} />
@@ -26,12 +27,6 @@ export default React.memo(function RecentlyListenedSection({ items, colors, isOn
 
 const styles = StyleSheet.create({
   section: {
-    marginBottom: 22,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: "700" as const,
-    paddingHorizontal: 20,
-    marginBottom: 10,
+    marginBottom: 28,
   },
 });

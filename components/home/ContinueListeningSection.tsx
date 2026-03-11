@@ -2,6 +2,7 @@ import React from "react";
 import { View, Text, FlatList, Pressable, StyleSheet, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import SectionHeader from "./SectionHeader";
 import type { Feed, Episode } from "@/lib/types";
 
 interface SavedPositionEntry {
@@ -38,10 +39,10 @@ const ContinueListeningCard = React.memo(function ContinueListeningCard({ episod
       <View style={styles.continueInfo}>
         <Text style={[styles.continueEpTitle, { color: colors.text }]} numberOfLines={2}>{episode.title}</Text>
         <Text style={[styles.continueFeedTitle, { color: colors.textSecondary }]} numberOfLines={1}>{feed.title}</Text>
-        <View style={[styles.continueProgressBg, { backgroundColor: colors.border }]}>
+        <View style={[styles.continueProgressBg, { backgroundColor: colors.progressBg }]}>
           <View style={[styles.continueProgressFill, { width: `${progress * 100}%`, backgroundColor: colors.accent }]} />
         </View>
-        <Text style={{ fontSize: 10, color: colors.textSecondary, marginTop: 2 }}>{remainingMin}m left</Text>
+        <Text style={{ fontSize: 10, color: colors.textTertiary, marginTop: 2 }}>{remainingMin}m left</Text>
       </View>
     </Pressable>
   );
@@ -59,7 +60,7 @@ export default React.memo(function ContinueListeningSection({ items, colors, onP
 
   return (
     <View style={styles.section}>
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>Continue Listening</Text>
+      <SectionHeader title="Continue Listening" colors={colors} />
       <FlatList
         horizontal
         data={items}
@@ -87,13 +88,7 @@ export default React.memo(function ContinueListeningSection({ items, colors, onP
 
 const styles = StyleSheet.create({
   section: {
-    marginBottom: 22,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: "700" as const,
-    paddingHorizontal: 20,
-    marginBottom: 10,
+    marginBottom: 28,
   },
   continueCard: {
     width: 145,

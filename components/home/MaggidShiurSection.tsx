@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
 import { lightHaptic } from "@/lib/haptics";
+import SectionHeader from "./SectionHeader";
 import type { Feed } from "@/lib/types";
 
 const MaggidShiurCard = React.memo(function MaggidShiurCard({ author, feeds, colors }: { author: string; feeds: Feed[]; colors: any }) {
@@ -36,16 +37,11 @@ export default React.memo(function MaggidShiurSection({ maggidShiurim, colors }:
 
   return (
     <View style={styles.section}>
-      <View style={styles.sectionHeaderRowSpaced}>
-        <Text style={[styles.sectionTitle, { color: colors.text, paddingHorizontal: 0, marginBottom: 0 }]}>Maggidei Shiur</Text>
-        <Pressable
-          onPress={() => { lightHaptic(); router.push("/all-maggidei-shiur"); }}
-          style={({ pressed }) => [styles.seeAllBtn, { backgroundColor: colors.accentLight, opacity: pressed ? 0.8 : 1 }]}
-        >
-          <Text style={[styles.seeAllText, { color: colors.accent }]}>See All</Text>
-          <Ionicons name="chevron-forward" size={14} color={colors.accent} />
-        </Pressable>
-      </View>
+      <SectionHeader
+        title="Maggidei Shiur"
+        colors={colors}
+        onSeeAll={() => router.push("/all-maggidei-shiur")}
+      />
       <FlatList
         horizontal
         data={maggidShiurim}
@@ -64,32 +60,7 @@ export default React.memo(function MaggidShiurSection({ maggidShiurim, colors }:
 
 const styles = StyleSheet.create({
   section: {
-    marginBottom: 22,
-  },
-  sectionHeaderRowSpaced: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    marginBottom: 14,
-  },
-  seeAllBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 2,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  seeAllText: {
-    fontSize: 13,
-    fontWeight: "600" as const,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: "700" as const,
-    paddingHorizontal: 20,
-    marginBottom: 10,
+    marginBottom: 28,
   },
   maggidCard: {
     width: 110,

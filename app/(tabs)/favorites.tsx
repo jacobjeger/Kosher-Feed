@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
-import { View, Text, FlatList, StyleSheet, Platform, ActivityIndicator } from "react-native";
+import { View, Text, FlatList, Pressable, StyleSheet, Platform, ActivityIndicator } from "react-native";
+import { router } from "expo-router";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
@@ -52,11 +53,19 @@ function FavoritesScreenInner() {
         <ActivityIndicator size="large" color={colors.accent} style={{ marginTop: 60 }} />
       ) : favoriteEpisodes.length === 0 ? (
         <View style={styles.emptyState}>
-          <Ionicons name="star-outline" size={56} color={colors.textSecondary} />
+          <View style={[styles.emptyIconBadge, { backgroundColor: colors.accentLight }]}>
+            <Ionicons name="star-outline" size={36} color={colors.accent} />
+          </View>
           <Text style={[styles.emptyTitle, { color: colors.text }]}>No Favorites Yet</Text>
           <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
             Star episodes you love to find them here
           </Text>
+          <Pressable
+            onPress={() => router.push("/(tabs)/")}
+            style={[styles.emptyBtn, { backgroundColor: colors.accent }]}
+          >
+            <Text style={styles.emptyBtnText}>Browse Shiurim</Text>
+          </Pressable>
         </View>
       ) : (
         <FlatList
@@ -122,5 +131,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center" as const,
     lineHeight: 20,
+  },
+  emptyIconBadge: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    marginBottom: 4,
+  },
+  emptyBtn: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  emptyBtnText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600" as const,
   },
 });

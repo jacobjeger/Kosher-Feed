@@ -635,7 +635,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   webContentWrap: {
-    maxWidth: 960,
+    maxWidth: 1080,
     marginHorizontal: "auto" as any,
     width: "100%" as any,
   },

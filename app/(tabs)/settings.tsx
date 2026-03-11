@@ -47,7 +47,9 @@ function SettingRow({ icon, label, value, subtitle, onPress, rightElement }: Set
       disabled={!onPress && !rightElement}
     >
       <View style={styles.settingLeft}>
-        {icon}
+        <View style={[styles.iconBg, { backgroundColor: colors.accentLight }]}>
+          {icon}
+        </View>
         <View>
           <Text style={[styles.settingLabel, { color: colors.text }]}>{label}</Text>
           {subtitle ? <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 1 }}>{subtitle}</Text> : null}
@@ -625,9 +627,18 @@ function SettingsScreenInner() {
         </>
       )}
 
-      <Text style={[styles.footer, { color: colors.textSecondary }]}>
-        ShiurPod{"\n"}A curated listening experience
-      </Text>
+      <View style={styles.footerContainer}>
+        <View style={[styles.footerLogo, { backgroundColor: isDark ? colors.accent : "#1a2a3a" }]}>
+          <Ionicons name="radio" size={18} color="#fff" />
+        </View>
+        <Text style={[styles.footerBrand, { color: colors.text }]}>ShiurPod</Text>
+        <Text style={[styles.footerTagline, { color: colors.textSecondary }]}>
+          A curated listening experience
+        </Text>
+        <Text style={[styles.footerVersion, { color: colors.textTertiary }]}>
+          Version 1.0.0
+        </Text>
+      </View>
 
       <Modal
         visible={showFeedbackModal}
@@ -830,6 +841,13 @@ const styles = StyleSheet.create({
     gap: 12,
     flex: 1,
   },
+  iconBg: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  },
   settingLabel: {
     fontSize: 15,
     fontWeight: "500",
@@ -847,14 +865,33 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: 1,
-    marginLeft: 48,
+    marginLeft: 60,
   },
-  footer: {
-    textAlign: "center",
-    fontSize: 13,
-    lineHeight: 20,
-    marginTop: 24,
+  footerContainer: {
+    alignItems: "center" as const,
+    marginTop: 32,
     marginBottom: 20,
+    gap: 6,
+  },
+  footerLogo: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    marginBottom: 4,
+  },
+  footerBrand: {
+    fontSize: 18,
+    fontWeight: "800" as const,
+    letterSpacing: -0.3,
+  },
+  footerTagline: {
+    fontSize: 13,
+  },
+  footerVersion: {
+    fontSize: 11,
+    marginTop: 2,
   },
 });
 
