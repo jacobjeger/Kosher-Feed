@@ -22,7 +22,7 @@ import OfflineBanner from "@/components/OfflineBanner";
 import { setupNotificationChannel } from "@/lib/notifications";
 import { initErrorLogger, setupGlobalErrorHandlers } from "@/lib/error-logger";
 import { DeepLinkHandler } from "@/components/DeepLinkHandler";
-import { getNotificationData, setupForegroundNotificationHandler, setupPushNotificationChannels } from "@/lib/push-notifications";
+import { getNotificationData, setupForegroundNotificationHandler, setupPushNotificationChannels, registerPushToken } from "@/lib/push-notifications";
 import { addLog } from "@/lib/error-logger";
 import AnnouncementModal from "@/components/AnnouncementModal";
 import { getDeviceId } from "@/lib/device-id";
@@ -136,6 +136,11 @@ export default function RootLayout() {
     if (!fontsLoaded || !onboardingChecked) return;
     SplashScreen.hideAsync();
     setupNotificationChannel();
+
+    // Auto-register push token on startup
+    if (Platform.OS !== "web") {
+      registerPushToken().catch(() => {});
+    }
 
     if (Platform.OS !== "web") {
       notificationResponseListener.current =

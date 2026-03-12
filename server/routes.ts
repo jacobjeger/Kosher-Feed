@@ -265,10 +265,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const baseUrl = `${protocol}://${host}`;
       const feedList = await storage.getActiveFeeds();
       const mappings = await storage.getAllFeedCategoryMappings();
-      const feedsWithCategories = feedList.map(f => {
+      let feedsWithCategories = feedList.map(f => {
         const catIds = mappings.filter(m => m.feedId === f.id).map(m => m.categoryId);
         return addKHDefaultImage({ ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) }, baseUrl);
       });
+
+      // Sort by popularity if requested
+      if (req.query.sort === "popular") {
+        const stats = await storage.getAllFeedStats();
+        feedsWithCategories = feedsWithCategories.sort((a, b) => {
+          const aStats = stats.get(a.id) || { subscriberCount: 0, listenCount: 0 };
+          const bStats = stats.get(b.id) || { subscriberCount: 0, listenCount: 0 };
+          const aScore = aStats.subscriberCount * 3 + aStats.listenCount;
+          const bScore = bStats.subscriberCount * 3 + bStats.listenCount;
+          return bScore - aScore;
+        });
+      }
+
       res.setHeader("Cache-Control", "public, max-age=60");
       res.json(feedsWithCategories);
     } catch (e: any) {
@@ -1160,6 +1173,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) required" });
       const allFeeds = await storage.getAllFeeds();
       const tatOnlyFeeds = allFeeds.filter(f => f.tatSpeakerId != null && f.rssUrl.startsWith("tat://"));
+      console.log(`TAT toggle: enabled=${enabled}, found ${tatOnlyFeeds.length} TAT-only feeds`);
       let updated = 0;
       for (const feed of tatOnlyFeeds) {
         if (feed.isActive !== enabled) {
@@ -1167,8 +1181,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           updated++;
         }
       }
-      res.json({ updated, enabled });
+      console.log(`TAT toggle: updated ${updated} feeds`);
+      res.json({ updated, enabled, totalFound: tatOnlyFeeds.length });
     } catch (e: any) {
+      console.error("TAT toggle error:", e);
       res.status(500).json({ error: e.message });
     }
   });
@@ -1252,6 +1268,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) required" });
         const allFeeds = await storage.getAllFeeds();
         const platformOnlyFeeds = allFeeds.filter(f => (f as any)[cfg.feedIdField] != null && f.rssUrl.startsWith(cfg.urlScheme));
+        console.log(`${platformRoute} toggle: enabled=${enabled}, found ${platformOnlyFeeds.length} platform-only feeds`);
         let updated = 0;
         for (const feed of platformOnlyFeeds) {
           if (feed.isActive !== enabled) {
@@ -1259,8 +1276,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             updated++;
           }
         }
-        res.json({ updated, enabled });
+        console.log(`${platformRoute} toggle: updated ${updated} feeds`);
+        res.json({ updated, enabled, totalFound: platformOnlyFeeds.length });
       } catch (e: any) {
+        console.error(`${platformRoute} toggle error:`, e);
         res.status(500).json({ error: e.message });
       }
     });
@@ -1322,6 +1341,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) required" });
       const allFeeds = await storage.getAllFeeds();
       const khOnlyFeeds = allFeeds.filter(f => (f as any).kolhalashonRavId != null && f.rssUrl.startsWith("kh://"));
+      console.log(`KH toggle: enabled=${enabled}, found ${khOnlyFeeds.length} KH-only feeds`);
       let updated = 0;
       for (const feed of khOnlyFeeds) {
         if (feed.isActive !== enabled) {
@@ -1329,8 +1349,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           updated++;
         }
       }
-      res.json({ updated, enabled });
+      console.log(`KH toggle: updated ${updated} feeds`);
+      res.json({ updated, enabled, totalFound: khOnlyFeeds.length });
     } catch (e: any) {
+      console.error("KH toggle error:", e);
       res.status(500).json({ error: e.message });
     }
   });

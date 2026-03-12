@@ -8,6 +8,7 @@ import {
   Platform,
   ActivityIndicator,
   useWindowDimensions,
+  TextInput,
 } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -78,6 +79,7 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
   const isSmall = height < SMALL_HEIGHT;
   const [followedIds, setFollowedIds] = useState<Set<string>>(new Set());
   const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [searchText, setSearchText] = useState("");
 
   React.useEffect(() => {
     AsyncStorage.getItem("@shiurpod_device_id").then((id) => {
@@ -86,13 +88,24 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
   }, []);
 
   const { data: feeds, isLoading } = useQuery<Feed[]>({
-    queryKey: ["/api/feeds"],
+    queryKey: ["/api/feeds", { sort: "popular" }],
+    queryFn: async () => {
+      const res = await fetch(new URL("/api/feeds?sort=popular", getApiUrl()).toString());
+      if (!res.ok) throw new Error("Failed to fetch feeds");
+      return res.json();
+    },
   });
 
-  const activeFeeds = React.useMemo(
-    () => (feeds || []).filter((f) => f.isActive),
-    [feeds]
-  );
+  const activeFeeds = React.useMemo(() => {
+    const list = (feeds || []).filter((f) => f.isActive);
+    if (!searchText.trim()) return list;
+    const q = searchText.toLowerCase().trim();
+    return list.filter(
+      (f) =>
+        f.title.toLowerCase().includes(q) ||
+        (f.author && f.author.toLowerCase().includes(q))
+    );
+  }, [feeds, searchText]);
 
   const toggleFollow = useCallback(
     async (feedId: string) => {
@@ -139,6 +152,26 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
         <Text style={[styles.followSubtitle, { color: colors.textSecondary, fontSize: isSmall ? 12 : 14 }]}>
           Choose shiurim to follow. You can always change this later.
         </Text>
+      </View>
+
+      <View style={[styles.searchContainer, { paddingHorizontal: isSmall ? 12 : 16 }]}>
+        <View style={[styles.searchBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Ionicons name="search" size={16} color={colors.textSecondary} />
+          <TextInput
+            style={[styles.searchInput, { color: colors.text, fontSize: isSmall ? 13 : 14 }]}
+            placeholder="Search shiurim..."
+            placeholderTextColor={colors.textSecondary}
+            value={searchText}
+            onChangeText={setSearchText}
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
+          {searchText.length > 0 && (
+            <Pressable onPress={() => setSearchText("")} hitSlop={8}>
+              <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
+            </Pressable>
+          )}
+        </View>
       </View>
 
       {isLoading ? (
@@ -474,6 +507,22 @@ const styles = StyleSheet.create({
     marginTop: 6,
     lineHeight: 18,
     maxWidth: 300,
+  },
+  searchContainer: {
+    marginBottom: 8,
+  },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 0,
   },
   feedList: {
     paddingHorizontal: 16,

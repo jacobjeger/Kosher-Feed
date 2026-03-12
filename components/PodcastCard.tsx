@@ -240,6 +240,7 @@ const styles = StyleSheet.create({
 
   smallContainer: {
     width: Platform.OS === "web" ? 150 : 130,
+    height: Platform.OS === "web" ? 220 : 200,
     marginRight: 12,
     borderRadius: 14,
     borderWidth: Platform.OS === "web" ? 0 : 1,
@@ -254,6 +255,7 @@ const styles = StyleSheet.create({
   smallInfo: {
     padding: 10,
     gap: 3,
+    flex: 1,
   },
   smallTitle: {
     fontSize: 13,

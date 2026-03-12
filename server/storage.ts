@@ -81,8 +81,8 @@ export async function mergeFeeds(sourceId: string, targetId: string): Promise<{ 
     }
   }
 
-  // Delete the source feed (remaining episodes/subscriptions cascade)
-  await db.delete(feeds).where(eq(feeds.id, sourceId));
+  // Deactivate the source feed instead of deleting it (preserve for recovery)
+  await db.update(feeds).set({ isActive: false, showInBrowse: false }).where(eq(feeds.id, sourceId));
 
   return { episodesMoved, subscriptionsMoved };
 }
