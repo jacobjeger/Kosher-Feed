@@ -239,8 +239,7 @@ const styles = StyleSheet.create({
   },
 
   smallContainer: {
-    width: Platform.OS === "web" ? 150 : 130,
-    height: Platform.OS === "web" ? 220 : 200,
+    width: Platform.OS === "web" ? 170 : 155,
     marginRight: 12,
     borderRadius: 14,
     borderWidth: Platform.OS === "web" ? 0 : 1,
@@ -250,7 +249,7 @@ const styles = StyleSheet.create({
   },
   smallImage: {
     width: "100%" as any,
-    height: Platform.OS === "web" ? 140 : 120,
+    height: Platform.OS === "web" ? 140 : 130,
   },
   smallInfo: {
     padding: 10,
