@@ -1,20 +1,26 @@
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as Notifications from "expo-notifications";
 import type { Episode, Feed } from "@/lib/types";
 import { addLog } from "@/lib/error-logger";
 
 const SEEN_EPISODES_KEY = "@kosher_shiurim_seen_episodes";
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+let Notifications: typeof import("expo-notifications") | null = null;
+
+try {
+  Notifications = require("expo-notifications");
+  Notifications?.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+} catch (e) {
+  addLog("warn", "expo-notifications not available (Expo Go does not support push notifications in SDK 53+)", undefined, "notifications");
+}
 
 async function getSeenEpisodeIds(): Promise<Set<string>> {
   try {
@@ -52,6 +58,11 @@ export async function requestNotificationPermissions(): Promise<boolean> {
     return false;
   }
 
+  if (!Notifications) {
+    addLog("warn", "expo-notifications not available, skipping permission request", undefined, "notifications");
+    return false;
+  }
+
   try {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
@@ -77,6 +88,7 @@ export async function checkNotificationPermission(): Promise<boolean> {
     return false;
   }
 
+  if (!Notifications) return false;
   try {
     const { status } = await Notifications.getPermissionsAsync();
     return status === "granted";
@@ -120,6 +132,11 @@ export async function sendLocalNotification(episode: Episode, feed: Feed) {
     } catch (e) {
       addLog("error", `Web notification failed: ${(e as any)?.message || e}`, undefined, "notifications");
     }
+    return;
+  }
+
+  if (!Notifications) {
+    addLog("warn", "expo-notifications not available, skipping notification", undefined, "notifications");
     return;
   }
 
@@ -172,7 +189,7 @@ export async function notifyNewEpisodes(newEpisodes: Episode[], feeds: Feed[]) {
             });
           }
         } catch {}
-      } else {
+      } else if (Notifications) {
         try {
           await setupNotificationChannel();
           await Notifications.scheduleNotificationAsync({
@@ -201,7 +218,7 @@ export async function initializeSeenEpisodes(episodes: Episode[]) {
 }
 
 export async function setupNotificationChannel() {
-  if (Platform.OS === "android") {
+  if (Platform.OS === "android" && Notifications) {
     try {
       await Notifications.setNotificationChannelAsync("new-episodes", {
         name: "New Episodes",
@@ -228,6 +245,11 @@ const DAILY_REMINDER_NOTIFICATION_ID = "daily-reminder";
 export async function scheduleDailyReminder(hour: number) {
   if (Platform.OS === "web") {
     addLog("info", "Daily reminders not supported on web", undefined, "notifications");
+    return;
+  }
+
+  if (!Notifications) {
+    addLog("warn", "expo-notifications not available, skipping daily reminder", undefined, "notifications");
     return;
   }
 
@@ -271,7 +293,7 @@ export async function scheduleDailyReminder(hour: number) {
 }
 
 export async function cancelDailyReminder() {
-  if (Platform.OS === "web") {
+  if (Platform.OS === "web" || !Notifications) {
     return;
   }
 
