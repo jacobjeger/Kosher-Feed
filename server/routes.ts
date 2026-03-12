@@ -2410,6 +2410,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Public: get all config as flat JSON
+  app.get("/api/config", async (_req: Request, res: Response) => {
+    try {
+      const config = await storage.getAllConfig();
+      res.setHeader("Cache-Control", "public, max-age=300");
+      res.json(config);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: get all config entries with descriptions
+  app.get("/api/admin/config", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const entries = await storage.getAllConfigEntries();
+      res.json(entries);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: update a config value
+  app.put("/api/admin/config/:key", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { key } = req.params;
+      const { value, description } = req.body;
+      if (value === undefined) return res.status(400).json({ error: "value is required" });
+      await storage.setConfig(key, value, description);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: delete a config entry
+  app.delete("/api/admin/config/:key", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteConfig(req.params.key);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: seed default config values
+  app.post("/api/admin/config/seed", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const defaults: { key: string; value: any; description: string }[] = [
+        { key: "homeSections", value: ["continue", "featured", "trending", "allShiurim", "recommended", "maggidShiur", "categories", "recent"], description: "Home screen section order and visibility" },
+        { key: "defaultSkipForward", value: 30, description: "Default skip forward seconds" },
+        { key: "defaultSkipBackward", value: 30, description: "Default skip backward seconds" },
+        { key: "defaultMaxEpisodes", value: 5, description: "Default max episodes per feed" },
+        { key: "carouselAutoScrollMs", value: 5000, description: "Featured carousel auto-scroll interval (ms)" },
+        { key: "featureFlags", value: { showRecommended: true, showMaggidShiur: true, showTrending: true, showContinueListening: true }, description: "Feature toggles for app sections" },
+        { key: "minAppVersion", value: "1.0.0", description: "Minimum supported app version" },
+      ];
+      let seeded = 0;
+      for (const d of defaults) {
+        const existing = await storage.getConfig(d.key);
+        if (existing === null) {
+          await storage.setConfig(d.key, d.value, d.description);
+          seeded++;
+        }
+      }
+      res.json({ success: true, seeded, total: defaults.length });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

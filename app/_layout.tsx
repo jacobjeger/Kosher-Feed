@@ -25,6 +25,7 @@ import { DeepLinkHandler } from "@/components/DeepLinkHandler";
 import { getNotificationData, setupForegroundNotificationHandler, setupPushNotificationChannels, registerPushToken } from "@/lib/push-notifications";
 import { addLog } from "@/lib/error-logger";
 import AnnouncementModal from "@/components/AnnouncementModal";
+import { RemoteConfigProvider } from "@/contexts/RemoteConfigContext";
 import { getDeviceId } from "@/lib/device-id";
 import { getApiUrl, apiRequest } from "@/lib/query-client";
 
@@ -207,6 +208,7 @@ export default function RootLayout() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
+        <RemoteConfigProvider>
         <SettingsProvider>
           <AudioPlayerProvider>
             <DownloadsProvider>
@@ -232,6 +234,7 @@ export default function RootLayout() {
             </DownloadsProvider>
           </AudioPlayerProvider>
         </SettingsProvider>
+        </RemoteConfigProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   );

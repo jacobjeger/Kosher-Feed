@@ -318,3 +318,12 @@ export const feedMergeHistory = pgTable("feed_merge_history", {
 });
 
 export type FeedMergeHistory = typeof feedMergeHistory.$inferSelect;
+
+export const appConfig = pgTable("app_config", {
+  key: varchar("key").primaryKey(),
+  value: text("value").notNull(),
+  description: text("description"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type AppConfig = typeof appConfig.$inferSelect;

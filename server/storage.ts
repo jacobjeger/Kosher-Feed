@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals, queueItems, notificationTaps, feedMergeHistory } from "@shared/schema";
-import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor, NotificationPreference, Announcement, AnnouncementDismissal, NotificationTap } from "@shared/schema";
+import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals, queueItems, notificationTaps, feedMergeHistory, appConfig } from "@shared/schema";
+import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor, NotificationPreference, Announcement, AnnouncementDismissal, NotificationTap, AppConfig } from "@shared/schema";
 import { eq, and, desc, asc, inArray, sql, count, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
@@ -1593,4 +1593,53 @@ export async function getAllMergeHistory() {
     .leftJoin(feeds, eq(feedMergeHistory.targetFeedId, feeds.id))
     .orderBy(desc(feedMergeHistory.mergedAt));
   return history;
+}
+
+// App Config CRUD
+export async function getAllConfig(): Promise<Record<string, any>> {
+  const rows = await db.select().from(appConfig);
+  const result: Record<string, any> = {};
+  for (const row of rows) {
+    try {
+      result[row.key] = JSON.parse(row.value);
+    } catch {
+      result[row.key] = row.value;
+    }
+  }
+  return result;
+}
+
+export async function getAllConfigEntries(): Promise<AppConfig[]> {
+  return db.select().from(appConfig).orderBy(appConfig.key);
+}
+
+export async function getConfig(key: string): Promise<any> {
+  const [row] = await db.select().from(appConfig).where(eq(appConfig.key, key)).limit(1);
+  if (!row) return null;
+  try {
+    return JSON.parse(row.value);
+  } catch {
+    return row.value;
+  }
+}
+
+export async function setConfig(key: string, value: any, description?: string): Promise<void> {
+  const jsonValue = typeof value === "string" ? value : JSON.stringify(value);
+  await db.insert(appConfig).values({
+    key,
+    value: jsonValue,
+    description: description || null,
+    updatedAt: new Date(),
+  }).onConflictDoUpdate({
+    target: appConfig.key,
+    set: {
+      value: jsonValue,
+      ...(description !== undefined ? { description } : {}),
+      updatedAt: new Date(),
+    },
+  });
+}
+
+export async function deleteConfig(key: string): Promise<void> {
+  await db.delete(appConfig).where(eq(appConfig.key, key));
 }
