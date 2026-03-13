@@ -21,7 +21,7 @@ const CategorySection = React.memo(function CategorySection({ category, feeds, c
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <PodcastCard feed={item} size="small" />}
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 20 }}
+        contentContainerStyle={{ paddingHorizontal: 20, alignItems: "flex-start" }}
         initialNumToRender={5}
         maxToRenderPerBatch={5}
         windowSize={3}
