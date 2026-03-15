@@ -21,6 +21,7 @@ import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import Colors from "@/constants/colors";
 import { lightHaptic } from "@/lib/haptics";
 import { getApiUrl } from "@/lib/query-client";
+import { getDeviceId } from "@/lib/device-id";
 import type { Feed } from "@/lib/types";
 
 const ONBOARDING_KEY = "@shiurpod_onboarding_complete";
@@ -82,9 +83,7 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
   const [searchText, setSearchText] = useState("");
 
   React.useEffect(() => {
-    AsyncStorage.getItem("@shiurpod_device_id").then((id) => {
-      if (id) setDeviceId(id);
-    });
+    getDeviceId().then((id) => setDeviceId(id));
   }, []);
 
   const { data: feeds, isLoading } = useQuery<Feed[]>({
@@ -110,27 +109,29 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
   const toggleFollow = useCallback(
     async (feedId: string) => {
       lightHaptic();
+      const isCurrentlyFollowed = followedIds.has(feedId);
       setFollowedIds((prev) => {
         const next = new Set(prev);
-        if (next.has(feedId)) {
+        if (isCurrentlyFollowed) {
           next.delete(feedId);
-          if (deviceId) {
-            fetch(new URL(`/api/subscriptions/${deviceId}/${feedId}`, getApiUrl()).toString(), { method: "DELETE" }).catch(() => {});
-          }
         } else {
           next.add(feedId);
-          if (deviceId) {
-            fetch(new URL("/api/subscriptions", getApiUrl()).toString(), {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ deviceId, feedId }),
-            }).catch(() => {});
-          }
         }
         return next;
       });
+      if (deviceId) {
+        if (isCurrentlyFollowed) {
+          fetch(new URL(`/api/subscriptions/${deviceId}/${feedId}`, getApiUrl()).toString(), { method: "DELETE" }).catch(() => {});
+        } else {
+          fetch(new URL("/api/subscriptions", getApiUrl()).toString(), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ deviceId, feedId }),
+          }).catch(() => {});
+        }
+      }
     },
-    [deviceId]
+    [deviceId, followedIds]
   );
 
   return (
