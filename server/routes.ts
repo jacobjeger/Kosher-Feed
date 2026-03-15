@@ -265,10 +265,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const baseUrl = `${protocol}://${host}`;
       const feedList = await storage.getActiveFeeds();
       const mappings = await storage.getAllFeedCategoryMappings();
-      const feedsWithCategories = feedList.map(f => {
+      let feedsWithCategories = feedList.map(f => {
         const catIds = mappings.filter(m => m.feedId === f.id).map(m => m.categoryId);
         return addKHDefaultImage({ ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) }, baseUrl);
       });
+
+      // Sort by popularity if requested
+      if (req.query.sort === "popular") {
+        const stats = await storage.getAllFeedStats();
+        feedsWithCategories = feedsWithCategories.sort((a, b) => {
+          const aStats = stats.get(a.id) || { subscriberCount: 0, listenCount: 0 };
+          const bStats = stats.get(b.id) || { subscriberCount: 0, listenCount: 0 };
+          const aScore = aStats.subscriberCount * 3 + aStats.listenCount;
+          const bScore = bStats.subscriberCount * 3 + bStats.listenCount;
+          return bScore - aScore;
+        });
+      }
+
       res.setHeader("Cache-Control", "public, max-age=60");
       res.json(feedsWithCategories);
     } catch (e: any) {
@@ -499,7 +512,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalNew += tatResult.newEpisodes;
       }
 
-      // OU Torah platform refresh (AllDaf, AllMishnah, AllParsha)
+      // OU Torah platform refresh (AllDaf, AllMishnah, AllParsha, AllHalacha)
       const ouDetected = detectOUPlatform(feed as any);
       if (ouDetected) {
         const ouResult = await refreshOUFeedEpisodes(ouDetected.platform, { id: feed.id, title: feed.title, authorId: ouDetected.authorId });
@@ -558,7 +571,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const tatResult = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveTatId });
             totalNew += tatResult.newEpisodes;
           }
-          // OU Torah platform refresh (AllDaf, AllMishnah, AllParsha)
+          // OU Torah platform refresh (AllDaf, AllMishnah, AllParsha, AllHalacha)
           const ouRefresh = detectOUPlatform(feed as any);
           if (ouRefresh) {
             const ouResult = await refreshOUFeedEpisodes(ouRefresh.platform, { id: feed.id, title: feed.title, authorId: ouRefresh.authorId });
@@ -1160,6 +1173,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) required" });
       const allFeeds = await storage.getAllFeeds();
       const tatOnlyFeeds = allFeeds.filter(f => f.tatSpeakerId != null && f.rssUrl.startsWith("tat://"));
+      console.log(`TAT toggle: enabled=${enabled}, found ${tatOnlyFeeds.length} TAT-only feeds`);
       let updated = 0;
       for (const feed of tatOnlyFeeds) {
         if (feed.isActive !== enabled) {
@@ -1167,8 +1181,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           updated++;
         }
       }
-      res.json({ updated, enabled });
+      console.log(`TAT toggle: updated ${updated} feeds`);
+      res.json({ updated, enabled, totalFound: tatOnlyFeeds.length });
     } catch (e: any) {
+      console.error("TAT toggle error:", e);
       res.status(500).json({ error: e.message });
     }
   });
@@ -1252,6 +1268,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) required" });
         const allFeeds = await storage.getAllFeeds();
         const platformOnlyFeeds = allFeeds.filter(f => (f as any)[cfg.feedIdField] != null && f.rssUrl.startsWith(cfg.urlScheme));
+        console.log(`${platformRoute} toggle: enabled=${enabled}, found ${platformOnlyFeeds.length} platform-only feeds`);
         let updated = 0;
         for (const feed of platformOnlyFeeds) {
           if (feed.isActive !== enabled) {
@@ -1259,8 +1276,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             updated++;
           }
         }
-        res.json({ updated, enabled });
+        console.log(`${platformRoute} toggle: updated ${updated} feeds`);
+        res.json({ updated, enabled, totalFound: platformOnlyFeeds.length });
       } catch (e: any) {
+        console.error(`${platformRoute} toggle error:`, e);
         res.status(500).json({ error: e.message });
       }
     });
@@ -1322,6 +1341,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) required" });
       const allFeeds = await storage.getAllFeeds();
       const khOnlyFeeds = allFeeds.filter(f => (f as any).kolhalashonRavId != null && f.rssUrl.startsWith("kh://"));
+      console.log(`KH toggle: enabled=${enabled}, found ${khOnlyFeeds.length} KH-only feeds`);
       let updated = 0;
       for (const feed of khOnlyFeeds) {
         if (feed.isActive !== enabled) {
@@ -1329,8 +1349,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           updated++;
         }
       }
-      res.json({ updated, enabled });
+      console.log(`KH toggle: updated ${updated} feeds`);
+      res.json({ updated, enabled, totalFound: khOnlyFeeds.length });
     } catch (e: any) {
+      console.error("KH toggle error:", e);
       res.status(500).json({ error: e.message });
     }
   });
@@ -1441,6 +1463,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (f.alldafAuthorId) platforms.push("AllDaf");
           if (f.allmishnahAuthorId) platforms.push("AllMishnah");
           if (f.allparshaAuthorId) platforms.push("AllParsha");
+          if (f.allhalachaAuthorId) platforms.push("AllHalacha");
           if ((f as any).kolhalashonRavId) platforms.push("Kol Halashon");
           if (platforms.length < 2) return null;
           return {
@@ -1454,6 +1477,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             alldafAuthorId: f.alldafAuthorId,
             allmishnahAuthorId: f.allmishnahAuthorId,
             allparshaAuthorId: f.allparshaAuthorId,
+            allhalachaAuthorId: f.allhalachaAuthorId,
             kolhalashonRavId: (f as any).kolhalashonRavId,
           };
         })
@@ -1536,6 +1560,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           break;
         case "AllParsha":
           await storage.setOUAuthorId(feedId, "allparshaAuthorId", null);
+          break;
+        case "AllHalacha":
+          await storage.setOUAuthorId(feedId, "allhalachaAuthorId", null);
           break;
         case "Kol Halashon":
           await storage.setKHRavId(feedId, null);
@@ -2383,6 +2410,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const days = parseInt(req.query.days as string) || 30;
       const stats = await storage.getNotificationTapStats(days);
       res.json(stats);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Public: get all config as flat JSON
+  app.get("/api/config", async (_req: Request, res: Response) => {
+    try {
+      const config = await storage.getAllConfig();
+      res.setHeader("Cache-Control", "public, max-age=300");
+      res.json(config);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: get all config entries with descriptions
+  app.get("/api/admin/config", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const entries = await storage.getAllConfigEntries();
+      res.json(entries);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: update a config value
+  app.put("/api/admin/config/:key", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { key } = req.params;
+      const { value, description } = req.body;
+      if (value === undefined) return res.status(400).json({ error: "value is required" });
+      await storage.setConfig(key, value, description);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: delete a config entry
+  app.delete("/api/admin/config/:key", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteConfig(req.params.key);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: seed default config values
+  app.post("/api/admin/config/seed", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const defaults: { key: string; value: any; description: string }[] = [
+        { key: "homeSections", value: ["continue", "featured", "trending", "allShiurim", "recommended", "maggidShiur", "categories", "recent"], description: "Home screen section order and visibility" },
+        { key: "defaultSkipForward", value: 30, description: "Default skip forward seconds" },
+        { key: "defaultSkipBackward", value: 30, description: "Default skip backward seconds" },
+        { key: "defaultMaxEpisodes", value: 5, description: "Default max episodes per feed" },
+        { key: "carouselAutoScrollMs", value: 5000, description: "Featured carousel auto-scroll interval (ms)" },
+        { key: "featureFlags", value: { showRecommended: true, showMaggidShiur: true, showTrending: true, showContinueListening: true }, description: "Feature toggles for app sections" },
+        { key: "minAppVersion", value: "1.0.0", description: "Minimum supported app version" },
+      ];
+      let seeded = 0;
+      for (const d of defaults) {
+        const existing = await storage.getConfig(d.key);
+        if (existing === null) {
+          await storage.setConfig(d.key, d.value, d.description);
+          seeded++;
+        }
+      }
+      res.json({ success: true, seeded, total: defaults.length });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

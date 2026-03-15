@@ -22,9 +22,10 @@ import OfflineBanner from "@/components/OfflineBanner";
 import { setupNotificationChannel } from "@/lib/notifications";
 import { initErrorLogger, setupGlobalErrorHandlers } from "@/lib/error-logger";
 import { DeepLinkHandler } from "@/components/DeepLinkHandler";
-import { getNotificationData, setupForegroundNotificationHandler, setupPushNotificationChannels } from "@/lib/push-notifications";
+import { getNotificationData, setupForegroundNotificationHandler, setupPushNotificationChannels, registerPushToken } from "@/lib/push-notifications";
 import { addLog } from "@/lib/error-logger";
 import AnnouncementModal from "@/components/AnnouncementModal";
+import { RemoteConfigProvider } from "@/contexts/RemoteConfigContext";
 import { getDeviceId } from "@/lib/device-id";
 import { getApiUrl, apiRequest } from "@/lib/query-client";
 
@@ -137,6 +138,11 @@ export default function RootLayout() {
     SplashScreen.hideAsync();
     setupNotificationChannel();
 
+    // Auto-register push token on startup
+    if (Platform.OS !== "web") {
+      registerPushToken().catch(() => {});
+    }
+
     if (Platform.OS !== "web") {
       notificationResponseListener.current =
         Notifications.addNotificationResponseReceivedListener(handleNotificationResponse);
@@ -202,6 +208,7 @@ export default function RootLayout() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
+        <RemoteConfigProvider>
         <SettingsProvider>
           <AudioPlayerProvider>
             <DownloadsProvider>
@@ -227,6 +234,7 @@ export default function RootLayout() {
             </DownloadsProvider>
           </AudioPlayerProvider>
         </SettingsProvider>
+        </RemoteConfigProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   );

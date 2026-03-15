@@ -1,0 +1,89 @@
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getApiUrl } from "@/lib/query-client";
+
+const CACHE_KEY = "@shiurpod_remote_config";
+
+export interface RemoteConfig {
+  homeSections: string[];
+  defaultSkipForward: number;
+  defaultSkipBackward: number;
+  defaultMaxEpisodes: number;
+  carouselAutoScrollMs: number;
+  featureFlags: Record<string, boolean>;
+  minAppVersion: string;
+  [key: string]: any;
+}
+
+const DEFAULT_CONFIG: RemoteConfig = {
+  homeSections: ["continue", "featured", "trending", "allShiurim", "recommended", "maggidShiur", "categories", "recent"],
+  defaultSkipForward: 30,
+  defaultSkipBackward: 30,
+  defaultMaxEpisodes: 5,
+  carouselAutoScrollMs: 5000,
+  featureFlags: {
+    showRecommended: true,
+    showMaggidShiur: true,
+    showTrending: true,
+    showContinueListening: true,
+  },
+  minAppVersion: "1.0.0",
+};
+
+interface RemoteConfigContextValue {
+  config: RemoteConfig;
+  isLoaded: boolean;
+  refresh: () => Promise<void>;
+}
+
+const RemoteConfigContext = createContext<RemoteConfigContextValue | null>(null);
+
+export function RemoteConfigProvider({ children }: { children: ReactNode }) {
+  const [config, setConfig] = useState<RemoteConfig>(DEFAULT_CONFIG);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  const fetchConfig = useCallback(async () => {
+    try {
+      const baseUrl = getApiUrl();
+      const res = await fetch(`${baseUrl}/api/config`);
+      if (res.ok) {
+        const data = await res.json();
+        const merged = { ...DEFAULT_CONFIG, ...data };
+        setConfig(merged);
+        await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(merged)).catch(() => {});
+        return;
+      }
+    } catch {}
+    // On failure, try cached
+    try {
+      const cached = await AsyncStorage.getItem(CACHE_KEY);
+      if (cached) {
+        setConfig({ ...DEFAULT_CONFIG, ...JSON.parse(cached) });
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    fetchConfig().finally(() => setIsLoaded(true));
+  }, [fetchConfig]);
+
+  const refresh = useCallback(async () => {
+    await fetchConfig();
+  }, [fetchConfig]);
+
+  const value = useMemo(() => ({ config, isLoaded, refresh }), [config, isLoaded, refresh]);
+
+  return (
+    <RemoteConfigContext.Provider value={value}>
+      {children}
+    </RemoteConfigContext.Provider>
+  );
+}
+
+export function useRemoteConfig(): RemoteConfigContextValue {
+  const context = useContext(RemoteConfigContext);
+  if (!context) {
+    throw new Error("useRemoteConfig must be used within RemoteConfigProvider");
+  }
+  return context;
+}

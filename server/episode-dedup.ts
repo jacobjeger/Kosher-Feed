@@ -67,17 +67,20 @@ export function isMergedFeed(feed: {
   alldafAuthorId?: number | null;
   allmishnahAuthorId?: number | null;
   allparshaAuthorId?: number | null;
+  allhalachaAuthorId?: number | null;
   kolhalashonRavId?: number | null;
 }): boolean {
   const hasRealRss = feed.rssUrl && !feed.rssUrl.startsWith("tat://") &&
     !feed.rssUrl.startsWith("alldaf://") && !feed.rssUrl.startsWith("allmishnah://") &&
-    !feed.rssUrl.startsWith("allparsha://") && !feed.rssUrl.startsWith("kh://");
+    !feed.rssUrl.startsWith("allparsha://") && !feed.rssUrl.startsWith("allhalacha://") &&
+    !feed.rssUrl.startsWith("kh://");
 
   const platformCount = [
     feed.tatSpeakerId,
     feed.alldafAuthorId,
     feed.allmishnahAuthorId,
     feed.allparshaAuthorId,
+    feed.allhalachaAuthorId,
     feed.kolhalashonRavId,
   ].filter(id => id != null).length;
 

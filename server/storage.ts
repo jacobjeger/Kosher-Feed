@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals, queueItems, notificationTaps, feedMergeHistory } from "@shared/schema";
-import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor, NotificationPreference, Announcement, AnnouncementDismissal, NotificationTap } from "@shared/schema";
+import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals, queueItems, notificationTaps, feedMergeHistory, appConfig } from "@shared/schema";
+import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor, NotificationPreference, Announcement, AnnouncementDismissal, NotificationTap, AppConfig } from "@shared/schema";
 import { eq, and, desc, asc, inArray, sql, count, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
@@ -81,8 +81,8 @@ export async function mergeFeeds(sourceId: string, targetId: string): Promise<{ 
     }
   }
 
-  // Delete the source feed (remaining episodes/subscriptions cascade)
-  await db.delete(feeds).where(eq(feeds.id, sourceId));
+  // Deactivate the source feed instead of deleting it (preserve for recovery)
+  await db.update(feeds).set({ isActive: false, showInBrowse: false }).where(eq(feeds.id, sourceId));
 
   return { episodesMoved, subscriptionsMoved };
 }
@@ -1449,13 +1449,14 @@ export async function getKHSpeakerStats() {
   return allFeeds.map(f => {
     const s = stats.get(f.id) || { episodeCount: 0, subscriberCount: 0, listenCount: 0 };
     const platforms: string[] = [];
-    if (f.rssUrl && !f.rssUrl.startsWith("tat://") && !f.rssUrl.startsWith("kh://") && !f.rssUrl.startsWith("alldaf://") && !f.rssUrl.startsWith("allmishnah://") && !f.rssUrl.startsWith("allparsha://")) {
+    if (f.rssUrl && !f.rssUrl.startsWith("tat://") && !f.rssUrl.startsWith("kh://") && !f.rssUrl.startsWith("alldaf://") && !f.rssUrl.startsWith("allmishnah://") && !f.rssUrl.startsWith("allparsha://") && !f.rssUrl.startsWith("allhalacha://")) {
       platforms.push("RSS");
     }
     if (f.tatSpeakerId) platforms.push("Torah Anytime");
     if (f.alldafAuthorId) platforms.push("AllDaf");
     if (f.allmishnahAuthorId) platforms.push("AllMishnah");
     if (f.allparshaAuthorId) platforms.push("AllParsha");
+    if (f.allhalachaAuthorId) platforms.push("AllHalacha");
     if (f.kolhalashonRavId) platforms.push("Kol Halashon");
 
     return {
@@ -1485,6 +1486,7 @@ export async function getSourceBreakdown() {
     "AllDaf": { feedCount: 0, episodeCount: 0 },
     "AllMishnah": { feedCount: 0, episodeCount: 0 },
     "AllParsha": { feedCount: 0, episodeCount: 0 },
+    "AllHalacha": { feedCount: 0, episodeCount: 0 },
     "Kol Halashon": { feedCount: 0, episodeCount: 0 },
   };
 
@@ -1497,6 +1499,7 @@ export async function getSourceBreakdown() {
     else if (f.alldafAuthorId) source = "AllDaf";
     else if (f.allmishnahAuthorId) source = "AllMishnah";
     else if (f.allparshaAuthorId) source = "AllParsha";
+    else if (f.allhalachaAuthorId) source = "AllHalacha";
     else if (f.tatSpeakerId) source = "Torah Anytime";
     else if (f.kolhalashonRavId) source = "Kol Halashon";
 
@@ -1593,4 +1596,53 @@ export async function getAllMergeHistory() {
     .leftJoin(feeds, eq(feedMergeHistory.targetFeedId, feeds.id))
     .orderBy(desc(feedMergeHistory.mergedAt));
   return history;
+}
+
+// App Config CRUD
+export async function getAllConfig(): Promise<Record<string, any>> {
+  const rows = await db.select().from(appConfig);
+  const result: Record<string, any> = {};
+  for (const row of rows) {
+    try {
+      result[row.key] = JSON.parse(row.value);
+    } catch {
+      result[row.key] = row.value;
+    }
+  }
+  return result;
+}
+
+export async function getAllConfigEntries(): Promise<AppConfig[]> {
+  return db.select().from(appConfig).orderBy(appConfig.key);
+}
+
+export async function getConfig(key: string): Promise<any> {
+  const [row] = await db.select().from(appConfig).where(eq(appConfig.key, key)).limit(1);
+  if (!row) return null;
+  try {
+    return JSON.parse(row.value);
+  } catch {
+    return row.value;
+  }
+}
+
+export async function setConfig(key: string, value: any, description?: string): Promise<void> {
+  const jsonValue = typeof value === "string" ? value : JSON.stringify(value);
+  await db.insert(appConfig).values({
+    key,
+    value: jsonValue,
+    description: description || null,
+    updatedAt: new Date(),
+  }).onConflictDoUpdate({
+    target: appConfig.key,
+    set: {
+      value: jsonValue,
+      ...(description !== undefined ? { description } : {}),
+      updatedAt: new Date(),
+    },
+  });
+}
+
+export async function deleteConfig(key: string): Promise<void> {
+  await db.delete(appConfig).where(eq(appConfig.key, key));
 }

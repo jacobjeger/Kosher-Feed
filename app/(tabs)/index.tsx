@@ -25,6 +25,7 @@ import CategoriesGrid from "@/components/home/CategoriesGrid";
 import RecentlyListenedSection from "@/components/home/RecentlyListenedSection";
 import RecommendedSection from "@/components/home/RecommendedSection";
 import { getDeviceId } from "@/lib/device-id";
+import { useRemoteConfig } from "@/contexts/RemoteConfigContext";
 
 interface SavedPositionEntry {
   episodeId: string;
@@ -43,7 +44,7 @@ const CAROUSEL_WIDTH = Platform.OS === "web" ? Math.min(screenWidth - 40, 920) :
 const CAROUSEL_HEIGHT = Platform.OS === "web" ? 280 : 180;
 const AUTO_SCROLL_INTERVAL = 5000;
 
-const FeaturedCarousel = React.memo(function FeaturedCarousel({ feeds, colors }: { feeds: Feed[]; colors: any }) {
+const FeaturedCarousel = React.memo(function FeaturedCarousel({ feeds, colors, autoScrollMs }: { feeds: Feed[]; colors: any; autoScrollMs?: number }) {
   const scrollRef = useRef<FlatList>(null);
   const activeIndexRef = useRef(0);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -57,7 +58,7 @@ const FeaturedCarousel = React.memo(function FeaturedCarousel({ feeds, colors }:
       activeIndexRef.current = next;
       setActiveIndex(next);
       scrollRef.current?.scrollToIndex({ index: next, animated: true });
-    }, AUTO_SCROLL_INTERVAL);
+    }, autoScrollMs || AUTO_SCROLL_INTERVAL);
   }, [feeds.length]);
 
   useEffect(() => {
@@ -466,7 +467,12 @@ function HomeScreenInner() {
 
   const isWeb = Platform.OS === "web";
 
+  const { config, refresh: refreshConfig } = useRemoteConfig();
+  const homeSections = config.homeSections;
+  const featureFlags = config.featureFlags || {};
+
   const onRefresh = useCallback(() => {
+    refreshConfig().catch(() => {});
     queryClient.invalidateQueries({ queryKey: ["/api/categories"] });
     queryClient.invalidateQueries({ queryKey: ["/api/feeds"] });
     queryClient.invalidateQueries({ queryKey: ["/api/episodes/latest"] });
@@ -581,42 +587,33 @@ function HomeScreenInner() {
         </View>
       )}
 
-      {!isSearching && (
-        <ContinueListeningSection
-          items={continueListeningItems}
-          colors={colors}
-          onPlay={handlePlayEpisode}
-          onDismiss={handleDismissContinue}
-        />
-      )}
-
-      {!isSearching && featuredFeeds.length > 0 && (
-        <FeaturedCarousel feeds={featuredFeeds} colors={colors} />
-      )}
-
-      {!isSearching && (
-        <TrendingSection items={quickPlayItems} colors={colors} onPlay={handlePlayEpisode} />
-      )}
-
-      {!isSearching && (
-        <AllShiurimSection feeds={allFeeds} feedsWithNew={feedsWithNew} colors={colors} />
-      )}
-
-      {!isSearching && (
-        <RecommendedSection feeds={recommendedFeeds} colors={colors} />
-      )}
-
-      {!isSearching && (
-        <MaggidShiurSection maggidShiurim={maggidShiurim} colors={colors} />
-      )}
-
-      {!isSearching && (
-        <CategoriesGrid categories={categories} allFeeds={allFeeds} colors={colors} />
-      )}
-
-      {!isSearching && (
-        <RecentlyListenedSection items={recentlyListenedItems} colors={colors} isOnline={isOnline} />
-      )}
+      {!isSearching && homeSections.map((section) => {
+        switch (section) {
+          case "continue":
+            if (featureFlags.showContinueListening === false) return null;
+            return <ContinueListeningSection key={section} items={continueListeningItems} colors={colors} onPlay={handlePlayEpisode} onDismiss={handleDismissContinue} />;
+          case "featured":
+            if (featuredFeeds.length === 0) return null;
+            return <FeaturedCarousel key={section} feeds={featuredFeeds} colors={colors} autoScrollMs={config.carouselAutoScrollMs} />;
+          case "trending":
+            if (featureFlags.showTrending === false) return null;
+            return <TrendingSection key={section} items={quickPlayItems} colors={colors} onPlay={handlePlayEpisode} />;
+          case "allShiurim":
+            return <AllShiurimSection key={section} feeds={allFeeds} feedsWithNew={feedsWithNew} colors={colors} />;
+          case "recommended":
+            if (featureFlags.showRecommended === false) return null;
+            return <RecommendedSection key={section} feeds={recommendedFeeds} colors={colors} />;
+          case "maggidShiur":
+            if (featureFlags.showMaggidShiur === false) return null;
+            return <MaggidShiurSection key={section} maggidShiurim={maggidShiurim} colors={colors} />;
+          case "categories":
+            return <CategoriesGrid key={section} categories={categories} allFeeds={allFeeds} colors={colors} />;
+          case "recent":
+            return <RecentlyListenedSection key={section} items={recentlyListenedItems} colors={colors} isOnline={isOnline} />;
+          default:
+            return null;
+        }
+      })}
      </View>
     </ScrollView>
   );

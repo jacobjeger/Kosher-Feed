@@ -304,7 +304,7 @@ export default function PlayerScreen() {
         <Text style={[styles.episodeTitle, { color: colors.text }, isSmallScreen && styles.episodeTitleSmall]} numberOfLines={2}>
           {currentEpisode.title}
         </Text>
-        <Pressable 
+        <Pressable
           onPress={() => { router.back(); router.push(`/podcast/${currentFeed.id}`); }}
           style={{ zIndex: 10, paddingVertical: 6, marginBottom: 4 }}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -313,6 +313,12 @@ export default function PlayerScreen() {
             {currentFeed.title}
           </Text>
         </Pressable>
+        {currentFeed.sourceNetwork && (
+          <View style={styles.sourceNetworkBadge}>
+            <Ionicons name="globe-outline" size={11} color="#fff" />
+            <Text style={styles.sourceNetworkText}>{currentFeed.sourceNetwork}</Text>
+          </View>
+        )}
       </View>
 
       <View style={[styles.sliderSection, isSmallScreen && styles.sliderSectionSmall]}>
@@ -504,7 +510,6 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: "space-between" as const,
   },
   scrollContentWeb: {
     maxWidth: 500,
@@ -572,6 +577,21 @@ const styles = StyleSheet.create({
   },
   feedName: {
     fontSize: 15,
+    fontWeight: "600" as const,
+  },
+  sourceNetworkBadge: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    alignSelf: "flex-start" as const,
+    gap: 4,
+    backgroundColor: "rgba(37, 99, 235, 0.85)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  sourceNetworkText: {
+    color: "#fff",
+    fontSize: 11,
     fontWeight: "600" as const,
   },
   sliderSection: {

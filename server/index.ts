@@ -35,6 +35,7 @@ async function ensureColumns() {
     { column: "alldaf_author_id", type: "INTEGER" },
     { column: "allmishnah_author_id", type: "INTEGER" },
     { column: "allparsha_author_id", type: "INTEGER" },
+    { column: "allhalacha_author_id", type: "INTEGER" },
     { column: "kolhalashon_rav_id", type: "INTEGER" },
     { column: "kolhalashon_file_id", type: "INTEGER", table: "episodes" },
     { column: "show_in_browse", type: "BOOLEAN DEFAULT true NOT NULL" },
@@ -430,7 +431,7 @@ export interface RefreshResult {
   episodesFound: number;
 }
 
-export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string; etag?: string | null; lastModifiedHeader?: string | null; tatSpeakerId?: number | null; alldafAuthorId?: number | null; allmishnahAuthorId?: number | null; allparshaAuthorId?: number | null; kolhalashonRavId?: number | null }): Promise<RefreshResult> {
+export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string; etag?: string | null; lastModifiedHeader?: string | null; tatSpeakerId?: number | null; alldafAuthorId?: number | null; allmishnahAuthorId?: number | null; allparshaAuthorId?: number | null; allhalachaAuthorId?: number | null; kolhalashonRavId?: number | null }): Promise<RefreshResult> {
   const start = Date.now();
 
   // TAT feed: refresh from TorahAnytime API
@@ -442,7 +443,7 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
     return { newEpisodes: result.newEpisodes, method: 'stream', durationMs: Date.now() - start, episodesFound: result.newEpisodes };
   }
 
-  // OU Torah platform feed (AllDaf, AllMishnah, AllParsha): API-only URL
+  // OU Torah platform feed (AllDaf, AllMishnah, AllParsha, AllHalacha): API-only URL
   const ouPlatform = detectOUPlatform(feed as any);
   const isOUUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
 
@@ -529,7 +530,7 @@ let isAutoRefreshing = false;
 function getFeedType(feed: { rssUrl: string }): 'rss' | 'tat' | 'ou' | 'kh' {
   if (feed.rssUrl.startsWith("kh://")) return 'kh';
   if (feed.rssUrl.startsWith("tat://")) return 'tat';
-  if (feed.rssUrl.startsWith("alldaf://") || feed.rssUrl.startsWith("allmishnah://") || feed.rssUrl.startsWith("allparsha://")) return 'ou';
+  if (feed.rssUrl.startsWith("alldaf://") || feed.rssUrl.startsWith("allmishnah://") || feed.rssUrl.startsWith("allparsha://") || feed.rssUrl.startsWith("allhalacha://")) return 'ou';
   return 'rss';
 }
 
@@ -773,7 +774,7 @@ async function syncAllPlatformSpeakers(): Promise<void> {
     log(`KH speaker sync error: ${e.message}`);
   }
 
-  // OU platforms (AllDaf, AllMishnah, AllParsha)
+  // OU platforms (AllDaf, AllMishnah, AllParsha, AllHalacha)
   for (const cfg of Object.values(OU_PLATFORMS)) {
     try {
       const result = await syncOUPlatformAuthors(cfg.key);
@@ -845,6 +846,7 @@ async function updateSpeakerBios(): Promise<number> {
       { field: "alldafAuthorId", platform: "alldaf" },
       { field: "allmishnahAuthorId", platform: "allmishnah" },
       { field: "allparshaAuthorId", platform: "allparsha" },
+      { field: "allhalachaAuthorId", platform: "allhalacha" },
     ];
     for (const { field, platform } of ouFields) {
       const authorId = (feed as any)[field];

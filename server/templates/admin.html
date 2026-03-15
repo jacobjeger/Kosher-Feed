@@ -685,6 +685,19 @@
         <p style="font-size:12px;color:#64748b;margin:0 0 12px;">Feeds pulling content from multiple platforms. You can unlink a platform to stop merging.</p>
         <div id="mergersArea" style="color:#94a3b8;font-size:13px;">Loading...</div>
       </div>
+      <div class="card" style="max-width:900px;margin-bottom:20px;">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <h2>Remote Config</h2>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-secondary btn-sm" onclick="seedConfigDefaults()">Seed Defaults</button>
+            <button class="btn btn-primary btn-sm" onclick="showAddConfigDialog()">Add Config</button>
+            <button class="btn btn-secondary btn-sm" onclick="loadRemoteConfig()">Refresh</button>
+          </div>
+        </div>
+        <p style="font-size:12px;color:#64748b;margin:0 0 12px;">Key-value configuration that drives the app remotely. Changes take effect within 5 minutes (or on app restart).</p>
+        <div id="remoteConfigArea" style="color:#94a3b8;font-size:13px;">Loading...</div>
+      </div>
+
       <div class="card" style="max-width:500px;">
         <div class="card-header">
           <h2>Change Password</h2>
@@ -1469,7 +1482,7 @@ function showMergeModal(sourceId) {
 
   document.getElementById('modalContent').innerHTML = `
     <h2>Merge Feed</h2>
-    <p style="color:#94a3b8;font-size:13px;margin-bottom:12px;">Merge <strong style="color:#e2e8f0;">${esc(source.title)}</strong> into another feed. All episodes and subscribers will be moved to the target, and this feed will be deleted.</p>
+    <p style="color:#94a3b8;font-size:13px;margin-bottom:12px;">Merge <strong style="color:#e2e8f0;">${esc(source.title)}</strong> into another feed. All episodes and subscribers will be moved to the target. The source feed will be deactivated (not deleted) and its platform links will be carried over.</p>
     <div class="form-group">
       <label>Target Feed</label>
       <input type="text" id="mergeSearch" placeholder="Search feeds..." oninput="filterMergeTargets('${sourceId}')">
@@ -1524,7 +1537,7 @@ async function executeMerge(sourceId) {
   if (!targetId) return;
   const source = allAdminFeeds.find(f => f.id === sourceId);
   const target = allAdminFeeds.find(f => f.id === targetId);
-  if (!confirm(`Merge "${source?.title}" into "${target?.title}"?\n\nAll episodes and subscribers will be moved. The source feed will be deleted. This cannot be undone.`)) return;
+  if (!confirm(`Merge "${source?.title}" into "${target?.title}"?\n\nAll episodes and subscribers will be moved to the target. The source feed will be deactivated (not deleted) and its platform links carried over.`)) return;
   try {
     const data = await api('/api/admin/feeds/merge', { method: 'POST', body: JSON.stringify({ sourceId, targetId }) });
     closeModal();
@@ -1940,7 +1953,7 @@ function switchTab(tab, btn) {
   if (tab === 'vitals') loadVitals();
   if (tab === 'announcements') loadAnnouncements();
   if (tab === 'kolhalashon') { loadKHStatus(); loadKHSpeakers(); loadKHVitals(); }
-  if (tab === 'settings') { loadTATStatus(); loadAllOUStatuses(); loadMergers(); loadGlobalMergeHistory(); }
+  if (tab === 'settings') { loadTATStatus(); loadAllOUStatuses(); loadMergers(); loadGlobalMergeHistory(); loadRemoteConfig(); }
 }
 
 function formatDate(dateStr) {
@@ -2349,17 +2362,29 @@ async function toggleTAT() {
   const btn = document.getElementById('tatToggleBtn');
   const currentlyOn = btn.classList.contains('on');
   const newState = !currentlyOn;
-  if (!newState && !confirm('This will hide all Torah Anytime feeds from the app immediately. Continue?')) return;
+  const action = newState ? 'enable' : 'disable';
+  if (!confirm('Are you sure you want to ' + action + ' all Torah Anytime feeds?')) return;
+  const statusArea = document.getElementById('tatStatusArea');
+  const prevStatus = statusArea.innerHTML;
+  statusArea.innerHTML = '<span style="color:#f59e0b;">Updating feeds...</span>';
   try {
     btn.disabled = true;
+    console.log('Toggling TAT to:', newState);
     const result = await api('/api/admin/tat/toggle', { method: 'POST', body: JSON.stringify({ enabled: newState }) });
+    console.log('TAT toggle result:', result);
     btn.className = 'toggle-btn ' + (newState ? 'on' : 'off');
-    showAlert((newState ? 'Enabled' : 'Disabled') + ' Torah Anytime — ' + result.updated + ' feeds updated');
-    loadTATStatus();
-    loadFeeds();
+    if (result.updated === 0) {
+      showAlert('No Torah Anytime-only feeds found to toggle. Merged feeds are not affected.', 'error');
+    } else {
+      showAlert((newState ? 'Enabled' : 'Disabled') + ' Torah Anytime — ' + result.updated + ' feeds updated');
+    }
+    await loadTATStatus();
+    await loadFeeds();
     loadAnalytics();
   } catch(e) {
-    showAlert('Failed: ' + e.message, 'error');
+    console.error('TAT toggle error:', e);
+    statusArea.innerHTML = prevStatus;
+    showAlert('Failed to toggle TAT: ' + (e.message || 'Unknown error'), 'error');
   } finally {
     btn.disabled = false;
   }
@@ -2405,17 +2430,29 @@ async function toggleOUPlatform(platform) {
   const btn = document.getElementById(platform + 'ToggleBtn');
   const currentlyOn = btn.classList.contains('on');
   const newState = !currentlyOn;
-  if (!newState && !confirm('This will hide all ' + label + ' feeds from the app immediately. Continue?')) return;
+  const action = newState ? 'enable' : 'disable';
+  if (!confirm('Are you sure you want to ' + action + ' all ' + label + ' feeds?')) return;
+  const statusArea = document.getElementById(platform + 'StatusArea');
+  const prevStatus = statusArea.innerHTML;
+  statusArea.innerHTML = '<span style="color:#f59e0b;">Updating feeds...</span>';
   try {
     btn.disabled = true;
+    console.log('Toggling ' + label + ' to:', newState);
     const result = await api('/api/admin/' + platform + '/toggle', { method: 'POST', body: JSON.stringify({ enabled: newState }) });
+    console.log(label + ' toggle result:', result);
     btn.className = 'toggle-btn ' + (newState ? 'on' : 'off');
-    showAlert((newState ? 'Enabled' : 'Disabled') + ' ' + label + ' — ' + result.updated + ' feeds updated');
-    loadOUPlatformStatus(platform);
-    loadFeeds();
+    if (result.updated === 0) {
+      showAlert('No ' + label + '-only feeds found to toggle. Merged feeds are not affected.', 'error');
+    } else {
+      showAlert((newState ? 'Enabled' : 'Disabled') + ' ' + label + ' — ' + result.updated + ' feeds updated');
+    }
+    await loadOUPlatformStatus(platform);
+    await loadFeeds();
     loadAnalytics();
   } catch(e) {
-    showAlert('Failed: ' + e.message, 'error');
+    console.error(label + ' toggle error:', e);
+    statusArea.innerHTML = prevStatus;
+    showAlert('Failed to toggle ' + label + ': ' + (e.message || 'Unknown error'), 'error');
   } finally {
     btn.disabled = false;
   }
@@ -2468,17 +2505,29 @@ async function toggleKH() {
   const btn = document.getElementById('khToggleBtn');
   const currentlyOn = btn.classList.contains('on');
   const newState = !currentlyOn;
-  if (!newState && !confirm('This will hide all Kol Halashon feeds from the app immediately. Continue?')) return;
+  const action = newState ? 'enable' : 'disable';
+  if (!confirm('Are you sure you want to ' + action + ' all Kol Halashon feeds?')) return;
+  const statusArea = document.getElementById('khStatusArea');
+  const prevStatus = statusArea.innerHTML;
+  statusArea.innerHTML = '<span style="color:#f59e0b;">Updating feeds...</span>';
   try {
     btn.disabled = true;
+    console.log('Toggling KH to:', newState);
     const result = await api('/api/admin/kh/toggle', { method: 'POST', body: JSON.stringify({ enabled: newState }) });
+    console.log('KH toggle result:', result);
     btn.className = 'toggle-btn ' + (newState ? 'on' : 'off');
-    showAlert((newState ? 'Enabled' : 'Disabled') + ' Kol Halashon — ' + result.updated + ' feeds updated');
-    loadKHStatus();
-    loadFeeds();
+    if (result.updated === 0) {
+      showAlert('No Kol Halashon-only feeds found to toggle. Merged feeds are not affected.', 'error');
+    } else {
+      showAlert((newState ? 'Enabled' : 'Disabled') + ' Kol Halashon — ' + result.updated + ' feeds updated');
+    }
+    await loadKHStatus();
+    await loadFeeds();
     loadAnalytics();
   } catch(e) {
-    showAlert('Failed: ' + e.message, 'error');
+    console.error('KH toggle error:', e);
+    statusArea.innerHTML = prevStatus;
+    showAlert('Failed to toggle KH: ' + (e.message || 'Unknown error'), 'error');
   } finally {
     btn.disabled = false;
   }
@@ -2559,6 +2608,96 @@ async function unlinkPlatform(feedId, platform, btn) {
     showAlert('Failed: ' + e.message, 'error');
     btn.disabled = false;
     btn.textContent = 'Unlink ' + platform;
+  }
+}
+
+// Remote Config
+async function loadRemoteConfig() {
+  const area = document.getElementById('remoteConfigArea');
+  try {
+    const entries = await api('/api/admin/config');
+    if (!entries || entries.length === 0) {
+      area.innerHTML = '<p style="color:#94a3b8;">No config entries yet. Click "Seed Defaults" to populate.</p>';
+      return;
+    }
+    let html = '<table class="feed-table"><thead><tr><th>Key</th><th>Value</th><th>Description</th><th>Updated</th><th style="text-align:center;">Actions</th></tr></thead><tbody>';
+    for (const e of entries) {
+      const val = e.value.length > 80 ? e.value.substring(0, 80) + '...' : e.value;
+      const updated = e.updatedAt ? new Date(e.updatedAt).toLocaleDateString() : '-';
+      html += '<tr>';
+      html += '<td><code style="background:#1e293b;padding:2px 6px;border-radius:4px;font-size:12px;">' + esc(e.key) + '</code></td>';
+      html += '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;">' + esc(val) + '</td>';
+      html += '<td style="font-size:12px;color:#94a3b8;">' + esc(e.description || '') + '</td>';
+      html += '<td style="font-size:12px;color:#64748b;">' + updated + '</td>';
+      html += '<td style="text-align:center;white-space:nowrap;">';
+      html += '<button class="btn btn-secondary btn-sm" onclick="editConfigEntry(\'' + esc(e.key) + '\')">Edit</button> ';
+      html += '<button class="btn btn-sm" style="background:#ef4444;color:#fff;" onclick="deleteConfigEntry(\'' + esc(e.key) + '\')">Delete</button>';
+      html += '</td></tr>';
+    }
+    html += '</tbody></table>';
+    area.innerHTML = html;
+  } catch (err) {
+    area.innerHTML = '<p style="color:#ef4444;">Failed to load config: ' + esc(err.message) + '</p>';
+  }
+}
+
+async function seedConfigDefaults() {
+  if (!confirm('Seed default config values? Existing values will NOT be overwritten.')) return;
+  try {
+    const result = await api('/api/admin/config/seed', { method: 'POST' });
+    showAlert('Seeded ' + result.seeded + ' of ' + result.total + ' config defaults.');
+    loadRemoteConfig();
+  } catch (err) {
+    showAlert('Failed to seed: ' + err.message, 'error');
+  }
+}
+
+function showAddConfigDialog() {
+  const key = prompt('Config key (e.g. "myFeature"):');
+  if (!key) return;
+  const valueStr = prompt('Value (JSON or plain text):', '');
+  if (valueStr === null) return;
+  const description = prompt('Description (optional):', '') || '';
+  let value;
+  try { value = JSON.parse(valueStr); } catch { value = valueStr; }
+  api('/api/admin/config/' + encodeURIComponent(key), {
+    method: 'PUT',
+    body: JSON.stringify({ value, description })
+  }).then(() => {
+    loadRemoteConfig();
+  }).catch(err => {
+    alert('Failed to add config: ' + err.message);
+  });
+}
+
+function editConfigEntry(key) {
+  api('/api/admin/config').then(entries => {
+    const entry = entries.find(e => e.key === key);
+    if (!entry) return alert('Entry not found');
+    const currentValue = entry.value;
+    const newValueStr = prompt('Edit value for "' + key + '":\n(Enter valid JSON for objects/arrays, or plain text)', currentValue);
+    if (newValueStr === null) return;
+    let value;
+    try { value = JSON.parse(newValueStr); } catch { value = newValueStr; }
+    const description = prompt('Description:', entry.description || '') || entry.description;
+    api('/api/admin/config/' + encodeURIComponent(key), {
+      method: 'PUT',
+      body: JSON.stringify({ value, description })
+    }).then(() => {
+      loadRemoteConfig();
+    }).catch(err => {
+      alert('Failed to update: ' + err.message);
+    });
+  });
+}
+
+async function deleteConfigEntry(key) {
+  if (!confirm('Delete config "' + key + '"? The app will fall back to its default value.')) return;
+  try {
+    await api('/api/admin/config/' + encodeURIComponent(key), { method: 'DELETE' });
+    loadRemoteConfig();
+  } catch (err) {
+    alert('Failed to delete: ' + err.message);
   }
 }
 
@@ -3652,19 +3791,35 @@ async function loadGlobalMergeHistory() {
       area.innerHTML = '<p style="color:#64748b;font-size:13px;">No merges recorded yet.</p>';
       return;
     }
-    area.innerHTML = '<table class="feed-table" style="margin-bottom:0;"><thead><tr><th>Date</th><th>Source Feed</th><th>Target Feed</th><th style="text-align:right;">Episodes</th><th style="text-align:right;">Subs</th></tr></thead><tbody>' +
+    area.innerHTML = '<table class="feed-table" style="margin-bottom:0;"><thead><tr><th>Date</th><th>Source Feed</th><th>RSS URL</th><th>Target Feed</th><th style="text-align:right;">Episodes</th><th style="text-align:right;">Subs</th><th>Actions</th></tr></thead><tbody>' +
       history.map(h => {
         const date = new Date(h.mergedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        const rssUrl = h.sourceFeedRssUrl || '';
+        const canReAdd = rssUrl && !rssUrl.startsWith('tat://') && !rssUrl.startsWith('kh://') && !rssUrl.startsWith('alldaf://') && !rssUrl.startsWith('allmishnah://') && !rssUrl.startsWith('allparsha://');
         return `<tr>
           <td style="white-space:nowrap;">${date}</td>
           <td><strong>${esc(h.sourceFeedTitle)}</strong>${h.sourceFeedAuthor ? '<br><span style="font-size:11px;color:#64748b;">' + esc(h.sourceFeedAuthor) + '</span>' : ''}</td>
+          <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:#64748b;" title="${esc(rssUrl)}">${esc(rssUrl || 'N/A')}</td>
           <td>${h.targetFeedTitle ? '<strong>' + esc(h.targetFeedTitle) + '</strong>' : '<span style="color:#ef4444;">Deleted</span>'}</td>
           <td style="text-align:right;">${h.episodesMoved}</td>
           <td style="text-align:right;">${h.subscriptionsMoved}</td>
+          <td>${canReAdd ? '<button class="btn btn-secondary btn-sm" onclick="reAddMergedFeed(\'' + esc(rssUrl).replace(/'/g, "\\'") + '\')">Re-add</button>' : ''}</td>
         </tr>`;
       }).join('') + '</tbody></table>';
   } catch(e) {
     console.error('Merge history error:', e);
+  }
+}
+
+async function reAddMergedFeed(rssUrl) {
+  if (!confirm('Re-add feed from RSS URL:\\n' + rssUrl + '\\n\\nThis will create a new feed from this RSS source.')) return;
+  try {
+    const result = await api('/api/admin/feeds', { method: 'POST', body: JSON.stringify({ rssUrl }) });
+    showAlert('Feed re-added: ' + (result.title || 'New feed'));
+    loadFeeds();
+    loadGlobalMergeHistory();
+  } catch(e) {
+    showAlert('Failed to re-add feed: ' + e.message, 'error');
   }
 }
 

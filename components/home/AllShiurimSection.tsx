@@ -27,7 +27,7 @@ export default React.memo(function AllShiurimSection({ feeds, feedsWithNew, colo
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <PodcastCard feed={item} size="small" hasNewEpisodes={feedsWithNew.has(item.id)} />}
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 20 }}
+        contentContainerStyle={{ paddingHorizontal: 20, alignItems: "flex-start" }}
         initialNumToRender={5}
         maxToRenderPerBatch={5}
         windowSize={3}

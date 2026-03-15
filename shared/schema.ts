@@ -30,6 +30,7 @@ export const feeds = pgTable("feeds", {
   alldafAuthorId: integer("alldaf_author_id"),
   allmishnahAuthorId: integer("allmishnah_author_id"),
   allparshaAuthorId: integer("allparsha_author_id"),
+  allhalachaAuthorId: integer("allhalacha_author_id"),
   kolhalashonRavId: integer("kolhalashon_rav_id"),
   showInBrowse: boolean("show_in_browse").default(true).notNull(),
 });
@@ -318,3 +319,12 @@ export const feedMergeHistory = pgTable("feed_merge_history", {
 });
 
 export type FeedMergeHistory = typeof feedMergeHistory.$inferSelect;
+
+export const appConfig = pgTable("app_config", {
+  key: varchar("key").primaryKey(),
+  value: text("value").notNull(),
+  description: text("description"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type AppConfig = typeof appConfig.$inferSelect;

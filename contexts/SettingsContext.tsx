@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, type ReactNode } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { scheduleDailyReminder, cancelDailyReminder } from "@/lib/notifications";
+import { useRemoteConfig } from "@/contexts/RemoteConfigContext";
 
 const SETTINGS_KEY = "@kosher_shiurim_settings";
 const FEED_SETTINGS_KEY = "@kosher_shiurim_feed_settings";
@@ -50,6 +51,7 @@ interface SettingsContextValue {
 const SettingsContext = createContext<SettingsContextValue | null>(null);
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
+  const { config: remoteConfig } = useRemoteConfig();
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [feedSettingsMap, setFeedSettingsMap] = useState<Record<string, FeedSettings>>({});
   const [isLoaded, setIsLoaded] = useState(false);
@@ -63,6 +65,15 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         try {
           setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(settingsData) });
         } catch {}
+      } else {
+        // First-time user: apply remote config defaults
+        const remoteDefaults: Partial<AppSettings> = {};
+        if (remoteConfig.defaultSkipForward) remoteDefaults.skipForwardSeconds = remoteConfig.defaultSkipForward;
+        if (remoteConfig.defaultSkipBackward) remoteDefaults.skipBackwardSeconds = remoteConfig.defaultSkipBackward;
+        if (remoteConfig.defaultMaxEpisodes) remoteDefaults.maxEpisodesPerFeed = remoteConfig.defaultMaxEpisodes;
+        if (Object.keys(remoteDefaults).length > 0) {
+          setSettings(prev => ({ ...prev, ...remoteDefaults }));
+        }
       }
       if (feedData) {
         try {
