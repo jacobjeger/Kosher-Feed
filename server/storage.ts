@@ -1449,13 +1449,14 @@ export async function getKHSpeakerStats() {
   return allFeeds.map(f => {
     const s = stats.get(f.id) || { episodeCount: 0, subscriberCount: 0, listenCount: 0 };
     const platforms: string[] = [];
-    if (f.rssUrl && !f.rssUrl.startsWith("tat://") && !f.rssUrl.startsWith("kh://") && !f.rssUrl.startsWith("alldaf://") && !f.rssUrl.startsWith("allmishnah://") && !f.rssUrl.startsWith("allparsha://")) {
+    if (f.rssUrl && !f.rssUrl.startsWith("tat://") && !f.rssUrl.startsWith("kh://") && !f.rssUrl.startsWith("alldaf://") && !f.rssUrl.startsWith("allmishnah://") && !f.rssUrl.startsWith("allparsha://") && !f.rssUrl.startsWith("allhalacha://")) {
       platforms.push("RSS");
     }
     if (f.tatSpeakerId) platforms.push("Torah Anytime");
     if (f.alldafAuthorId) platforms.push("AllDaf");
     if (f.allmishnahAuthorId) platforms.push("AllMishnah");
     if (f.allparshaAuthorId) platforms.push("AllParsha");
+    if (f.allhalachaAuthorId) platforms.push("AllHalacha");
     if (f.kolhalashonRavId) platforms.push("Kol Halashon");
 
     return {
@@ -1485,6 +1486,7 @@ export async function getSourceBreakdown() {
     "AllDaf": { feedCount: 0, episodeCount: 0 },
     "AllMishnah": { feedCount: 0, episodeCount: 0 },
     "AllParsha": { feedCount: 0, episodeCount: 0 },
+    "AllHalacha": { feedCount: 0, episodeCount: 0 },
     "Kol Halashon": { feedCount: 0, episodeCount: 0 },
   };
 
@@ -1497,6 +1499,7 @@ export async function getSourceBreakdown() {
     else if (f.alldafAuthorId) source = "AllDaf";
     else if (f.allmishnahAuthorId) source = "AllMishnah";
     else if (f.allparshaAuthorId) source = "AllParsha";
+    else if (f.allhalachaAuthorId) source = "AllHalacha";
     else if (f.tatSpeakerId) source = "Torah Anytime";
     else if (f.kolhalashonRavId) source = "Kol Halashon";
 

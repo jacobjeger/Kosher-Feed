@@ -512,7 +512,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalNew += tatResult.newEpisodes;
       }
 
-      // OU Torah platform refresh (AllDaf, AllMishnah, AllParsha)
+      // OU Torah platform refresh (AllDaf, AllMishnah, AllParsha, AllHalacha)
       const ouDetected = detectOUPlatform(feed as any);
       if (ouDetected) {
         const ouResult = await refreshOUFeedEpisodes(ouDetected.platform, { id: feed.id, title: feed.title, authorId: ouDetected.authorId });
@@ -571,7 +571,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const tatResult = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveTatId });
             totalNew += tatResult.newEpisodes;
           }
-          // OU Torah platform refresh (AllDaf, AllMishnah, AllParsha)
+          // OU Torah platform refresh (AllDaf, AllMishnah, AllParsha, AllHalacha)
           const ouRefresh = detectOUPlatform(feed as any);
           if (ouRefresh) {
             const ouResult = await refreshOUFeedEpisodes(ouRefresh.platform, { id: feed.id, title: feed.title, authorId: ouRefresh.authorId });
@@ -1463,6 +1463,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (f.alldafAuthorId) platforms.push("AllDaf");
           if (f.allmishnahAuthorId) platforms.push("AllMishnah");
           if (f.allparshaAuthorId) platforms.push("AllParsha");
+          if (f.allhalachaAuthorId) platforms.push("AllHalacha");
           if ((f as any).kolhalashonRavId) platforms.push("Kol Halashon");
           if (platforms.length < 2) return null;
           return {
@@ -1476,6 +1477,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             alldafAuthorId: f.alldafAuthorId,
             allmishnahAuthorId: f.allmishnahAuthorId,
             allparshaAuthorId: f.allparshaAuthorId,
+            allhalachaAuthorId: f.allhalachaAuthorId,
             kolhalashonRavId: (f as any).kolhalashonRavId,
           };
         })
@@ -1558,6 +1560,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           break;
         case "AllParsha":
           await storage.setOUAuthorId(feedId, "allparshaAuthorId", null);
+          break;
+        case "AllHalacha":
+          await storage.setOUAuthorId(feedId, "allhalachaAuthorId", null);
           break;
         case "Kol Halashon":
           await storage.setKHRavId(feedId, null);

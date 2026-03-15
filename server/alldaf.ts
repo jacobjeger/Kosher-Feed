@@ -6,7 +6,7 @@ import { filterCrossSourceDuplicates, isMergedFeed } from "./episode-dedup";
 
 // --- Platform Configuration ---
 
-export type OUPlatformKey = "alldaf" | "allmishnah" | "allparsha";
+export type OUPlatformKey = "alldaf" | "allmishnah" | "allparsha" | "allhalacha";
 
 interface OUPlatformConfig {
   key: OUPlatformKey;
@@ -15,7 +15,13 @@ interface OUPlatformConfig {
   baseUrl: string;          // tRPC base URL
   urlScheme: string;        // e.g. "alldaf://author/"
   guidPrefix: string;       // e.g. "alldaf-"
-  feedIdField: "alldafAuthorId" | "allmishnahAuthorId" | "allparshaAuthorId";
+  feedIdField: "alldafAuthorId" | "allmishnahAuthorId" | "allparshaAuthorId" | "allhalachaAuthorId";
+  // tRPC procedure name overrides (AllHalacha uses authorRouter/postRouter instead of authors/posts)
+  procedures?: {
+    authorsFetchList: string;
+    authorsFetchById: string;
+    postsFetchList: string;
+  };
 }
 
 export const OU_PLATFORMS: Record<OUPlatformKey, OUPlatformConfig> = {
@@ -45,6 +51,20 @@ export const OU_PLATFORMS: Record<OUPlatformKey, OUPlatformConfig> = {
     urlScheme: "allparsha://author/",
     guidPrefix: "allparsha-",
     feedIdField: "allparshaAuthorId",
+  },
+  allhalacha: {
+    key: "allhalacha",
+    label: "AllHalacha",
+    platformParam: "AllHalacha",
+    baseUrl: "https://allhalacha.org/api/trpc",
+    urlScheme: "allhalacha://author/",
+    guidPrefix: "allhalacha-",
+    feedIdField: "allhalachaAuthorId",
+    procedures: {
+      authorsFetchList: "authorRouter.fetchList",
+      authorsFetchById: "authorRouter.fetchById",
+      postsFetchList: "postRouter.fetchList",
+    },
   },
 };
 
@@ -99,19 +119,15 @@ async function trpcGet(baseUrl: string, procedures: string, input: Record<string
 
 export async function fetchAllAuthors(platform: OUPlatformKey, take: number = 500): Promise<OUAuthor[]> {
   const cfg = OU_PLATFORMS[platform];
+  const procedure = cfg.procedures?.authorsFetchList || "authors.fetchList";
   const allAuthors: OUAuthor[] = [];
   let skip = 0;
 
   while (true) {
-    const data = await trpcGet(cfg.baseUrl, "authors.fetchList", {
-      "0": {
-        sort: [{ field: "postsCount", direction: "desc" }],
-        take,
-        skip,
-        platform: cfg.platformParam,
-        search: "",
-      },
-    });
+    const input: Record<string, any> = cfg.procedures
+      ? { "0": { limit: take, offset: skip } }
+      : { "0": { sort: [{ field: "postsCount", direction: "desc" }], take, skip, platform: cfg.platformParam, search: "" } };
+    const data = await trpcGet(cfg.baseUrl, procedure, input);
 
     const records = data[0]?.result?.data?.records || [];
     if (records.length === 0) break;
@@ -135,8 +151,9 @@ export async function fetchAllAuthors(platform: OUPlatformKey, take: number = 50
 
 export async function fetchAuthorById(platform: OUPlatformKey, authorId: number): Promise<OUAuthorDetail | null> {
   const cfg = OU_PLATFORMS[platform];
+  const procedure = cfg.procedures?.authorsFetchById || "authors.fetchById";
   try {
-    const data = await trpcGet(cfg.baseUrl, "authors.fetchById", {
+    const data = await trpcGet(cfg.baseUrl, procedure, {
       "0": { id: authorId, platform: cfg.platformParam },
     });
     const author = data[0]?.result?.data;
@@ -156,16 +173,11 @@ export async function fetchAuthorById(platform: OUPlatformKey, authorId: number)
 
 export async function fetchAuthorPosts(platform: OUPlatformKey, authorId: number, limit: number = 50, skip: number = 0): Promise<{ records: OUPost[]; total?: number }> {
   const cfg = OU_PLATFORMS[platform];
-  const data = await trpcGet(cfg.baseUrl, "posts.fetchList", {
-    "0": {
-      authorId,
-      limit,
-      take: limit,
-      skip,
-      platform: cfg.platformParam,
-      filter: {},
-    },
-  });
+  const procedure = cfg.procedures?.postsFetchList || "posts.fetchList";
+  const input: Record<string, any> = cfg.procedures
+    ? { "0": { authorId, limit, offset: skip } }
+    : { "0": { authorId, limit, take: limit, skip, platform: cfg.platformParam, filter: {} } };
+  const data = await trpcGet(cfg.baseUrl, procedure, input);
   const result = data[0]?.result?.data || {};
   return { records: result.records || [], total: result.total };
 }
@@ -426,6 +438,7 @@ export async function refreshOUFeedEpisodes(
 export async function syncAllDafAuthors() { return syncOUPlatformAuthors("alldaf"); }
 export async function syncAllMishnahAuthors() { return syncOUPlatformAuthors("allmishnah"); }
 export async function syncAllParshaAuthors() { return syncOUPlatformAuthors("allparsha"); }
+export async function syncAllHalachaAuthors() { return syncOUPlatformAuthors("allhalacha"); }
 
 export async function refreshAllDafFeedEpisodes(feed: { id: string; title: string; alldafAuthorId: number }) {
   return refreshOUFeedEpisodes("alldaf", { id: feed.id, title: feed.title, authorId: feed.alldafAuthorId });
@@ -436,10 +449,13 @@ export async function refreshAllMishnahFeedEpisodes(feed: { id: string; title: s
 export async function refreshAllParshaFeedEpisodes(feed: { id: string; title: string; allparshaAuthorId: number }) {
   return refreshOUFeedEpisodes("allparsha", { id: feed.id, title: feed.title, authorId: feed.allparshaAuthorId });
 }
+export async function refreshAllHalachaFeedEpisodes(feed: { id: string; title: string; allhalachaAuthorId: number }) {
+  return refreshOUFeedEpisodes("allhalacha", { id: feed.id, title: feed.title, authorId: feed.allhalachaAuthorId });
+}
 
 // --- Helper to detect any OU platform from a feed ---
 
-export function detectOUPlatform(feed: { rssUrl: string; alldafAuthorId?: number | null; allmishnahAuthorId?: number | null; allparshaAuthorId?: number | null }): { platform: OUPlatformKey; authorId: number } | null {
+export function detectOUPlatform(feed: { rssUrl: string; alldafAuthorId?: number | null; allmishnahAuthorId?: number | null; allparshaAuthorId?: number | null; allhalachaAuthorId?: number | null }): { platform: OUPlatformKey; authorId: number } | null {
   for (const cfg of Object.values(OU_PLATFORMS)) {
     const authorId = (feed as any)[cfg.feedIdField];
     if (authorId) return { platform: cfg.key, authorId };
