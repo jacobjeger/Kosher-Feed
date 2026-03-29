@@ -976,13 +976,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/public-stats", async (_req: Request, res: Response) => {
     try {
-      const allFeeds = await storage.getAllFeeds();
-      const activeFeeds = allFeeds.filter(f => f.isActive);
-      const analytics = await storage.getAnalytics();
-      res.setHeader("Cache-Control", "public, max-age=60");
+      // Use lightweight queries instead of full getAnalytics() which runs 8+ joins
+      const [activeFeedCount, episodeCount] = await Promise.all([
+        storage.getActiveFeedCount(),
+        storage.getTotalEpisodeCount(),
+      ]);
+      res.setHeader("Cache-Control", "public, max-age=300");
       res.json({
-        shiurimCount: activeFeeds.length,
-        episodeCount: analytics.totalEpisodes,
+        shiurimCount: activeFeedCount,
+        episodeCount: episodeCount,
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
