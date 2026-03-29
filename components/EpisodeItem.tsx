@@ -1,5 +1,6 @@
 import React, { useRef, useMemo } from "react";
 import { View, Text, Pressable, StyleSheet, Platform, Animated as RNAnimated, PanResponder, InteractionManager } from "react-native";
+import FocusableView from "@/components/FocusableView";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -182,7 +183,8 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
     <>
       <View style={styles.mainRow}>
         <View>
-          <Pressable
+          <FocusableView
+            focusRadius={10}
             onPress={offlineUnavailable ? undefined : handlePlay}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             style={[
@@ -201,7 +203,7 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
               color={offlineUnavailable ? colors.textSecondary : (isCurrentlyPlaying ? "#fff" : colors.accent)}
               style={isCurrentlyPlaying && playback.isPlaying ? undefined : { marginLeft: 2 }}
             />
-          </Pressable>
+          </FocusableView>
           {!isOnline && downloaded && (
             <View style={styles.offlineAvailableBadge}>
               <Ionicons name="checkmark-circle" size={14} color={colors.success} />
@@ -253,7 +255,8 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
         </Pressable>
         <View style={styles.actionsRow}>
           {isNative ? (
-            <Pressable
+            <FocusableView
+              focusRadius={8}
               onPress={(e) => {
                 e.stopPropagation();
                 lightHaptic();
@@ -263,7 +266,7 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
               style={styles.actionBtn}
             >
               <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
-            </Pressable>
+            </FocusableView>
           ) : (
             <>
               <Pressable
@@ -342,16 +345,16 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
       )}
       {isNative && mobileMenuVisible && (
         <View style={[styles.mobileMenu, { backgroundColor: colors.surfaceElevated, borderTopColor: colors.divider }]}>
-          <Pressable onPress={() => { handleToggleFavorite(); setMobileMenuVisible(false); }} style={styles.mobileMenuItem}>
+          <FocusableView autoFocus onPress={() => { handleToggleFavorite(); setMobileMenuVisible(false); }} style={styles.mobileMenuItem}>
             <Ionicons name={favorited ? "star" : "star-outline"} size={18} color={favorited ? colors.accent : colors.textSecondary} />
             <Text style={[styles.mobileMenuText, { color: colors.text }]}>{favorited ? "Unfavorite" : "Favorite"}</Text>
-          </Pressable>
-          <Pressable onPress={() => { handleToggleQueue(); setMobileMenuVisible(false); }} style={styles.mobileMenuItem}>
+          </FocusableView>
+          <FocusableView onPress={() => { handleToggleQueue(); setMobileMenuVisible(false); }} style={styles.mobileMenuItem}>
             <Ionicons name={isInQueue ? "remove-circle-outline" : "add-circle-outline"} size={18} color={isInQueue ? colors.danger : colors.textSecondary} />
             <Text style={[styles.mobileMenuText, { color: colors.text }]}>{isInQueue ? "Remove from Queue" : "Add to Queue"}</Text>
-          </Pressable>
+          </FocusableView>
           {canDownload && (
-            <Pressable onPress={() => { handleDownload(); setMobileMenuVisible(false); }} style={styles.mobileMenuItem}>
+            <FocusableView onPress={() => { handleDownload(); setMobileMenuVisible(false); }} style={styles.mobileMenuItem}>
               {downloading ? (
                 <Text style={[styles.progressText, { color: colors.accent }]}>{Math.round(progress * 100)}%</Text>
               ) : downloaded ? (
@@ -360,7 +363,7 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
                 <Feather name="download" size={18} color={colors.textSecondary} />
               )}
               <Text style={[styles.mobileMenuText, { color: colors.text }]}>{downloaded ? "Downloaded" : downloading ? "Downloading..." : "Download"}</Text>
-            </Pressable>
+            </FocusableView>
           )}
         </View>
       )}

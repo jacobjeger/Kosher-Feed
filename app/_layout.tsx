@@ -28,6 +28,7 @@ import AnnouncementModal from "@/components/AnnouncementModal";
 import { RemoteConfigProvider } from "@/contexts/RemoteConfigContext";
 import { getDeviceId } from "@/lib/device-id";
 import { getApiUrl, apiRequest } from "@/lib/query-client";
+import { checkForUpdate } from "@/lib/updates";
 
 const ONBOARDING_KEY = "@shiurpod_onboarding_complete";
 
@@ -137,6 +138,7 @@ export default function RootLayout() {
     if (!fontsLoaded || !onboardingChecked) return;
     SplashScreen.hideAsync();
     setupNotificationChannel();
+    checkForUpdate();
 
     // Auto-register push token on startup
     if (Platform.OS !== "web") {

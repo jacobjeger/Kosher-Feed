@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { View, Text, Pressable, StyleSheet, Platform, Alert, ScrollView, PanResponder, Animated as RNAnimated, Dimensions, ActivityIndicator } from "react-native";
+import FocusableView from "@/components/FocusableView";
+import { useBackHandler } from "@/hooks/useBackHandler";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
@@ -63,6 +65,9 @@ export default function PlayerScreen() {
   const [sleepModalVisible, setSleepModalVisible] = useState(false);
 
   const swipeAnim = useRef(new RNAnimated.Value(0)).current;
+
+  // D-pad: hardware back dismisses player
+  useBackHandler(useCallback(() => { safeGoBack(); return true; }, []));
 
   useEffect(() => {
     if (episodeCompleted) {
@@ -348,24 +353,28 @@ export default function PlayerScreen() {
       </View>
 
       <View style={[styles.controls, isSmallScreen && styles.controlsSmall]}>
-        <Pressable
+        <FocusableView
+          focusRadius={12}
           onPress={cycleRate}
           style={[styles.rateBtn, { backgroundColor: colors.surfaceAlt }]}
         >
           <Text style={[styles.rateText, { color: colors.text }]}>
             {playback.playbackRate}x
           </Text>
-        </Pressable>
+        </FocusableView>
 
-        <Pressable
+        <FocusableView
+          focusRadius={24}
           onPress={() => { lightHaptic(); skip(-settings.skipBackwardSeconds); }}
           hitSlop={8}
           style={styles.skipBtn}
         >
           <MaterialIcons name={getSkipBackwardIcon()} size={isSmallScreen ? 28 : 32} color={colors.text} />
-        </Pressable>
+        </FocusableView>
 
-        <Pressable
+        <FocusableView
+          autoFocus
+          focusRadius={32}
           onPress={() => {
             if (playback.isLoading) return;
             mediumHaptic();
@@ -384,27 +393,30 @@ export default function PlayerScreen() {
               style={playback.isPlaying ? undefined : { marginLeft: 3 }}
             />
           )}
-        </Pressable>
+        </FocusableView>
 
-        <Pressable
+        <FocusableView
+          focusRadius={24}
           onPress={() => { lightHaptic(); skip(settings.skipForwardSeconds); }}
           hitSlop={8}
           style={styles.skipBtn}
         >
           <MaterialIcons name={getSkipForwardIcon()} size={isSmallScreen ? 28 : 32} color={colors.text} />
-        </Pressable>
+        </FocusableView>
 
-        <Pressable
+        <FocusableView
+          focusRadius={12}
           onPress={() => { lightHaptic(); stop(); safeGoBack(); }}
           hitSlop={8}
           style={[styles.rateBtn, { backgroundColor: colors.surfaceAlt }]}
         >
           <Ionicons name="stop" size={18} color={colors.danger} />
-        </Pressable>
+        </FocusableView>
       </View>
 
       <View style={styles.secondaryControls}>
-        <Pressable
+        <FocusableView
+          focusRadius={10}
           onPress={handleSleepTimerPress}
           style={[
             styles.secondaryBtn,
@@ -421,9 +433,10 @@ export default function PlayerScreen() {
               {sleepButtonLabel}
             </Text>
           ) : null}
-        </Pressable>
+        </FocusableView>
 
-        <Pressable
+        <FocusableView
+          focusRadius={10}
           onPress={handleAddBookmark}
           style={[styles.secondaryBtn, { backgroundColor: colors.surfaceAlt }]}
         >
@@ -432,10 +445,11 @@ export default function PlayerScreen() {
             size={18}
             color={bookmarkSaved ? colors.success : colors.textSecondary}
           />
-        </Pressable>
+        </FocusableView>
 
 
-        <Pressable
+        <FocusableView
+          focusRadius={10}
           onPress={handleToggleFavorite}
           style={[styles.secondaryBtn, { backgroundColor: colors.surfaceAlt }]}
         >
@@ -444,14 +458,15 @@ export default function PlayerScreen() {
             size={18}
             color={isFavorite(currentEpisode.id) ? colors.accent : colors.textSecondary}
           />
-        </Pressable>
+        </FocusableView>
 
-        <Pressable
+        <FocusableView
+          focusRadius={10}
           onPress={() => { lightHaptic(); router.push("/queue"); }}
           style={[styles.secondaryBtn, { backgroundColor: colors.surfaceAlt }]}
         >
           <Ionicons name="list" size={18} color={colors.textSecondary} />
-        </Pressable>
+        </FocusableView>
       </View>
 
       {bookmarks.length > 0 && (
@@ -460,8 +475,9 @@ export default function PlayerScreen() {
           {bookmarks
             .sort((a, b) => a.positionMs - b.positionMs)
             .map((bm) => (
-              <Pressable
+              <FocusableView
                 key={bm.id}
+                focusRadius={10}
                 style={[styles.bookmarkItem, { backgroundColor: colors.surfaceAlt }]}
                 onPress={() => {
                   lightHaptic();
@@ -475,7 +491,8 @@ export default function PlayerScreen() {
                 <Text style={[styles.bookmarkTime, { color: colors.textSecondary }]}>
                   {formatTime(bm.positionMs)}
                 </Text>
-                <Pressable
+                <FocusableView
+                  focusRadius={8}
                   onPress={(e) => {
                     e.stopPropagation();
                     handleRemoveBookmark(bm.id);
@@ -483,8 +500,8 @@ export default function PlayerScreen() {
                   hitSlop={8}
                 >
                   <Ionicons name="close" size={16} color={colors.textSecondary} />
-                </Pressable>
-              </Pressable>
+                </FocusableView>
+              </FocusableView>
             ))}
         </View>
       )}

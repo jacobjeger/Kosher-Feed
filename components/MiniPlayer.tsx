@@ -1,5 +1,6 @@
 import React from "react";
 import { View, Text, Pressable, StyleSheet, Platform, ActivityIndicator } from "react-native";
+import FocusableView from "@/components/FocusableView";
 import Animated, { FadeInDown, FadeOutDown, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
@@ -39,7 +40,8 @@ export default function MiniPlayer() {
 
   return (
     <Animated.View entering={enteringAnimation} exiting={exitingAnimation} style={pressStyle}>
-      <Pressable
+      <FocusableView
+        focusRadius={14}
         style={[styles.container, { backgroundColor: colors.playerBg }]}
         onPress={() => router.push("/player")}
         onPressIn={() => { pressScale.value = withSpring(0.98, { damping: 15 }); }}
@@ -99,7 +101,8 @@ export default function MiniPlayer() {
             </Pressable>
           )}
 
-          <Pressable
+          <FocusableView
+            focusRadius={20}
             onPress={(e) => {
               e.stopPropagation();
               playback.isPlaying ? pause() : resume();
@@ -116,7 +119,7 @@ export default function MiniPlayer() {
                 color={colors.playerText}
               />
             )}
-          </Pressable>
+          </FocusableView>
 
           {isWeb && (
             <Pressable
@@ -128,7 +131,7 @@ export default function MiniPlayer() {
             </Pressable>
           )}
         </View>
-      </Pressable>
+      </FocusableView>
     </Animated.View>
   );
 }

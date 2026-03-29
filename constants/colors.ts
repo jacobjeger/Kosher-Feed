@@ -26,6 +26,7 @@ const Colors = {
     gradientEnd: "#7c3aed",
     shadowColor: "rgba(0,0,0,0.08)",
     progressBg: "rgba(37,99,235,0.1)",
+    focusRing: "#2563eb",
   },
   dark: {
     text: "#f1f5f9",
@@ -54,6 +55,7 @@ const Colors = {
     gradientEnd: "#8b5cf6",
     shadowColor: "rgba(0,0,0,0.4)",
     progressBg: "rgba(96,165,250,0.15)",
+    focusRing: "#3b82f6",
   },
 };
 

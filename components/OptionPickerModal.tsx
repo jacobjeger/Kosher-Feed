@@ -4,6 +4,7 @@ import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Ionicons } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
 import { lightHaptic } from "@/lib/haptics";
+import FocusableView from "@/components/FocusableView";
 
 export interface PickerOption {
   label: string;
@@ -37,17 +38,19 @@ function OptionPickerModal({ visible, title, subtitle, options, onClose }: Props
         <Pressable style={[styles.sheet, { backgroundColor: colors.surface }]} onPress={(e) => e.stopPropagation()}>
           <View style={styles.headerRow}>
             <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
-            <Pressable onPress={onClose} hitSlop={10} style={[styles.closeBtn, { backgroundColor: colors.surfaceAlt }]}>
+            <FocusableView onPress={onClose} hitSlop={10} style={[styles.closeBtn, { backgroundColor: colors.surfaceAlt }]} focusRadius={15}>
               <Ionicons name="close" size={18} color={colors.textSecondary} />
-            </Pressable>
+            </FocusableView>
           </View>
           {subtitle ? (
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
           ) : null}
           <ScrollView style={styles.optionsList} bounces={false}>
             {options.map((opt, i) => (
-              <Pressable
+              <FocusableView
                 key={i}
+                autoFocus={i === 0}
+                focusRadius={0}
                 style={({ pressed }) => [
                   styles.optionRow,
                   { backgroundColor: pressed ? colors.surfaceAlt : "transparent", borderColor: colors.border },
@@ -71,7 +74,7 @@ function OptionPickerModal({ visible, title, subtitle, options, onClose }: Props
                 {opt.selected && (
                   <Ionicons name="checkmark" size={20} color={colors.accent} />
                 )}
-              </Pressable>
+              </FocusableView>
             ))}
           </ScrollView>
         </Pressable>

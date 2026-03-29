@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback } from "react";
 import { View, Text, Pressable, StyleSheet, useWindowDimensions, Animated as RNAnimated, Platform } from "react-native";
+import FocusableView from "@/components/FocusableView";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
@@ -43,7 +44,8 @@ function PodcastCard({ feed, size = "small", hasNewEpisodes }: Props) {
 
   if (size === "featured") {
     return (
-      <Pressable
+      <FocusableView
+        focusRadius={16}
         style={({ pressed }) => [
           styles.featuredContainer,
           { width: width - 40, backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.95 : 1 },
@@ -84,13 +86,14 @@ function PodcastCard({ feed, size = "small", hasNewEpisodes }: Props) {
             </Text>
           )}
         </View>
-      </Pressable>
+      </FocusableView>
     );
   }
 
   if (size === "medium") {
     return (
-      <Pressable
+      <FocusableView
+        focusRadius={14}
         style={({ pressed }) => [
           styles.mediumContainer,
           { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.95 : 1 },
@@ -118,13 +121,14 @@ function PodcastCard({ feed, size = "small", hasNewEpisodes }: Props) {
           )}
           {networkBadge}
         </View>
-      </Pressable>
+      </FocusableView>
     );
   }
 
   return (
     <RNAnimated.View style={isNative ? { transform: [{ scale: scaleAnim }] } : undefined}>
-      <Pressable
+      <FocusableView
+        focusRadius={14}
         style={({ pressed }) => [
           styles.smallContainer,
           { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.95 : 1 },
@@ -154,7 +158,7 @@ function PodcastCard({ feed, size = "small", hasNewEpisodes }: Props) {
           )}
           {networkBadge}
         </View>
-      </Pressable>
+      </FocusableView>
     </RNAnimated.View>
   );
 }
