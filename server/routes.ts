@@ -1106,6 +1106,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // General audio proxy — fallback for clients that can't connect directly (e.g. SSL cert issues on Android)
+  app.get("/api/audio/proxy", async (req: Request, res: Response) => {
+    try {
+      const url = req.query.url as string;
+      if (!url || !url.startsWith("http")) return res.status(400).json({ error: "Missing url param" });
+      const rangeHeader = req.headers.range;
+      const reqHeaders: Record<string, string> = { "User-Agent": "ShiurPod/1.0" };
+      if (rangeHeader) reqHeaders["Range"] = rangeHeader;
+      const audioResp = await fetch(url, { headers: reqHeaders, redirect: "follow", signal: AbortSignal.timeout(30000) });
+      if (!audioResp.ok && audioResp.status !== 206) return res.status(audioResp.status).json({ error: `Upstream ${audioResp.status}` });
+      res.status(audioResp.status);
+      res.setHeader("Content-Type", audioResp.headers.get("content-type") || "audio/mpeg");
+      const cl = audioResp.headers.get("content-length");
+      if (cl) res.setHeader("Content-Length", cl);
+      const cr = audioResp.headers.get("content-range");
+      if (cr) res.setHeader("Content-Range", cr);
+      res.setHeader("Accept-Ranges", "bytes");
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      const reader = audioResp.body?.getReader();
+      if (!reader) return res.status(502).json({ error: "No stream" });
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!res.writableEnded) res.write(Buffer.from(value));
+      }
+      res.end();
+    } catch (e: any) {
+      if (!res.headersSent) res.status(502).json({ error: e.message });
+    }
+  });
+
   // What's New (episodes from subscribed feeds)
   app.get("/api/whatsnew/:deviceId", async (req: Request, res: Response) => {
     try {

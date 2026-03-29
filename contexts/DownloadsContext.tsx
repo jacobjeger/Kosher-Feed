@@ -304,7 +304,23 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
         }
       );
 
-      const result = await downloadResumable.downloadAsync();
+      let result: Awaited<ReturnType<typeof downloadResumable.downloadAsync>> | null = null;
+      try {
+        result = await downloadResumable.downloadAsync();
+      } catch (directErr: any) {
+        const errMsg = directErr?.message || '';
+        // SSL cert errors or network failures — retry through server proxy
+        if (errMsg.includes('CertPath') || errMsg.includes('SSL') || errMsg.includes('Trust anchor') || errMsg.includes('certificate')) {
+          addLog("warn", `Direct download SSL error, retrying via proxy: ${episode.title}`, undefined, "downloads");
+          const proxyUrl = `${getApiUrl()}/api/audio/proxy?url=${encodeURIComponent(episode.audioUrl)}`;
+          const proxyResumable = LegacyFS.createDownloadResumable(proxyUrl, fileUri, {
+            headers: { "User-Agent": "ShiurPod/1.0" },
+          });
+          result = await proxyResumable.downloadAsync();
+        } else {
+          throw directErr;
+        }
+      }
       if (!result) throw new Error("Download returned null result");
 
       addLog("info", `Download result: uri=${result.uri}, status=${result.status}, headers=${JSON.stringify(result.headers || {}).substring(0, 200)}`, undefined, "downloads");

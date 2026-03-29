@@ -263,6 +263,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const intervalRef = useRef<any>(null);
   const isLoadingRef = useRef(false);
+  const loadingGuardStartRef = useRef(0);
   const currentEpisodeRef = useRef<Episode | null>(null);
   const currentFeedRef = useRef<Feed | null>(null);
   const playbackRef = useRef<PlaybackState>(playback);
@@ -558,17 +559,25 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
   const playEpisodeInternal = useCallback(async (episode: Episode, feed: Feed, skipHistory?: boolean) => {
     if (isLoadingRef.current) {
-      addLog("warn", `Play blocked by loading guard for: ${episode.title}`, undefined, "audio");
-      return;
+      // Allow retrying after 3s even if guard is set (previous attempt likely stuck)
+      const guardAge = Date.now() - (loadingGuardStartRef.current || 0);
+      if (guardAge < 3000) {
+        addLog("warn", `Play blocked by loading guard for: ${episode.title} (${Math.round(guardAge)}ms ago)`, undefined, "audio");
+        return;
+      }
+      addLog("warn", `Loading guard stale (${Math.round(guardAge)}ms) — forcing reset for: ${episode.title}`, undefined, "audio");
+      isLoadingRef.current = false;
     }
     isLoadingRef.current = true;
+    loadingGuardStartRef.current = Date.now();
 
     const safetyTimeout = setTimeout(() => {
       if (isLoadingRef.current) {
-        addLog("warn", "Loading guard safety timeout — resetting after 10s", undefined, "audio");
+        addLog("warn", "Loading guard safety timeout — resetting after 15s", undefined, "audio");
         isLoadingRef.current = false;
+        setPlayback(prev => prev.isLoading ? { ...prev, isLoading: false } : prev);
       }
-    }, 10000);
+    }, 15000);
 
     saveCurrentPosition();
 
@@ -609,8 +618,11 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         audio.onended = () => {
           handleEpisodeEndRef.current(episode, feed);
         };
-        audio.onerror = (e) => {
-          addLog("error", `Web audio error: ${episode.title}`, undefined, "audio");
+        audio.onerror = () => {
+          const code = audio.error?.code;
+          const msg = audio.error?.message || '';
+          const errorMap: Record<number, string> = { 1: 'ABORTED', 2: 'NETWORK', 3: 'DECODE', 4: 'SRC_NOT_SUPPORTED' };
+          addLog("error", `Web audio error: ${episode.title} (${errorMap[code || 0] || 'UNKNOWN'}${msg ? ': ' + msg : ''})`, undefined, "audio");
           setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: false }));
         };
       } else if (createAudioPlayerFn && nativePlayerReady) {
