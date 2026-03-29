@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo } from "react";
 import { View, Text, FlatList, Pressable, StyleSheet, Platform } from "react-native";
+import FocusableView from "@/components/FocusableView";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -13,6 +14,7 @@ import Colors from "@/constants/colors";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import type { Feed, Episode } from "@/lib/types";
 import { reorderQueue } from "@/lib/queue";
+import { useBackHandler } from "@/hooks/useBackHandler";
 
 function formatRemainingTime(positionMs: number, durationMs: number): string {
   if (durationMs <= 0) return "";
@@ -32,6 +34,8 @@ export default function QueueScreen() {
   const { currentEpisode, currentFeed, queue, removeFromQueue, clearQueue, playEpisode, refreshQueue } = useAudioPlayer();
   const { isPlayed } = usePlayedEpisodes();
   const { positions } = usePositions();
+
+  useBackHandler(useCallback(() => { safeGoBack(); return true; }, []));
 
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
   const latestQuery = useQuery<Episode[]>({ queryKey: ["/api/episodes/latest"] });
@@ -83,14 +87,14 @@ export default function QueueScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + (Platform.OS === "web" ? 12 : 8) }]}>
-        <Pressable onPress={() => safeGoBack()} hitSlop={12}>
+        <FocusableView focusRadius={8} onPress={() => safeGoBack()} hitSlop={12}>
           <Ionicons name="chevron-down" size={28} color={colors.text} />
-        </Pressable>
+        </FocusableView>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Up Next</Text>
         {queueItems.length > 0 ? (
-          <Pressable onPress={handleClear} hitSlop={8}>
+          <FocusableView focusRadius={8} onPress={handleClear} hitSlop={8}>
             <Text style={[styles.clearText, { color: colors.danger }]}>Clear</Text>
-          </Pressable>
+          </FocusableView>
         ) : (
           <View style={{ width: 44 }} />
         )}
@@ -125,7 +129,7 @@ export default function QueueScreen() {
         ) : null}
         renderItem={({ item, index }) => (
           <View style={[styles.queueCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
-            <Pressable onPress={() => handlePlayFromQueue(item.episode, item.feed)} style={styles.queueCardContent}>
+            <FocusableView focusRadius={12} onPress={() => handlePlayFromQueue(item.episode, item.feed)} style={styles.queueCardContent}>
               {item.feed.imageUrl ? (
                 <Image source={{ uri: item.feed.imageUrl }} style={styles.artwork} contentFit="cover" cachePolicy="memory-disk" transition={0} />
               ) : (
@@ -150,17 +154,17 @@ export default function QueueScreen() {
                   </View>
                 ) : null}
               </View>
-            </Pressable>
+            </FocusableView>
             <View style={styles.queueActions}>
-              <Pressable onPress={() => handleMoveUp(index)} hitSlop={6} style={styles.reorderBtn} disabled={index === 0}>
+              <FocusableView focusRadius={8} onPress={() => handleMoveUp(index)} hitSlop={6} style={styles.reorderBtn} disabled={index === 0}>
                 <Ionicons name="chevron-up" size={18} color={index === 0 ? colors.border : colors.textSecondary} />
-              </Pressable>
-              <Pressable onPress={() => handleMoveDown(index)} hitSlop={6} style={styles.reorderBtn} disabled={index === queueItems.length - 1}>
+              </FocusableView>
+              <FocusableView focusRadius={8} onPress={() => handleMoveDown(index)} hitSlop={6} style={styles.reorderBtn} disabled={index === queueItems.length - 1}>
                 <Ionicons name="chevron-down" size={18} color={index === queueItems.length - 1 ? colors.border : colors.textSecondary} />
-              </Pressable>
-              <Pressable onPress={() => handleRemove(item.episodeId)} hitSlop={6} style={styles.reorderBtn}>
+              </FocusableView>
+              <FocusableView focusRadius={8} onPress={() => handleRemove(item.episodeId)} hitSlop={6} style={styles.reorderBtn}>
                 <Ionicons name="close" size={18} color={colors.danger} />
-              </Pressable>
+              </FocusableView>
             </View>
           </View>
         )}

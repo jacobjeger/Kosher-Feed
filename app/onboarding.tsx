@@ -10,6 +10,7 @@ import {
   useWindowDimensions,
   TextInput,
 } from "react-native";
+import FocusableView from "@/components/FocusableView";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
@@ -170,9 +171,9 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
             autoCapitalize="none"
           />
           {searchText.length > 0 && (
-            <Pressable onPress={() => setSearchText("")} hitSlop={8}>
+            <FocusableView focusRadius={8} onPress={() => setSearchText("")} hitSlop={8}>
               <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
-            </Pressable>
+            </FocusableView>
           )}
         </View>
       </View>
@@ -188,7 +189,8 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
           renderItem={({ item }) => {
             const isFollowed = followedIds.has(item.id);
             return (
-              <Pressable
+              <FocusableView
+                focusRadius={12}
                 onPress={() => toggleFollow(item.id)}
                 style={[
                   styles.feedItem,
@@ -240,7 +242,7 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
                     <Ionicons name="add" size={isSmall ? 14 : 18} color={colors.textSecondary} />
                   )}
                 </View>
-              </Pressable>
+              </FocusableView>
             );
           }}
         />
@@ -256,7 +258,8 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
           },
         ]}
       >
-        <Pressable
+        <FocusableView
+          focusRadius={14}
           onPress={onComplete}
           style={[styles.getStartedBtn, { backgroundColor: colors.accent, paddingVertical: isSmall ? 12 : 16 }]}
         >
@@ -266,7 +269,7 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
               : "Skip & Get Started"}
           </Text>
           <Ionicons name="arrow-forward" size={isSmall ? 16 : 20} color="#fff" />
-        </Pressable>
+        </FocusableView>
       </View>
     </View>
   );
@@ -406,16 +409,16 @@ export default function OnboardingScreen() {
         <PageIndicator total={PAGE_DATA.length} current={currentPage} />
 
         <View style={styles.bottomActions}>
-          <Pressable onPress={completeOnboarding} style={styles.skipBtn}>
+          <FocusableView focusRadius={8} onPress={completeOnboarding} style={styles.skipBtn}>
             <Text style={[styles.skipText, { fontSize: isSmall ? 13 : 15 }]}>Skip</Text>
-          </Pressable>
+          </FocusableView>
 
-          <Pressable onPress={goToNext} style={[styles.nextBtn, isSmall ? { paddingVertical: 10, paddingHorizontal: 20 } : {}]}>
+          <FocusableView focusRadius={30} onPress={goToNext} style={[styles.nextBtn, isSmall ? { paddingVertical: 10, paddingHorizontal: 20 } : {}]}>
             <Text style={[styles.nextText, { fontSize: isSmall ? 14 : 16 }]}>
               {currentPage === PAGE_DATA.length - 1 ? "Choose Shiurim" : "Next"}
             </Text>
             <Ionicons name="arrow-forward" size={isSmall ? 16 : 18} color="#fff" />
-          </Pressable>
+          </FocusableView>
         </View>
       </LinearGradient>
     </View>

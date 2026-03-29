@@ -11,10 +11,13 @@ import { router } from "expo-router";
 import { lightHaptic } from "@/lib/haptics";
 import { safeGoBack } from "@/lib/safe-back";
 import { getApiUrl } from "@/lib/query-client";
+import FocusableView from "@/components/FocusableView";
+import { useBackHandler } from "@/hooks/useBackHandler";
 
 const ShiurRow = React.memo(function ShiurRow({ feed, colors }: { feed: Feed; colors: any }) {
   return (
-    <Pressable
+    <FocusableView
+      focusRadius={14}
       style={({ pressed }) => [
         styles.row,
         { backgroundColor: pressed ? colors.surfaceAlt : colors.surface, borderColor: colors.cardBorder },
@@ -35,7 +38,7 @@ const ShiurRow = React.memo(function ShiurRow({ feed, colors }: { feed: Feed; co
         ) : null}
       </View>
       <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-    </Pressable>
+    </FocusableView>
   );
 });
 
@@ -45,6 +48,8 @@ export default function AllShiurimScreen() {
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const [search, setSearch] = useState("");
+
+  useBackHandler(useCallback(() => { safeGoBack(); return true; }, []));
 
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
   const allFeeds = feedsQuery.data || [];
@@ -92,9 +97,9 @@ export default function AllShiurimScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 8 }]}>
-        <Pressable onPress={() => safeGoBack()} hitSlop={10} style={styles.backBtn}>
+        <FocusableView focusRadius={8} onPress={() => safeGoBack()} hitSlop={10} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </Pressable>
+        </FocusableView>
         <Text style={[styles.headerTitle, { color: colors.text }]}>All Shiurim</Text>
         <View style={{ width: 34 }} />
       </View>
@@ -111,9 +116,9 @@ export default function AllShiurimScreen() {
           autoCorrect={false}
         />
         {search.length > 0 && (
-          <Pressable onPress={() => setSearch("")} style={styles.searchClear}>
+          <FocusableView focusRadius={12} onPress={() => setSearch("")} style={styles.searchClear}>
             <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
-          </Pressable>
+          </FocusableView>
         )}
       </View>
 

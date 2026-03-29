@@ -16,6 +16,7 @@ import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { getLogsSnapshot } from "@/lib/error-logger";
 import OptionPickerModal from "@/components/OptionPickerModal";
+import FocusableView from "@/components/FocusableView";
 
 const EPISODE_LIMIT_OPTIONS = [3, 5, 10, 15, 25, 50];
 const SKIP_OPTIONS = [10, 15, 30, 45, 60];
@@ -38,7 +39,7 @@ function SettingRow({ icon, label, value, subtitle, onPress, rightElement }: Set
   const colors = isDark ? Colors.dark : Colors.light;
 
   return (
-    <Pressable
+    <FocusableView
       style={({ pressed }) => [
         styles.settingRow,
         { backgroundColor: pressed && onPress ? colors.surfaceAlt : colors.surface },
@@ -60,7 +61,7 @@ function SettingRow({ icon, label, value, subtitle, onPress, rightElement }: Set
       ) : onPress ? (
         <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
       ) : null}
-    </Pressable>
+    </FocusableView>
   );
 }
 
@@ -661,9 +662,9 @@ function SettingsScreenInner() {
                 <Text style={[feedbackStyles.modalTitle, { color: colors.text }]}>
                   {feedbackType === "shiur_request" ? "Request a Shiur" : "Report a Problem"}
                 </Text>
-                <Pressable onPress={() => setShowFeedbackModal(false)} hitSlop={8}>
+                <FocusableView onPress={() => setShowFeedbackModal(false)} hitSlop={8}>
                   <Ionicons name="close" size={24} color={colors.textSecondary} />
-                </Pressable>
+                </FocusableView>
               </View>
 
               <ScrollView
@@ -709,17 +710,18 @@ function SettingsScreenInner() {
                   autoCapitalize="none"
                 />
 
-                <Pressable
+                <FocusableView
                   style={[feedbackStyles.submitBtn, { backgroundColor: colors.accent, opacity: feedbackSending ? 0.6 : 1 }]}
                   onPress={handleSubmitFeedback}
                   disabled={feedbackSending}
+                  focusRadius={12}
                 >
                   {feedbackSending ? (
                     <ActivityIndicator size="small" color="#fff" />
                   ) : (
                     <Text style={feedbackStyles.submitBtnText}>Submit</Text>
                   )}
-                </Pressable>
+                </FocusableView>
               </ScrollView>
             </View>
           </Pressable>

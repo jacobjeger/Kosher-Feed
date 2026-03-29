@@ -24,6 +24,8 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
 }
 import OptionPickerModal from "@/components/OptionPickerModal";
+import FocusableView from "@/components/FocusableView";
+import { useBackHandler } from "@/hooks/useBackHandler";
 
 const StableArtwork = memo(function StableArtwork({ imageUrl, fallbackColor, iconColor }: { imageUrl?: string | null; fallbackColor: string; iconColor: string }) {
   if (imageUrl) {
@@ -54,6 +56,7 @@ function PodcastDetailScreenInner() {
   const isDark = colorScheme === "dark";
   const colors = useMemo(() => isDark ? Colors.dark : Colors.light, [isDark]);
   const isOnline = useNetworkStatus();
+  useBackHandler(useCallback(() => { safeGoBack(); return true; }, []));
   const { getFeedSettings, updateFeedSettings } = useSettings();
   const { batchDownload, isDownloaded } = useDownloads();
   const { isPlayed } = usePlayedEpisodes();
@@ -286,9 +289,9 @@ function PodcastDetailScreenInner() {
     if (feedError && !feed) {
       return (
         <View style={{ alignItems: "center", justifyContent: "center", paddingVertical: 80, paddingHorizontal: 40, gap: 12 }}>
-          <Pressable onPress={() => safeGoBack()} style={{ alignSelf: "flex-start", paddingTop: insets.top + 8 }}>
+          <FocusableView focusRadius={8} onPress={() => safeGoBack()} style={{ alignSelf: "flex-start", paddingTop: insets.top + 8 }}>
             <Ionicons name="arrow-back" size={24} color={colors.text} />
-          </Pressable>
+          </FocusableView>
           <Ionicons name="cloud-offline-outline" size={56} color={colors.textSecondary} />
           <Text style={{ fontSize: 22, fontWeight: "700" as const, color: colors.text }}>Connection Issue</Text>
           <Text style={{ fontSize: 14, textAlign: "center", lineHeight: 20, color: colors.textSecondary }}>
@@ -296,7 +299,8 @@ function PodcastDetailScreenInner() {
               ? "Unable to reach the server. Check your connection and try again."
               : `Something went wrong: ${feedErrorMsg}`}
           </Text>
-          <Pressable
+          <FocusableView
+            focusRadius={12}
             style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, marginTop: 8, backgroundColor: colors.accent }}
             onPress={() => {
               queryClient.invalidateQueries({ queryKey: ["/api/feeds"] });
@@ -305,7 +309,7 @@ function PodcastDetailScreenInner() {
           >
             <Ionicons name="refresh" size={18} color="#fff" />
             <Text style={{ color: "#fff", fontSize: 15, fontWeight: "600" as const }}>Try Again</Text>
-          </Pressable>
+          </FocusableView>
         </View>
       );
     }
@@ -319,9 +323,9 @@ function PodcastDetailScreenInner() {
     return (
     <View>
       <View style={[styles.header, { paddingTop: insets.top + (Platform.OS === "web" ? 12 : 8) }]}>
-        <Pressable onPress={() => safeGoBack()} hitSlop={12}>
+        <FocusableView focusRadius={8} onPress={() => safeGoBack()} hitSlop={12}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </Pressable>
+        </FocusableView>
       </View>
 
       <View style={styles.podcastInfo}>
@@ -340,7 +344,8 @@ function PodcastDetailScreenInner() {
           )}
 
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <Pressable
+            <FocusableView
+              focusRadius={20}
               onPress={handleFollow}
               style={[
                 styles.followBtn,
@@ -359,9 +364,10 @@ function PodcastDetailScreenInner() {
               <Text style={[styles.followText, { color: isFollowing ? colors.text : "#fff" }]}>
                 {isFollowing ? "Following" : "Follow"}
               </Text>
-            </Pressable>
+            </FocusableView>
             {isFollowing && (
-              <Pressable
+              <FocusableView
+                focusRadius={20}
                 onPress={handleToggleMute}
                 style={[styles.followBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, borderWidth: 1, paddingHorizontal: 10 }]}
                 hitSlop={8}
@@ -371,7 +377,7 @@ function PodcastDetailScreenInner() {
                   size={18}
                   color={isMuted ? colors.textSecondary : colors.accent}
                 />
-              </Pressable>
+              </FocusableView>
             )}
           </View>
         </View>
@@ -385,17 +391,18 @@ function PodcastDetailScreenInner() {
           >
             {stripHtml(feed.description)}
           </Text>
-          <Pressable onPress={() => setShowFullDescription(prev => !prev)}>
+          <FocusableView focusRadius={8} onPress={() => setShowFullDescription(prev => !prev)}>
             <Text style={[styles.seeMoreText, { color: colors.accent }]}>
               {showFullDescription ? "See less" : "See more"}
             </Text>
-          </Pressable>
+          </FocusableView>
         </View>
       )}
 
       {isFollowing && (
         <View style={{ marginBottom: 16 }}>
-          <Pressable
+          <FocusableView
+            focusRadius={10}
             onPress={() => { lightHaptic(); setShowPreferences(prev => !prev); }}
             style={[styles.preferencesBtn, { backgroundColor: colors.surfaceAlt }]}
           >
@@ -404,7 +411,7 @@ function PodcastDetailScreenInner() {
               <Text style={[styles.preferencesBtnText, { color: colors.text }]}>Preferences</Text>
             </View>
             <Ionicons name={showPreferences ? "chevron-up" : "chevron-down"} size={18} color={colors.textSecondary} />
-          </Pressable>
+          </FocusableView>
 
           {showPreferences && (
             <View style={[styles.feedSettingsCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
@@ -421,7 +428,7 @@ function PodcastDetailScreenInner() {
                 />
               </View>
               <View style={[styles.feedSettingDivider, { backgroundColor: colors.border }]} />
-              <Pressable style={styles.feedSettingRow} onPress={handleChangeEpisodeLimit}>
+              <FocusableView focusRadius={8} style={styles.feedSettingRow} onPress={handleChangeEpisodeLimit}>
                 <View style={styles.feedSettingLeft}>
                   <Ionicons name="layers-outline" size={18} color={colors.accent} />
                   <Text style={[styles.feedSettingLabel, { color: colors.text }]}>Episodes to keep</Text>
@@ -430,11 +437,12 @@ function PodcastDetailScreenInner() {
                   <Text style={[styles.feedSettingValue, { color: colors.textSecondary }]}>{feedSettings.maxEpisodes}</Text>
                   <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
                 </View>
-              </Pressable>
+              </FocusableView>
               {allEpisodes.length > 0 && (
                 <>
                   <View style={[styles.feedSettingDivider, { backgroundColor: colors.border }]} />
-                  <Pressable
+                  <FocusableView
+                    focusRadius={8}
                     style={styles.feedSettingRow}
                     onPress={() => {
                       lightHaptic();
@@ -447,7 +455,7 @@ function PodcastDetailScreenInner() {
                       <Text style={[styles.feedSettingLabel, { color: colors.text }]}>Download Latest Episodes</Text>
                     </View>
                     <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
-                  </Pressable>
+                  </FocusableView>
                 </>
               )}
             </View>
@@ -467,7 +475,8 @@ function PodcastDetailScreenInner() {
       </Text>
 
       <View style={styles.sortRow}>
-        <Pressable
+        <FocusableView
+          focusRadius={8}
           onPress={() => { lightHaptic(); setSortOrder(prev => prev === 'newest' ? 'oldest' : 'newest'); }}
           style={[styles.sortBtn, { backgroundColor: colors.surfaceAlt }]}
         >
@@ -475,8 +484,9 @@ function PodcastDetailScreenInner() {
           <Text style={[styles.sortBtnText, { color: colors.text }]}>
             {sortOrder === 'newest' ? 'Newest' : 'Oldest'}
           </Text>
-        </Pressable>
-        <Pressable
+        </FocusableView>
+        <FocusableView
+          focusRadius={8}
           onPress={() => { lightHaptic(); setFilterPickerVisible(true); }}
           style={[styles.sortBtn, { backgroundColor: episodeFilter !== 'all' ? colors.accent : colors.surfaceAlt }]}
         >
@@ -485,7 +495,7 @@ function PodcastDetailScreenInner() {
             {episodeFilter === 'all' ? 'Filter' : episodeFilter === 'unplayed' ? 'Unplayed' : episodeFilter === 'inprogress' ? 'Started' : 'Downloaded'}
           </Text>
           <Ionicons name="chevron-down" size={12} color={episodeFilter !== 'all' ? '#fff' : colors.textSecondary} />
-        </Pressable>
+        </FocusableView>
       </View>
 
       <View style={[styles.episodeSearchContainer, { backgroundColor: colors.surfaceAlt, borderColor: isEpisodeSearchFocused ? colors.accent : "transparent" }]}>
@@ -501,9 +511,9 @@ function PodcastDetailScreenInner() {
           returnKeyType="search"
         />
         {episodeSearch.length > 0 && (
-          <Pressable onPress={() => setEpisodeSearch("")} style={styles.episodeSearchClear}>
+          <FocusableView focusRadius={12} onPress={() => setEpisodeSearch("")} style={styles.episodeSearchClear}>
             <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
-          </Pressable>
+          </FocusableView>
         )}
       </View>
     </View>

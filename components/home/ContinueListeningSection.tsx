@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, FlatList, Pressable, StyleSheet, Platform } from "react-native";
+import { View, Text, FlatList, StyleSheet, Platform } from "react-native";
+import FocusableView from "@/components/FocusableView";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import SectionHeader from "./SectionHeader";
@@ -25,10 +26,10 @@ const ContinueListeningCard = React.memo(function ContinueListeningCard({ episod
   const remainingMin = Math.max(1, Math.round(remainingMs / 60000));
 
   return (
-    <Pressable style={[styles.continueCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]} onPress={onPlay}>
-      <Pressable style={[styles.continueDismiss, { backgroundColor: "rgba(0,0,0,0.5)" }]} onPress={onDismiss} hitSlop={6}>
+    <FocusableView focusRadius={14} style={[styles.continueCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]} onPress={onPlay}>
+      <FocusableView focusRadius={11} style={[styles.continueDismiss, { backgroundColor: "rgba(0,0,0,0.5)" }]} onPress={onDismiss} hitSlop={6}>
         <Ionicons name="close" size={12} color="#fff" />
-      </Pressable>
+      </FocusableView>
       {feed.imageUrl ? (
         <Image source={{ uri: feed.imageUrl }} style={styles.continueImage} contentFit="cover" cachePolicy="memory-disk" transition={0} />
       ) : (
@@ -44,7 +45,7 @@ const ContinueListeningCard = React.memo(function ContinueListeningCard({ episod
         </View>
         <Text style={{ fontSize: 10, color: colors.textTertiary, marginTop: 2 }}>{remainingMin}m left</Text>
       </View>
-    </Pressable>
+    </FocusableView>
   );
 });
 

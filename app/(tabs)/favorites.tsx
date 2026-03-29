@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import { View, Text, FlatList, Pressable, StyleSheet, Platform, ActivityIndicator } from "react-native";
+import FocusableView from "@/components/FocusableView";
 import { router } from "expo-router";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -71,12 +72,13 @@ function FavoritesScreenInner() {
           <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
             Star episodes you love to find them here
           </Text>
-          <Pressable
+          <FocusableView
+            focusRadius={12}
             onPress={() => router.push("/(tabs)/")}
             style={[styles.emptyBtn, { backgroundColor: colors.accent }]}
           >
             <Text style={styles.emptyBtnText}>Browse Shiurim</Text>
-          </Pressable>
+          </FocusableView>
         </View>
       ) : (
         <FlatList

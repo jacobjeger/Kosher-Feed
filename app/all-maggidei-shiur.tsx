@@ -11,6 +11,8 @@ import { router } from "expo-router";
 import { lightHaptic } from "@/lib/haptics";
 import { safeGoBack } from "@/lib/safe-back";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import FocusableView from "@/components/FocusableView";
+import { useBackHandler } from "@/hooks/useBackHandler";
 
 interface SpeakerGroup {
   author: string;
@@ -20,7 +22,8 @@ interface SpeakerGroup {
 
 const SpeakerCard = React.memo(function SpeakerCard({ speaker, colors }: { speaker: SpeakerGroup; colors: any }) {
   return (
-    <Pressable
+    <FocusableView
+      focusRadius={14}
       style={({ pressed }) => [
         styles.card,
         { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.95 : 1 },
@@ -44,7 +47,7 @@ const SpeakerCard = React.memo(function SpeakerCard({ speaker, colors }: { speak
       <Text style={[styles.count, { color: colors.textSecondary }]}>
         {speaker.feeds.length} {speaker.feeds.length === 1 ? "shiur" : "shiurim"}
       </Text>
-    </Pressable>
+    </FocusableView>
   );
 });
 
@@ -54,6 +57,8 @@ function AllMaggideiShiurInner() {
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const [search, setSearch] = useState("");
+
+  useBackHandler(useCallback(() => { safeGoBack(); return true; }, []));
 
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
   const maggidQuery = useQuery<MaggidShiur[]>({ queryKey: ["/api/feeds/maggid-shiur"] });
@@ -79,9 +84,9 @@ function AllMaggideiShiurInner() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 8 }]}>
-        <Pressable onPress={() => safeGoBack()} hitSlop={10} style={styles.backBtn}>
+        <FocusableView focusRadius={8} onPress={() => safeGoBack()} hitSlop={10} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </Pressable>
+        </FocusableView>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Maggidei Shiur</Text>
         <View style={{ width: 34 }} />
       </View>
@@ -98,9 +103,9 @@ function AllMaggideiShiurInner() {
           autoCorrect={false}
         />
         {search.length > 0 && (
-          <Pressable onPress={() => setSearch("")} style={styles.searchClear}>
+          <FocusableView focusRadius={12} onPress={() => setSearch("")} style={styles.searchClear}>
             <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
-          </Pressable>
+          </FocusableView>
         )}
       </View>
 

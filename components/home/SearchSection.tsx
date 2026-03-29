@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, Pressable, ActivityIndicator, StyleSheet } from "react-native";
+import { View, Text, ActivityIndicator, StyleSheet } from "react-native";
+import FocusableView from "@/components/FocusableView";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
@@ -20,7 +21,8 @@ interface SearchSectionProps {
 
 const SearchResultItem = React.memo(function SearchResultItem({ feed, colors }: { feed: Feed; colors: any }) {
   return (
-    <Pressable
+    <FocusableView
+      focusRadius={14}
       style={({ pressed }) => [
         styles.searchResult,
         { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.9 : 1 },
@@ -45,7 +47,7 @@ const SearchResultItem = React.memo(function SearchResultItem({ feed, colors }: 
         )}
       </View>
       <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-    </Pressable>
+    </FocusableView>
   );
 });
 
@@ -70,8 +72,9 @@ export default React.memo(function SearchSection({ searchQuery, searchResults, s
           <Text style={[styles.searchSectionLabel, { color: colors.textSecondary }]}>Maggidei Shiur</Text>
           <View style={{ paddingHorizontal: 20 }}>
             {speakerSearchResults.map((speaker) => (
-              <Pressable
+              <FocusableView
                 key={speaker.author}
+                focusRadius={14}
                 style={({ pressed }) => [
                   styles.searchResult,
                   { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.9 : 1 },
@@ -94,7 +97,7 @@ export default React.memo(function SearchSection({ searchQuery, searchResults, s
                   </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
-              </Pressable>
+              </FocusableView>
             ))}
           </View>
         </>

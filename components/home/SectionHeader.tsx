@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
+import FocusableView from "@/components/FocusableView";
 import { Ionicons } from "@expo/vector-icons";
 import Typography from "@/constants/typography";
 import { lightHaptic } from "@/lib/haptics";
@@ -21,13 +22,14 @@ export default React.memo(function SectionHeader({ title, icon, iconColor, color
         <Text style={[Typography.sectionTitle, { color: colors.text }]}>{title}</Text>
       </View>
       {onSeeAll && (
-        <Pressable
+        <FocusableView
+          focusRadius={8}
           onPress={() => { lightHaptic(); onSeeAll(); }}
           style={({ pressed }) => [styles.seeAllBtn, { backgroundColor: colors.accentLight, opacity: pressed ? 0.8 : 1 }]}
         >
           <Text style={[styles.seeAllText, { color: colors.accent }]}>{seeAllLabel}</Text>
           <Ionicons name="chevron-forward" size={14} color={colors.accent} />
-        </Pressable>
+        </FocusableView>
       )}
     </View>
   );

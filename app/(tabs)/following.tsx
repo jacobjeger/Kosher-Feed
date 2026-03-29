@@ -13,6 +13,7 @@ import { getApiUrl, queryClient } from "@/lib/query-client";
 import type { Feed, Episode } from "@/lib/types";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useNetworkStatus } from "@/components/OfflineBanner";
+import FocusableView from "@/components/FocusableView";
 
 function FollowingScreenInner() {
   const insets = useSafeAreaInsets();
@@ -103,13 +104,14 @@ function FollowingScreenInner() {
               ? "Unable to reach the server. Check your connection and try again."
               : `Something went wrong: ${errorMessage}`}
           </Text>
-          <Pressable
+          <FocusableView
             style={[styles.retryButton, { backgroundColor: colors.accent }]}
             onPress={onRefresh}
+            focusRadius={12}
           >
             <Ionicons name="refresh" size={18} color="#fff" />
             <Text style={styles.retryText}>Try Again</Text>
-          </Pressable>
+          </FocusableView>
         </View>
       </View>
     );
@@ -176,12 +178,13 @@ function FollowingScreenInner() {
           <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
             Follow shiurim from the Home tab to see their latest episodes here.
           </Text>
-          <Pressable
+          <FocusableView
             onPress={() => router.push("/(tabs)/")}
             style={[styles.emptyBtn, { backgroundColor: colors.accent }]}
+            focusRadius={12}
           >
             <Text style={styles.emptyBtnText}>Browse Shiurim</Text>
-          </Pressable>
+          </FocusableView>
         </View>
       )}
     />

@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { View, Text, FlatList, ScrollView, Pressable, StyleSheet, RefreshControl, Platform, TextInput, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from "react-native";
+import FocusableView from "@/components/FocusableView";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
@@ -78,7 +79,8 @@ const FeaturedCarousel = React.memo(function FeaturedCarousel({ feeds, colors, a
   }, []);
 
   const renderItem = useCallback(({ item }: { item: Feed }) => (
-    <Pressable
+    <FocusableView
+      focusRadius={20}
       style={({ pressed }) => [styles.carouselSlide, { opacity: pressed ? 0.95 : 1 }]}
       onPress={() => { lightHaptic(); router.push(`/podcast/${item.id}`); }}
     >
@@ -103,7 +105,7 @@ const FeaturedCarousel = React.memo(function FeaturedCarousel({ feeds, colors, a
           <Text style={styles.carouselAuthor} numberOfLines={1}>{item.author}</Text>
         ) : null}
       </View>
-    </Pressable>
+    </FocusableView>
   ), [colors]);
 
   return (
@@ -195,7 +197,8 @@ const WebScrollArrows = React.memo(function WebScrollArrows({ children, colors }
     <View style={arrowStyles.wrapper}>
       {cloned}
       {canScrollLeft && (
-        <Pressable
+        <FocusableView
+          focusRadius={18}
           onPress={scrollLeft}
           style={({ pressed }) => [
             arrowStyles.arrowBtn,
@@ -204,10 +207,11 @@ const WebScrollArrows = React.memo(function WebScrollArrows({ children, colors }
           ]}
         >
           <Ionicons name="chevron-back" size={20} color={colors.text} />
-        </Pressable>
+        </FocusableView>
       )}
       {canScrollRight && (
-        <Pressable
+        <FocusableView
+          focusRadius={18}
           onPress={scrollRight}
           style={({ pressed }) => [
             arrowStyles.arrowBtn,
@@ -216,7 +220,7 @@ const WebScrollArrows = React.memo(function WebScrollArrows({ children, colors }
           ]}
         >
           <Ionicons name="chevron-forward" size={20} color={colors.text} />
-        </Pressable>
+        </FocusableView>
       )}
     </View>
   );
@@ -505,7 +509,8 @@ function HomeScreenInner() {
               ? "Unable to reach the server. Please check your internet connection and try again."
               : `Something went wrong: ${errorMessage}`}
           </Text>
-          <Pressable
+          <FocusableView
+            focusRadius={12}
             style={[styles.retryButton, { backgroundColor: colors.accent }]}
             onPress={() => {
               queryClient.invalidateQueries({ queryKey: ["/api/feeds"] });
@@ -516,7 +521,7 @@ function HomeScreenInner() {
           >
             <Ionicons name="refresh" size={18} color="#fff" />
             <Text style={styles.retryButtonText}>Try Again</Text>
-          </Pressable>
+          </FocusableView>
         </View>
       </View>
     );
@@ -557,9 +562,9 @@ function HomeScreenInner() {
             testID="search-input"
           />
           {searchQuery.length > 0 && (
-            <Pressable onPress={() => setSearchQuery("")} style={styles.searchClear} testID="search-clear">
+            <FocusableView focusRadius={8} onPress={() => setSearchQuery("")} style={styles.searchClear} testID="search-clear">
               <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
-            </Pressable>
+            </FocusableView>
           )}
         </View>
       </View>

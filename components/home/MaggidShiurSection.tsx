@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, FlatList, Pressable, StyleSheet, Platform } from "react-native";
+import { View, Text, FlatList, StyleSheet, Platform } from "react-native";
+import FocusableView from "@/components/FocusableView";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
@@ -10,7 +11,8 @@ import type { Feed } from "@/lib/types";
 const MaggidShiurCard = React.memo(function MaggidShiurCard({ author, feeds, colors }: { author: string; feeds: Feed[]; colors: any }) {
   const imageUrl = feeds[0]?.imageUrl;
   return (
-    <Pressable
+    <FocusableView
+      focusRadius={14}
       style={[styles.maggidCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
       onPress={() => { lightHaptic(); router.push({ pathname: "/maggid-shiur/[author]" as any, params: { author, feedIds: feeds.map(f => f.id).join(",") } }); }}
     >
@@ -23,7 +25,7 @@ const MaggidShiurCard = React.memo(function MaggidShiurCard({ author, feeds, col
       )}
       <Text style={[styles.maggidName, { color: colors.text }]} numberOfLines={2}>{author}</Text>
       <Text style={[styles.maggidCount, { color: colors.textSecondary }]}>{feeds.length} {feeds.length === 1 ? "shiur" : "shiurim"}</Text>
-    </Pressable>
+    </FocusableView>
   );
 });
 

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, Pressable, StyleSheet, Platform, ScrollView, ActivityIndicator } from "react-native";
+import FocusableView from "@/components/FocusableView";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -70,9 +71,9 @@ export default function StatsScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + (Platform.OS === "web" ? 12 : 8) }]}>
-        <Pressable onPress={() => safeGoBack()} hitSlop={12}>
+        <FocusableView focusRadius={8} onPress={() => safeGoBack()} hitSlop={12}>
           <Ionicons name="chevron-back" size={28} color={colors.text} />
-        </Pressable>
+        </FocusableView>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Your Stats</Text>
         <View style={{ width: 28 }} />
       </View>

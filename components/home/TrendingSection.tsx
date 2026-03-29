@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
+import FocusableView from "@/components/FocusableView";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import SectionHeader from "./SectionHeader";
@@ -11,7 +12,7 @@ interface TrendingEpisode extends Episode {
 
 const TrendingEpisodeCard = React.memo(function TrendingEpisodeCard({ episode, feed, rank, colors, onPlay }: { episode: TrendingEpisode; feed: Feed; rank: number; colors: any; onPlay: () => void }) {
   return (
-    <Pressable style={[styles.trendingCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]} onPress={onPlay}>
+    <FocusableView focusRadius={14} style={[styles.trendingCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]} onPress={onPlay}>
       <View style={[styles.rankBadge, { backgroundColor: rank <= 3 ? colors.accent : colors.surfaceAlt }]}>
         <Text style={[styles.rankText, { color: rank <= 3 ? "#fff" : colors.textSecondary }]}>{rank}</Text>
       </View>
@@ -32,10 +33,10 @@ const TrendingEpisodeCard = React.memo(function TrendingEpisodeCard({ episode, f
           </Text>
         </View>
       </View>
-      <Pressable style={[styles.trendingPlayBtn, { backgroundColor: colors.accent }]} onPress={onPlay}>
+      <FocusableView focusRadius={16} style={[styles.trendingPlayBtn, { backgroundColor: colors.accent }]} onPress={onPlay}>
         <Ionicons name="play" size={16} color="#fff" />
-      </Pressable>
-    </Pressable>
+      </FocusableView>
+    </FocusableView>
   );
 });
 

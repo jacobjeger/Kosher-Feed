@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { View, Text, Pressable, StyleSheet, ScrollView, Alert, Platform, ActivityIndicator } from "react-native";
+import FocusableView from "@/components/FocusableView";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -138,9 +139,9 @@ export default function StorageScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 8 }]}>
-        <Pressable onPress={() => safeGoBack()} hitSlop={12}>
+        <FocusableView focusRadius={8} onPress={() => safeGoBack()} hitSlop={12}>
           <Ionicons name="chevron-back" size={28} color={colors.text} />
-        </Pressable>
+        </FocusableView>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Storage</Text>
         <View style={{ width: 28 }} />
       </View>
@@ -157,7 +158,8 @@ export default function StorageScreen() {
             </View>
           </View>
           {downloads.length > 0 && (
-            <Pressable
+            <FocusableView
+              focusRadius={10}
               style={[styles.clearAllBtn, { borderColor: "#EF4444" }]}
               onPress={handleClearAll}
               disabled={clearingFeed === "all"}
@@ -170,7 +172,7 @@ export default function StorageScreen() {
                   <Text style={styles.clearAllText}>Clear All Downloads</Text>
                 </>
               )}
-            </Pressable>
+            </FocusableView>
           )}
         </View>
 
@@ -197,7 +199,8 @@ export default function StorageScreen() {
                   {group.episodes.length} episode{group.episodes.length !== 1 ? "s" : ""} · {formatBytes(group.totalSize)}
                 </Text>
               </View>
-              <Pressable
+              <FocusableView
+                focusRadius={8}
                 onPress={() => handleClearFeed(group)}
                 disabled={clearingFeed === group.feedId}
                 hitSlop={8}
@@ -207,7 +210,7 @@ export default function StorageScreen() {
                 ) : (
                   <Ionicons name="trash-outline" size={20} color="#EF4444" />
                 )}
-              </Pressable>
+              </FocusableView>
             </View>
 
             {group.episodes.map((ep, idx) => (
@@ -220,7 +223,8 @@ export default function StorageScreen() {
                       ~{formatBytes(estimateSize(ep))}
                     </Text>
                   </View>
-                  <Pressable
+                  <FocusableView
+                    focusRadius={8}
                     onPress={() => handleDeleteEpisode(ep.id, ep.title)}
                     disabled={deleting === ep.id}
                     hitSlop={8}
@@ -230,7 +234,7 @@ export default function StorageScreen() {
                     ) : (
                       <Ionicons name="close-circle-outline" size={22} color={colors.textSecondary} />
                     )}
-                  </Pressable>
+                  </FocusableView>
                 </View>
               </View>
             ))}

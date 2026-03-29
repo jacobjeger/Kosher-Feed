@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback } from "react";
 import { View, Text, FlatList, Pressable, StyleSheet, Platform } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -12,6 +12,8 @@ import Colors from "@/constants/colors";
 import type { Feed } from "@/lib/types";
 import { lightHaptic } from "@/lib/haptics";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import FocusableView from "@/components/FocusableView";
+import { useBackHandler } from "@/hooks/useBackHandler";
 
 function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
@@ -25,6 +27,8 @@ function MaggidShiurDetailInner() {
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
 
+  useBackHandler(useCallback(() => { safeGoBack(); return true; }, []));
+
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
   const allFeeds = feedsQuery.data || [];
 
@@ -34,9 +38,9 @@ function MaggidShiurDetailInner() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 67 : insets.top + 8, borderBottomColor: colors.border }]}>
-        <Pressable onPress={() => { lightHaptic(); safeGoBack(); }} hitSlop={10} style={styles.backBtn}>
+        <FocusableView focusRadius={8} onPress={() => { lightHaptic(); safeGoBack(); }} hitSlop={10} style={styles.backBtn}>
           <Ionicons name="chevron-back" size={24} color={colors.text} />
-        </Pressable>
+        </FocusableView>
         <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
           {author || "Speaker"}
         </Text>
@@ -50,7 +54,8 @@ function MaggidShiurDetailInner() {
         contentContainerStyle={styles.gridContent}
         columnWrapperStyle={styles.gridRow}
         renderItem={({ item }) => (
-          <Pressable
+          <FocusableView
+            focusRadius={14}
             style={({ pressed }) => [
               styles.feedCard,
               { backgroundColor: colors.card, borderColor: colors.cardBorder, opacity: pressed ? 0.95 : 1 },
@@ -74,7 +79,7 @@ function MaggidShiurDetailInner() {
                 </Text>
               ) : null}
             </View>
-          </Pressable>
+          </FocusableView>
         )}
         ListEmptyComponent={
           <View style={styles.empty}>

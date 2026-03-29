@@ -9,6 +9,7 @@ import {
   Share,
   Platform,
 } from "react-native";
+import FocusableView from "@/components/FocusableView";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -47,7 +48,8 @@ function LogItem({
   const timeStr = `${time.getHours().toString().padStart(2, "0")}:${time.getMinutes().toString().padStart(2, "0")}:${time.getSeconds().toString().padStart(2, "0")}`;
 
   return (
-    <Pressable
+    <FocusableView
+      focusRadius={10}
       style={[styles.logItem, { borderColor: colors.border }]}
       onPress={() => setExpanded(!expanded)}
     >
@@ -88,7 +90,7 @@ function LogItem({
           {expanded ? "Tap to collapse" : "Tap to expand"}
         </Text>
       )}
-    </Pressable>
+    </FocusableView>
   );
 }
 
@@ -152,23 +154,23 @@ export default function DebugLogsScreen() {
           { paddingTop: Platform.OS === "web" ? 12 : insets.top + 8 },
         ]}
       >
-        <Pressable onPress={() => safeGoBack()} hitSlop={12}>
+        <FocusableView focusRadius={8} onPress={() => safeGoBack()} hitSlop={12}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </Pressable>
+        </FocusableView>
         <Text style={[styles.headerTitle, { color: colors.text }]}>
           Debug Logs
         </Text>
         <View style={styles.headerActions}>
-          <Pressable onPress={handleShare} hitSlop={12} style={styles.headerBtn}>
+          <FocusableView focusRadius={8} onPress={handleShare} hitSlop={12} style={styles.headerBtn}>
             <Ionicons
               name={Platform.OS === "web" ? "copy-outline" : "share-outline"}
               size={20}
               color={colors.text}
             />
-          </Pressable>
-          <Pressable onPress={handleClear} hitSlop={12} style={styles.headerBtn}>
+          </FocusableView>
+          <FocusableView focusRadius={8} onPress={handleClear} hitSlop={12} style={styles.headerBtn}>
             <Ionicons name="trash-outline" size={20} color="#ef4444" />
-          </Pressable>
+          </FocusableView>
         </View>
       </View>
 

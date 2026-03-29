@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet, Platform, TextInput, Alert, ActivityIndicator, KeyboardAvoidingView } from "react-native";
+import FocusableView from "@/components/FocusableView";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -83,16 +84,17 @@ export default function LegalScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: Platform.OS === "web" ? 12 : insets.top + 8 }]}>
-        <Pressable onPress={() => safeGoBack()} hitSlop={12} style={styles.backBtn}>
+        <FocusableView focusRadius={8} onPress={() => safeGoBack()} hitSlop={12} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </Pressable>
+        </FocusableView>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Legal</Text>
         <View style={{ width: 36 }} />
       </View>
 
       <View style={[styles.tabBar, { borderBottomColor: colors.border }]}>
         {(["privacy", "terms", "contact"] as const).map((tab) => (
-          <Pressable
+          <FocusableView
+            focusRadius={20}
             key={tab}
             style={[styles.tab, { backgroundColor: tabBg(tab), borderColor: activeTab === tab ? colors.accent : "transparent" }]}
             onPress={() => { lightHaptic(); setActiveTab(tab); }}
@@ -105,7 +107,7 @@ export default function LegalScreen() {
             <Text style={[styles.tabText, { color: tabColor(tab), fontWeight: activeTab === tab ? "700" : "500" }]}>
               {tab === "privacy" ? "Privacy" : tab === "terms" ? "Terms" : "Contact"}
             </Text>
-          </Pressable>
+          </FocusableView>
         ))}
       </View>
 
@@ -249,7 +251,8 @@ export default function LegalScreen() {
                 />
               </View>
 
-              <Pressable
+              <FocusableView
+                focusRadius={12}
                 style={[styles.sendBtn, { backgroundColor: colors.accent, opacity: sending ? 0.6 : 1 }]}
                 onPress={handleSendContact}
                 disabled={sending}
@@ -262,7 +265,7 @@ export default function LegalScreen() {
                     <Text style={styles.sendBtnText}>Send Inquiry</Text>
                   </>
                 )}
-              </Pressable>
+              </FocusableView>
             </>
           )}
         </ScrollView>

@@ -1,5 +1,6 @@
 import React from "react";
 import { View, Text, FlatList, Pressable, StyleSheet, Platform, Alert } from "react-native";
+import FocusableView from "@/components/FocusableView";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
@@ -84,7 +85,8 @@ function DownloadItem({ item }: { item: DownloadedEpisode }) {
   };
 
   return (
-    <Pressable
+    <FocusableView
+      focusRadius={12}
       style={({ pressed }) => [
         styles.downloadItem,
         { backgroundColor: pressed ? colors.surfaceAlt : colors.surface, borderColor: colors.cardBorder },
@@ -126,10 +128,10 @@ function DownloadItem({ item }: { item: DownloadedEpisode }) {
         </View>
       </View>
 
-      <Pressable onPress={handleRemove} hitSlop={10} style={styles.removeBtn}>
+      <FocusableView focusRadius={8} onPress={handleRemove} hitSlop={10} style={styles.removeBtn}>
         <Feather name="trash-2" size={18} color={colors.danger} />
-      </Pressable>
-    </Pressable>
+      </FocusableView>
+    </FocusableView>
   );
 }
 
@@ -170,12 +172,13 @@ function DownloadsScreenInner() {
           <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
             Download episodes to listen offline. Tap the download icon on any episode.
           </Text>
-          <Pressable
+          <FocusableView
+            focusRadius={12}
             onPress={() => router.push("/(tabs)/")}
             style={[styles.emptyBtn, { backgroundColor: colors.accent }]}
           >
             <Text style={styles.emptyBtnText}>Browse Shiurim</Text>
-          </Pressable>
+          </FocusableView>
         </View>
       )}
     />
