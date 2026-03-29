@@ -13,7 +13,7 @@ import * as storage from "./storage";
 import { sendNewEpisodePushes } from "./push";
 import { startRefreshCycle, recordFeedResult, endRefreshCycle } from "./feed-vitals";
 import { refreshTATFeedEpisodes, syncTATSpeakers, fetchAllSpeakers } from "./torahanytime";
-import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, fetchAuthorById, OU_PLATFORMS, type OUPlatformKey } from "./alldaf";
+import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, fetchAuthorById, OU_PLATFORMS, isApiOnlyUrl, type OUPlatformKey } from "./alldaf";
 import { refreshKHFeedEpisodes, syncKHSpeakers } from "./kolhalashon";
 import { autoCategorizeFeeds } from "./auto-categorize";
 import * as fs from "fs";
@@ -530,7 +530,7 @@ let isAutoRefreshing = false;
 function getFeedType(feed: { rssUrl: string }): 'rss' | 'tat' | 'ou' | 'kh' {
   if (feed.rssUrl.startsWith("kh://")) return 'kh';
   if (feed.rssUrl.startsWith("tat://")) return 'tat';
-  if (feed.rssUrl.startsWith("alldaf://") || feed.rssUrl.startsWith("allmishnah://") || feed.rssUrl.startsWith("allparsha://") || feed.rssUrl.startsWith("allhalacha://")) return 'ou';
+  if (Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme))) return 'ou';
   return 'rss';
 }
 

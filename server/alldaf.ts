@@ -68,6 +68,12 @@ export const OU_PLATFORMS: Record<OUPlatformKey, OUPlatformConfig> = {
   },
 };
 
+/** Check if a URL is an API-only scheme (not a real RSS feed) */
+export function isApiOnlyUrl(url: string): boolean {
+  return url.startsWith("tat://") || url.startsWith("kh://") ||
+    Object.values(OU_PLATFORMS).some(c => url.startsWith(c.urlScheme));
+}
+
 const DAILY_LEARNING_URL = "https://dailylearnings.outorah.org";
 const CLOUDINARY_BASE = "https://res.cloudinary.com/outorah/image/upload";
 
@@ -129,8 +135,14 @@ export async function fetchAllAuthors(platform: OUPlatformKey, take: number = 50
       : { "0": { sort: [{ field: "postsCount", direction: "desc" }], take, skip, platform: cfg.platformParam, search: "" } };
     const data = await trpcGet(cfg.baseUrl, procedure, input);
 
-    const records = data[0]?.result?.data?.records || [];
-    if (records.length === 0) break;
+    const resultData = data[0]?.result?.data;
+    const records = resultData?.records || [];
+    if (records.length === 0) {
+      if (skip === 0 && resultData !== undefined) {
+        console.warn(`${cfg.label}: fetchAllAuthors got data but no records — response shape may have changed:`, JSON.stringify(resultData).slice(0, 200));
+      }
+      break;
+    }
 
     for (const author of records) {
       allAuthors.push({
@@ -153,9 +165,10 @@ export async function fetchAuthorById(platform: OUPlatformKey, authorId: number)
   const cfg = OU_PLATFORMS[platform];
   const procedure = cfg.procedures?.authorsFetchById || "authors.fetchById";
   try {
-    const data = await trpcGet(cfg.baseUrl, procedure, {
-      "0": { id: authorId, platform: cfg.platformParam },
-    });
+    const input: Record<string, any> = cfg.procedures
+      ? { "0": { id: authorId } }
+      : { "0": { id: authorId, platform: cfg.platformParam } };
+    const data = await trpcGet(cfg.baseUrl, procedure, input);
     const author = data[0]?.result?.data;
     if (!author) return null;
     return {

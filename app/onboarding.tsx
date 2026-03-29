@@ -109,10 +109,11 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
   const toggleFollow = useCallback(
     async (feedId: string) => {
       lightHaptic();
-      const isCurrentlyFollowed = followedIds.has(feedId);
+      let shouldUnfollow = false;
       setFollowedIds((prev) => {
         const next = new Set(prev);
-        if (isCurrentlyFollowed) {
+        if (prev.has(feedId)) {
+          shouldUnfollow = true;
           next.delete(feedId);
         } else {
           next.add(feedId);
@@ -120,18 +121,19 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
         return next;
       });
       if (deviceId) {
-        if (isCurrentlyFollowed) {
-          fetch(new URL(`/api/subscriptions/${deviceId}/${feedId}`, getApiUrl()).toString(), { method: "DELETE" }).catch(() => {});
+        if (shouldUnfollow) {
+          fetch(new URL(`/api/subscriptions/${deviceId}/${feedId}`, getApiUrl()).toString(), { method: "DELETE" })
+            .catch((e) => console.warn("Failed to unfollow:", e));
         } else {
           fetch(new URL("/api/subscriptions", getApiUrl()).toString(), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ deviceId, feedId }),
-          }).catch(() => {});
+          }).catch((e) => console.warn("Failed to follow:", e));
         }
       }
     },
-    [deviceId, followedIds]
+    [deviceId]
   );
 
   return (

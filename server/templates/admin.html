@@ -818,7 +818,23 @@ let selectedSearchResult = null;
 let allAdminFeeds = [];
 let allSpeakers = [];
 
+// Track in-flight requests to prevent duplicate submissions
+const _inflightRequests = new Map();
+
 const api = async (url, opts = {}) => {
+  const method = (opts.method || 'GET').toUpperCase();
+  // Deduplicate mutating requests (POST/PUT/DELETE) to the same URL
+  if (method !== 'GET') {
+    const key = method + ':' + url;
+    if (_inflightRequests.has(key)) return _inflightRequests.get(key);
+    const promise = _apiRaw(url, opts).finally(() => _inflightRequests.delete(key));
+    _inflightRequests.set(key, promise);
+    return promise;
+  }
+  return _apiRaw(url, opts);
+};
+
+const _apiRaw = async (url, opts = {}) => {
   const headers = { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Basic ${token}` } : {}), ...opts.headers };
   const res = await fetch(url, { ...opts, headers });
   if (!res.ok) {
@@ -827,6 +843,15 @@ const api = async (url, opts = {}) => {
   }
   return res.json();
 };
+
+// Helper: disable a button during an async action, re-enable after
+function withLoading(btn, fn) {
+  if (!btn || btn.disabled) return;
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.style.opacity = '0.5';
+  Promise.resolve(fn()).finally(() => { btn.disabled = false; btn.style.opacity = ''; btn.textContent = origText; });
+}
 
 async function login() {
   const user = document.getElementById('loginUser').value;
@@ -858,20 +883,29 @@ async function showAdmin() {
 
 function showAlert(msg, type = 'success') {
   const area = document.getElementById('alertArea');
-  area.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+  const div = document.createElement('div');
+  div.className = `alert alert-${type}`;
+  div.textContent = msg;
+  area.innerHTML = '';
+  area.appendChild(div);
   setTimeout(() => area.innerHTML = '', 4000);
 }
 
 async function loadAnalytics() {
   try {
-    analyticsData = await api('/api/admin/analytics');
-    const enhanced = await api('/api/admin/analytics/enhanced').catch(() => null);
+    // Fire all analytics requests in parallel instead of sequentially
+    const [base, enhanced] = await Promise.all([
+      api('/api/admin/analytics'),
+      api('/api/admin/analytics/enhanced').catch(() => null),
+    ]);
+    analyticsData = base;
     if (enhanced) analyticsData.enhanced = enhanced;
     renderStats();
     renderListenChart();
     renderTopEpisodes();
     renderFeedPerformance();
     if (enhanced) renderEnhancedStats();
+    // Fire remaining analytics in parallel (non-blocking)
     loadListenerAnalytics();
     loadSourceBreakdown();
   } catch(e) {
@@ -1457,8 +1491,9 @@ async function deleteFeed(id) {
   if (!confirm('Remove this feed and all its episodes?')) return;
   try {
     await api(`/api/admin/feeds/${id}`, { method: 'DELETE' });
+    allAdminFeeds = allAdminFeeds.filter(f => f.id !== id);
+    filterFeeds(document.getElementById('feedSearchInput')?.value || '');
     showAlert('Feed removed');
-    await Promise.all([loadFeeds(), loadAnalytics()]);
   } catch (e) {
     showAlert(e.message, 'error');
   }
@@ -1469,7 +1504,7 @@ async function deleteCategory(id) {
   try {
     await api(`/api/admin/categories/${id}`, { method: 'DELETE' });
     showAlert('Category removed');
-    await Promise.all([loadCategories(), loadAnalytics()]);
+    await loadCategories();
   } catch (e) {
     showAlert(e.message, 'error');
   }
@@ -1538,6 +1573,8 @@ async function executeMerge(sourceId) {
   const source = allAdminFeeds.find(f => f.id === sourceId);
   const target = allAdminFeeds.find(f => f.id === targetId);
   if (!confirm(`Merge "${source?.title}" into "${target?.title}"?\n\nAll episodes and subscribers will be moved to the target. The source feed will be deactivated (not deleted) and its platform links carried over.`)) return;
+  const btn = document.getElementById('mergeBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Merging...'; }
   try {
     const data = await api('/api/admin/feeds/merge', { method: 'POST', body: JSON.stringify({ sourceId, targetId }) });
     closeModal();
@@ -1545,19 +1582,26 @@ async function executeMerge(sourceId) {
     await loadFeeds();
   } catch (e) {
     showAlert(e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Merge'; }
   }
 }
 
-async function refreshFeed(id) {
+async function refreshFeed(id, btnEl) {
+  const btn = btnEl || event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Refreshing...'; }
   try {
     const data = await api(`/api/admin/feeds/${id}/refresh`, { method: 'POST' });
     showAlert(`Feed refreshed! ${data.newEpisodes} new episodes found.`);
   } catch (e) {
     showAlert(e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Refresh'; }
   }
 }
 
 async function refreshAllFeeds() {
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Refreshing...'; }
   try {
     showAlert('Refreshing all feeds...', 'success');
     const data = await api('/api/admin/feeds/refresh-all', { method: 'POST' });
@@ -1565,6 +1609,8 @@ async function refreshAllFeeds() {
     await loadFeeds();
   } catch (e) {
     showAlert(e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Refresh All'; }
   }
 }
 
@@ -1641,8 +1687,8 @@ async function bulkSearch() {
     }
     results.innerHTML = data.results.map(r => {
       const isSelected = bulkSelectedFeeds.some(f => f.feedUrl === r.feedUrl);
-      return `<div style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;background:${isSelected ? '#1e3a5f' : '#0f172a'};margin-bottom:4px;cursor:pointer;" onclick="toggleBulkSelect('${esc(r.feedUrl)}','${esc(r.name)}','${esc(r.artworkUrl || '')}')">
-        <input type="checkbox" ${isSelected ? 'checked' : ''} style="flex-shrink:0;width:18px;height:18px;accent-color:#3b82f6;" onclick="event.stopPropagation();toggleBulkSelect('${esc(r.feedUrl)}','${esc(r.name)}','${esc(r.artworkUrl || '')}')">
+      return `<div style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;background:${isSelected ? '#1e3a5f' : '#0f172a'};margin-bottom:4px;cursor:pointer;" onclick="toggleBulkSelect('${escJs(r.feedUrl)}','${escJs(r.name)}','${escJs(r.artworkUrl || '')}')">
+        <input type="checkbox" ${isSelected ? 'checked' : ''} style="flex-shrink:0;width:18px;height:18px;accent-color:#3b82f6;" onclick="event.stopPropagation();toggleBulkSelect('${escJs(r.feedUrl)}','${escJs(r.name)}','${escJs(r.artworkUrl || '')}')">
         ${r.artworkUrl ? `<img src="${esc(r.artworkUrl)}" style="width:40px;height:40px;border-radius:6px;object-fit:cover;flex-shrink:0;">` : '<div style="width:40px;height:40px;border-radius:6px;background:#334155;flex-shrink:0;"></div>'}
         <div style="flex:1;min-width:0;">
           <div style="font-size:13px;font-weight:600;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(r.name)}</div>
@@ -1681,7 +1727,7 @@ function updateBulkSummary() {
     <div style="display:flex;flex-wrap:wrap;gap:4px;">
       ${bulkSelectedFeeds.map(f => `<span style="background:#1e3a5f;color:#93c5fd;padding:2px 8px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
         ${esc(f.name.length > 25 ? f.name.substring(0,25) + '...' : f.name)}
-        <span style="cursor:pointer;font-weight:bold;" onclick="event.stopPropagation();toggleBulkSelect('${esc(f.feedUrl)}','${esc(f.name)}','${esc(f.artworkUrl || '')}')">×</span>
+        <span style="cursor:pointer;font-weight:bold;" onclick="event.stopPropagation();toggleBulkSelect('${escJs(f.feedUrl)}','${escJs(f.name)}','${escJs(f.artworkUrl || '')}')">×</span>
       </span>`).join('')}
     </div>`;
 }
@@ -1701,24 +1747,30 @@ async function bulkImport() {
   if (urls.length === 0) return showAlert('No feeds selected', 'error');
   const categoryId = document.getElementById('bulkCategory').value || null;
 
+  const btn = document.getElementById('bulkImportBtn');
+  if (btn) { btn.disabled = true; btn.textContent = `Importing ${urls.length} feeds...`; }
   try {
-    showAlert(`Importing ${urls.length} feeds... This may take a moment.`, 'info');
+    showAlert(`Importing ${urls.length} feeds... This may take a moment.`, 'success');
     const result = await api('/api/admin/feeds/bulk-import', { method: 'POST', body: JSON.stringify({ feeds: urls, categoryId }) });
     closeModal(new Event('click'));
     const successes = result.results.filter(r => r.success).length;
     const failures = result.results.filter(r => !r.success).length;
     showAlert(`Imported ${successes} feeds!${failures > 0 ? ` ${failures} failed.` : ''}`, 'success');
-    await Promise.all([loadFeeds(), loadAnalytics()]);
+    await loadFeeds();
   } catch (e) {
     showAlert('Bulk import failed: ' + e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = `Import Selected (${urls.length})`; }
   }
 }
 
 async function toggleFeedActive(id, isActive) {
   try {
     await api(`/api/admin/feeds/${id}`, { method: 'PUT', body: JSON.stringify({ isActive }) });
+    // Update local state instead of refetching everything
+    const f = allAdminFeeds.find(f => f.id === id);
+    if (f) f.isActive = isActive;
+    filterFeeds(document.getElementById('feedSearchInput')?.value || '');
     showAlert(`Feed ${isActive ? 'activated' : 'deactivated'}.`);
-    await Promise.all([loadFeeds(), loadAnalytics()]);
   } catch(e) {
     showAlert(e.message, 'error');
   }
@@ -1727,8 +1779,10 @@ async function toggleFeedActive(id, isActive) {
 async function toggleFeedFeatured(id, featured) {
   try {
     await api(`/api/admin/feeds/${id}/featured`, { method: 'PUT', body: JSON.stringify({ featured }) });
+    const f = allAdminFeeds.find(f => f.id === id);
+    if (f) f.isFeatured = featured;
+    filterFeeds(document.getElementById('feedSearchInput')?.value || '');
     showAlert(`Feed ${featured ? 'marked as featured' : 'removed from featured'}.`);
-    await loadFeeds();
   } catch(e) {
     showAlert(e.message, 'error');
   }
@@ -1736,8 +1790,7 @@ async function toggleFeedFeatured(id, featured) {
 
 async function editFeed(id) {
   try {
-    const feeds = await api('/api/admin/feeds');
-    const feed = feeds.find(f => f.id === id);
+    const feed = allAdminFeeds.find(f => f.id === id);
     if (!feed) return;
 
     const feedCatIds = feed.categoryIds || (feed.categoryId ? [feed.categoryId] : []);
@@ -1795,6 +1848,8 @@ async function loadMergeHistory(feedId) {
 }
 
 async function saveFeedEdit(id) {
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
   try {
     const selectedCategoryIds = Array.from(document.querySelectorAll('.editCategoryCb:checked')).map(cb => cb.value);
     const scheduledVal = document.getElementById('editScheduledPublish').value;
@@ -1813,6 +1868,7 @@ async function saveFeedEdit(id) {
     await loadFeeds();
   } catch(e) {
     showAlert(e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Save Changes'; }
   }
 }
 
@@ -1877,19 +1933,22 @@ function showAddSpeakerModal(prefillName) {
 }
 
 async function saveSpeaker() {
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Creating...'; }
   try {
     const data = {
       name: document.getElementById('speakerName').value.trim(),
       imageUrl: document.getElementById('speakerImage').value.trim() || null,
       bio: document.getElementById('speakerBio').value.trim() || null,
     };
-    if (!data.name) return showAlert('Name is required', 'error');
+    if (!data.name) { if (btn) { btn.disabled = false; btn.textContent = 'Create Speaker'; } return showAlert('Name is required', 'error'); }
     await api('/api/admin/maggid-shiurim', { method: 'POST', body: JSON.stringify(data) });
     closeModal();
     showAlert('Speaker profile created!');
     await loadSpeakers();
   } catch(e) {
     showAlert(e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Create Speaker'; }
   }
 }
 
@@ -1910,30 +1969,36 @@ async function editSpeaker(id) {
 }
 
 async function updateSpeaker(id) {
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
   try {
     const data = {
       name: document.getElementById('speakerName').value.trim(),
       imageUrl: document.getElementById('speakerImage').value.trim() || null,
       bio: document.getElementById('speakerBio').value.trim() || null,
     };
-    if (!data.name) return showAlert('Name is required', 'error');
+    if (!data.name) { if (btn) { btn.disabled = false; btn.textContent = 'Save Changes'; } return showAlert('Name is required', 'error'); }
     await api(`/api/admin/maggid-shiurim/${id}`, { method: 'PUT', body: JSON.stringify(data) });
     closeModal();
     showAlert('Speaker profile updated!');
     await loadSpeakers();
   } catch(e) {
     showAlert(e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Save Changes'; }
   }
 }
 
 async function deleteSpeaker(id) {
   if (!confirm('Delete this speaker profile?')) return;
+  const btn = event?.target;
+  if (btn) btn.disabled = true;
   try {
     await api(`/api/admin/maggid-shiurim/${id}`, { method: 'DELETE' });
     showAlert('Speaker profile deleted');
     await loadSpeakers();
   } catch(e) {
     showAlert(e.message, 'error');
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -1962,6 +2027,8 @@ function formatDate(dateStr) {
 }
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+// Escape for use inside JS string literals in onclick attributes
+function escJs(s) { return (s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/</g, '\\x3c'); }
 
 let errorReportsPage = 1;
 
@@ -2018,20 +2085,25 @@ async function loadErrorReports(page) {
 }
 
 async function resolveError(id) {
+  const btn = event?.target;
+  if (btn) btn.disabled = true;
   try {
     await api(`/api/admin/error-reports/${id}/resolve`, { method: 'PUT' });
-    loadErrorReports();
+    await loadErrorReports();
   } catch(e) {
     showAlert(e.message, 'error');
+    if (btn) btn.disabled = false;
   }
 }
 
 async function deleteResolvedErrors() {
   if (!confirm('Delete all resolved error reports?')) return;
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Deleting...'; }
   try {
     const data = await api('/api/admin/error-reports/resolved', { method: 'DELETE' });
     showAlert(`Deleted ${data.deleted} resolved reports`, 'success');
-    loadErrorReports();
+    await loadErrorReports();
   } catch(e) {
     showAlert(e.message, 'error');
   }
@@ -2129,12 +2201,15 @@ async function loadFeedback(page) {
 }
 
 async function updateFeedbackStatus(id, status) {
+  const btn = event?.target;
+  if (btn) btn.disabled = true;
   try {
     await api(`/api/admin/feedback/${id}`, { method: 'PUT', body: JSON.stringify({ status }) });
     showAlert('Feedback updated', 'success');
-    loadFeedback();
+    await loadFeedback();
   } catch(e) {
     showAlert(e.message, 'error');
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -2144,7 +2219,7 @@ async function addFeedbackNote(id) {
   try {
     await api(`/api/admin/feedback/${id}`, { method: 'PUT', body: JSON.stringify({ adminNotes: note }) });
     showAlert('Note added', 'success');
-    loadFeedback();
+    await loadFeedback();
   } catch(e) {
     showAlert(e.message, 'error');
   }
@@ -2155,7 +2230,7 @@ async function deleteFeedback(id) {
   try {
     await api(`/api/admin/feedback/${id}`, { method: 'DELETE' });
     showAlert('Feedback deleted', 'success');
-    loadFeedback();
+    await loadFeedback();
   } catch(e) {
     showAlert(e.message, 'error');
   }
@@ -2215,23 +2290,29 @@ async function loadMessages(page) {
 }
 
 async function updateMessageStatus(id, status) {
+  const btn = event?.target;
+  if (btn) btn.disabled = true;
   try {
     await api(`/api/admin/contact-messages/${id}`, { method: 'PUT', body: JSON.stringify({ status }) });
     showAlert('Message updated', 'success');
-    loadMessages();
+    await loadMessages();
   } catch(e) {
     showAlert(e.message, 'error');
+    if (btn) btn.disabled = false;
   }
 }
 
 async function deleteMessage(id) {
   if (!confirm('Delete this message?')) return;
+  const btn = event?.target;
+  if (btn) btn.disabled = true;
   try {
     await api(`/api/admin/contact-messages/${id}`, { method: 'DELETE' });
     showAlert('Message deleted', 'success');
-    loadMessages();
+    await loadMessages();
   } catch(e) {
     showAlert(e.message, 'error');
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -2325,23 +2406,29 @@ async function loadApks() {
 }
 
 async function activateApk(id) {
+  const btn = event?.target;
+  if (btn) btn.disabled = true;
   try {
     await api('/api/admin/apk/' + id + '/activate', { method: 'PUT' });
     showAlert('APK set as active download');
-    loadApks();
+    await loadApks();
   } catch(e) {
     showAlert(e.message, 'error');
+    if (btn) btn.disabled = false;
   }
 }
 
 async function deleteApk(id) {
   if (!confirm('Delete this APK?')) return;
+  const btn = event?.target;
+  if (btn) btn.disabled = true;
   try {
     await api('/api/admin/apk/' + id, { method: 'DELETE' });
     showAlert('APK deleted');
-    loadApks();
+    await loadApks();
   } catch(e) {
     showAlert(e.message, 'error');
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -2736,6 +2823,7 @@ async function loadSponsors() {
   const list = document.getElementById('sponsorList');
   try {
     const sponsors = await api('/api/admin/sponsors');
+    allSponsorsCache = sponsors || [];
     if (!sponsors || sponsors.length === 0) {
       list.innerHTML = '<p style="color:#64748b;text-align:center;padding:32px;">No sponsors yet</p>';
       return;
@@ -2783,6 +2871,7 @@ function closeSponsorModal() {
 }
 
 async function saveSponsor() {
+  const btn = event?.target;
   const id = document.getElementById('sponsorEditId').value;
   const name = document.getElementById('sponsorName').value.trim();
   const text = document.getElementById('sponsorText').value.trim();
@@ -2794,6 +2883,7 @@ async function saveSponsor() {
     return;
   }
 
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
   const data = { name, text: text || undefined, logoUrl: logoUrl || undefined, linkUrl: linkUrl || undefined };
 
   try {
@@ -2805,40 +2895,44 @@ async function saveSponsor() {
       showAlert('Sponsor added', 'success');
     }
     closeSponsorModal();
-    loadSponsors();
+    await loadSponsors();
   } catch (e) {
     document.getElementById('sponsorAlert').innerHTML = '<div style="background:#7f1d1d;color:#fca5a5;padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:13px;">Failed to save sponsor</div>';
+    if (btn) { btn.disabled = false; btn.textContent = id ? 'Save' : 'Add Sponsor'; }
   }
 }
 
 async function editSponsor(id) {
-  try {
-    const sponsors = await api('/api/admin/sponsors');
-    const sponsor = sponsors.find(s => s.id === id);
-    if (sponsor) showSponsorModal(sponsor);
-  } catch (e) {
-    showAlert('Failed to load sponsor', 'error');
-  }
+  // Use cached sponsor data from last loadSponsors() instead of refetching
+  const sponsor = allSponsorsCache.find(s => s.id === id);
+  if (sponsor) showSponsorModal(sponsor);
+  else showAlert('Sponsor not found', 'error');
 }
 
 async function toggleSponsor(id, activate) {
+  const btn = event?.target;
+  if (btn) btn.disabled = true;
   try {
     await api('/api/admin/sponsors/' + id, { method: 'PUT', body: JSON.stringify({ isActive: activate }) });
     showAlert(activate ? 'Sponsor activated' : 'Sponsor deactivated', 'success');
-    loadSponsors();
+    await loadSponsors();
   } catch (e) {
     showAlert('Failed to update sponsor', 'error');
+    if (btn) btn.disabled = false;
   }
 }
 
 async function removeSponsor(id) {
   if (!confirm('Delete this sponsor?')) return;
+  const btn = event?.target;
+  if (btn) btn.disabled = true;
   try {
     await api('/api/admin/sponsors/' + id, { method: 'DELETE' });
     showAlert('Sponsor deleted', 'success');
-    loadSponsors();
+    await loadSponsors();
   } catch (e) {
     showAlert('Failed to delete sponsor', 'error');
+    if (btn) btn.disabled = false;
   }
 }
 

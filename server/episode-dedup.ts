@@ -70,10 +70,8 @@ export function isMergedFeed(feed: {
   allhalachaAuthorId?: number | null;
   kolhalashonRavId?: number | null;
 }): boolean {
-  const hasRealRss = feed.rssUrl && !feed.rssUrl.startsWith("tat://") &&
-    !feed.rssUrl.startsWith("alldaf://") && !feed.rssUrl.startsWith("allmishnah://") &&
-    !feed.rssUrl.startsWith("allparsha://") && !feed.rssUrl.startsWith("allhalacha://") &&
-    !feed.rssUrl.startsWith("kh://");
+  const apiSchemes = ["tat://", "kh://", "alldaf://", "allmishnah://", "allparsha://", "allhalacha://"];
+  const hasRealRss = feed.rssUrl && !apiSchemes.some(s => feed.rssUrl.startsWith(s));
 
   const platformCount = [
     feed.tatSpeakerId,

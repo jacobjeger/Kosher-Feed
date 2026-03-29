@@ -5,9 +5,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="Listen to Torah shiurim on the go. Browse curated feeds, download for offline listening, and never miss a new episode." />
+    <link rel="icon" type="image/png" href="/assets/images/favicon.png" />
+    <meta property="og:title" content="ShiurPod — Torah Learning, Beautifully Simple" />
+    <meta property="og:description" content="Listen to curated shiurim from top speakers. Download for offline, resume where you left off, and discover new content daily." />
+    <meta property="og:image" content="/assets/images/icon.png" />
+    <meta property="og:type" content="website" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
     <style>
       * {
         box-sizing: border-box;
@@ -101,16 +106,24 @@
       .sticky-nav-logo .nav-icon {
         width: 32px;
         height: 32px;
-        background: linear-gradient(135deg, #c4a96a, #a08040);
-        border-radius: 8px;
+        background: #111111;
+        border-radius: 6px;
         display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
+        font-family: 'Playfair Display', serif;
+        font-weight: 700;
+        line-height: 0.95;
+        padding-top: 1px;
       }
-      .sticky-nav-logo .nav-icon svg {
-        width: 18px;
-        height: 18px;
-        fill: #fff;
+      .sticky-nav-logo .nav-icon .icon-shiur {
+        font-size: 10px;
+        color: #fff;
+      }
+      .sticky-nav-logo .nav-icon .icon-pod {
+        font-size: 10px;
+        color: #1D4ED8;
       }
       .sticky-nav-links {
         display: flex;
@@ -203,19 +216,26 @@
       .app-icon {
         width: 88px;
         height: 88px;
-        background: linear-gradient(135deg, #c4a96a, #a08040);
+        background: #111111;
         border-radius: 22px;
         display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
         margin: 0 auto 32px;
-        box-shadow: 0 12px 40px rgba(196, 169, 106, 0.25), 0 0 0 1px rgba(255,255,255,0.1);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255,255,255,0.1);
         animation: float 4s ease-in-out infinite;
+        font-family: 'Playfair Display', serif;
+        font-weight: 700;
+        line-height: 0.95;
       }
-      .app-icon svg {
-        width: 42px;
-        height: 42px;
-        fill: #fff;
+      .app-icon .icon-shiur {
+        font-size: 26px;
+        color: #fff;
+      }
+      .app-icon .icon-pod {
+        font-size: 26px;
+        color: #1D4ED8;
       }
       .hero-badge {
         display: inline-flex;
@@ -954,9 +974,9 @@
       <div class="sticky-nav-inner">
         <a href="#" class="sticky-nav-logo">
           <div class="nav-icon">
-            <svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55C7.79 13 6 14.79 6 17s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+            <span class="icon-shiur">Shiur</span><span class="icon-pod">Pod</span>
           </div>
-          APP_NAME_PLACEHOLDER
+          <span style="font-family:'Playfair Display',serif;font-weight:600;"><span style="color:#fff;">Shiur</span><span style="color:#1D4ED8;">Pod</span></span>
         </a>
         <div class="sticky-nav-links">
           <a href="#features">Features</a>
@@ -971,7 +991,7 @@
       <div class="hero-inner">
         <div class="hero-text">
           <div class="app-icon">
-            <svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55C7.79 13 6 14.79 6 17s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+            <span class="icon-shiur">Shiur</span><span class="icon-pod">Pod</span>
           </div>
           <div class="hero-badge">
             <span class="hero-badge-dot"></span>
@@ -1151,7 +1171,7 @@
           <a href="/support">Support</a>
           <a href="/webapp">Web App</a>
         </div>
-        <p>APP_NAME_PLACEHOLDER</p>
+        <p style="font-family:'Playfair Display',serif;font-weight:600;font-size:18px;"><span>Shiur</span><span style="color:#1D4ED8;">Pod</span> <span style="font-family:'Inter',sans-serif;font-weight:400;font-size:13px;color:#999;display:block;margin-top:2px;">שיעורי תורה</span></p>
       </div>
     </footer>
 

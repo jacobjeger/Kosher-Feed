@@ -11,6 +11,7 @@ import { Ionicons } from "@expo/vector-icons";
 import type { Feed, Episode } from "@/lib/types";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useNetworkStatus } from "@/components/OfflineBanner";
+import { apiRequest } from "@/lib/query-client";
 
 function FavoritesScreenInner() {
   const insets = useSafeAreaInsets();
@@ -20,25 +21,35 @@ function FavoritesScreenInner() {
   const isOnline = useNetworkStatus();
   const { favorites, isLoading: favsLoading } = useFavorites();
 
+  const favEpisodeIds = useMemo(() => favorites.map(f => f.episodeId), [favorites]);
+
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
-  const latestQuery = useQuery<Episode[]>({ queryKey: ["/api/episodes/latest"] });
+  const episodesQuery = useQuery<Episode[]>({
+    queryKey: ["/api/episodes/batch", favEpisodeIds],
+    queryFn: async () => {
+      if (favEpisodeIds.length === 0) return [];
+      const res = await apiRequest("POST", "/api/episodes/batch", { ids: favEpisodeIds });
+      return res.json();
+    },
+    enabled: favEpisodeIds.length > 0,
+  });
 
   const allFeeds = feedsQuery.data || [];
-  const allEpisodes = latestQuery.data || [];
+  const allEpisodes = episodesQuery.data || [];
 
   const favoriteEpisodes = useMemo(() => {
     if (favorites.length === 0 || allEpisodes.length === 0) return [];
-    const favEpisodeIds = new Set(favorites.map(f => f.episodeId));
+    const favSet = new Set(favEpisodeIds);
     return allEpisodes
-      .filter(ep => favEpisodeIds.has(ep.id))
+      .filter(ep => favSet.has(ep.id))
       .map(ep => ({
         episode: ep,
         feed: allFeeds.find(f => f.id === ep.feedId),
       }))
       .filter(item => item.feed) as { episode: Episode; feed: Feed }[];
-  }, [favorites, allEpisodes, allFeeds]);
+  }, [favorites, allEpisodes, allFeeds, favEpisodeIds]);
 
-  const isLoading = favsLoading || feedsQuery.isLoading || latestQuery.isLoading;
+  const isLoading = favsLoading || feedsQuery.isLoading || episodesQuery.isLoading;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>

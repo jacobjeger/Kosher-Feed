@@ -610,6 +610,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Episodes
+
+  // Batch fetch episodes by IDs (used by favorites screen)
+  app.post("/api/episodes/batch", async (req: Request, res: Response) => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) return res.json([]);
+      const eps = await storage.getEpisodesByIds(ids.slice(0, 200));
+      res.json(eps);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.get("/api/episodes/latest", async (req: Request, res: Response) => {
     try {
       const limit = parseInt(req.query.limit as string) || 50;

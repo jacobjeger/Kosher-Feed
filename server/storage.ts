@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { isApiOnlyUrl } from "./alldaf";
 import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals, queueItems, notificationTaps, feedMergeHistory, appConfig } from "@shared/schema";
 import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor, NotificationPreference, Announcement, AnnouncementDismissal, NotificationTap, AppConfig } from "@shared/schema";
 import { eq, and, desc, asc, inArray, sql, count, ilike } from "drizzle-orm";
@@ -90,6 +91,11 @@ export async function mergeFeeds(sourceId: string, targetId: string): Promise<{ 
 export async function getEpisodeById(episodeId: string): Promise<Episode | undefined> {
   const result = await db.select().from(episodes).where(eq(episodes.id, episodeId)).limit(1);
   return result[0];
+}
+
+export async function getEpisodesByIds(episodeIds: string[]): Promise<Episode[]> {
+  if (episodeIds.length === 0) return [];
+  return db.select().from(episodes).where(inArray(episodes.id, episodeIds));
 }
 
 export async function getEpisodesByFeed(feedId: string): Promise<Episode[]> {
@@ -1449,7 +1455,7 @@ export async function getKHSpeakerStats() {
   return allFeeds.map(f => {
     const s = stats.get(f.id) || { episodeCount: 0, subscriberCount: 0, listenCount: 0 };
     const platforms: string[] = [];
-    if (f.rssUrl && !f.rssUrl.startsWith("tat://") && !f.rssUrl.startsWith("kh://") && !f.rssUrl.startsWith("alldaf://") && !f.rssUrl.startsWith("allmishnah://") && !f.rssUrl.startsWith("allparsha://") && !f.rssUrl.startsWith("allhalacha://")) {
+    if (f.rssUrl && !isApiOnlyUrl(f.rssUrl)) {
       platforms.push("RSS");
     }
     if (f.tatSpeakerId) platforms.push("Torah Anytime");
