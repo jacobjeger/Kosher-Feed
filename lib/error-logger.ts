@@ -2,6 +2,25 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import { getApiUrl } from "@/lib/query-client";
 
+let _appVersion: string | null = null;
+let _metadata: string | null = null;
+
+function getAppVersion(): string | null {
+  if (_appVersion !== null) return _appVersion;
+  try {
+    const Constants = require("expo-constants").default;
+    _appVersion = Constants.expoConfig?.version || Constants.manifest?.version || null;
+    _metadata = JSON.stringify({
+      osVersion: Platform.Version,
+      sdkVersion: Constants.expoConfig?.sdkVersion || null,
+    });
+  } catch {
+    _appVersion = null;
+    _metadata = null;
+  }
+  return _appVersion;
+}
+
 const LOG_KEY = "APP_ERROR_LOGS";
 const PENDING_REPORTS_KEY = "APP_PENDING_ERROR_REPORTS";
 const MAX_LOGS = 200;
@@ -102,6 +121,7 @@ async function flushReportsToServer() {
     const baseUrl = getApiUrl();
     const url = new URL("/api/error-reports/batch", baseUrl).toString();
 
+    const appVersion = getAppVersion();
     const reports = batch.map(entry => ({
       deviceId,
       level: entry.level,
@@ -109,7 +129,8 @@ async function flushReportsToServer() {
       stack: entry.stack || null,
       source: entry.source || null,
       platform: Platform.OS,
-      appVersion: null,
+      appVersion,
+      metadata: _metadata,
     }));
 
     const origFetch = (globalThis as any).__origFetch || globalThis.fetch;

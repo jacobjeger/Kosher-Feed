@@ -1789,7 +1789,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Error Reports - public endpoint (no auth needed, devices send errors here)
   app.post("/api/error-reports", async (req: Request, res: Response) => {
     try {
-      const { deviceId, level, message, stack, source, platform, appVersion } = req.body;
+      const { deviceId, level, message, stack, source, platform, appVersion, metadata } = req.body;
       if (!message) return res.status(400).json({ error: "message required" });
       const report = await storage.createErrorReport({
         deviceId: deviceId || null,
@@ -1799,6 +1799,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         source: source || null,
         platform: platform || null,
         appVersion: appVersion || null,
+        metadata: metadata ? (metadata as string).substring(0, 2000) : null,
       });
       res.json({ ok: true, id: report.id });
     } catch (e: any) {
@@ -1823,10 +1824,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           source: r.source || null,
           platform: r.platform || null,
           appVersion: r.appVersion || null,
+          metadata: r.metadata ? (r.metadata as string).substring(0, 2000) : null,
         });
         results.push(report.id);
       }
       res.json({ ok: true, count: results.length });
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
+  // Admin: Error Health Dashboard
+  app.get("/api/admin/error-health", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const health = await storage.getErrorHealth();
+      res.json(health);
     } catch (e: any) {
       publicError(res, e);
     }
@@ -1839,7 +1851,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
       const level = req.query.level as string || undefined;
       const resolved = req.query.resolved === "true" ? true : req.query.resolved === "false" ? false : undefined;
-      const reports = await storage.getErrorReports({ page, limit, level, resolved });
+      const source = req.query.source as string || undefined;
+      const search = req.query.search as string || undefined;
+      const reports = await storage.getErrorReports({ page, limit, level, resolved, source, search });
       res.json(reports);
     } catch (e: any) {
       publicError(res, e);

@@ -966,6 +966,7 @@ export async function createErrorReport(data: {
   source: string | null;
   platform: string | null;
   appVersion: string | null;
+  metadata?: string | null;
 }): Promise<ErrorReport> {
   const [report] = await db.insert(errorReports).values(data).returning();
   return report;
@@ -976,10 +977,14 @@ export async function getErrorReports(opts: {
   limit: number;
   level?: string;
   resolved?: boolean;
+  source?: string;
+  search?: string;
 }): Promise<{ reports: ErrorReport[]; total: number; page: number; totalPages: number }> {
   const conditions = [];
   if (opts.level) conditions.push(eq(errorReports.level, opts.level));
   if (opts.resolved !== undefined) conditions.push(eq(errorReports.resolved, opts.resolved));
+  if (opts.source) conditions.push(eq(errorReports.source, opts.source));
+  if (opts.search) conditions.push(ilike(errorReports.message, `%${opts.search}%`));
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -1009,6 +1014,66 @@ export async function resolveErrorReport(id: string): Promise<ErrorReport> {
 export async function deleteResolvedErrorReports(): Promise<number> {
   const result = await db.delete(errorReports).where(eq(errorReports.resolved, true)).returning();
   return result.length;
+}
+
+export async function getErrorHealth(): Promise<{
+  lastHour: number;
+  last24h: number;
+  last7d: number;
+  topErrors: { message: string; source: string | null; count: number; firstSeen: Date; lastSeen: Date }[];
+  bySource: { source: string; count: number }[];
+  byPlatform: { platform: string; count: number }[];
+}> {
+  const now = new Date();
+  const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+  const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  const [[h1], [h24], [h7d]] = await Promise.all([
+    db.select({ count: count() }).from(errorReports).where(sql`${errorReports.createdAt} > ${oneHourAgo}`),
+    db.select({ count: count() }).from(errorReports).where(sql`${errorReports.createdAt} > ${oneDayAgo}`),
+    db.select({ count: count() }).from(errorReports).where(sql`${errorReports.createdAt} > ${sevenDaysAgo}`),
+  ]);
+
+  const topErrors = await db.select({
+    message: sql<string>`LEFT(${errorReports.message}, 120)`,
+    source: errorReports.source,
+    count: count(),
+    firstSeen: sql<Date>`MIN(${errorReports.createdAt})`,
+    lastSeen: sql<Date>`MAX(${errorReports.createdAt})`,
+  })
+    .from(errorReports)
+    .where(sql`${errorReports.createdAt} > ${sevenDaysAgo}`)
+    .groupBy(sql`LEFT(${errorReports.message}, 120)`, errorReports.source)
+    .orderBy(desc(count()))
+    .limit(10);
+
+  const bySource = await db.select({
+    source: sql<string>`COALESCE(${errorReports.source}, 'unknown')`,
+    count: count(),
+  })
+    .from(errorReports)
+    .where(sql`${errorReports.createdAt} > ${sevenDaysAgo}`)
+    .groupBy(sql`COALESCE(${errorReports.source}, 'unknown')`)
+    .orderBy(desc(count()));
+
+  const byPlatform = await db.select({
+    platform: sql<string>`COALESCE(${errorReports.platform}, 'unknown')`,
+    count: count(),
+  })
+    .from(errorReports)
+    .where(sql`${errorReports.createdAt} > ${sevenDaysAgo}`)
+    .groupBy(sql`COALESCE(${errorReports.platform}, 'unknown')`)
+    .orderBy(desc(count()));
+
+  return {
+    lastHour: Number(h1.count),
+    last24h: Number(h24.count),
+    last7d: Number(h7d.count),
+    topErrors: topErrors.map(e => ({ ...e, count: Number(e.count) })),
+    bySource: bySource.map(s => ({ ...s, count: Number(s.count) })),
+    byPlatform: byPlatform.map(p => ({ ...p, count: Number(p.count) })),
+  };
 }
 
 export async function createFeedback(data: {

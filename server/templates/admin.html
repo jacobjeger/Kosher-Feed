@@ -335,17 +335,30 @@
     </div>
 
     <div id="errorsTab" class="hidden">
+      <!-- Error Health Dashboard -->
+      <div id="errorHealthCards" class="stats" style="margin-bottom:16px;"></div>
+
+      <!-- Top Recurring Errors -->
+      <div class="card" id="topErrorsCard" style="display:none;margin-bottom:16px;">
+        <div class="card-header"><h2>Top Recurring Errors (7d)</h2></div>
+        <div id="topErrorsList"></div>
+      </div>
+
       <div class="card">
         <div class="card-header">
           <h2>Error Reports</h2>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <select id="errorLevelFilter" onchange="loadErrorReports()" style="width:auto;padding:6px 10px;font-size:12px;">
+            <input type="text" id="errorSearchInput" placeholder="Search errors..." oninput="loadErrorReports(1)" style="width:180px;padding:6px 10px;font-size:12px;">
+            <select id="errorLevelFilter" onchange="loadErrorReports(1)" style="width:auto;padding:6px 10px;font-size:12px;">
               <option value="">All Levels</option>
               <option value="error">Errors Only</option>
               <option value="warn">Warnings Only</option>
               <option value="info">Info Only</option>
             </select>
-            <select id="errorResolvedFilter" onchange="loadErrorReports()" style="width:auto;padding:6px 10px;font-size:12px;">
+            <select id="errorSourceFilter" onchange="loadErrorReports(1)" style="width:auto;padding:6px 10px;font-size:12px;">
+              <option value="">All Sources</option>
+            </select>
+            <select id="errorResolvedFilter" onchange="loadErrorReports(1)" style="width:auto;padding:6px 10px;font-size:12px;">
               <option value="false">Unresolved</option>
               <option value="true">Resolved</option>
               <option value="">All</option>
@@ -2009,7 +2022,7 @@ function switchTab(tab, btn) {
     document.getElementById(t + 'Tab').classList.toggle('hidden', tab !== t);
   });
   if (tab === 'speakers') loadSpeakers();
-  if (tab === 'errors') loadErrorReports();
+  if (tab === 'errors') { loadErrorHealth(); loadErrorReports(); }
   if (tab === 'feedback') loadFeedback();
   if (tab === 'messages') loadMessages();
   if (tab === 'apk') loadApks();
@@ -2031,14 +2044,62 @@ function esc(s) { const d = document.createElement('div'); d.textContent = s || 
 function escJs(s) { return (s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/</g, '\\x3c'); }
 
 let errorReportsPage = 1;
+let _errorSourcesPopulated = false;
+
+async function loadErrorHealth() {
+  try {
+    const h = await api('/api/admin/error-health');
+    const cards = document.getElementById('errorHealthCards');
+    const h1Color = h.lastHour > 10 ? '#ef4444' : h.lastHour > 0 ? '#f59e0b' : '#059669';
+    const h24Color = h.last24h > 50 ? '#ef4444' : h.last24h > 10 ? '#f59e0b' : '#059669';
+    cards.innerHTML = `
+      <div class="stat-card"><div class="stat-value" style="color:${h1Color}">${h.lastHour}</div><div class="stat-label">Errors (1h)</div></div>
+      <div class="stat-card"><div class="stat-value" style="color:${h24Color}">${h.last24h}</div><div class="stat-label">Errors (24h)</div></div>
+      <div class="stat-card"><div class="stat-value">${h.last7d}</div><div class="stat-label">Errors (7d)</div></div>
+      <div class="stat-card"><div class="stat-label" style="margin-bottom:6px;">By Source</div>${h.bySource.map(s => '<div style="display:flex;justify-content:space-between;font-size:12px;color:#94a3b8;margin-bottom:2px;"><span>' + esc(s.source) + '</span><strong style="color:#e2e8f0;">' + s.count + '</strong></div>').join('')}</div>
+      <div class="stat-card"><div class="stat-label" style="margin-bottom:6px;">By Platform</div>${h.byPlatform.map(p => '<div style="display:flex;justify-content:space-between;font-size:12px;color:#94a3b8;margin-bottom:2px;"><span>' + esc(p.platform) + '</span><strong style="color:#e2e8f0;">' + p.count + '</strong></div>').join('')}</div>
+    `;
+
+    // Populate source filter from health data
+    if (!_errorSourcesPopulated && h.bySource.length > 0) {
+      const sel = document.getElementById('errorSourceFilter');
+      h.bySource.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.source;
+        opt.textContent = s.source + ' (' + s.count + ')';
+        sel.appendChild(opt);
+      });
+      _errorSourcesPopulated = true;
+    }
+
+    // Top recurring errors
+    if (h.topErrors && h.topErrors.length > 0) {
+      const card = document.getElementById('topErrorsCard');
+      card.style.display = '';
+      document.getElementById('topErrorsList').innerHTML = h.topErrors.slice(0, 8).map(e => {
+        const ago = Math.round((Date.now() - new Date(e.lastSeen).getTime()) / 60000);
+        const agoStr = ago < 60 ? ago + 'm ago' : Math.round(ago / 60) + 'h ago';
+        return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#0f172a;border-radius:8px;margin-bottom:4px;gap:12px;">'
+          + '<div style="flex:1;min-width:0;"><div style="font-size:12px;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(e.message) + '</div>'
+          + '<div style="font-size:10px;color:#64748b;margin-top:2px;">' + esc(e.source || '') + ' · last seen ' + agoStr + '</div></div>'
+          + '<div style="font-size:18px;font-weight:700;color:#ef4444;flex-shrink:0;">×' + e.count + '</div>'
+          + '</div>';
+      }).join('');
+    }
+  } catch(e) { console.error('Error health load failed:', e); }
+}
 
 async function loadErrorReports(page) {
   if (page) errorReportsPage = page;
   const level = document.getElementById('errorLevelFilter').value;
   const resolved = document.getElementById('errorResolvedFilter').value;
+  const source = document.getElementById('errorSourceFilter').value;
+  const search = (document.getElementById('errorSearchInput').value || '').trim();
   let url = `/api/admin/error-reports?page=${errorReportsPage}&limit=30`;
   if (level) url += `&level=${level}`;
   if (resolved !== '') url += `&resolved=${resolved}`;
+  if (source) url += `&source=${encodeURIComponent(source)}`;
+  if (search) url += `&search=${encodeURIComponent(search)}`;
   try {
     const data = await api(url);
     const list = document.getElementById('errorReportsList');
@@ -2051,21 +2112,25 @@ async function loadErrorReports(page) {
         const levelColor = r.level === 'error' ? '#ef4444' : r.level === 'warn' ? '#f59e0b' : '#3b82f6';
         const levelBg = r.level === 'error' ? 'rgba(239,68,68,0.1)' : r.level === 'warn' ? 'rgba(245,158,11,0.1)' : 'rgba(59,130,246,0.1)';
         const time = new Date(r.createdAt).toLocaleString();
+        let metaHtml = '';
+        if (r.metadata) { try { const m = JSON.parse(r.metadata); metaHtml = '<span style="font-size:10px;color:#475569;margin-left:8px;">OS ' + esc(String(m.osVersion || '')) + '</span>'; } catch {} }
+        const versionBadge = r.appVersion ? '<span style="font-size:10px;padding:1px 6px;border-radius:3px;background:#1e293b;color:#94a3b8;margin-left:4px;">v' + esc(r.appVersion) + '</span>' : '';
         return `<div style="padding:14px;background:#0f172a;border-radius:10px;margin-bottom:8px;border-left:3px solid ${levelColor};${r.resolved ? 'opacity:0.5;' : ''}">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
-            <div style="display:flex;align-items:center;gap:8px;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
               <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:${levelBg};color:${levelColor};text-transform:uppercase;">${esc(r.level)}</span>
-              <span style="font-size:11px;color:#64748b;">${esc(r.source || '')}</span>
-              <span style="font-size:11px;color:#64748b;">${esc(r.platform || '')}</span>
+              ${r.source ? '<span style="font-size:11px;padding:1px 6px;border-radius:3px;background:#1e293b;color:#94a3b8;">' + esc(r.source) + '</span>' : ''}
+              ${r.platform ? '<span style="font-size:11px;color:#64748b;">' + esc(r.platform) + '</span>' : ''}
+              ${versionBadge}${metaHtml}
             </div>
             <div style="display:flex;align-items:center;gap:6px;">
               <span style="font-size:11px;color:#64748b;">${time}</span>
-              ${!r.resolved ? `<button class="btn btn-success btn-sm" onclick="resolveError('${r.id}')" style="padding:3px 8px;font-size:11px;">Resolve</button>` : '<span style="font-size:11px;color:#059669;">Resolved</span>'}
+              ${!r.resolved ? '<button class="btn btn-success btn-sm" onclick="resolveError(\'' + r.id + '\')" style="padding:3px 8px;font-size:11px;">Resolve</button>' : '<span style="font-size:11px;color:#059669;">Resolved</span>'}
             </div>
           </div>
           <div style="font-size:13px;color:#e2e8f0;word-break:break-word;margin-bottom:4px;">${esc(r.message)}</div>
-          ${r.stack ? `<details style="margin-top:6px;"><summary style="font-size:11px;color:#64748b;cursor:pointer;">Stack trace</summary><pre style="font-size:11px;color:#94a3b8;margin-top:6px;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow:auto;background:#0a0f1a;padding:8px;border-radius:6px;">${esc(r.stack)}</pre></details>` : ''}
-          ${r.deviceId ? `<div style="font-size:11px;color:#475569;margin-top:4px;">Device: ${esc(r.deviceId.substring(0,12))}...</div>` : ''}
+          ${r.stack ? '<details style="margin-top:6px;"><summary style="font-size:11px;color:#64748b;cursor:pointer;">Stack trace</summary><pre style="font-size:11px;color:#94a3b8;margin-top:6px;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow:auto;background:#0a0f1a;padding:8px;border-radius:6px;">' + esc(r.stack) + '</pre></details>' : ''}
+          ${r.deviceId ? '<div style="font-size:11px;color:#475569;margin-top:4px;">Device: ' + esc(r.deviceId.substring(0,12)) + '...</div>' : ''}
         </div>`;
       }).join('');
     }

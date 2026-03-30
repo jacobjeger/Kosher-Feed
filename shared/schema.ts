@@ -120,6 +120,7 @@ export const errorReports = pgTable("error_reports", {
   source: text("source"),
   platform: text("platform"),
   appVersion: text("app_version"),
+  metadata: text("metadata"),
   resolved: boolean("resolved").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
