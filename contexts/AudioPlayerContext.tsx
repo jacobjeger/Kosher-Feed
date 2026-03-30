@@ -649,6 +649,14 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           nativePlayerRef.current = player;
           nativePlayerInstance = player;
 
+          // Start playback immediately, then apply settings async
+          let hasConfirmedPlaying = false;
+          let lockScreenDone = false;
+          const playStartTime = Date.now();
+
+          // Fire play() BEFORE waiting for settings — minimizes perceived latency
+          player.play();
+
           const [savedPos, feedSpeed, boostEnabledNative] = await Promise.all([
             getSavedPosition(episode.id),
             getFeedSpeed(feed.id),
@@ -656,10 +664,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           ]);
           setPlayback(prev => ({ ...prev, positionMs: savedPos, playbackRate: feedSpeed }));
           try { player.volume = boostEnabledNative ? BOOST_VOLUME : NORMAL_VOLUME; } catch {}
-
-          let hasConfirmedPlaying = false;
-          let lockScreenDone = false;
-          const playStartTime = Date.now();
+          try { player.setPlaybackRate(feedSpeed); } catch {}
 
           const setupLockScreen = () => {
             if (lockScreenDone || nativePlayerRef.current !== player) return;
@@ -720,13 +725,11 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
             }
           });
 
-          player.setPlaybackRate(feedSpeed);
-
+          // Seek to saved position (play() already called above before settings loaded)
           if (savedPos > 0) {
             player.seekTo(savedPos / 1000);
           }
 
-          player.play();
           startPositionTracking();
 
           setTimeout(() => {

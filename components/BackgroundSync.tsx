@@ -44,8 +44,8 @@ export function BackgroundSync() {
       const res = await fetch(url.toString());
       return res.json();
     },
-    refetchInterval: 5 * 60 * 1000,
-    staleTime: 2 * 60 * 1000,
+    refetchInterval: 15 * 60 * 1000,
+    staleTime: 10 * 60 * 1000,
     enabled: ready,
   });
 
@@ -57,8 +57,8 @@ export function BackgroundSync() {
       const res = await fetch(url.toString());
       return res.json();
     },
-    refetchInterval: 5 * 60 * 1000,
-    staleTime: 2 * 60 * 1000,
+    refetchInterval: 15 * 60 * 1000,
+    staleTime: 10 * 60 * 1000,
     enabled: ready,
   });
 
@@ -80,7 +80,7 @@ export function BackgroundSync() {
     }
 
     const now = Date.now();
-    if (now - lastCheckRef.current < 60000) return;
+    if (now - lastCheckRef.current < 5 * 60 * 1000) return;
     lastCheckRef.current = now;
 
     const runCheck = async () => {
