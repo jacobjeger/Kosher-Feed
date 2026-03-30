@@ -276,6 +276,15 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     const safeFilename = episode.id.replace(/[^a-zA-Z0-9]/g, "_") + ".mp3";
     const fileUri = podcastsDirUri + safeFilename;
 
+    // Check disk space before downloading (require at least 100MB free)
+    try {
+      const freeBytes = await LegacyFS.getFreeDiskStorageAsync();
+      if (freeBytes < 100 * 1024 * 1024) {
+        addLog("warn", `Download skipped: low disk space (${Math.round(freeBytes / 1024 / 1024)}MB free)`, undefined, "downloads");
+        return null;
+      }
+    } catch {}
+
     progressRef.current.set(episode.id, 0);
     addLog("info", `Starting download: ${episode.title} -> ${fileUri}`, undefined, "downloads");
     addLog("info", `Audio URL: ${episode.audioUrl}`, undefined, "downloads");
@@ -351,6 +360,8 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
       };
     } catch (e) {
       addLog("error", `Download failed: ${episode.title} - ${(e as any)?.message || e}`, (e as any)?.stack, "downloads");
+      // Clean up partial file on error
+      try { await LegacyFS.deleteAsync(fileUri, { idempotent: true }); } catch {}
       const existing = failedDownloadsRef.current.get(episode.id);
       const retryCount = existing ? existing.retryCount : 0;
       failedDownloadsRef.current.set(episode.id, { retryCount, lastAttempt: Date.now() });

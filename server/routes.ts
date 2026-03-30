@@ -52,6 +52,12 @@ function detectSourceNetwork(rssUrl: string): string | null {
   } catch {}
   return null;
 }
+/** Safely handle errors in public endpoints — log details server-side, return generic message to client */
+function publicError(res: Response, e: any, status = 500) {
+  console.error("API error:", e?.message || e);
+  if (!res.headersSent) res.status(status).json({ error: "Something went wrong" });
+}
+
 const refreshingFeeds = new Set<string>();
 
 async function onDemandRefreshFeed(feedId: string): Promise<void> {
@@ -208,7 +214,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const token = Buffer.from(`${username}:${password}`).toString("base64");
       res.json({ token });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -233,7 +239,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.setHeader("Cache-Control", "public, max-age=60");
       res.json(cats);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -252,7 +258,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteCategory(req.params.id);
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -262,7 +268,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await autoCategorizeFeeds();
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -294,7 +300,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.setHeader("Cache-Control", "public, max-age=60");
       res.json(feedsWithCategories);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -305,7 +311,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.setHeader("Cache-Control", "public, max-age=60");
       res.json(featured);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -327,7 +333,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.setHeader("Cache-Control", "public, max-age=30");
       res.json(enriched);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -343,7 +349,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const f of junctionFeeds) allFeedsMap.set(f.id, f);
       res.json(Array.from(allFeedsMap.values()).map(f => addKHDefaultImage(f, baseUrl)));
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -361,7 +367,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.setHeader("Cache-Control", "public, max-age=60");
       res.json(enriched);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -381,7 +387,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const catIds = mappings.filter(m => m.feedId === feed.id).map(m => m.categoryId);
       res.json(addKHDefaultImage({ ...feed, categoryIds: catIds.length > 0 ? catIds : (feed.categoryId ? [feed.categoryId] : []) }, baseUrl));
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -428,7 +434,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json(eps.map(mapEpisode));
       }
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -444,7 +450,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       res.json(feedsWithCategories);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -501,7 +507,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteFeed(req.params.id);
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -563,7 +569,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({ newEpisodes: totalNew });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -614,7 +620,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json({ refreshed: allFeeds.length, newEpisodes: totalNew });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -629,7 +635,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const eps = await storage.getEpisodesByIds(ids);
       res.json(eps);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -653,7 +659,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json(eps);
       }
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -665,7 +671,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.recordListen(episodeId, deviceId);
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -676,7 +682,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const pos = await storage.syncPlaybackPosition(episodeId, feedId || "", deviceId, positionMs || 0, durationMs || 0, completed || false);
       res.json(pos);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -685,7 +691,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const positions = await storage.getPlaybackPositions(req.params.deviceId);
       res.json(positions);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -694,7 +700,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const items = await storage.getQueueForDevice(req.params.deviceId);
       res.json(items);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -705,7 +711,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.saveQueue(req.params.deviceId, items);
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -716,7 +722,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.setHeader("Cache-Control", "public, max-age=30");
       res.json(eps);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -746,7 +752,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.setHeader("Cache-Control", "public, max-age=60");
       res.json(recs.map((f: any) => addKHDefaultImage(f, baseUrl)));
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -756,7 +762,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const analytics = await storage.getAnalytics();
       res.json(analytics);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -780,7 +786,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       })).filter((r: any) => r.feedUrl);
       res.json({ results });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -810,7 +816,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const subs = await storage.getSubscriptions(req.params.deviceId);
       res.json(subs);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -819,7 +825,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const feedList = await storage.getSubscribedFeeds(req.params.deviceId);
       res.json(feedList);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -828,7 +834,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const eps = await storage.getEpisodesForSubscribedFeeds(req.params.deviceId);
       res.json(eps);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -839,7 +845,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const sub = await storage.addSubscription(deviceId, feedId);
       res.json(sub || { ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -848,7 +854,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.removeSubscription(req.params.deviceId, req.params.feedId);
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -858,7 +864,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const pref = await storage.getNotificationPreference(req.params.deviceId, req.params.feedId);
       res.json({ muted: pref?.muted ?? false });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -869,7 +875,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.muteNotificationsForFeed(deviceId, feedId);
       res.json({ muted: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -878,7 +884,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.unmuteNotificationsForFeed(req.params.deviceId, req.params.feedId);
       res.json({ muted: false });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -888,7 +894,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const favs = await storage.getFavorites(req.params.deviceId);
       res.json(favs);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -899,7 +905,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const fav = await storage.addFavorite(episodeId, deviceId);
       res.json(fav || { ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -908,7 +914,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.removeFavorite(req.params.episodeId, req.params.deviceId);
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -920,7 +926,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.syncPlaybackPosition(episodeId, feedId, deviceId, positionMs || 0, durationMs || 0, completed || false);
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -929,7 +935,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const positions = await storage.getPlaybackPositions(req.params.deviceId);
       res.json(positions);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -938,7 +944,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const pos = await storage.getPlaybackPosition(req.params.episodeId, req.params.deviceId);
       res.json(pos || { positionMs: 0, durationMs: 0, completed: false });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -947,7 +953,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const completed = await storage.getCompletedEpisodes(req.params.deviceId);
       res.json(completed);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -957,7 +963,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const stats = await storage.getListeningStats(req.params.deviceId);
       res.json(stats);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -969,7 +975,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.setHeader("Cache-Control", "public, max-age=60");
       res.json(eps);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -980,7 +986,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.setHeader("Cache-Control", "public, max-age=60");
       res.json({ count });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -997,7 +1003,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         episodeCount: episodeCount,
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1010,7 +1016,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const eps = await storage.searchEpisodes(q, limit);
       res.json(eps);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1122,7 +1128,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/audio/proxy", async (req: Request, res: Response) => {
     try {
       const url = req.query.url as string;
-      if (!url || !url.startsWith("http")) return res.status(400).json({ error: "Missing url param" });
+      if (!url) return res.status(400).json({ error: "Missing url param" });
+      // Validate URL is a proper HTTPS URL to prevent SSRF
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== "https:") return res.status(400).json({ error: "Only HTTPS URLs are supported" });
+        // Block internal/private IPs
+        const host = parsed.hostname.toLowerCase();
+        if (host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host.startsWith("10.") || host.startsWith("192.168.") || host.startsWith("172.") || host.endsWith(".internal")) {
+          return res.status(400).json({ error: "Invalid URL" });
+        }
+      } catch {
+        return res.status(400).json({ error: "Invalid URL" });
+      }
       const rangeHeader = req.headers.range;
       const reqHeaders: Record<string, string> = { "User-Agent": "ShiurPod/1.0" };
       if (rangeHeader) reqHeaders["Range"] = rangeHeader;
@@ -1157,7 +1175,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const eps = await storage.getNewEpisodesForSubscribedFeeds(req.params.deviceId, limit, since);
       res.json(eps);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1168,7 +1186,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.setFeedFeatured(req.params.id, featured);
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1178,7 +1196,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const profiles = await storage.getAllMaggidShiurim();
       res.json(profiles);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1208,7 +1226,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteMaggidShiur(req.params.id);
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1218,7 +1236,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const result = await syncTATSpeakers();
       res.json(result);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1241,7 +1259,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ updated, enabled, totalFound: tatOnlyFeeds.length });
     } catch (e: any) {
       console.error("TAT toggle error:", e);
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1255,7 +1273,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const enabled = activeCount > 0;
       res.json({ enabled, totalTATFeeds: tatOnlyFeeds.length, activeTATFeeds: activeCount, mergedFeeds: tatFeeds.length - tatOnlyFeeds.length });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1276,7 +1294,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json({ removed, totalFemaleSpakers: femaleSpeakerIds.size });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1288,7 +1306,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const feed = await storage.updateFeed(req.params.id, { tatSpeakerId } as any);
       res.json(feed);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1297,7 +1315,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const feed = await storage.updateFeed(req.params.id, { tatSpeakerId: null } as any);
       res.json(feed);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1386,7 +1404,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const result = await syncKHSpeakers();
       res.json(result);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1409,7 +1427,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ updated, enabled, totalFound: khOnlyFeeds.length });
     } catch (e: any) {
       console.error("KH toggle error:", e);
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1429,7 +1447,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         hasProxy: !!process.env.KH_PROXY_URL,
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1442,7 +1460,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const feed = await storage.getFeedById(req.params.id);
       res.json(feed);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1452,7 +1470,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const feed = await storage.getFeedById(req.params.id);
       res.json(feed);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1501,7 +1519,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...result,
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1540,7 +1558,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .filter(Boolean);
       res.json(merged);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1552,7 +1570,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .orderBy(desc(feedMergeHistory.mergedAt));
       res.json(history);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1562,7 +1580,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const history = await storage.getAllMergeHistory();
       res.json(history);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1572,7 +1590,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const speakers = await storage.getKHSpeakerStats();
       res.json(speakers);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1582,7 +1600,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const breakdown = await storage.getSourceBreakdown();
       res.json(breakdown);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1592,7 +1610,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updated = await storage.recomputeKHBrowseVisibility();
       res.json({ updated, message: `Recomputed KH browse visibility, ${updated} feeds changed` });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1629,7 +1647,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`Unlinked "${platform}" from feed "${feed.title}"`);
       res.json({ ok: true, unlinked: platform, feedTitle: feed.title });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1689,7 +1707,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const [updated] = await db.update(episodes).set({ adminNotes, sourceSheetUrl }).where(eq(episodes.id, req.params.id)).returning();
       res.json(updated);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1699,7 +1717,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const notifs = await storage.getAdminNotifications();
       res.json(notifs);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1710,7 +1728,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const notif = await storage.createAdminNotification(title, message);
       res.json(notif);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1719,7 +1737,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.markNotificationSent(req.params.id);
       res.json({ ok: true, sent: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1729,7 +1747,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const analytics = await storage.getEnhancedAnalytics();
       res.json(analytics);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1738,7 +1756,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const analytics = await storage.getListenerAnalytics();
       res.json(analytics);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1752,7 +1770,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       res.json(feed);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1764,7 +1782,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.recordListenWithDuration(episodeId, deviceId, durationMs || 0);
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1784,7 +1802,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       res.json({ ok: true, id: report.id });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1810,7 +1828,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json({ ok: true, count: results.length });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1824,7 +1842,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const reports = await storage.getErrorReports({ page, limit, level, resolved });
       res.json(reports);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1833,7 +1851,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const report = await storage.resolveErrorReport(req.params.id);
       res.json(report);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1842,7 +1860,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const count = await storage.deleteResolvedErrorReports();
       res.json({ ok: true, deleted: count });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1868,7 +1886,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       res.json({ ok: true, id: fb.id });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1882,7 +1900,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const data = await storage.getFeedbackList({ page, limit, type, status });
       res.json(data);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1892,7 +1910,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const fb = await storage.updateFeedbackStatus(req.params.id, status, adminNotes);
       res.json(fb);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1901,7 +1919,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteFeedback(req.params.id);
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1913,7 +1931,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const result = await storage.registerPushToken(deviceId, token, platform || "unknown", provider || "expo");
       res.json(result);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1924,7 +1942,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.removePushToken(token);
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -1947,7 +1965,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         feed: feed ? { id: feed.id, title: feed.title, imageUrl: feed.imageUrl } : null,
       });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2009,7 +2027,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const msg = await storage.createContactMessage(name, email || null, message);
       res.json({ ok: true, id: msg.id });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2026,7 +2044,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const messages = filtered.slice(start, start + limit);
       res.json({ messages, total, page, totalPages: Math.ceil(total / limit) });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2041,7 +2059,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2051,7 +2069,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteContactMessage(req.params.id);
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2075,7 +2093,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2086,7 +2104,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!apk) return res.json({ available: false });
       res.json({ available: true, version: apk.version, fileSize: apk.fileSize, uploadedAt: apk.createdAt });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2110,7 +2128,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.setHeader("Content-Type", "application/vnd.android.package-archive");
       res.sendFile(filePath);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2137,7 +2155,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({ ok: true, apk });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2147,7 +2165,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const apks = await storage.getAllApkUploads();
       res.json(apks);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2157,7 +2175,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.setActiveApk(req.params.id);
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2167,7 +2185,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteApkUpload(req.params.id);
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2178,7 +2196,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.setHeader("Cache-Control", "public, max-age=60");
       res.json(sponsor || null);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2188,7 +2206,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const allSponsors = await storage.getAllSponsors();
       res.json(allSponsors);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2200,7 +2218,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const sponsor = await storage.createSponsor({ name, text, logoUrl, linkUrl });
       res.json(sponsor);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2210,7 +2228,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const sponsor = await storage.updateSponsor(req.params.id, req.body);
       res.json(sponsor);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2220,7 +2238,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteSponsor(req.params.id);
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2229,7 +2247,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const tokens = await storage.getAllPushTokens();
       res.json(tokens);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2238,7 +2256,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.removePushTokenById(req.params.id);
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2252,7 +2270,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const result = await sendCustomPush(title, body, deviceId || undefined);
       res.json(result);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2266,7 +2284,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const result = await checkPushReceipts(ticketIds);
       res.json(result);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2275,7 +2293,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const vitals = getVitals();
       res.json(vitals);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2379,7 +2397,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json({ status: "error", error: syncErr.message?.slice(0, 200), durationMs: Date.now() - start });
       }
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2389,7 +2407,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const anns = await storage.getAnnouncementsForDevice(req.params.deviceId);
       res.json(anns);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2400,7 +2418,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.dismissAnnouncement(req.params.id, deviceId);
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2415,7 +2433,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       })));
       res.json(result);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2424,7 +2442,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const ann = await storage.createAnnouncement(req.body);
       res.json(ann);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2433,7 +2451,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const ann = await storage.updateAnnouncement(req.params.id, req.body);
       res.json(ann);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2442,7 +2460,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteAnnouncement(req.params.id);
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2457,7 +2475,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.recordNotificationTap({ deviceId, notificationType, episodeId, feedId });
       res.json({ ok: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2467,7 +2485,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const stats = await storage.getNotificationTapStats(days);
       res.json(stats);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2478,7 +2496,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.setHeader("Cache-Control", "public, max-age=300");
       res.json(config);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2488,7 +2506,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const entries = await storage.getAllConfigEntries();
       res.json(entries);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2501,7 +2519,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.setConfig(key, value, description);
       res.json({ success: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2511,7 +2529,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteConfig(req.params.key);
       res.json({ success: true });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 
@@ -2537,7 +2555,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       res.json({ success: true, seeded, total: defaults.length });
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      publicError(res, e);
     }
   });
 

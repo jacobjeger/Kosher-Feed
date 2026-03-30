@@ -1263,7 +1263,7 @@ export async function getRecommendations(deviceId: string, limit: number = 10): 
 
   // Rank by listen count
   const ranked = await db.select({
-    feedId: episodeListens.episodeId,
+    feedId: episodes.feedId,
     count: count(),
   })
     .from(episodeListens)
