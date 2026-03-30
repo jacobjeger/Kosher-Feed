@@ -142,7 +142,7 @@ const styles = StyleSheet.create({
   container: {
     marginHorizontal: 8,
     marginBottom: 4,
-    borderRadius: 10,
+    borderRadius: 12,
     overflow: "hidden",
     ...Platform.select({
       web: {
@@ -184,9 +184,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   artwork: {
-    width: 34,
-    height: 34,
-    borderRadius: 6,
+    width: 36,
+    height: 36,
+    borderRadius: 7,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -202,8 +202,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   playBtn: {
-    width: 36,
-    height: 36,
+    width: 34,
+    height: 34,
     alignItems: "center",
     justifyContent: "center",
   },

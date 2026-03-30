@@ -444,7 +444,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     paddingHorizontal: 10,
-    paddingVertical: 10,
+    paddingVertical: 6,
     gap: 8,
   },
   playBtn: {
@@ -521,8 +521,8 @@ const styles = StyleSheet.create({
     fontWeight: "600" as const,
   },
   actionBtn: {
-    width: 40,
-    height: 40,
+    width: 32,
+    height: 32,
     alignItems: "center" as const,
     justifyContent: "center" as const,
     flexShrink: 0,
@@ -544,7 +544,7 @@ const styles = StyleSheet.create({
   },
   mobileMenu: {
     paddingHorizontal: 10,
-    paddingVertical: 10,
+    paddingVertical: 4,
     paddingLeft: 54,
     borderTopWidth: 1,
   },
