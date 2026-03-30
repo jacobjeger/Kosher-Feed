@@ -1,6 +1,5 @@
 import React, { useCallback, useRef, useState } from "react";
 import { Pressable, Platform, type ViewStyle, type PressableProps } from "react-native";
-import { lightHaptic } from "@/lib/haptics";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import Colors from "@/constants/colors";
 
@@ -16,10 +15,6 @@ interface FocusableViewProps extends PressableProps {
 /**
  * Drop-in replacement for Pressable that adds D-pad focus support on Android.
  * On iOS/web, behaves identically to Pressable.
- *
- * - Renders a visible focus ring (2px accent border) when focused via D-pad
- * - Fires haptic feedback on focus gain
- * - Supports autoFocus for initial focus placement
  */
 export default function FocusableView({
   focusStyle,
@@ -34,21 +29,23 @@ export default function FocusableView({
   const [isFocused, setIsFocused] = useState(false);
   const colorScheme = useAppColorScheme();
   const colors = Colors[colorScheme];
-  const ref = useRef<any>(null);
 
   const handleFocus = useCallback(
     (e: any) => {
-      setIsFocused(true);
-      lightHaptic();
-      onFocus?.(e);
+      try {
+        setIsFocused(true);
+        onFocus?.(e);
+      } catch {}
     },
     [onFocus]
   );
 
   const handleBlur = useCallback(
     (e: any) => {
-      setIsFocused(false);
-      onBlur?.(e);
+      try {
+        setIsFocused(false);
+        onBlur?.(e);
+      } catch {}
     },
     [onBlur]
   );
@@ -64,14 +61,18 @@ export default function FocusableView({
         }
       : undefined;
 
+  // Build props safely — avoid hasTVPreferredFocus on non-TV Android
+  const focusProps: any = {};
+  if (isAndroid) {
+    focusProps.focusable = true;
+    focusProps.onFocus = handleFocus;
+    focusProps.onBlur = handleBlur;
+  }
+
   return (
     <Pressable
-      ref={ref}
       {...rest}
-      focusable={isAndroid ? true : undefined}
-      hasTVPreferredFocus={isAndroid && autoFocus ? true : undefined}
-      onFocus={isAndroid ? handleFocus : onFocus}
-      onBlur={isAndroid ? handleBlur : onBlur}
+      {...focusProps}
       style={(pressState) => {
         const baseStyle =
           typeof style === "function" ? style(pressState) : style;
