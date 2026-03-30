@@ -394,6 +394,7 @@ function SettingsScreenInner() {
           <SettingRow
             icon={<Ionicons name="trash-bin" size={20} color={colors.accent} />}
             label="Auto-Delete After Listening"
+            subtitle="Removes downloads 48 hours after completion"
             rightElement={
               <Switch
                 value={settings.autoDeleteAfterListen}

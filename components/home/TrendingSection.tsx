@@ -17,7 +17,7 @@ const TrendingEpisodeCard = React.memo(function TrendingEpisodeCard({ episode, f
         <Text style={[styles.rankText, { color: rank <= 3 ? "#fff" : colors.textSecondary }]}>{rank}</Text>
       </View>
       {feed.imageUrl ? (
-        <Image source={{ uri: feed.imageUrl }} style={styles.trendingImage} contentFit="cover" cachePolicy="memory-disk" transition={0} />
+        <Image source={{ uri: feed.imageUrl }} style={styles.trendingImage} contentFit="cover" cachePolicy="disk" transition={0} />
       ) : (
         <View style={[styles.trendingImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="mic" size={20} color={colors.textSecondary} />

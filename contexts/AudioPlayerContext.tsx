@@ -467,23 +467,25 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       setSleepTimerState({ active: true, remainingMs: 0, mode: "endOfEpisode" });
     } else {
       const ms = minutes * 60 * 1000;
+      const targetTime = Date.now() + ms;
       setSleepTimerState({ active: true, remainingMs: ms, mode: "time" });
 
       sleepTimerIntervalRef.current = setInterval(() => {
-        setSleepTimerState(prev => {
-          if (!prev.active || prev.mode !== "time") return prev;
-          const newRemaining = prev.remainingMs - 1000;
-          if (newRemaining <= 0) {
-            if (sleepTimerIntervalRef.current) {
-              clearInterval(sleepTimerIntervalRef.current);
-              sleepTimerIntervalRef.current = null;
-            }
-            pauseRef.current();
-            return { active: false, remainingMs: 0, mode: "time" };
+        const remaining = targetTime - Date.now();
+        if (remaining <= 0) {
+          if (sleepTimerIntervalRef.current) {
+            clearInterval(sleepTimerIntervalRef.current);
+            sleepTimerIntervalRef.current = null;
           }
-          return { ...prev, remainingMs: newRemaining };
-        });
-      }, 1000);
+          pauseRef.current();
+          setSleepTimerState({ active: false, remainingMs: 0, mode: "time" });
+        } else {
+          setSleepTimerState(prev => {
+            if (!prev.active || prev.mode !== "time") return prev;
+            return { ...prev, remainingMs: remaining };
+          });
+        }
+      }, 500);
     }
   }, []);
 

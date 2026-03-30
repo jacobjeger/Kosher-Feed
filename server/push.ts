@@ -3,6 +3,9 @@ import * as storage from "./storage";
 
 const expo = new Expo();
 
+const recentPushes = new Map<string, number>();
+const PUSH_DEDUP_MS = 60000;
+
 export async function checkPushReceipts(ticketIds: string[]): Promise<{ receipts: Record<string, any>; errors: string[] }> {
   const errors: string[] = [];
   const receipts: Record<string, any> = {};
@@ -165,6 +168,10 @@ export async function sendNewEpisodePushes(
   episode: { title: string; id: string },
   feedTitle?: string
 ) {
+  const dedupKey = `${feedId}:${episode.id}`;
+  if (recentPushes.has(dedupKey) && Date.now() - recentPushes.get(dedupKey)! < PUSH_DEDUP_MS) return;
+  recentPushes.set(dedupKey, Date.now());
+
   try {
     const tokens = await storage.getSubscribersForFeed(feedId);
     if (tokens.length === 0) return;

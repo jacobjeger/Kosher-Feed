@@ -54,7 +54,7 @@ function PodcastCard({ feed, size = "small", hasNewEpisodes }: Props) {
       >
         <View>
           {feed.imageUrl && !imgError ? (
-            <Image source={{ uri: feed.imageUrl }} style={styles.featuredImage} contentFit="cover" cachePolicy="memory-disk" onError={() => setImgError(true)} />
+            <Image source={{ uri: feed.imageUrl }} style={styles.featuredImage} contentFit="cover" cachePolicy="disk" onError={() => setImgError(true)} />
           ) : (
             <View style={[styles.featuredImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
               <Ionicons name="mic" size={48} color={colors.textSecondary} />
@@ -102,7 +102,7 @@ function PodcastCard({ feed, size = "small", hasNewEpisodes }: Props) {
       >
         <View>
           {feed.imageUrl && !imgError ? (
-            <Image source={{ uri: feed.imageUrl }} style={styles.mediumImage} contentFit="cover" cachePolicy="memory-disk" onError={() => setImgError(true)} />
+            <Image source={{ uri: feed.imageUrl }} style={styles.mediumImage} contentFit="cover" cachePolicy="disk" onError={() => setImgError(true)} />
           ) : (
             <View style={[styles.mediumImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
               <Ionicons name="mic" size={28} color={colors.textSecondary} />
@@ -139,7 +139,7 @@ function PodcastCard({ feed, size = "small", hasNewEpisodes }: Props) {
       >
         <View>
           {feed.imageUrl && !imgError ? (
-            <Image source={{ uri: feed.imageUrl }} style={styles.smallImage} contentFit="cover" cachePolicy="memory-disk" onError={() => setImgError(true)} />
+            <Image source={{ uri: feed.imageUrl }} style={styles.smallImage} contentFit="cover" cachePolicy="disk" onError={() => setImgError(true)} />
           ) : (
             <View style={[styles.smallImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
               <Ionicons name="mic" size={24} color={colors.textSecondary} />
