@@ -26,6 +26,12 @@ export default function MiniPlayer() {
   const colors = isDark ? Colors.dark : Colors.light;
   const isWeb = Platform.OS === "web";
 
+  // Hooks must be called before any conditional return to avoid "Rendered more hooks" error
+  const pressScale = useSharedValue(1);
+  const pressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pressScale.value }],
+  }));
+
   if (!currentEpisode) return null;
 
   const rawProgress = position.durationMs > 0 ? position.positionMs / position.durationMs : 0;
@@ -33,10 +39,6 @@ export default function MiniPlayer() {
 
   const enteringAnimation = !isWeb ? FadeInDown.duration(300).springify() : undefined;
   const exitingAnimation = !isWeb ? FadeOutDown.duration(200) : undefined;
-  const pressScale = useSharedValue(1);
-  const pressStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: pressScale.value }],
-  }));
 
   return (
     <Animated.View entering={enteringAnimation} exiting={exitingAnimation} style={pressStyle}>
