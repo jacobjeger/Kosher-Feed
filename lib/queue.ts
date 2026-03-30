@@ -61,7 +61,7 @@ export async function addToQueue(episodeId: string, feedId: string): Promise<voi
     if (exists) return;
     queue.push({ episodeId, feedId, addedAt: Date.now() });
     await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
-    syncQueueToServer(queue);
+    await syncQueueToServer(queue);
   } catch (e) {
     console.error("Failed to add to queue:", e);
   }
@@ -72,7 +72,7 @@ export async function removeFromQueue(episodeId: string): Promise<void> {
     const queue = await getQueue();
     const filtered = queue.filter((item) => item.episodeId !== episodeId);
     await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(filtered));
-    syncQueueToServer(filtered);
+    await syncQueueToServer(filtered);
   } catch (e) {
     console.error("Failed to remove from queue:", e);
   }
@@ -81,7 +81,7 @@ export async function removeFromQueue(episodeId: string): Promise<void> {
 export async function clearQueue(): Promise<void> {
   try {
     await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify([]));
-    syncQueueToServer([]);
+    await syncQueueToServer([]);
   } catch (e) {
     console.error("Failed to clear queue:", e);
   }
@@ -90,7 +90,7 @@ export async function clearQueue(): Promise<void> {
 export async function reorderQueue(items: QueueItem[]): Promise<void> {
   try {
     await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(items));
-    syncQueueToServer(items);
+    await syncQueueToServer(items);
   } catch (e) {
     console.error("Failed to reorder queue:", e);
   }
@@ -100,7 +100,7 @@ export async function initQueueFromServer(): Promise<QueueItem[]> {
   try {
     const localQueue = await getQueue();
     if (localQueue.length > 0) {
-      syncQueueToServer(localQueue);
+      await syncQueueToServer(localQueue);
       return localQueue;
     }
     const serverQueue = await fetchQueueFromServer();

@@ -105,7 +105,11 @@ function handleNotificationResponse(response: Notifications.NotificationResponse
 
     if (data.feedId) {
       setTimeout(() => {
-        router.push(`/podcast/${data.feedId}` as any);
+        try {
+          router.push(`/podcast/${data.feedId}` as any);
+        } catch (e) {
+          addLog("warn", `Notification navigation failed: ${(e as any)?.message}`, undefined, "notifications");
+        }
       }, 500);
     }
   } catch (e) {

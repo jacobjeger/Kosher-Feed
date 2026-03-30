@@ -14,7 +14,7 @@ export function notifyEpisodePlayed(episodeId: string) {
       if (arr.length > 5000) arr.splice(0, arr.length - 5000);
       AsyncStorage.setItem(PLAYED_KEY, JSON.stringify(arr)).catch(() => {});
     }
-  }).catch(() => {});
+  }).catch(err => console.warn("Failed to persist played episode:", err));
   playedListeners.forEach(fn => fn(episodeId));
 }
 

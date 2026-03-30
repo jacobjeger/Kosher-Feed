@@ -408,14 +408,14 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
           InteractionManager.runAfterInteractions(() => {
             setDownloads(prev => {
               const next = [result, ...prev.filter(d => d.id !== item.episode.id)];
-              saveDownloads(next);
+              saveDownloads(next).catch(err => addLog("error", `Failed to persist download: ${err?.message}`, undefined, "downloads"));
               return next;
             });
           });
         } else {
           setDownloads(prev => {
             const next = [result, ...prev.filter(d => d.id !== item.episode.id)];
-            saveDownloads(next);
+            saveDownloads(next).catch(err => addLog("error", `Failed to persist download: ${err?.message}`, undefined, "downloads"));
             return next;
           });
         }
@@ -460,7 +460,7 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
 
     setDownloads(prev => {
       const next = prev.filter(d => d.id !== episodeId);
-      saveDownloads(next);
+      saveDownloads(next).catch(err => addLog("error", `Failed to persist download: ${err?.message}`, undefined, "downloads"));
       return next;
     });
   }, []);
@@ -515,7 +515,7 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     const removeIds = new Set(toRemove.map(e => e.id));
     setDownloads(prev => {
       const next = prev.filter(d => !removeIds.has(d.id));
-      saveDownloads(next);
+      saveDownloads(next).catch(err => addLog("error", `Failed to persist download: ${err?.message}`, undefined, "downloads"));
       return next;
     });
   }, []);

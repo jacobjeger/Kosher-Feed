@@ -44,6 +44,7 @@ export function BackgroundSync() {
       const baseUrl = getApiUrl();
       const url = new URL(`/api/subscriptions/${deviceId}/feeds`, baseUrl);
       const res = await fetch(url.toString());
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
     },
     refetchInterval: 15 * 60 * 1000,
@@ -57,6 +58,7 @@ export function BackgroundSync() {
       const baseUrl = getApiUrl();
       const url = new URL("/api/episodes/latest?limit=100", baseUrl);
       const res = await fetch(url.toString());
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
     },
     refetchInterval: 15 * 60 * 1000,
@@ -115,6 +117,7 @@ export function BackgroundSync() {
             const deviceId = await getDeviceId();
             const baseUrl = getApiUrl();
             const favRes = await fetch(new URL(`/api/favorites/${deviceId}`, baseUrl).toString());
+            if (!favRes.ok) throw new Error(`Favorites HTTP ${favRes.status}`);
             const favs: any[] = await favRes.json();
             const favIds = favs.map((f: any) => f.episodeId);
             await cleanupExpiredDownloads(favIds);
