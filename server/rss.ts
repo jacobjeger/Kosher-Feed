@@ -186,11 +186,19 @@ async function fetchViaStreaming(
       const episodes: Omit<Episode, "id" | "createdAt">[] = [];
       let episodeCount = 0;
       let finished = false;
+      // Separate timeout for XML parsing (in case stream hangs during parse)
+      const parseTimeout = setTimeout(() => {
+        if (!finished) {
+          console.warn(`RSS parse timeout for ${rssUrl}`);
+          finishStream();
+        }
+      }, 60000);
 
       function finishStream() {
         if (finished) return;
         finished = true;
         clearTimeout(timeout);
+        clearTimeout(parseTimeout);
         try {
           response.data.destroy();
         } catch {}
@@ -475,7 +483,7 @@ export async function parseFeed(
 }
 
 function stripHtml(html: string): string {
-  return html
+  let text = html
     .replace(/<[^>]*>/g, "")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
@@ -484,6 +492,8 @@ function stripHtml(html: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
     .replace(/&#(\d+);/g, (_m, code) => String.fromCharCode(parseInt(code, 10)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_m, code) => String.fromCharCode(parseInt(code, 16)))
-    .trim();
+    .replace(/&#x([0-9a-fA-F]+);/g, (_m, code) => String.fromCharCode(parseInt(code, 16)));
+  // Second pass: strip any tags that were produced by entity decoding (double-encoded attacks)
+  text = text.replace(/<[^>]*>/g, "");
+  return text.trim();
 }
