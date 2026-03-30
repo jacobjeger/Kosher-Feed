@@ -1,5 +1,4 @@
 import { Platform } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
 let Haptics: typeof import("expo-haptics") | null = null;
 let _hapticEnabled: boolean | null = null;
@@ -19,6 +18,7 @@ async function loadHaptics() {
 async function isHapticEnabled(): Promise<boolean> {
   if (_hapticEnabled !== null) return _hapticEnabled;
   try {
+    const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     const raw = await AsyncStorage.getItem("@kosher_shiurim_settings");
     if (raw) {
       const settings = JSON.parse(raw);
