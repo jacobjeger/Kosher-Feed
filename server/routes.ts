@@ -1141,7 +1141,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (parsed.protocol !== "https:") return res.status(400).json({ error: "Only HTTPS URLs are supported" });
         // Block internal/private IPs
         const host = parsed.hostname.toLowerCase();
-        if (host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host.startsWith("10.") || host.startsWith("192.168.") || host.startsWith("172.") || host.endsWith(".internal")) {
+        if (host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host.startsWith("10.") || host.startsWith("192.168.") || host.startsWith("172.") || host.endsWith(".internal") || host === "[::1]" || host.startsWith("[fe") || host.startsWith("[fc") || host.startsWith("[fd") || host.startsWith("[::") || host.includes("localhost")) {
           return res.status(400).json({ error: "Invalid URL" });
         }
       } catch {
@@ -2414,7 +2414,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           error: syncErr.message?.slice(0, 200),
           timestamp: Date.now(),
         });
-        res.json({ status: "error", error: syncErr.message?.slice(0, 200), durationMs: Date.now() - start });
+        res.status(502).json({ status: "error", error: syncErr.message?.slice(0, 200), durationMs: Date.now() - start });
       }
     } catch (e: any) {
       publicError(res, e);

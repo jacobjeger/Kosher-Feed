@@ -274,6 +274,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   const sleepTimerRef = useRef<SleepTimerState>(sleepTimer);
   const queueRef = useRef<QueueItem[]>(queue);
   const nativePlayerRef = useRef<any>(null);
+  const statusSubRef = useRef<any>(null);
   const preBufferRef = useRef<HTMLAudioElement | null>(null);
   const preBufferEpisodeIdRef = useRef<string | null>(null);
 
@@ -643,6 +644,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
             nativePlayerInstance = null;
             try { oldPlayer.pause(); } catch {}
             try { oldPlayer.clearLockScreenControls(); } catch {}
+            // Remove listener subscription before destroying player
+            if (statusSubRef.current) { try { statusSubRef.current.remove(); } catch {} statusSubRef.current = null; }
             try { oldPlayer.remove(); } catch {}
           }
 
@@ -695,7 +698,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
             }, 500);
           };
 
-          const statusSub = player.addListener("playbackStatusUpdate", (status: any) => {
+          statusSubRef.current = player.addListener("playbackStatusUpdate", (status: any) => {
             if (nativePlayerRef.current !== player) return;
 
             if (status.playing === true) {
