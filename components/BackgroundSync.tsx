@@ -9,6 +9,8 @@ import { getApiUrl } from "@/lib/query-client";
 import {
   initializeSeenEpisodes,
   setupNotificationChannel,
+  checkForNewEpisodes,
+  notifyNewEpisodes,
 } from "@/lib/notifications";
 
 import { cleanupExpiredDownloads } from "@/lib/auto-delete-download";
@@ -92,6 +94,19 @@ export function BackgroundSync() {
             await autoDownloadNewEpisodes(feeds, settings.maxEpisodesPerFeed);
           } catch (e) {
             addLog("error", `BackgroundSync: auto-download failed: ${(e as any)?.message || e}`, (e as any)?.stack, "background-sync");
+          }
+        }
+
+        // Check for new episodes and send local notifications
+        if (hasInitialized.current) {
+          try {
+            const newEpisodes = await checkForNewEpisodes(feeds, episodes);
+            if (newEpisodes.length > 0) {
+              addLog("info", `BackgroundSync: ${newEpisodes.length} new episode(s) detected`, undefined, "background-sync");
+              await notifyNewEpisodes(newEpisodes, feeds);
+            }
+          } catch (e) {
+            addLog("warn", `BackgroundSync: new episode check failed: ${(e as any)?.message || e}`, undefined, "background-sync");
           }
         }
 

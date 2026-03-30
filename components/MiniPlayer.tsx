@@ -140,7 +140,7 @@ const styles = StyleSheet.create({
   container: {
     marginHorizontal: 12,
     marginBottom: 8,
-    borderRadius: 14,
+    borderRadius: 12,
     overflow: "hidden",
     ...Platform.select({
       web: {
@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
     }),
   },
   progressBar: {
-    height: 3,
+    height: 4,
   },
   progressFill: {
     height: "100%" as any,
@@ -178,7 +178,7 @@ const styles = StyleSheet.create({
   content: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 10,
+    padding: 12,
     gap: 10,
   },
   artwork: {
@@ -212,11 +212,11 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.1)",
   },
   skipBtn: {
-    width: 36,
-    height: 36,
+    width: 44,
+    height: 44,
     alignItems: "center" as const,
     justifyContent: "center" as const,
-    borderRadius: 18,
+    borderRadius: 22,
     ...(Platform.OS === "web" ? { cursor: "pointer" as any } : {}),
   },
 });

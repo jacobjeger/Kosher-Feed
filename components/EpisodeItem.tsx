@@ -383,8 +383,8 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
     );
   }
 
-  const queueActionBg = isInQueue ? "#E53935" : "#2979FF";
-  const downloadActionBg = downloaded ? "#43A047" : "#43A047";
+  const queueActionBg = isInQueue ? colors.danger : "#2979FF";
+  const downloadActionBg = downloaded ? colors.success : colors.success;
 
   const rightActionOpacity = translateX.interpolate({
     inputRange: [0, SWIPE_THRESHOLD],
@@ -444,7 +444,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 10,
     gap: 8,
   },
   playBtn: {
@@ -521,8 +521,8 @@ const styles = StyleSheet.create({
     fontWeight: "600" as const,
   },
   actionBtn: {
-    width: 32,
-    height: 32,
+    width: 40,
+    height: 40,
     alignItems: "center" as const,
     justifyContent: "center" as const,
     flexShrink: 0,
@@ -544,7 +544,7 @@ const styles = StyleSheet.create({
   },
   mobileMenu: {
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 10,
     paddingLeft: 54,
     borderTopWidth: 1,
   },

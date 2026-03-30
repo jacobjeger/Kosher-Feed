@@ -231,7 +231,7 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 12,
     justifyContent: "center",
-    gap: 4,
+    gap: 6,
   },
   mediumTitle: {
     fontSize: 14,
