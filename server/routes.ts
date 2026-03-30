@@ -17,13 +17,19 @@ import fs from "node:fs";
 
 const ON_DEMAND_STALE_MS = 5 * 60 * 1000;
 
-// Default logo for Kol Halashon feeds without a speaker image
+// Default logos for platform feeds without artwork
 const KH_DEFAULT_LOGO_PATH = "/api/images/kol-halashon-logo.svg";
+const OU_DEFAULT_LOGO_PATH = "/api/images/ou-torah-logo.svg";
+const OU_LOGO_NETWORKS = new Set(["AllDaf", "AllMishnah", "AllParsha", "AllHalacha", "OU Torah"]);
 
-function addKHDefaultImage(feed: any, baseUrl?: string): any {
-  if (!feed.imageUrl && feed.sourceNetwork === "Kol Halashon") {
-    const prefix = baseUrl || "";
+function addDefaultImage(feed: any, baseUrl?: string): any {
+  if (feed.imageUrl) return feed;
+  const prefix = baseUrl || "";
+  if (feed.sourceNetwork === "Kol Halashon") {
     return { ...feed, imageUrl: prefix + KH_DEFAULT_LOGO_PATH };
+  }
+  if (OU_LOGO_NETWORKS.has(feed.sourceNetwork)) {
+    return { ...feed, imageUrl: prefix + OU_DEFAULT_LOGO_PATH };
   }
   return feed;
 }
@@ -282,7 +288,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const mappings = await storage.getAllFeedCategoryMappings();
       let feedsWithCategories = feedList.map(f => {
         const catIds = mappings.filter(m => m.feedId === f.id).map(m => m.categoryId);
-        return addKHDefaultImage({ ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) }, baseUrl);
+        return addDefaultImage({ ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) }, baseUrl);
       });
 
       // Sort by popularity if requested
@@ -328,7 +334,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const mappings = await storage.getAllFeedCategoryMappings();
       const enriched = results.map(f => {
         const catIds = mappings.filter(m => m.feedId === f.id).map(m => m.categoryId);
-        return addKHDefaultImage({ ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) }, baseUrl);
+        return addDefaultImage({ ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) }, baseUrl);
       });
       res.setHeader("Cache-Control", "public, max-age=30");
       res.json(enriched);
@@ -347,7 +353,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const allFeedsMap = new Map<string, any>();
       for (const f of legacyFeeds) allFeedsMap.set(f.id, f);
       for (const f of junctionFeeds) allFeedsMap.set(f.id, f);
-      res.json(Array.from(allFeedsMap.values()).map(f => addKHDefaultImage(f, baseUrl)));
+      res.json(Array.from(allFeedsMap.values()).map(f => addDefaultImage(f, baseUrl)));
     } catch (e: any) {
       publicError(res, e);
     }
@@ -362,7 +368,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const grouped = await storage.getActiveFeedsGroupedByAuthor();
       const enriched = grouped.map((g: any) => ({
         ...g,
-        feeds: g.feeds.map((f: any) => addKHDefaultImage(f, baseUrl)),
+        feeds: g.feeds.map((f: any) => addDefaultImage(f, baseUrl)),
       }));
       res.setHeader("Cache-Control", "public, max-age=60");
       res.json(enriched);
@@ -385,7 +391,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const baseUrl = `${protocol}://${host}`;
       const mappings = await storage.getAllFeedCategoryMappings();
       const catIds = mappings.filter(m => m.feedId === feed.id).map(m => m.categoryId);
-      res.json(addKHDefaultImage({ ...feed, categoryIds: catIds.length > 0 ? catIds : (feed.categoryId ? [feed.categoryId] : []) }, baseUrl));
+      res.json(addDefaultImage({ ...feed, categoryIds: catIds.length > 0 ? catIds : (feed.categoryId ? [feed.categoryId] : []) }, baseUrl));
     } catch (e: any) {
       publicError(res, e);
     }
@@ -738,7 +744,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const cached = recommendationCache.get(deviceId);
       if (cached && Date.now() - cached.ts < 5 * 60 * 1000) {
         res.setHeader("Cache-Control", "public, max-age=60");
-        return res.json(cached.data.map((f: any) => addKHDefaultImage(f, baseUrl)));
+        return res.json(cached.data.map((f: any) => addDefaultImage(f, baseUrl)));
       }
       const recs = await storage.getRecommendations(deviceId, limit);
       recommendationCache.set(deviceId, { data: recs, ts: Date.now() });
@@ -750,7 +756,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       res.setHeader("Cache-Control", "public, max-age=60");
-      res.json(recs.map((f: any) => addKHDefaultImage(f, baseUrl)));
+      res.json(recs.map((f: any) => addDefaultImage(f, baseUrl)));
     } catch (e: any) {
       publicError(res, e);
     }

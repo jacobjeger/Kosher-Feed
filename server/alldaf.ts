@@ -359,6 +359,10 @@ export async function syncOUPlatformAuthors(platform: OUPlatformKey): Promise<{ 
       const updates: Record<string, any> = {
         sourceNetwork: matchedFeed.sourceNetwork || cfg.label,
       };
+      // Update image if feed doesn't have one and we have an author photo
+      if (!matchedFeed.imageUrl && photoUrl) {
+        updates.imageUrl = photoUrl;
+      }
       // Update bio if we have one and the feed's description is empty/placeholder
       if (bio && bio.length > 10) {
         const curDesc = matchedFeed.description?.trim() || "";
