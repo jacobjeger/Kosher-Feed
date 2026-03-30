@@ -8,7 +8,8 @@ const playedListeners = new Set<PlayedListener>();
 
 export function notifyEpisodePlayed(episodeId: string) {
   AsyncStorage.getItem(PLAYED_KEY).then(data => {
-    const arr: string[] = data ? JSON.parse(data) : [];
+    let arr: string[] = [];
+    try { arr = data ? JSON.parse(data) : []; } catch { arr = []; }
     if (!arr.includes(episodeId)) {
       arr.push(episodeId);
       if (arr.length > 5000) arr.splice(0, arr.length - 5000);

@@ -29,8 +29,10 @@ export async function cleanupExpiredDownloads(favoriteEpisodeIds: string[]): Pro
 
     if (!completedData || !downloadsData) return 0;
 
-    const completed: Record<string, number> = JSON.parse(completedData);
-    const downloads: any[] = JSON.parse(downloadsData);
+    let completed: Record<string, number>;
+    let downloads: any[];
+    try { completed = JSON.parse(completedData); } catch { return 0; }
+    try { downloads = JSON.parse(downloadsData); } catch { return 0; }
     const now = Date.now();
     const favSet = new Set(favoriteEpisodeIds);
     let deletedCount = 0;

@@ -14,7 +14,7 @@ async function syncQueueToServer(queue: QueueItem[]): Promise<void> {
   try {
     const deviceId = await getDeviceId();
     const baseUrl = getApiUrl();
-    await fetch(`${baseUrl}/api/queue/${deviceId}`, {
+    const res = await fetch(`${baseUrl}/api/queue/${deviceId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -25,7 +25,10 @@ async function syncQueueToServer(queue: QueueItem[]): Promise<void> {
         })),
       }),
     });
-  } catch {}
+    if (!res.ok) console.warn(`Queue sync failed: HTTP ${res.status}`);
+  } catch (e) {
+    console.warn("Queue sync error:", e);
+  }
 }
 
 export async function fetchQueueFromServer(): Promise<QueueItem[]> {
