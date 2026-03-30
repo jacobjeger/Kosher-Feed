@@ -8,6 +8,8 @@ import { getDeviceId } from "@/lib/device-id";
 import { getQueue, addToQueue as addToQueueStorage, removeFromQueue as removeFromQueueStorage, clearQueue as clearQueueStorage, initQueueFromServer, type QueueItem } from "@/lib/queue";
 import { addToHistory, updateHistoryPosition } from "@/lib/history";
 import { notifyEpisodePlayed } from "@/contexts/PlayedEpisodesContext";
+import { markDownloadCompleted } from "@/lib/auto-delete-download";
+import { reorderQueue } from "@/lib/queue";
 
 let expoAudioModule: any = null;
 let createAudioPlayerFn: any = null;
@@ -503,9 +505,10 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       AsyncStorage.getItem("@kosher_shiurim_settings").then(data => {
         const s = data ? JSON.parse(data) : {};
         if (s.autoDeleteAfterListen === false) return;
-        const { markDownloadCompleted } = require("@/lib/auto-delete-download");
         markDownloadCompleted(episode.id);
-      }).catch(() => {});
+      }).catch(err => {
+        addLog("warn", `Auto-delete check failed: ${(err as any)?.message || err}`, undefined, "audio");
+      });
     } catch {}
 
     if (sleepTimerRef.current.active && sleepTimerRef.current.mode === "endOfEpisode") {
@@ -513,6 +516,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     } else if (queueRef.current.length > 0) {
       playNextRef.current();
     } else {
+      const finishedEpisodeId = episode.id;
       AsyncStorage.getItem("@kosher_shiurim_settings").then(data => {
         try {
           const settings = data ? JSON.parse(data) : {};
@@ -522,33 +526,35 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
               const baseUrl = getApiUrl();
               fetch(new URL(`/api/feeds/${feedId}/episodes?sort=newest&limit=50`, baseUrl).toString())
                 .then(r => r.json())
-                .then((episodes: any[]) => {
-                  const currentIdx = episodes.findIndex((e: any) => e.id === episode.id);
-                  const nextEp = currentIdx >= 0 && currentIdx < episodes.length - 1 ? episodes[currentIdx + 1] : null;
+                .then((eps: any[]) => {
+                  // Guard: if user switched to a different episode during fetch, bail out
+                  if (currentEpisodeRef.current?.id !== finishedEpisodeId && currentEpisodeRef.current !== null) return;
+                  const currentIdx = eps.findIndex((e: any) => e.id === finishedEpisodeId);
+                  const nextEp = currentIdx >= 0 && currentIdx < eps.length - 1 ? eps[currentIdx + 1] : null;
                   if (nextEp && currentFeedRef.current) {
                     playEpisodeInternalRef.current(nextEp, currentFeedRef.current, false);
                   } else {
-                    setEpisodeCompleted(episode.id);
+                    setEpisodeCompleted(finishedEpisodeId);
                     stopRef.current();
                   }
                 }).catch(() => {
-                  setEpisodeCompleted(episode.id);
+                  setEpisodeCompleted(finishedEpisodeId);
                   stopRef.current();
                 });
             } else {
-              setEpisodeCompleted(episode.id);
+              setEpisodeCompleted(finishedEpisodeId);
               stopRef.current();
             }
           } else {
-            setEpisodeCompleted(episode.id);
+            setEpisodeCompleted(finishedEpisodeId);
             stopRef.current();
           }
         } catch {
-          setEpisodeCompleted(episode.id);
+          setEpisodeCompleted(finishedEpisodeId);
           stopRef.current();
         }
       }).catch(() => {
-        setEpisodeCompleted(episode.id);
+        setEpisodeCompleted(finishedEpisodeId);
         stopRef.current();
       });
     }
@@ -610,7 +616,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           if (savedPos > 0) {
             audio.currentTime = savedPos / 1000;
           }
-          audio.play().catch(console.error);
+          audio.play().catch(err => addLog("error", `Audio play failed: ${(err as any)?.message || err}`, undefined, "audio"));
           setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true, durationMs: (audio.duration || 0) * 1000 }));
           addLog("info", `Playing: ${episode.title} (feed: ${feed.title})`, undefined, "audio");
           startPositionTracking();
@@ -762,8 +768,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       }
 
       getDeviceId().then(deviceId => {
-        apiRequest("POST", "/api/listens", { episodeId: episode.id, deviceId }).catch(() => {});
-      });
+        return apiRequest("POST", "/api/listens", { episodeId: episode.id, deviceId });
+      }).catch(err => addLog("warn", `Failed to record listen: ${(err as any)?.message || err}`, undefined, "audio"));
     } catch (e) {
       addLog("error", `Playback failed: ${episode.title} - ${(e as any)?.message || e}`, (e as any)?.stack, "audio");
       setPlayback(prev => ({ ...prev, isLoading: false }));
@@ -785,9 +791,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     const remaining = currentQueue.slice(1);
     setQueue(remaining);
     clearQueueStorage().then(() => {
-      const { reorderQueue } = require("@/lib/queue");
       reorderQueue(remaining);
-    }).catch(() => {});
+    }).catch(err => addLog("warn", `Queue reorder failed: ${(err as any)?.message || err}`, undefined, "audio"));
 
     const result = await fetchEpisodeAndFeed(nextItem.episodeId, nextItem.feedId);
     if (result) {

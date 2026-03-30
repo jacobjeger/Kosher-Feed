@@ -170,7 +170,16 @@ function requireAdmin(req: Request, res: Response): boolean {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  await storage.resetAllAdmins("akivajeger", "1340ne174TH").catch(() => {});
+  // Seed initial admin from env vars only if no admin exists yet
+  const adminUser = process.env.ADMIN_USERNAME;
+  const adminPass = process.env.ADMIN_PASSWORD;
+  if (adminUser && adminPass) {
+    const exists = await storage.adminExists().catch(() => false);
+    if (!exists) {
+      await storage.resetAllAdmins(adminUser, adminPass).catch(e => console.error("Failed to seed admin:", e));
+      console.log("Initial admin account created from environment variables");
+    }
+  }
 
   app.get("/api/health", (_req: Request, res: Response) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -616,7 +625,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { ids } = req.body;
       if (!Array.isArray(ids) || ids.length === 0) return res.json([]);
-      const eps = await storage.getEpisodesByIds(ids.slice(0, 200));
+      if (ids.length > 200) return res.status(400).json({ error: "Maximum 200 IDs per request" });
+      const eps = await storage.getEpisodesByIds(ids);
       res.json(eps);
     } catch (e: any) {
       res.status(500).json({ error: e.message });

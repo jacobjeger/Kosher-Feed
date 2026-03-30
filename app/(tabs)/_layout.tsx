@@ -53,10 +53,13 @@ function WebNavBar() {
     <View style={[webStyles.navBar, { backgroundColor: isDark ? "#0f172a" : "#ffffff", borderBottomColor: isDark ? "#1e293b" : "#e2e8f0" }]}>
       <View style={webStyles.navInner}>
         <Pressable onPress={() => router.push("/")} style={webStyles.logoArea}>
-          <View style={[webStyles.logoIcon, { backgroundColor: isDark ? colors.accent : "#1a2a3a" }]}>
-            <Ionicons name="radio" size={18} color="#fff" />
+          <View style={[webStyles.logoIcon, { backgroundColor: "#111111" }]}>
+            <Text style={{ fontFamily: "serif", fontWeight: "700", fontSize: 11, lineHeight: 13, color: "#fff", textAlign: "center" }}>Shiur</Text>
+            <Text style={{ fontFamily: "serif", fontWeight: "700", fontSize: 11, lineHeight: 13, color: "#1D4ED8", textAlign: "center" }}>Pod</Text>
           </View>
-          <Text style={[webStyles.logoText, { color: colors.text }]}>ShiurPod</Text>
+          <Text style={[webStyles.logoText, { color: colors.text }]}>
+            <Text>Shiur</Text><Text style={{ color: "#1D4ED8" }}>Pod</Text>
+          </Text>
         </Pressable>
 
         <View style={webStyles.navLinks}>

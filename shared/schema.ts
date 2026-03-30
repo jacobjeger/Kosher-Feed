@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, boolean, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, boolean, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -53,6 +53,7 @@ export const episodes = pgTable("episodes", {
   noDownload: boolean("no_download").default(false),
 }, (table) => [
   uniqueIndex("episodes_guid_feed_idx").on(table.guid, table.feedId),
+  index("episodes_feed_id_idx").on(table.feedId),
 ]);
 
 export const subscriptions = pgTable("subscriptions", {
@@ -62,6 +63,7 @@ export const subscriptions = pgTable("subscriptions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("subscriptions_device_feed_idx").on(table.deviceId, table.feedId),
+  index("subscriptions_feed_id_idx").on(table.feedId),
 ]);
 
 export const episodeListens = pgTable("episode_listens", {

@@ -365,6 +365,18 @@ function configureExpoAndLanding(app: express.Application) {
     res.sendFile(path.resolve(process.cwd(), "server", "templates", "support.html"));
   });
 
+  // Serve favicon from assets
+  app.get("/favicon.ico", (_req: Request, res: Response) => {
+    const faviconPath = path.resolve(process.cwd(), "assets", "images", "favicon.png");
+    if (fs.existsSync(faviconPath)) {
+      res.setHeader("Content-Type", "image/png");
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.sendFile(faviconPath);
+    } else {
+      res.status(204).end();
+    }
+  });
+
   app.use("/assets", (req: Request, res: Response, next: NextFunction) => {
     const localPath = path.resolve(process.cwd(), "assets", req.path);
     if (fs.existsSync(localPath)) {

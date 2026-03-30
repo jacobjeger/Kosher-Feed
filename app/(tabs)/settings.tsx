@@ -629,10 +629,11 @@ function SettingsScreenInner() {
       )}
 
       <View style={styles.footerContainer}>
-        <View style={[styles.footerLogo, { backgroundColor: isDark ? colors.accent : "#1a2a3a" }]}>
-          <Ionicons name="radio" size={18} color="#fff" />
+        <View style={[styles.footerLogo, { backgroundColor: "#111111" }]}>
+          <Text style={{ fontFamily: Platform.OS === "web" ? "serif" : undefined, fontWeight: "700", fontSize: 11, lineHeight: 13, color: "#fff", textAlign: "center" }}>Shiur</Text>
+          <Text style={{ fontFamily: Platform.OS === "web" ? "serif" : undefined, fontWeight: "700", fontSize: 11, lineHeight: 13, color: "#1D4ED8", textAlign: "center" }}>Pod</Text>
         </View>
-        <Text style={[styles.footerBrand, { color: colors.text }]}>ShiurPod</Text>
+        <Text style={[styles.footerBrand, { color: colors.text }]}>Shiur<Text style={{ color: "#1D4ED8" }}>Pod</Text></Text>
         <Text style={[styles.footerTagline, { color: colors.textSecondary }]}>
           A curated listening experience
         </Text>

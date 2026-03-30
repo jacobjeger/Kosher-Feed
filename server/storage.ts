@@ -65,37 +65,38 @@ export async function deleteFeed(id: string): Promise<void> {
 }
 
 export async function mergeFeeds(sourceId: string, targetId: string): Promise<{ episodesMoved: number; subscriptionsMoved: number }> {
-  // Move episodes from source to target (skip duplicates by guid)
+  // Move episodes from source to target (skip duplicates by guid) — batch update
   const sourceEps = await db.select().from(episodes).where(eq(episodes.feedId, sourceId));
   const targetEps = await db.select().from(episodes).where(eq(episodes.feedId, targetId));
   const targetGuids = new Set(targetEps.map(e => e.guid).filter(Boolean));
 
-  let episodesMoved = 0;
-  for (const ep of sourceEps) {
-    if (ep.guid && targetGuids.has(ep.guid)) continue;
-    await db.update(episodes).set({ feedId: targetId }).where(eq(episodes.id, ep.id));
-    episodesMoved++;
+  const idsToMove = sourceEps
+    .filter(ep => !ep.guid || !targetGuids.has(ep.guid))
+    .map(ep => ep.id);
+  if (idsToMove.length > 0) {
+    await db.update(episodes).set({ feedId: targetId }).where(inArray(episodes.id, idsToMove));
   }
+  const episodesMoved = idsToMove.length;
 
-  // Move subscriptions from source to target (skip duplicates by deviceId)
+  // Move subscriptions from source to target (skip duplicates by deviceId) — batch operations
   const sourceSubs = await db.select().from(subscriptions).where(eq(subscriptions.feedId, sourceId));
   const targetSubs = await db.select().from(subscriptions).where(eq(subscriptions.feedId, targetId));
   const targetDevices = new Set(targetSubs.map(s => s.deviceId));
 
-  let subscriptionsMoved = 0;
-  for (const sub of sourceSubs) {
-    if (targetDevices.has(sub.deviceId)) {
-      await db.delete(subscriptions).where(eq(subscriptions.id, sub.id));
-    } else {
-      await db.update(subscriptions).set({ feedId: targetId }).where(eq(subscriptions.id, sub.id));
-      subscriptionsMoved++;
-    }
+  const subsToMove = sourceSubs.filter(s => !targetDevices.has(s.deviceId));
+  const subsToDelete = sourceSubs.filter(s => targetDevices.has(s.deviceId));
+
+  if (subsToMove.length > 0) {
+    await db.update(subscriptions).set({ feedId: targetId }).where(inArray(subscriptions.id, subsToMove.map(s => s.id)));
+  }
+  if (subsToDelete.length > 0) {
+    await db.delete(subscriptions).where(inArray(subscriptions.id, subsToDelete.map(s => s.id)));
   }
 
   // Deactivate the source feed instead of deleting it (preserve for recovery)
   await db.update(feeds).set({ isActive: false, showInBrowse: false }).where(eq(feeds.id, sourceId));
 
-  return { episodesMoved, subscriptionsMoved };
+  return { episodesMoved, subscriptionsMoved: subsToMove.length };
 }
 
 export async function getEpisodeById(episodeId: string): Promise<Episode | undefined> {
