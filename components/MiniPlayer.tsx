@@ -140,9 +140,9 @@ export default function MiniPlayer() {
 
 const styles = StyleSheet.create({
   container: {
-    marginHorizontal: 12,
-    marginBottom: 8,
-    borderRadius: 12,
+    marginHorizontal: 8,
+    marginBottom: 4,
+    borderRadius: 10,
     overflow: "hidden",
     ...Platform.select({
       web: {
@@ -180,13 +180,13 @@ const styles = StyleSheet.create({
   content: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 12,
-    gap: 10,
+    padding: 8,
+    gap: 8,
   },
   artwork: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
+    width: 34,
+    height: 34,
+    borderRadius: 6,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -195,15 +195,15 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   title: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "600",
   },
   subtitle: {
-    fontSize: 12,
+    fontSize: 11,
   },
   playBtn: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
     alignItems: "center",
     justifyContent: "center",
   },
