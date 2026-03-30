@@ -40,7 +40,6 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-      "./plugins/withAndroidAuto",
       [
         "expo-router",
         {
