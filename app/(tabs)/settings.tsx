@@ -11,7 +11,7 @@ import { useDownloads } from "@/contexts/DownloadsContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { requestNotificationPermissions, checkNotificationPermission, setupNotificationChannel, scheduleDailyReminder, cancelDailyReminder } from "@/lib/notifications";
 import { registerPushToken } from "@/lib/push-notifications";
-import { lightHaptic, mediumHaptic } from "@/lib/haptics";
+import { lightHaptic, mediumHaptic, invalidateHapticCache } from "@/lib/haptics";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { getLogsSnapshot } from "@/lib/error-logger";
@@ -437,6 +437,20 @@ function SettingsScreenInner() {
               <Switch
                 value={settings.audioBoostEnabled}
                 onValueChange={handleToggleAudioBoost}
+                trackColor={{ false: colors.border, true: colors.accent }}
+                thumbColor="#fff"
+              />
+            }
+          />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingRow
+            icon={<Ionicons name="phone-portrait-outline" size={20} color={colors.accent} />}
+            label="Haptic Feedback"
+            subtitle="Vibrate on button presses"
+            rightElement={
+              <Switch
+                value={settings.hapticFeedback}
+                onValueChange={(value: boolean) => { updateSettings({ hapticFeedback: value }); invalidateHapticCache(); if (value) mediumHaptic(); }}
                 trackColor={{ false: colors.border, true: colors.accent }}
                 thumbColor="#fff"
               />

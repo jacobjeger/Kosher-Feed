@@ -18,6 +18,7 @@ interface AppSettings {
   dailyReminderEnabled: boolean;
   dailyReminderHour: number;
   autoDeleteAfterListen: boolean;
+  hapticFeedback: boolean;
 }
 
 export interface FeedSettings {
@@ -37,6 +38,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   dailyReminderEnabled: false,
   dailyReminderHour: 8,
   autoDeleteAfterListen: true,
+  hapticFeedback: false,
 };
 
 interface SettingsContextValue {
