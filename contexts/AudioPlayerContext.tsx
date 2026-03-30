@@ -8,8 +8,9 @@ import { getDeviceId } from "@/lib/device-id";
 import { getQueue, addToQueue as addToQueueStorage, removeFromQueue as removeFromQueueStorage, clearQueue as clearQueueStorage, initQueueFromServer, type QueueItem } from "@/lib/queue";
 import { addToHistory, updateHistoryPosition } from "@/lib/history";
 import { notifyEpisodePlayed } from "@/contexts/PlayedEpisodesContext";
-import { markDownloadCompleted } from "@/lib/auto-delete-download";
-import { reorderQueue } from "@/lib/queue";
+// Dynamic imports to avoid circular dependency issues in production builds
+const getAutoDelete = () => require("@/lib/auto-delete-download") as { markDownloadCompleted: (id: string) => void };
+const getQueueUtils = () => require("@/lib/queue") as { reorderQueue: (items: any[]) => void };
 
 let expoAudioModule: any = null;
 let createAudioPlayerFn: any = null;
@@ -505,7 +506,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       AsyncStorage.getItem("@kosher_shiurim_settings").then(data => {
         const s = data ? JSON.parse(data) : {};
         if (s.autoDeleteAfterListen === false) return;
-        markDownloadCompleted(episode.id);
+        getAutoDelete().markDownloadCompleted(episode.id);
       }).catch(err => {
         addLog("warn", `Auto-delete check failed: ${(err as any)?.message || err}`, undefined, "audio");
       });
@@ -794,7 +795,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     const remaining = currentQueue.slice(1);
     setQueue(remaining);
     clearQueueStorage().then(() => {
-      reorderQueue(remaining);
+      getQueueUtils().reorderQueue(remaining);
     }).catch(err => addLog("warn", `Queue reorder failed: ${(err as any)?.message || err}`, undefined, "audio"));
 
     const result = await fetchEpisodeAndFeed(nextItem.episodeId, nextItem.feedId);
