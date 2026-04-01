@@ -550,21 +550,31 @@ function HomeScreenInner() {
 
         <View style={[styles.searchContainer, { backgroundColor: colors.surfaceAlt, borderColor: isSearchFocused ? colors.accent : "transparent" }]}>
           <Ionicons name="search" size={18} color={colors.textSecondary} style={{ marginLeft: 14 }} />
-          <View style={{ flex: 1 }} importantForAccessibility="no-hide-descendants">
+          {isSearchFocused ? (
             <TextInput
-              style={[styles.searchInput, { color: colors.text }]}
+              autoFocus
+              style={[styles.searchInput, { flex: 1, color: colors.text }]}
               placeholder="Search shiurim, speakers, episodes..."
               placeholderTextColor={colors.textSecondary}
               value={searchQuery}
               onChangeText={setSearchQuery}
-              onFocus={() => setIsSearchFocused(true)}
               onBlur={() => setIsSearchFocused(false)}
               returnKeyType="search"
               testID="search-input"
             />
-          </View>
+          ) : (
+            <FocusableView
+              focusRadius={12}
+              onPress={() => setIsSearchFocused(true)}
+              style={[styles.searchInput, { flex: 1, justifyContent: "center" }]}
+            >
+              <Text style={{ color: searchQuery ? colors.text : colors.textSecondary, fontSize: 14 }}>
+                {searchQuery || "Search shiurim, speakers, episodes..."}
+              </Text>
+            </FocusableView>
+          )}
           {searchQuery.length > 0 && (
-            <FocusableView focusRadius={8} onPress={() => setSearchQuery("")} style={styles.searchClear} testID="search-clear">
+            <FocusableView focusRadius={8} onPress={() => { setSearchQuery(""); setIsSearchFocused(false); }} style={styles.searchClear} testID="search-clear">
               <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
             </FocusableView>
           )}

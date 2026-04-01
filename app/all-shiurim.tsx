@@ -48,6 +48,7 @@ export default function AllShiurimScreen() {
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const [search, setSearch] = useState("");
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
 
   useBackHandler(useCallback(() => { safeGoBack(); return true; }, []));
 
@@ -106,17 +107,29 @@ export default function AllShiurimScreen() {
 
       <View style={[styles.searchContainer, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
         <Ionicons name="search" size={18} color={colors.textSecondary} style={{ marginLeft: 14 }} />
-        <View style={{ flex: 1 }} importantForAccessibility="no-hide-descendants">
+        {isSearchFocused ? (
           <TextInput
-            style={[styles.searchInput, { color: colors.text }]}
+            autoFocus
+            style={[styles.searchInput, { flex: 1, color: colors.text }]}
             placeholder="Search shiurim..."
             placeholderTextColor={colors.textSecondary}
             value={search}
             onChangeText={setSearch}
+            onBlur={() => setIsSearchFocused(false)}
             returnKeyType="search"
             autoCorrect={false}
           />
-        </View>
+        ) : (
+          <FocusableView
+            focusRadius={12}
+            onPress={() => setIsSearchFocused(true)}
+            style={[styles.searchInput, { flex: 1, justifyContent: "center" }]}
+          >
+            <Text style={{ color: search ? colors.text : colors.textSecondary, fontSize: 15 }}>
+              {search || "Search shiurim..."}
+            </Text>
+          </FocusableView>
+        )}
         {search.length > 0 && (
           <FocusableView focusRadius={12} onPress={() => setSearch("")} style={styles.searchClear}>
             <Ionicons name="close-circle" size={18} color={colors.textSecondary} />

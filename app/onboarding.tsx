@@ -82,6 +82,7 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
   const [followedIds, setFollowedIds] = useState<Set<string>>(new Set());
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [searchText, setSearchText] = useState("");
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
 
   React.useEffect(() => {
     getDeviceId().then((id) => setDeviceId(id));
@@ -161,17 +162,29 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
       <View style={[styles.searchContainer, { paddingHorizontal: isSmall ? 12 : 16 }]}>
         <View style={[styles.searchBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Ionicons name="search" size={16} color={colors.textSecondary} />
-          <View style={{ flex: 1 }} importantForAccessibility="no-hide-descendants">
+          {isSearchFocused ? (
             <TextInput
-              style={[styles.searchInput, { color: colors.text, fontSize: isSmall ? 13 : 14 }]}
+              autoFocus
+              style={[styles.searchInput, { flex: 1, color: colors.text, fontSize: isSmall ? 13 : 14 }]}
               placeholder="Search shiurim..."
               placeholderTextColor={colors.textSecondary}
               value={searchText}
               onChangeText={setSearchText}
+              onBlur={() => setIsSearchFocused(false)}
               autoCorrect={false}
               autoCapitalize="none"
             />
-          </View>
+          ) : (
+            <FocusableView
+              focusRadius={12}
+              onPress={() => setIsSearchFocused(true)}
+              style={[styles.searchInput, { flex: 1, justifyContent: "center" }]}
+            >
+              <Text style={{ color: searchText ? colors.text : colors.textSecondary, fontSize: isSmall ? 13 : 14 }}>
+                {searchText || "Search shiurim..."}
+              </Text>
+            </FocusableView>
+          )}
           {searchText.length > 0 && (
             <FocusableView focusRadius={8} onPress={() => setSearchText("")} hitSlop={8}>
               <Ionicons name="close-circle" size={16} color={colors.textSecondary} />

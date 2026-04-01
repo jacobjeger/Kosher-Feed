@@ -500,18 +500,28 @@ function PodcastDetailScreenInner() {
 
       <View style={[styles.episodeSearchContainer, { backgroundColor: colors.surfaceAlt, borderColor: isEpisodeSearchFocused ? colors.accent : "transparent" }]}>
         <Ionicons name="search" size={16} color={colors.textSecondary} style={{ marginLeft: 12 }} />
-        <View style={{ flex: 1 }} importantForAccessibility="no-hide-descendants">
+        {isEpisodeSearchFocused ? (
           <TextInput
-            style={[styles.episodeSearchInput, { color: colors.text }]}
+            autoFocus
+            style={[styles.episodeSearchInput, { flex: 1, color: colors.text }]}
             placeholder="Search episodes..."
             placeholderTextColor={colors.textSecondary}
             value={episodeSearch}
             onChangeText={setEpisodeSearch}
-            onFocus={() => setIsEpisodeSearchFocused(true)}
             onBlur={() => setIsEpisodeSearchFocused(false)}
             returnKeyType="search"
           />
-        </View>
+        ) : (
+          <FocusableView
+            focusRadius={12}
+            onPress={() => setIsEpisodeSearchFocused(true)}
+            style={[styles.episodeSearchInput, { flex: 1, justifyContent: "center" }]}
+          >
+            <Text style={{ color: episodeSearch ? colors.text : colors.textSecondary, fontSize: 14 }}>
+              {episodeSearch || "Search episodes..."}
+            </Text>
+          </FocusableView>
+        )}
         {episodeSearch.length > 0 && (
           <FocusableView focusRadius={12} onPress={() => setEpisodeSearch("")} style={styles.episodeSearchClear}>
             <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
