@@ -41,7 +41,8 @@ const SLEEP_OPTIONS = [15, 30, 45, 60, "endOfEpisode" as const, "cancel" as cons
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 const isSmallScreen = SCREEN_HEIGHT < 750;
-const artworkMaxSize = isSmallScreen ? 140 : 220;
+const isTinyScreen = SCREEN_HEIGHT <= 640;
+const artworkMaxSize = isTinyScreen ? 100 : isSmallScreen ? 140 : 220;
 
 export default function PlayerScreen() {
   const insets = useSafeAreaInsets();
@@ -253,8 +254,8 @@ export default function PlayerScreen() {
         <View style={{ width: 28 }} />
       </View>
 
-      <View style={[styles.artworkContainer, isSmallScreen && styles.artworkContainerSmall]}>
-        {currentFeed.imageUrl && (
+      <View style={[styles.artworkContainer, isSmallScreen && styles.artworkContainerSmall, isTinyScreen && { marginVertical: 4 }]}>
+        {currentFeed.imageUrl && !isTinyScreen && (
           <View style={styles.artworkGlow}>
             {Platform.OS === "web" ? (
               <Image
