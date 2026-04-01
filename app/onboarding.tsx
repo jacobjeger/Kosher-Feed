@@ -161,16 +161,17 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
       <View style={[styles.searchContainer, { paddingHorizontal: isSmall ? 12 : 16 }]}>
         <View style={[styles.searchBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Ionicons name="search" size={16} color={colors.textSecondary} />
-          <TextInput
-            focusable={false}
-            style={[styles.searchInput, { color: colors.text, fontSize: isSmall ? 13 : 14 }]}
-            placeholder="Search shiurim..."
-            placeholderTextColor={colors.textSecondary}
-            value={searchText}
-            onChangeText={setSearchText}
-            autoCorrect={false}
-            autoCapitalize="none"
-          />
+          <View style={{ flex: 1 }} importantForAccessibility="no-hide-descendants">
+            <TextInput
+              style={[styles.searchInput, { color: colors.text, fontSize: isSmall ? 13 : 14 }]}
+              placeholder="Search shiurim..."
+              placeholderTextColor={colors.textSecondary}
+              value={searchText}
+              onChangeText={setSearchText}
+              autoCorrect={false}
+              autoCapitalize="none"
+            />
+          </View>
           {searchText.length > 0 && (
             <FocusableView focusRadius={8} onPress={() => setSearchText("")} hitSlop={8}>
               <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
@@ -528,7 +529,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   searchInput: {
-    flex: 1,
     paddingVertical: 0,
   },
   feedList: {

@@ -93,16 +93,17 @@ function AllMaggideiShiurInner() {
 
       <View style={[styles.searchContainer, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
         <Ionicons name="search" size={18} color={colors.textSecondary} style={{ marginLeft: 14 }} />
-        <TextInput
-          focusable={false}
-          style={[styles.searchInput, { color: colors.text }]}
-          placeholder="Search speakers..."
-          placeholderTextColor={colors.textSecondary}
-          value={search}
-          onChangeText={setSearch}
-          returnKeyType="search"
-          autoCorrect={false}
-        />
+        <View style={{ flex: 1 }} importantForAccessibility="no-hide-descendants">
+          <TextInput
+            style={[styles.searchInput, { color: colors.text }]}
+            placeholder="Search speakers..."
+            placeholderTextColor={colors.textSecondary}
+            value={search}
+            onChangeText={setSearch}
+            returnKeyType="search"
+            autoCorrect={false}
+          />
+        </View>
         {search.length > 0 && (
           <FocusableView focusRadius={12} onPress={() => setSearch("")} style={styles.searchClear}>
             <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
@@ -178,7 +179,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   searchInput: {
-    flex: 1,
     fontSize: 15,
     paddingHorizontal: 10,
     paddingVertical: 0,

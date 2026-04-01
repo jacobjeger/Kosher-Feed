@@ -550,18 +550,19 @@ function HomeScreenInner() {
 
         <View style={[styles.searchContainer, { backgroundColor: colors.surfaceAlt, borderColor: isSearchFocused ? colors.accent : "transparent" }]}>
           <Ionicons name="search" size={18} color={colors.textSecondary} style={{ marginLeft: 14 }} />
-          <TextInput
-            focusable={false}
-            style={[styles.searchInput, { color: colors.text }]}
-            placeholder="Search shiurim, speakers, episodes..."
-            placeholderTextColor={colors.textSecondary}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onFocus={() => setIsSearchFocused(true)}
-            onBlur={() => setIsSearchFocused(false)}
-            returnKeyType="search"
-            testID="search-input"
-          />
+          <View style={{ flex: 1 }} importantForAccessibility="no-hide-descendants">
+            <TextInput
+              style={[styles.searchInput, { color: colors.text }]}
+              placeholder="Search shiurim, speakers, episodes..."
+              placeholderTextColor={colors.textSecondary}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              onFocus={() => setIsSearchFocused(true)}
+              onBlur={() => setIsSearchFocused(false)}
+              returnKeyType="search"
+              testID="search-input"
+            />
+          </View>
           {searchQuery.length > 0 && (
             <FocusableView focusRadius={8} onPress={() => setSearchQuery("")} style={styles.searchClear} testID="search-clear">
               <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
@@ -750,7 +751,6 @@ const styles = StyleSheet.create({
     ...(Platform.OS === "web" ? { transition: "border-color 0.2s ease, box-shadow 0.2s ease" as any } : {}),
   },
   searchInput: {
-    flex: 1,
     fontSize: 15,
     paddingHorizontal: 10,
     paddingVertical: 0,
