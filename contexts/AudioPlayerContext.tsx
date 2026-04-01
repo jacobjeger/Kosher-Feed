@@ -354,7 +354,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const positionSaveInterval = setInterval(saveCurrentPosition, 30000);
+    const positionSaveInterval = setInterval(saveCurrentPosition, 60000);
     return () => clearInterval(positionSaveInterval);
   }, [saveCurrentPosition]);
 
@@ -434,7 +434,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           });
         } catch {}
       }
-    }, 500);
+    }, 1000);
   }, [notifyPositionListeners]);
 
   const pause = useCallback(async () => {

@@ -303,12 +303,12 @@ function HomeScreenInner() {
     getInProgressEpisodes().then(setInProgressPositions).catch(() => {});
   }, [getInProgressEpisodes]);
 
-  const categoriesQuery = useQuery<Category[]>({ queryKey: ["/api/categories"] });
+  const categoriesQuery = useQuery<Category[]>({ queryKey: ["/api/categories"], staleTime: 60 * 60 * 1000 });
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
   const latestQuery = useQuery<Episode[]>({ queryKey: ["/api/episodes/latest"] });
-  const trendingQuery = useQuery<TrendingEpisode[]>({ queryKey: ["/api/episodes/trending"] });
-  const featuredQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds/featured"] });
-  const maggidQuery = useQuery<{ author: string; feeds: Feed[] }[]>({ queryKey: ["/api/feeds/maggid-shiur"] });
+  const trendingQuery = useQuery<TrendingEpisode[]>({ queryKey: ["/api/episodes/trending"], staleTime: 15 * 60 * 1000 });
+  const featuredQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds/featured"], staleTime: 30 * 60 * 1000 });
+  const maggidQuery = useQuery<{ author: string; feeds: Feed[] }[]>({ queryKey: ["/api/feeds/maggid-shiur"], staleTime: 30 * 60 * 1000 });
   const recommendationsQuery = useQuery<Feed[]>({
     queryKey: ["/api/recommendations"],
     queryFn: async () => {

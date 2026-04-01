@@ -8,7 +8,7 @@ const apiFetch: typeof globalThis.fetch =
     : require("expo/fetch").fetch;
 
 const PRODUCTION_API_URL = process.env.EXPO_PUBLIC_API_URL || "https://kosher-feed-production.up.railway.app";
-const REQUEST_TIMEOUT_MS = 12000;
+const REQUEST_TIMEOUT_MS = 20000;
 const CACHE_PREFIX = "shiurpod_cache_";
 
 export function getApiUrl(): string {
@@ -44,7 +44,7 @@ async function cacheResponse(key: string, data: unknown): Promise<void> {
   } catch {}
 }
 
-async function getCachedResponse<T>(key: string, maxAgeMs: number = 24 * 60 * 60 * 1000): Promise<T | null> {
+async function getCachedResponse<T>(key: string, maxAgeMs: number = 7 * 24 * 60 * 60 * 1000): Promise<T | null> {
   try {
     const raw = await AsyncStorage.getItem(CACHE_PREFIX + key);
     if (!raw) return null;

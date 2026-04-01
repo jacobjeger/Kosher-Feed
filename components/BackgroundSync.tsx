@@ -47,8 +47,8 @@ export function BackgroundSync() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
     },
-    refetchInterval: 15 * 60 * 1000,
-    staleTime: 10 * 60 * 1000,
+    refetchInterval: 30 * 60 * 1000,
+    staleTime: 20 * 60 * 1000,
     enabled: ready,
   });
 
@@ -61,8 +61,8 @@ export function BackgroundSync() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
     },
-    refetchInterval: 15 * 60 * 1000,
-    staleTime: 10 * 60 * 1000,
+    refetchInterval: 30 * 60 * 1000,
+    staleTime: 20 * 60 * 1000,
     enabled: ready,
   });
 
