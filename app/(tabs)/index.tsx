@@ -564,6 +564,7 @@ function HomeScreenInner() {
             />
           ) : (
             <FocusableView
+              autoFocus
               focusRadius={12}
               onPress={() => setIsSearchFocused(true)}
               style={[styles.searchInput, { flex: 1, justifyContent: "center" }]}

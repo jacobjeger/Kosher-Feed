@@ -73,6 +73,7 @@ function FavoritesScreenInner() {
             Star episodes you love to find them here
           </Text>
           <FocusableView
+            autoFocus
             focusRadius={12}
             onPress={() => router.push("/(tabs)/")}
             style={[styles.emptyBtn, { backgroundColor: colors.accent }]}

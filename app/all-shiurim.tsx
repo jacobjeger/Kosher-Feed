@@ -121,6 +121,7 @@ export default function AllShiurimScreen() {
           />
         ) : (
           <FocusableView
+            autoFocus
             focusRadius={12}
             onPress={() => setIsSearchFocused(true)}
             style={[styles.searchInput, { flex: 1, justifyContent: "center" }]}

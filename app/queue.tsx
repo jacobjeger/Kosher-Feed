@@ -87,7 +87,7 @@ export default function QueueScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + (Platform.OS === "web" ? 12 : 8) }]}>
-        <FocusableView focusRadius={8} onPress={() => safeGoBack()} hitSlop={12}>
+        <FocusableView autoFocus focusRadius={8} onPress={() => safeGoBack()} hitSlop={12}>
           <Ionicons name="chevron-down" size={28} color={colors.text} />
         </FocusableView>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Up Next</Text>

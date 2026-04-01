@@ -31,15 +31,17 @@ interface SettingRowProps {
   subtitle?: string;
   onPress?: () => void;
   rightElement?: React.ReactNode;
+  autoFocus?: boolean;
 }
 
-function SettingRow({ icon, label, value, subtitle, onPress, rightElement }: SettingRowProps) {
+function SettingRow({ icon, label, value, subtitle, onPress, rightElement, autoFocus }: SettingRowProps) {
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
 
   return (
     <FocusableView
+      autoFocus={autoFocus}
       style={({ pressed }) => [
         styles.settingRow,
         { backgroundColor: pressed && onPress ? colors.surfaceAlt : colors.surface },
@@ -348,6 +350,7 @@ function SettingsScreenInner() {
         <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>NOTIFICATIONS</Text>
         <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
           <SettingRow
+            autoFocus
             icon={<Ionicons name="notifications" size={20} color={colors.accent} />}
             label="New Episode Alerts"
             rightElement={

@@ -173,6 +173,7 @@ function DownloadsScreenInner() {
             Download episodes to listen offline. Tap the download icon on any episode.
           </Text>
           <FocusableView
+            autoFocus
             focusRadius={12}
             onPress={() => router.push("/(tabs)/")}
             style={[styles.emptyBtn, { backgroundColor: colors.accent }]}

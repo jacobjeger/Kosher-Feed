@@ -345,6 +345,7 @@ function PodcastDetailScreenInner() {
 
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <FocusableView
+              autoFocus
               focusRadius={20}
               onPress={handleFollow}
               style={[

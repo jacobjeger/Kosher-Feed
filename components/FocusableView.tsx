@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { Pressable, Platform, type ViewStyle, type PressableProps } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import Colors from "@/constants/colors";
@@ -15,6 +15,8 @@ interface FocusableViewProps extends PressableProps {
 /**
  * Drop-in replacement for Pressable that adds D-pad focus support on Android.
  * On iOS/web, behaves identically to Pressable.
+ *
+ * Focus indicator: 2px accent border + subtle background tint for visibility.
  */
 export default function FocusableView({
   focusStyle,
@@ -29,6 +31,7 @@ export default function FocusableView({
   const [isFocused, setIsFocused] = useState(false);
   const colorScheme = useAppColorScheme();
   const colors = Colors[colorScheme];
+  const isDark = colorScheme === "dark";
 
   const handleFocus = useCallback(
     (e: any) => {
@@ -52,16 +55,17 @@ export default function FocusableView({
 
   const isAndroid = Platform.OS === "android";
 
+  // Visible focus: border + background tint (per D-pad UX guide)
   const focusRingStyle: ViewStyle | undefined =
     isAndroid && isFocused
       ? focusStyle ?? {
           borderWidth: 2,
           borderColor: colors.accent,
           borderRadius: focusRadius,
+          backgroundColor: isDark ? "rgba(59,130,246,0.12)" : "rgba(37,99,235,0.08)",
         }
       : undefined;
 
-  // Build props safely — avoid hasTVPreferredFocus on non-TV Android
   const focusProps: any = {};
   if (isAndroid) {
     focusProps.focusable = true;

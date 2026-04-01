@@ -179,6 +179,7 @@ function FollowingScreenInner() {
             Follow shiurim from the Home tab to see their latest episodes here.
           </Text>
           <FocusableView
+            autoFocus
             onPress={() => router.push("/(tabs)/")}
             style={[styles.emptyBtn, { backgroundColor: colors.accent }]}
             focusRadius={12}
