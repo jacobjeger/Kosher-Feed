@@ -551,6 +551,7 @@ function HomeScreenInner() {
         <View style={[styles.searchContainer, { backgroundColor: colors.surfaceAlt, borderColor: isSearchFocused ? colors.accent : "transparent" }]}>
           <Ionicons name="search" size={18} color={colors.textSecondary} style={{ marginLeft: 14 }} />
           <TextInput
+            focusable={false}
             style={[styles.searchInput, { color: colors.text }]}
             placeholder="Search shiurim, speakers, episodes..."
             placeholderTextColor={colors.textSecondary}

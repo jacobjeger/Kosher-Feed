@@ -501,6 +501,7 @@ function PodcastDetailScreenInner() {
       <View style={[styles.episodeSearchContainer, { backgroundColor: colors.surfaceAlt, borderColor: isEpisodeSearchFocused ? colors.accent : "transparent" }]}>
         <Ionicons name="search" size={16} color={colors.textSecondary} style={{ marginLeft: 12 }} />
         <TextInput
+          focusable={false}
           style={[styles.episodeSearchInput, { color: colors.text }]}
           placeholder="Search episodes..."
           placeholderTextColor={colors.textSecondary}

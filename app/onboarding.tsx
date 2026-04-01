@@ -162,6 +162,7 @@ function FollowStep({ onComplete }: { onComplete: () => void }) {
         <View style={[styles.searchBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Ionicons name="search" size={16} color={colors.textSecondary} />
           <TextInput
+            focusable={false}
             style={[styles.searchInput, { color: colors.text, fontSize: isSmall ? 13 : 14 }]}
             placeholder="Search shiurim..."
             placeholderTextColor={colors.textSecondary}

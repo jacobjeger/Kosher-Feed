@@ -84,6 +84,7 @@ function CategoryDetailInner() {
       <View style={[styles.searchContainer, { backgroundColor: colors.surfaceAlt, borderColor: colors.border }]}>
         <Ionicons name="search" size={18} color={colors.textSecondary} style={{ marginLeft: 14 }} />
         <TextInput
+          focusable={false}
           style={[styles.searchInput, { color: colors.text }]}
           placeholder="Search shiurim..."
           placeholderTextColor={colors.textSecondary}
