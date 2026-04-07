@@ -2268,9 +2268,9 @@ async function loadFeedback(page) {
         </div>
         <div style="font-weight:600;font-size:14px;color:#f8fafc;margin-bottom:4px;">${esc(fb.subject)}</div>
         <div style="font-size:13px;color:#94a3b8;margin-bottom:8px;white-space:pre-wrap;max-height:100px;overflow-y:auto;">${esc(fb.message)}</div>
-        ${fb.contactInfo ? `<div style="font-size:12px;color:#3b82f6;margin-bottom:8px;">Contact: ${esc(fb.contactInfo)}</div>` : ''}
+        ${fb.contactInfo ? `<div style="font-size:12px;margin-bottom:8px;"><a href="${fb.contactInfo.includes('@') ? 'mailto:' + esc(fb.contactInfo) + '?subject=Re: ' + encodeURIComponent(fb.subject || 'Your ShiurPod Feedback') : '#'}" style="color:#3b82f6;text-decoration:none;">📧 ${esc(fb.contactInfo)}</a> <button class="btn btn-secondary btn-sm" style="font-size:10px;padding:2px 6px;margin-left:4px;" onclick="replyToFeedback('${escJs(fb.contactInfo)}','${escJs(fb.subject || '')}')">Reply</button></div>` : '<div style="font-size:11px;color:#64748b;margin-bottom:8px;">No contact info provided</div>'}
         ${fb.adminNotes ? `<div style="font-size:12px;color:#a78bfa;margin-bottom:8px;padding:6px 8px;background:#1e1b4b;border-radius:6px;">Admin: ${esc(fb.adminNotes)}</div>` : ''}
-        <div style="font-size:11px;color:#475569;margin-bottom:8px;">Device: ${esc(fb.deviceId || 'Unknown')}</div>
+        <div style="font-size:11px;color:#475569;margin-bottom:8px;display:flex;align-items:center;gap:8px;">Device: ${esc((fb.deviceId || 'Unknown').substring(0,16))}${fb.deviceId ? '<button class="btn btn-secondary btn-sm" style="font-size:10px;padding:2px 6px;" onclick="showDeviceProfile(\'' + fb.deviceId + '\')">View Profile</button>' : ''}</div>
         ${fb.deviceLogs ? `<div style="margin-bottom:8px;">
           <button class="btn btn-secondary btn-sm" onclick="toggleDeviceLogs('${fb.id}')" style="font-size:11px;">View Device Logs</button>
           <div id="logs-${fb.id}" class="hidden" style="margin-top:6px;background:#020617;border:1px solid #1e293b;border-radius:6px;padding:8px;max-height:200px;overflow-y:auto;font-family:monospace;font-size:11px;color:#94a3b8;">
@@ -2312,6 +2312,19 @@ async function updateFeedbackStatus(id, status) {
   } catch(e) {
     showAlert(e.message, 'error');
     if (btn) btn.disabled = false;
+  }
+}
+
+function replyToFeedback(contactInfo, subject) {
+  if (contactInfo.includes('@')) {
+    window.open('mailto:' + contactInfo + '?subject=' + encodeURIComponent('Re: ' + (subject || 'Your ShiurPod Feedback')), '_blank');
+  } else {
+    // Phone number or other contact — copy to clipboard
+    navigator.clipboard.writeText(contactInfo).then(() => {
+      showAlert('Contact info copied: ' + contactInfo, 'success');
+    }).catch(() => {
+      prompt('Contact info:', contactInfo);
+    });
   }
 }
 
@@ -2365,7 +2378,7 @@ async function loadMessages(page) {
           </div>
           <span style="font-size:11px;color:#64748b;">${dateStr}</span>
         </div>
-        ${m.email ? `<div style="font-size:12px;color:#3b82f6;margin-bottom:6px;">${esc(m.email)}</div>` : ''}
+        ${m.email ? `<div style="font-size:12px;margin-bottom:6px;"><a href="mailto:${esc(m.email)}?subject=${encodeURIComponent('Re: Your message to ShiurPod')}" style="color:#3b82f6;text-decoration:none;">📧 ${esc(m.email)}</a> <button class="btn btn-secondary btn-sm" style="font-size:10px;padding:2px 6px;margin-left:4px;" onclick="window.open('mailto:${escJs(m.email)}?subject=${encodeURIComponent('Re: Your message to ShiurPod')}','_blank')">Reply</button></div>` : ''}
         <div style="font-size:13px;color:#94a3b8;white-space:pre-wrap;max-height:150px;overflow-y:auto;margin-bottom:10px;">${esc(m.message)}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           ${m.status === 'new' ? `<button class="btn btn-secondary btn-sm" onclick="updateMessageStatus('${m.id}','read')">Mark Read</button>` : ''}
