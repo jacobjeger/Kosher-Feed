@@ -77,7 +77,7 @@ export default function MessagesScreen() {
       await fetch(`${baseUrl}/api/conversations/${selectedConv}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sender: "user", message: newMessage.trim() }),
+        body: JSON.stringify({ message: newMessage.trim(), deviceId: await getDeviceId() }),
       });
       setNewMessage("");
       queryClient.invalidateQueries({ queryKey: ["/api/conversations/messages", selectedConv] });

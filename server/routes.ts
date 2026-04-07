@@ -1926,6 +1926,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/conversations/:deviceId/:conversationId", async (req: Request, res: Response) => {
     try {
+      // Verify conversation belongs to this device
+      const convs = await storage.getConversationsForDevice(req.params.deviceId);
+      if (!convs.some(c => c.id === req.params.conversationId)) {
+        return res.status(403).json({ error: "Not your conversation" });
+      }
       const msgs = await storage.getConversationMessages(req.params.conversationId);
       await storage.markMessagesRead(req.params.conversationId, "admin");
       res.json(msgs);
@@ -1934,9 +1939,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/conversations/:conversationId/messages", async (req: Request, res: Response) => {
     try {
-      const { sender, message } = req.body;
-      if (!sender || !message) return res.status(400).json({ error: "sender and message required" });
-      const msg = await storage.addMessage(req.params.conversationId, sender, message);
+      const { message, deviceId } = req.body;
+      if (!message || !deviceId) return res.status(400).json({ error: "message and deviceId required" });
+      // Verify conversation belongs to this device
+      const convs = await storage.getConversationsForDevice(deviceId);
+      if (!convs.some(c => c.id === req.params.conversationId)) {
+        return res.status(403).json({ error: "Not your conversation" });
+      }
+      // Force sender to "user" — only admin endpoint can send as admin
+      const msg = await storage.addMessage(req.params.conversationId, "user", message);
       res.json(msg);
     } catch (e: any) { publicError(res, e); }
   });
