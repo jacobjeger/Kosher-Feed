@@ -2365,12 +2365,18 @@ function replyToFeedback(contactInfo, subject) {
 }
 
 function replyViaApp(deviceId, subject) {
-  const title = prompt('Notification title:', 'Re: ' + (subject || 'Your Feedback'));
+  const title = prompt('Message title:', 'Re: ' + (subject || 'Your Feedback'));
   if (!title) return;
-  const body = prompt('Message:');
+  const body = prompt('Message body:');
   if (!body) return;
-  api('/api/admin/send-push', { method: 'POST', body: JSON.stringify({ title, body, deviceId }) })
-    .then(() => showAlert('Push notification sent to device', 'success'))
+
+  // Create a targeted announcement (shows in app message center) + send push notification
+  Promise.all([
+    api('/api/admin/announcements', { method: 'POST', body: JSON.stringify({
+      title, body, targetType: 'device', targetValue: deviceId, frequency: 'once'
+    }) }),
+    api('/api/admin/send-push', { method: 'POST', body: JSON.stringify({ title, body, deviceId }) }).catch(() => null),
+  ]).then(() => showAlert('Reply sent to device (in-app message + push notification)', 'success'))
     .catch(e => showAlert('Failed to send: ' + (e.message || e), 'error'));
 }
 
