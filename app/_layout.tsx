@@ -144,6 +144,9 @@ export default function RootLayout() {
     setupNotificationChannel();
     checkForUpdate();
 
+    // Sync device profile (model, OS, screen size, locale)
+    import("@/lib/device-profile").then(m => m.syncDeviceProfile()).catch(() => {});
+
     // Auto-register push token on startup
     if (Platform.OS !== "web") {
       registerPushToken().catch(() => {});

@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { isApiOnlyUrl } from "./alldaf";
-import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals, queueItems, notificationTaps, feedMergeHistory, appConfig } from "@shared/schema";
-import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor, NotificationPreference, Announcement, AnnouncementDismissal, NotificationTap, AppConfig } from "@shared/schema";
+import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals, queueItems, notificationTaps, feedMergeHistory, appConfig, deviceProfiles } from "@shared/schema";
+import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor, NotificationPreference, Announcement, AnnouncementDismissal, NotificationTap, AppConfig, DeviceProfile } from "@shared/schema";
 import { eq, and, desc, asc, inArray, sql, count, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
@@ -1727,4 +1727,153 @@ export async function setConfig(key: string, value: any, description?: string): 
 
 export async function deleteConfig(key: string): Promise<void> {
   await db.delete(appConfig).where(eq(appConfig.key, key));
+}
+
+// Device Profiles
+export async function upsertDeviceProfile(data: {
+  deviceId: string;
+  platform?: string | null;
+  osVersion?: string | null;
+  deviceModel?: string | null;
+  deviceBrand?: string | null;
+  screenWidth?: number | null;
+  screenHeight?: number | null;
+  appVersion?: string | null;
+  locale?: string | null;
+  timezone?: string | null;
+  country?: string | null;
+  city?: string | null;
+  ipAddress?: string | null;
+}): Promise<DeviceProfile> {
+  const [profile] = await db.insert(deviceProfiles).values({
+    ...data,
+    lastSeenAt: new Date(),
+  }).onConflictDoUpdate({
+    target: deviceProfiles.deviceId,
+    set: {
+      platform: data.platform ?? undefined,
+      osVersion: data.osVersion ?? undefined,
+      deviceModel: data.deviceModel ?? undefined,
+      deviceBrand: data.deviceBrand ?? undefined,
+      screenWidth: data.screenWidth ?? undefined,
+      screenHeight: data.screenHeight ?? undefined,
+      appVersion: data.appVersion ?? undefined,
+      locale: data.locale ?? undefined,
+      timezone: data.timezone ?? undefined,
+      country: data.country ?? undefined,
+      city: data.city ?? undefined,
+      ipAddress: data.ipAddress ?? undefined,
+      lastSeenAt: new Date(),
+    },
+  }).returning();
+  return profile;
+}
+
+export async function getDeviceProfile(deviceId: string): Promise<DeviceProfile | undefined> {
+  const [profile] = await db.select().from(deviceProfiles).where(eq(deviceProfiles.deviceId, deviceId)).limit(1);
+  return profile;
+}
+
+export async function getDeviceUsageStats(deviceId: string): Promise<{
+  totalListens: number;
+  totalListeningMinutes: number;
+  subscribedFeeds: number;
+  totalFavorites: number;
+  daysSinceFirstUse: number;
+  lastListenDate: string | null;
+}> {
+  const [[listens], [listenTime], [subs], [favs], [firstListen]] = await Promise.all([
+    db.select({ count: count() }).from(episodeListens).where(eq(episodeListens.deviceId, deviceId)),
+    db.select({ total: sql<number>`COALESCE(SUM(${episodeListens.durationListenedMs}), 0)` }).from(episodeListens).where(eq(episodeListens.deviceId, deviceId)),
+    db.select({ count: count() }).from(subscriptions).where(eq(subscriptions.deviceId, deviceId)),
+    db.select({ count: count() }).from(favorites).where(eq(favorites.deviceId, deviceId)),
+    db.select({ earliest: sql<Date>`MIN(${episodeListens.listenedAt})`, latest: sql<Date>`MAX(${episodeListens.listenedAt})` }).from(episodeListens).where(eq(episodeListens.deviceId, deviceId)),
+  ]);
+
+  const firstDate = firstListen.earliest;
+  const daysSinceFirst = firstDate ? Math.floor((Date.now() - new Date(firstDate).getTime()) / (24 * 60 * 60 * 1000)) : 0;
+
+  return {
+    totalListens: Number(listens.count),
+    totalListeningMinutes: Math.round(Number(listenTime.total) / 60000),
+    subscribedFeeds: Number(subs.count),
+    totalFavorites: Number(favs.count),
+    daysSinceFirstUse: daysSinceFirst,
+    lastListenDate: firstListen.latest ? new Date(firstListen.latest).toISOString() : null,
+  };
+}
+
+export async function getDeviceAnalytics(): Promise<{
+  totalDevices: number;
+  activeDevices7d: number;
+  activeDevices30d: number;
+  byModel: { model: string; count: number }[];
+  byPlatform: { platform: string; count: number }[];
+  byOsVersion: { osVersion: string; count: number }[];
+  byCountry: { country: string; count: number }[];
+  byAppVersion: { appVersion: string; count: number }[];
+  avgListeningMinutes: number;
+  avgListensPerUser: number;
+  powerUsers: { deviceId: string; model: string | null; totalMinutes: number; listens: number }[];
+  newUsersThisWeek: number;
+  newUsersThisMonth: number;
+}> {
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  const [[total], [active7], [active30], [newWeek], [newMonth]] = await Promise.all([
+    db.select({ count: count() }).from(deviceProfiles),
+    db.select({ count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.lastSeenAt} > ${sevenDaysAgo}`),
+    db.select({ count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.lastSeenAt} > ${thirtyDaysAgo}`),
+    db.select({ count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.createdAt} > ${sevenDaysAgo}`),
+    db.select({ count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.createdAt} > ${thirtyDaysAgo}`),
+  ]);
+
+  const [byModel, byPlatform, byOsVersion, byCountry, byAppVersion] = await Promise.all([
+    db.select({ model: sql<string>`COALESCE(${deviceProfiles.deviceModel}, 'Unknown')`, count: count() }).from(deviceProfiles).groupBy(sql`COALESCE(${deviceProfiles.deviceModel}, 'Unknown')`).orderBy(desc(count())).limit(15),
+    db.select({ platform: sql<string>`COALESCE(${deviceProfiles.platform}, 'Unknown')`, count: count() }).from(deviceProfiles).groupBy(sql`COALESCE(${deviceProfiles.platform}, 'Unknown')`).orderBy(desc(count())),
+    db.select({ osVersion: sql<string>`COALESCE(${deviceProfiles.osVersion}, 'Unknown')`, count: count() }).from(deviceProfiles).groupBy(sql`COALESCE(${deviceProfiles.osVersion}, 'Unknown')`).orderBy(desc(count())).limit(10),
+    db.select({ country: sql<string>`COALESCE(${deviceProfiles.country}, 'Unknown')`, count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.country} IS NOT NULL`).groupBy(sql`COALESCE(${deviceProfiles.country}, 'Unknown')`).orderBy(desc(count())).limit(15),
+    db.select({ appVersion: sql<string>`COALESCE(${deviceProfiles.appVersion}, 'Unknown')`, count: count() }).from(deviceProfiles).groupBy(sql`COALESCE(${deviceProfiles.appVersion}, 'Unknown')`).orderBy(desc(count())).limit(10),
+  ]);
+
+  // Usage averages
+  const [avgStats] = await db.select({
+    avgMinutes: sql<number>`COALESCE(AVG(sub.total_ms) / 60000, 0)`,
+    avgListens: sql<number>`COALESCE(AVG(sub.listen_count), 0)`,
+  }).from(sql`(SELECT ${episodeListens.deviceId}, SUM(${episodeListens.durationListenedMs}) as total_ms, COUNT(*) as listen_count FROM ${episodeListens} GROUP BY ${episodeListens.deviceId}) sub`);
+
+  // Power users
+  const powerUsers = await db.select({
+    deviceId: episodeListens.deviceId,
+    totalMinutes: sql<number>`SUM(${episodeListens.durationListenedMs}) / 60000`,
+    listens: count(),
+  }).from(episodeListens).groupBy(episodeListens.deviceId).orderBy(desc(sql`SUM(${episodeListens.durationListenedMs})`)).limit(20);
+
+  // Join with device profiles for model names
+  const deviceIds = powerUsers.map(p => p.deviceId);
+  const profiles = deviceIds.length > 0 ? await db.select().from(deviceProfiles).where(inArray(deviceProfiles.deviceId, deviceIds)) : [];
+  const profileMap = new Map(profiles.map(p => [p.deviceId, p]));
+
+  return {
+    totalDevices: Number(total.count),
+    activeDevices7d: Number(active7.count),
+    activeDevices30d: Number(active30.count),
+    byModel: byModel.map(m => ({ ...m, count: Number(m.count) })),
+    byPlatform: byPlatform.map(p => ({ ...p, count: Number(p.count) })),
+    byOsVersion: byOsVersion.map(o => ({ ...o, count: Number(o.count) })),
+    byCountry: byCountry.map(c => ({ ...c, count: Number(c.count) })),
+    byAppVersion: byAppVersion.map(a => ({ ...a, count: Number(a.count) })),
+    avgListeningMinutes: Math.round(Number(avgStats.avgMinutes)),
+    avgListensPerUser: Math.round(Number(avgStats.avgListens)),
+    powerUsers: powerUsers.map(p => ({
+      deviceId: p.deviceId,
+      model: profileMap.get(p.deviceId)?.deviceModel || null,
+      totalMinutes: Math.round(Number(p.totalMinutes)),
+      listens: Number(p.listens),
+    })),
+    newUsersThisWeek: Number(newWeek.count),
+    newUsersThisMonth: Number(newMonth.count),
+  };
 }

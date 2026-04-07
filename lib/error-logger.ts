@@ -13,7 +13,27 @@ function getAppVersion(): string | null {
     _metadata = JSON.stringify({
       osVersion: Platform.Version,
       sdkVersion: Constants.expoConfig?.sdkVersion || null,
+      deviceModel: null as string | null,
+      deviceBrand: null as string | null,
+      screenWidth: null as number | null,
+      screenHeight: null as number | null,
     });
+    // Enrich with device info (async, best-effort)
+    try {
+      const { getDeviceInfo } = require("@/lib/device-profile");
+      getDeviceInfo().then((info: any) => {
+        if (_metadata) {
+          const parsed = JSON.parse(_metadata);
+          parsed.deviceModel = info.deviceModel || null;
+          parsed.deviceBrand = info.deviceBrand || null;
+          parsed.screenWidth = info.screenWidth || null;
+          parsed.screenHeight = info.screenHeight || null;
+          parsed.locale = info.locale || null;
+          parsed.timezone = info.timezone || null;
+          _metadata = JSON.stringify(parsed);
+        }
+      }).catch(() => {});
+    } catch {}
   } catch {
     _appVersion = null;
     _metadata = null;

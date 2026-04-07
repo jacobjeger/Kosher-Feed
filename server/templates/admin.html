@@ -264,6 +264,12 @@
           <div id="topDevicesArea" style="max-height:400px;overflow-y:auto;"></div>
         </div>
       </div>
+
+      <div class="card" style="margin-top:16px;">
+        <div class="card-header"><h2>Device Analytics</h2></div>
+        <div id="deviceAnalytics" class="stats" style="margin-bottom:16px;"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;" id="deviceBreakdowns"></div>
+      </div>
     </div>
 
     <div id="feedsTab" class="hidden">
@@ -921,6 +927,7 @@ async function loadAnalytics() {
     // Fire remaining analytics in parallel (non-blocking)
     loadListenerAnalytics();
     loadSourceBreakdown();
+    loadDeviceAnalytics();
   } catch(e) {
     console.error('Analytics error:', e);
   }
@@ -2130,7 +2137,7 @@ async function loadErrorReports(page) {
           </div>
           <div style="font-size:13px;color:#e2e8f0;word-break:break-word;margin-bottom:4px;">${esc(r.message)}</div>
           ${r.stack ? '<details style="margin-top:6px;"><summary style="font-size:11px;color:#64748b;cursor:pointer;">Stack trace</summary><pre style="font-size:11px;color:#94a3b8;margin-top:6px;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow:auto;background:#0a0f1a;padding:8px;border-radius:6px;">' + esc(r.stack) + '</pre></details>' : ''}
-          ${r.deviceId ? '<div style="font-size:11px;color:#475569;margin-top:4px;">Device: ' + esc(r.deviceId.substring(0,12)) + '...</div>' : ''}
+          ${r.deviceId ? '<div style="font-size:11px;color:#475569;margin-top:4px;">Device: ' + esc(r.deviceId.substring(0,12)) + '...<button class="btn btn-secondary btn-sm" style="margin-left:8px;font-size:10px;padding:2px 6px;" onclick="showDeviceProfile(\'' + r.deviceId + '\')">Profile</button></div>' : ''}
         </div>`;
       }).join('');
     }
@@ -2158,6 +2165,36 @@ async function resolveError(id) {
   } catch(e) {
     showAlert(e.message, 'error');
     if (btn) btn.disabled = false;
+  }
+}
+
+async function showDeviceProfile(deviceId) {
+  try {
+    const data = await api('/api/admin/device/' + deviceId);
+    const p = data.profile || {};
+    const u = data.usage || {};
+    const info = [
+      p.deviceModel ? 'Model: ' + p.deviceModel : null,
+      p.deviceBrand ? 'Brand: ' + p.deviceBrand : null,
+      p.platform ? 'Platform: ' + p.platform : null,
+      p.osVersion ? 'OS: ' + p.osVersion : null,
+      p.screenWidth ? 'Screen: ' + p.screenWidth + 'x' + p.screenHeight : null,
+      p.appVersion ? 'App: v' + p.appVersion : null,
+      p.locale ? 'Locale: ' + p.locale : null,
+      p.timezone ? 'TZ: ' + p.timezone : null,
+      p.country ? 'Location: ' + (p.city ? p.city + ', ' : '') + p.country : null,
+      p.lastSeenAt ? 'Last seen: ' + new Date(p.lastSeenAt).toLocaleString() : null,
+      '---',
+      'Total listens: ' + (u.totalListens || 0),
+      'Listening time: ' + (u.totalListeningMinutes || 0) + ' minutes',
+      'Subscribed feeds: ' + (u.subscribedFeeds || 0),
+      'Favorites: ' + (u.totalFavorites || 0),
+      'Days since first use: ' + (u.daysSinceFirstUse || 0),
+      u.lastListenDate ? 'Last listen: ' + new Date(u.lastListenDate).toLocaleString() : null,
+    ].filter(Boolean).join('\n');
+    alert('Device Profile\n\n' + info);
+  } catch(e) {
+    alert('Could not load profile: ' + (e.message || e));
   }
 }
 
@@ -3938,6 +3975,45 @@ async function loadSourceBreakdown() {
     `;
   } catch(e) {
     console.error('Source breakdown error:', e);
+  }
+}
+
+async function loadDeviceAnalytics() {
+  try {
+    const data = await api('/api/admin/analytics/devices');
+    const cards = document.getElementById('deviceAnalytics');
+    cards.innerHTML = `
+      <div class="stat-card"><div class="stat-value">${data.totalDevices}</div><div class="stat-label">Total Devices</div></div>
+      <div class="stat-card"><div class="stat-value">${data.activeDevices7d}</div><div class="stat-label">Active (7d)</div></div>
+      <div class="stat-card"><div class="stat-value">${data.activeDevices30d}</div><div class="stat-label">Active (30d)</div></div>
+      <div class="stat-card"><div class="stat-value">${data.newUsersThisWeek}</div><div class="stat-label">New This Week</div></div>
+      <div class="stat-card"><div class="stat-value">${data.newUsersThisMonth}</div><div class="stat-label">New This Month</div></div>
+      <div class="stat-card"><div class="stat-value">${data.avgListeningMinutes}m</div><div class="stat-label">Avg Listen Time</div></div>
+      <div class="stat-card"><div class="stat-value">${data.avgListensPerUser}</div><div class="stat-label">Avg Listens/User</div></div>
+    `;
+
+    const breakdowns = document.getElementById('deviceBreakdowns');
+    // Helper to render a breakdown table
+    function renderBreakdown(title, items, keyField) {
+      if (!items || items.length === 0) return '<div></div>';
+      return '<div style="background:#0f172a;border-radius:10px;padding:14px;"><div style="font-size:14px;font-weight:600;color:#f8fafc;margin-bottom:10px;">' + esc(title) + '</div>' +
+        items.map(function(item) {
+          return '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;"><span style="color:#94a3b8;">' + esc(String(item[keyField])) + '</span><strong style="color:#e2e8f0;">' + item.count + '</strong></div>';
+        }).join('') + '</div>';
+    }
+
+    breakdowns.innerHTML =
+      renderBreakdown('Device Models', data.byModel, 'model') +
+      renderBreakdown('Platforms', data.byPlatform, 'platform') +
+      renderBreakdown('OS Versions', data.byOsVersion, 'osVersion') +
+      renderBreakdown('Countries', data.byCountry, 'country') +
+      renderBreakdown('App Versions', data.byAppVersion, 'appVersion') +
+      '<div style="background:#0f172a;border-radius:10px;padding:14px;grid-column:1/-1;"><div style="font-size:14px;font-weight:600;color:#f8fafc;margin-bottom:10px;">Power Users (Top 20)</div>' +
+      (data.powerUsers || []).map(function(u) {
+        return '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;"><span style="color:#94a3b8;">' + esc(u.model || u.deviceId.substring(0,12)) + '</span><span style="color:#e2e8f0;">' + u.totalMinutes + ' min · ' + u.listens + ' listens</span></div>';
+      }).join('') + '</div>';
+  } catch(e) {
+    console.error('Device analytics load failed:', e);
   }
 }
 

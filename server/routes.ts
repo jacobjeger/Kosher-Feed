@@ -1840,6 +1840,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Device Profile — client sends on every app launch
+  app.post("/api/device-profile", async (req: Request, res: Response) => {
+    try {
+      const { deviceId, platform, osVersion, deviceModel, deviceBrand, screenWidth, screenHeight, appVersion, locale, timezone } = req.body;
+      if (!deviceId) return res.status(400).json({ error: "deviceId required" });
+
+      // Resolve IP to country/city
+      const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || null;
+      let country: string | null = null;
+      let city: string | null = null;
+
+      // Use ip-api.com free tier for geo lookup (no API key needed, 45 req/min limit)
+      if (clientIp && clientIp !== "127.0.0.1" && clientIp !== "::1") {
+        try {
+          const geoRes = await fetch(`http://ip-api.com/json/${clientIp}?fields=country,city`, { signal: AbortSignal.timeout(3000) });
+          if (geoRes.ok) {
+            const geo = await geoRes.json() as any;
+            country = geo.country || null;
+            city = geo.city || null;
+          }
+        } catch {}
+      }
+
+      await storage.upsertDeviceProfile({
+        deviceId,
+        platform: platform || null,
+        osVersion: osVersion || null,
+        deviceModel: deviceModel || null,
+        deviceBrand: deviceBrand || null,
+        screenWidth: screenWidth || null,
+        screenHeight: screenHeight || null,
+        appVersion: appVersion || null,
+        locale: locale || null,
+        timezone: timezone || null,
+        country,
+        city,
+        ipAddress: clientIp,
+      });
+      res.json({ ok: true });
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
+  // Admin: Device Analytics
+  app.get("/api/admin/analytics/devices", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const data = await storage.getDeviceAnalytics();
+      res.json(data);
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
+  // Admin: Device Usage Stats for a specific device
+  app.get("/api/admin/device/:deviceId", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const [profile, usage] = await Promise.all([
+        storage.getDeviceProfile(req.params.deviceId),
+        storage.getDeviceUsageStats(req.params.deviceId),
+      ]);
+      res.json({ profile: profile || null, usage });
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
   // Admin: Error Health Dashboard
   app.get("/api/admin/error-health", adminAuth as any, async (_req: Request, res: Response) => {
     try {

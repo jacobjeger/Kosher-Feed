@@ -331,3 +331,23 @@ export const appConfig = pgTable("app_config", {
 });
 
 export type AppConfig = typeof appConfig.$inferSelect;
+
+export const deviceProfiles = pgTable("device_profiles", {
+  deviceId: text("device_id").primaryKey(),
+  platform: text("platform"),
+  osVersion: text("os_version"),
+  deviceModel: text("device_model"),
+  deviceBrand: text("device_brand"),
+  screenWidth: integer("screen_width"),
+  screenHeight: integer("screen_height"),
+  appVersion: text("app_version"),
+  locale: text("locale"),
+  timezone: text("timezone"),
+  country: text("country"),
+  city: text("city"),
+  ipAddress: text("ip_address"),
+  lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type DeviceProfile = typeof deviceProfiles.$inferSelect;
