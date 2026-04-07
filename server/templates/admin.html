@@ -2306,8 +2306,7 @@ async function loadFeedback(page) {
         </div>
         <div style="font-weight:600;font-size:14px;color:#f8fafc;margin-bottom:4px;">${esc(fb.subject)}</div>
         <div style="font-size:13px;color:#94a3b8;margin-bottom:8px;white-space:pre-wrap;max-height:100px;overflow-y:auto;">${esc(fb.message)}</div>
-        ${fb.contactInfo ? `<div style="font-size:12px;margin-bottom:8px;"><a href="${fb.contactInfo.includes('@') ? 'mailto:' + esc(fb.contactInfo) + '?subject=Re: ' + encodeURIComponent(fb.subject || 'Your ShiurPod Feedback') : '#'}" style="color:#3b82f6;text-decoration:none;">📧 ${esc(fb.contactInfo)}</a> <button class="btn btn-secondary btn-sm" style="font-size:10px;padding:2px 6px;margin-left:4px;" onclick="replyToFeedback('${escJs(fb.contactInfo)}','${escJs(fb.subject || '')}')">Email</button></div>` : ''}
-        <div style="font-size:11px;margin-bottom:8px;">${fb.deviceId ? '<button class="btn btn-primary btn-sm" style="font-size:11px;" onclick="replyViaApp(\'' + fb.deviceId + '\',\'' + escJs(fb.subject || '') + '\')">Reply via App</button>' : ''}</div>
+        ${fb.contactInfo ? `<div style="font-size:12px;margin-bottom:8px;"><a href="${fb.contactInfo.includes('@') ? 'mailto:' + esc(fb.contactInfo) + '?subject=Re: ' + encodeURIComponent(fb.subject || 'Your ShiurPod Feedback') : '#'}" style="color:#3b82f6;text-decoration:none;">📧 ${esc(fb.contactInfo)}</a></div>` : ''}
         ${fb.adminNotes ? `<div style="font-size:12px;color:#a78bfa;margin-bottom:8px;padding:6px 8px;background:#1e1b4b;border-radius:6px;">Admin: ${esc(fb.adminNotes)}</div>` : ''}
         <div style="font-size:11px;color:#475569;margin-bottom:8px;display:flex;align-items:center;gap:8px;">Device: ${esc((fb.deviceId || 'Unknown').substring(0,16))}${fb.deviceId ? '<button class="btn btn-secondary btn-sm" style="font-size:10px;padding:2px 6px;" onclick="showDeviceProfile(\'' + fb.deviceId + '\')">View Profile</button>' : ''}</div>
         ${fb.deviceLogs ? `<div style="margin-bottom:8px;">
@@ -2354,31 +2353,6 @@ async function updateFeedbackStatus(id, status) {
   }
 }
 
-function replyToFeedback(contactInfo, subject) {
-  if (contactInfo && contactInfo.includes('@')) {
-    window.open('mailto:' + contactInfo + '?subject=' + encodeURIComponent('Re: ' + (subject || 'Your ShiurPod Feedback')), '_blank');
-  } else if (contactInfo) {
-    navigator.clipboard.writeText(contactInfo).then(() => {
-      showAlert('Contact info copied: ' + contactInfo, 'success');
-    }).catch(() => { prompt('Contact info:', contactInfo); });
-  }
-}
-
-function replyViaApp(deviceId, subject) {
-  const title = prompt('Message title:', 'Re: ' + (subject || 'Your Feedback'));
-  if (!title) return;
-  const body = prompt('Message body:');
-  if (!body) return;
-
-  // Create a targeted announcement (shows in app message center) + send push notification
-  Promise.all([
-    api('/api/admin/announcements', { method: 'POST', body: JSON.stringify({
-      title, body, targetType: 'device', targetValue: deviceId, frequency: 'once'
-    }) }),
-    api('/api/admin/send-push', { method: 'POST', body: JSON.stringify({ title, body, deviceId }) }).catch(() => null),
-  ]).then(() => showAlert('Reply sent to device (in-app message + push notification)', 'success'))
-    .catch(e => showAlert('Failed to send: ' + (e.message || e), 'error'));
-}
 
 async function openThread(feedbackId, type, subject, message, deviceId, dateStr) {
   // Check if conversation exists for this feedback, or show original + reply box
@@ -2472,6 +2446,15 @@ async function sendThreadReply(feedbackId, subject, deviceId) {
       method: 'POST',
       body: JSON.stringify({ message })
     });
+
+    // Also send push notification so the user sees it immediately
+    if (deviceId) {
+      api('/api/admin/send-push', { method: 'POST', body: JSON.stringify({
+        title: 'Re: ' + (subject || 'Your Feedback'),
+        body: message.substring(0, 200),
+        deviceId
+      }) }).catch(() => {});
+    }
 
     showAlert('Reply sent!', 'success');
     // Refresh the thread
@@ -4175,6 +4158,7 @@ async function loadDeviceAnalytics() {
       renderBreakdown('Platforms', data.byPlatform, 'platform') +
       renderBreakdown('OS Versions', data.byOsVersion, 'osVersion') +
       renderBreakdown('Countries', data.byCountry, 'country') +
+      renderBreakdown('Cities', data.byCity, 'city') +
       renderBreakdown('App Versions', data.byAppVersion, 'appVersion') +
       '<div style="background:#0f172a;border-radius:10px;padding:14px;grid-column:1/-1;"><div style="font-size:14px;font-weight:600;color:#f8fafc;margin-bottom:10px;">Power Users (Top 20)</div>' +
       (data.powerUsers || []).map(function(u) {

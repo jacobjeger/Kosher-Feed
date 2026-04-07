@@ -87,9 +87,11 @@ function SettingsScreenInner() {
   const [feedbackContact, setFeedbackContact] = useState("");
   const [feedbackSending, setFeedbackSending] = useState(false);
   const [activePicker, setActivePicker] = useState<string | null>(null);
+  const [sponsor, setSponsor] = useState<{ name: string; text?: string; logoUrl?: string; linkUrl?: string } | null>(null);
 
   useEffect(() => {
     getDeviceId().then(setDeviceId);
+    fetch(getApiUrl() + "/api/sponsor").then(r => r.ok ? r.json() : null).then(setSponsor).catch(() => {});
   }, []);
 
   const testConnection = async () => {
@@ -528,13 +530,6 @@ function SettingsScreenInner() {
           />
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <SettingRow
-            icon={<Ionicons name="chatbubbles" size={20} color={colors.accent} />}
-            label="Messages"
-            value="View"
-            onPress={() => router.push('/messages')}
-          />
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <SettingRow
             icon={<Ionicons name="stats-chart" size={20} color={colors.accent} />}
             label="Listening History"
             value="View"
@@ -558,9 +553,16 @@ function SettingsScreenInner() {
             onPress={() => { lightHaptic(); setFeedbackType("technical_issue"); setShowFeedbackModal(true); }}
           />
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingRow
+            icon={<Ionicons name="chatbubbles" size={20} color={colors.accent} />}
+            label="Messages"
+            value="View"
+            onPress={() => router.push('/messages')}
+          />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <View style={styles.settingDescription}>
             <Text style={[styles.descriptionText, { color: colors.textSecondary }]}>
-              Request new shiurim to be added or report any issues you&apos;re experiencing.
+              Request new shiurim, report issues, or view messages from the ShiurPod team.
             </Text>
           </View>
         </View>
@@ -651,6 +653,14 @@ function SettingsScreenInner() {
             </View>
           </View>
         </>
+      )}
+
+      {sponsor && (
+        <View style={{ alignItems: "center", paddingVertical: 16, paddingHorizontal: 32 }}>
+          <Text style={{ color: colors.textTertiary, fontSize: 11, textAlign: "center" }}>
+            {sponsor.text || `Sponsored by ${sponsor.name}`}
+          </Text>
+        </View>
       )}
 
       <View style={styles.footerContainer}>

@@ -1811,6 +1811,7 @@ export async function getDeviceAnalytics(): Promise<{
   byPlatform: { platform: string; count: number }[];
   byOsVersion: { osVersion: string; count: number }[];
   byCountry: { country: string; count: number }[];
+  byCity: { city: string; count: number }[];
   byAppVersion: { appVersion: string; count: number }[];
   avgListeningMinutes: number;
   avgListensPerUser: number;
@@ -1830,11 +1831,12 @@ export async function getDeviceAnalytics(): Promise<{
     db.select({ count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.createdAt} > ${thirtyDaysAgo}`),
   ]);
 
-  const [byModel, byPlatform, byOsVersion, byCountry, byAppVersion] = await Promise.all([
+  const [byModel, byPlatform, byOsVersion, byCountry, byCity, byAppVersion] = await Promise.all([
     db.select({ model: sql<string>`COALESCE(${deviceProfiles.deviceModel}, 'Unknown')`, count: count() }).from(deviceProfiles).groupBy(sql`COALESCE(${deviceProfiles.deviceModel}, 'Unknown')`).orderBy(desc(count())).limit(15),
     db.select({ platform: sql<string>`COALESCE(${deviceProfiles.platform}, 'Unknown')`, count: count() }).from(deviceProfiles).groupBy(sql`COALESCE(${deviceProfiles.platform}, 'Unknown')`).orderBy(desc(count())),
     db.select({ osVersion: sql<string>`COALESCE(${deviceProfiles.osVersion}, 'Unknown')`, count: count() }).from(deviceProfiles).groupBy(sql`COALESCE(${deviceProfiles.osVersion}, 'Unknown')`).orderBy(desc(count())).limit(10),
     db.select({ country: sql<string>`COALESCE(${deviceProfiles.country}, 'Unknown')`, count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.country} IS NOT NULL`).groupBy(sql`COALESCE(${deviceProfiles.country}, 'Unknown')`).orderBy(desc(count())).limit(15),
+    db.select({ city: sql<string>`COALESCE(${deviceProfiles.city}, 'Unknown') || ', ' || COALESCE(${deviceProfiles.country}, '')`, count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.city} IS NOT NULL`).groupBy(sql`COALESCE(${deviceProfiles.city}, 'Unknown') || ', ' || COALESCE(${deviceProfiles.country}, '')`).orderBy(desc(count())).limit(20),
     db.select({ appVersion: sql<string>`COALESCE(${deviceProfiles.appVersion}, 'Unknown')`, count: count() }).from(deviceProfiles).groupBy(sql`COALESCE(${deviceProfiles.appVersion}, 'Unknown')`).orderBy(desc(count())).limit(10),
   ]);
 
@@ -1864,6 +1866,7 @@ export async function getDeviceAnalytics(): Promise<{
     byPlatform: byPlatform.map(p => ({ ...p, count: Number(p.count) })),
     byOsVersion: byOsVersion.map(o => ({ ...o, count: Number(o.count) })),
     byCountry: byCountry.map(c => ({ ...c, count: Number(c.count) })),
+    byCity: byCity.map(c => ({ ...c, count: Number(c.count) })),
     byAppVersion: byAppVersion.map(a => ({ ...a, count: Number(a.count) })),
     avgListeningMinutes: Math.round(Number(avgStats.avgMinutes)),
     avgListensPerUser: Math.round(Number(avgStats.avgListens)),

@@ -67,6 +67,7 @@ function RootLayoutNav({ initialRoute }: { initialRoute: string }) {
       <Stack.Screen name="storage" options={{ headerShown: false }} />
       <Stack.Screen name="debug-logs" options={{ headerShown: false }} />
       <Stack.Screen name="legal" options={{ headerShown: false }} />
+      <Stack.Screen name="messages" options={{ headerShown: false }} />
       <Stack.Screen
         name="podcast/[id]"
         options={{

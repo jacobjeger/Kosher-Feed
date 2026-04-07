@@ -8,6 +8,7 @@ import React, { useState, useEffect } from "react";
 import Colors from "@/constants/colors";
 import MiniPlayer from "@/components/MiniPlayer";
 import { router } from "expo-router";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 
 const DESKTOP_BREAKPOINT = 768;
 
@@ -124,6 +125,8 @@ export default function TabLayout() {
   const isIOS = Platform.OS === "ios";
   const safeAreaInsets = useSafeAreaInsets();
   const isDesktopWeb = useIsDesktopWeb();
+
+  useKeyboardShortcuts();
 
   const showTopNav = isDesktopWeb;
   const showBottomTabs = !isDesktopWeb;

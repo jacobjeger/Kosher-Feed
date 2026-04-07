@@ -23,6 +23,77 @@ import pLimit from "p-limit";
 const app = express();
 const log = console.log;
 
+function escHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function slugify(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function renderSeoPage(opts: { title: string; description: string; canonicalUrl: string; baseUrl: string; heading: string; subheading: string; contentHtml: string; jsonLd: string }): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escHtml(opts.title)}</title>
+  <meta name="description" content="${escHtml(opts.description)}">
+  <link rel="canonical" href="${escHtml(opts.canonicalUrl)}">
+  <meta property="og:title" content="${escHtml(opts.title)}">
+  <meta property="og:description" content="${escHtml(opts.description)}">
+  <meta property="og:url" content="${escHtml(opts.canonicalUrl)}">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="${escHtml(opts.baseUrl)}/assets/images/icon.png">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="${escHtml(opts.title)}">
+  <meta name="twitter:description" content="${escHtml(opts.description)}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <script type="application/ld+json">${opts.jsonLd}</script>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Inter',system-ui,sans-serif;background:#0a0f1a;color:#e2e8f0;min-height:100vh}
+    .nav{position:sticky;top:0;background:rgba(10,15,26,0.95);backdrop-filter:blur(12px);padding:16px 24px;border-bottom:1px solid #1e293b;display:flex;align-items:center;justify-content:space-between;z-index:10}
+    .nav-brand{font-size:20px;font-weight:700;color:#fff;text-decoration:none}
+    .nav-brand span{color:#3b82f6}
+    .nav-cta{background:#3b82f6;color:#fff;padding:8px 20px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px}
+    .nav-cta:hover{background:#2563eb}
+    .hero{text-align:center;padding:64px 24px 48px}
+    .hero h1{font-size:clamp(28px,5vw,44px);font-weight:700;margin-bottom:8px}
+    .hero h1 span{color:#3b82f6}
+    .hero p{color:#94a3b8;font-size:18px}
+    .content{max-width:900px;margin:0 auto;padding:0 24px 64px}
+    .feed-list{list-style:none;display:grid;gap:12px}
+    .feed-card{background:#151c2c;border:1px solid #1e293b;border-radius:12px;padding:20px}
+    .feed-card a{color:#f8fafc;font-size:16px;font-weight:600;text-decoration:none}
+    .feed-card a:hover{color:#3b82f6}
+    .feed-author{display:block;color:#64748b;font-size:13px;margin-top:4px}
+    .feed-card p{color:#94a3b8;font-size:14px;margin-top:8px;line-height:1.5}
+    .footer{text-align:center;padding:32px;border-top:1px solid #1e293b;color:#64748b;font-size:13px}
+    .footer a{color:#3b82f6;text-decoration:none}
+    .breadcrumbs{max-width:900px;margin:0 auto;padding:24px 24px 0;font-size:13px;color:#64748b}
+    .breadcrumbs a{color:#3b82f6;text-decoration:none}
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <a href="${escHtml(opts.baseUrl)}" class="nav-brand">Shiur<span>Pod</span></a>
+    <a href="${escHtml(opts.baseUrl)}" class="nav-cta">Open App</a>
+  </nav>
+  <div class="breadcrumbs"><a href="${escHtml(opts.baseUrl)}">Home</a> &rsaquo; ${escHtml(opts.heading)}</div>
+  <div class="hero">
+    <h1>${escHtml(opts.heading)}</h1>
+    <p>${escHtml(opts.subheading)}</p>
+  </div>
+  <div class="content">${opts.contentHtml}</div>
+  <footer class="footer">
+    <p>&copy; ${new Date().getFullYear()} <a href="${escHtml(opts.baseUrl)}">ShiurPod</a> &middot; <a href="${escHtml(opts.baseUrl)}/privacy">Privacy</a> &middot; <a href="${escHtml(opts.baseUrl)}/terms">Terms</a></p>
+  </footer>
+</body>
+</html>`;
+}
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
@@ -363,6 +434,135 @@ function configureExpoAndLanding(app: express.Application) {
 
   app.get("/support", (_req: Request, res: Response) => {
     res.sendFile(path.resolve(process.cwd(), "server", "templates", "support.html"));
+  });
+
+  // SEO: Category landing pages
+  app.get("/category/:slug", async (req: Request, res: Response) => {
+    try {
+      const cats = await storage.getAllCategories();
+      const cat = cats.find(c => c.slug === req.params.slug);
+      if (!cat) return res.status(404).send("Category not found");
+
+      const allFeeds = await storage.getActiveFeeds();
+      const mappings = await storage.getAllFeedCategoryMappings();
+      const feedIds = new Set(mappings.filter(m => m.categoryId === cat.id).map(m => m.feedId));
+      const feeds = allFeeds.filter(f => feedIds.has(f.id) || f.categoryId === cat.id);
+      const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
+      const host = req.header("x-forwarded-host") || req.get("host");
+      const baseUrl = `${protocol}://${host}`;
+      const canonicalUrl = `${baseUrl}/category/${cat.slug}`;
+
+      const feedListHtml = feeds.map(f =>
+        `<li class="feed-card"><a href="${baseUrl}">${escHtml(f.title)}</a>${f.author ? `<span class="feed-author">by ${escHtml(f.author)}</span>` : ""}${f.description ? `<p>${escHtml(f.description.substring(0, 200))}</p>` : ""}</li>`
+      ).join("");
+
+      const jsonLd = JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "CollectionPage",
+        name: `${cat.name} Torah Shiurim`,
+        description: `Listen to curated ${cat.name} Torah lectures and shiurim on ShiurPod.`,
+        url: canonicalUrl,
+        isPartOf: { "@type": "WebSite", name: "ShiurPod", url: baseUrl },
+        numberOfItems: feeds.length,
+      });
+
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      res.send(renderSeoPage({
+        title: `${cat.name} Torah Shiurim | ShiurPod`,
+        description: `Browse ${feeds.length} curated ${cat.name} Torah shiurim and lectures. Listen online or download for offline learning.`,
+        canonicalUrl,
+        baseUrl,
+        heading: cat.name,
+        subheading: `${feeds.length} shiurim available`,
+        contentHtml: `<ul class="feed-list">${feedListHtml}</ul>`,
+        jsonLd,
+      }));
+    } catch (e: any) {
+      res.status(500).send("Server error");
+    }
+  });
+
+  // SEO: Speaker landing pages
+  app.get("/speaker/:author", async (req: Request, res: Response) => {
+    try {
+      const authorSlug = decodeURIComponent(req.params.author);
+      const allFeeds = await storage.getActiveFeeds();
+      const feeds = allFeeds.filter(f => f.author && slugify(f.author) === authorSlug);
+      if (feeds.length === 0) return res.status(404).send("Speaker not found");
+
+      const authorName = feeds[0].author!;
+      const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
+      const host = req.header("x-forwarded-host") || req.get("host");
+      const baseUrl = `${protocol}://${host}`;
+      const canonicalUrl = `${baseUrl}/speaker/${authorSlug}`;
+
+      const feedListHtml = feeds.map(f =>
+        `<li class="feed-card"><a href="${baseUrl}">${escHtml(f.title)}</a>${f.description ? `<p>${escHtml(f.description.substring(0, 200))}</p>` : ""}</li>`
+      ).join("");
+
+      const jsonLd = JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "ProfilePage",
+        name: `${authorName} - Torah Shiurim`,
+        description: `Listen to Torah lectures by ${authorName} on ShiurPod.`,
+        url: canonicalUrl,
+        mainEntity: {
+          "@type": "Person",
+          name: authorName,
+        },
+      });
+
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      res.send(renderSeoPage({
+        title: `${authorName} - Torah Shiurim | ShiurPod`,
+        description: `Listen to ${feeds.length} Torah shiurim by ${authorName}. Stream online or download for offline learning on ShiurPod.`,
+        canonicalUrl,
+        baseUrl,
+        heading: authorName,
+        subheading: `${feeds.length} shiurim available`,
+        contentHtml: `<ul class="feed-list">${feedListHtml}</ul>`,
+        jsonLd,
+      }));
+    } catch (e: any) {
+      res.status(500).send("Server error");
+    }
+  });
+
+  // SEO: Sitemap
+  app.get("/sitemap.xml", async (_req: Request, res: Response) => {
+    try {
+      const protocol = _req.header("x-forwarded-proto") || _req.protocol || "https";
+      const host = _req.header("x-forwarded-host") || _req.get("host");
+      const baseUrl = `${protocol}://${host}`;
+      const cats = await storage.getAllCategories();
+      const allFeeds = await storage.getActiveFeeds();
+      const authors = [...new Set(allFeeds.filter(f => f.author).map(f => f.author!))];
+
+      let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
+      xml += `  <url><loc>${baseUrl}/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>\n`;
+      for (const cat of cats) {
+        xml += `  <url><loc>${baseUrl}/category/${cat.slug}</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>\n`;
+      }
+      for (const author of authors) {
+        xml += `  <url><loc>${baseUrl}/speaker/${slugify(author)}</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>\n`;
+      }
+      xml += `</urlset>`;
+
+      res.setHeader("Content-Type", "application/xml");
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      res.send(xml);
+    } catch {
+      res.status(500).send("Server error");
+    }
+  });
+
+  // SEO: Robots.txt
+  app.get("/robots.txt", (req: Request, res: Response) => {
+    const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
+    const host = req.header("x-forwarded-host") || req.get("host");
+    res.setHeader("Content-Type", "text/plain");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\n\nSitemap: ${protocol}://${host}/sitemap.xml\n`);
   });
 
   // Serve favicon from assets
