@@ -1907,6 +1907,85 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Conversations — user-facing
+  app.get("/api/conversations/:deviceId", async (req: Request, res: Response) => {
+    try {
+      const convs = await storage.getConversationsForDevice(req.params.deviceId);
+      res.json(convs);
+    } catch (e: any) { publicError(res, e); }
+  });
+
+  app.post("/api/conversations", async (req: Request, res: Response) => {
+    try {
+      const { deviceId, subject, message, feedbackId } = req.body;
+      if (!deviceId || !subject || !message) return res.status(400).json({ error: "deviceId, subject, message required" });
+      const conv = await storage.createConversation(deviceId, subject, message, feedbackId);
+      res.json(conv);
+    } catch (e: any) { publicError(res, e); }
+  });
+
+  app.get("/api/conversations/:deviceId/:conversationId", async (req: Request, res: Response) => {
+    try {
+      const msgs = await storage.getConversationMessages(req.params.conversationId);
+      await storage.markMessagesRead(req.params.conversationId, "admin");
+      res.json(msgs);
+    } catch (e: any) { publicError(res, e); }
+  });
+
+  app.post("/api/conversations/:conversationId/messages", async (req: Request, res: Response) => {
+    try {
+      const { sender, message } = req.body;
+      if (!sender || !message) return res.status(400).json({ error: "sender and message required" });
+      const msg = await storage.addMessage(req.params.conversationId, sender, message);
+      res.json(msg);
+    } catch (e: any) { publicError(res, e); }
+  });
+
+  // Admin: Conversations
+  app.get("/api/admin/conversations", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = Math.min(parseInt(req.query.limit as string) || 30, 100);
+      const status = req.query.status as string || undefined;
+      const data = await storage.getAdminConversations({ page, limit, status });
+      res.json(data);
+    } catch (e: any) { publicError(res, e); }
+  });
+
+  app.get("/api/admin/conversations/:id/messages", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const msgs = await storage.getConversationMessages(req.params.id);
+      await storage.markMessagesRead(req.params.id, "user");
+      res.json(msgs);
+    } catch (e: any) { publicError(res, e); }
+  });
+
+  app.post("/api/admin/conversations/:id/reply", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { message } = req.body;
+      if (!message) return res.status(400).json({ error: "message required" });
+      const msg = await storage.addMessage(req.params.id, "admin", message);
+
+      // Send push notification to alert user
+      try {
+        const allConvs = await storage.getAdminConversations({ page: 1, limit: 1, status: undefined });
+        const conv = allConvs.conversations.find((c: any) => c.id === req.params.id);
+        if (conv?.deviceId) {
+          await sendCustomPush("New reply from ShiurPod", message.substring(0, 100), conv.deviceId);
+        }
+      } catch {}
+
+      res.json(msg);
+    } catch (e: any) { publicError(res, e); }
+  });
+
+  app.put("/api/admin/conversations/:id/close", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      await storage.closeConversation(req.params.id);
+      res.json({ ok: true });
+    } catch (e: any) { publicError(res, e); }
+  });
+
   // Admin: Error Health Dashboard
   app.get("/api/admin/error-health", adminAuth as any, async (_req: Request, res: Response) => {
     try {

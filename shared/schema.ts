@@ -351,3 +351,26 @@ export const deviceProfiles = pgTable("device_profiles", {
 });
 
 export type DeviceProfile = typeof deviceProfiles.$inferSelect;
+
+export const conversations = pgTable("conversations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  deviceId: text("device_id").notNull(),
+  subject: text("subject").notNull(),
+  status: text("status").notNull().default("open"), // "open" | "closed"
+  feedbackId: varchar("feedback_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type Conversation = typeof conversations.$inferSelect;
+
+export const conversationMessages = pgTable("conversation_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  conversationId: varchar("conversation_id").references(() => conversations.id, { onDelete: "cascade" }).notNull(),
+  sender: text("sender").notNull(), // "user" | "admin"
+  message: text("message").notNull(),
+  readAt: timestamp("read_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type ConversationMessage = typeof conversationMessages.$inferSelect;

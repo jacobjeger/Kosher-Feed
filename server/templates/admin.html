@@ -2319,7 +2319,7 @@ async function loadFeedback(page) {
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           <button class="btn btn-secondary btn-sm" onclick="updateFeedbackStatus('${fb.id}','reviewed')">Mark Reviewed</button>
           <button class="btn btn-success btn-sm" onclick="updateFeedbackStatus('${fb.id}','resolved')">Resolve</button>
-          <button class="btn btn-primary btn-sm" onclick="addFeedbackNote('${fb.id}')">Add Note</button>
+          <button class="btn btn-primary btn-sm" onclick="openThread('${fb.id}','${escJs(fb.type || '')}','${escJs(fb.subject || '')}','${escJs(fb.message || '')}','${escJs(fb.deviceId || '')}','${dateStr}')">Reply / View Thread</button>
           <button class="btn btn-danger btn-sm" onclick="deleteFeedback('${fb.id}')">Delete</button>
         </div>
       </div>`;
@@ -2378,6 +2378,109 @@ function replyViaApp(deviceId, subject) {
     api('/api/admin/send-push', { method: 'POST', body: JSON.stringify({ title, body, deviceId }) }).catch(() => null),
   ]).then(() => showAlert('Reply sent to device (in-app message + push notification)', 'success'))
     .catch(e => showAlert('Failed to send: ' + (e.message || e), 'error'));
+}
+
+async function openThread(feedbackId, type, subject, message, deviceId, dateStr) {
+  // Check if conversation exists for this feedback, or show original + reply box
+  let convId = null;
+  let replies = [];
+  try {
+    const convs = await api('/api/admin/conversations');
+    const existing = convs.conversations.find(c => c.feedbackId === feedbackId);
+    if (existing) {
+      convId = existing.id;
+      replies = await api('/api/admin/conversations/' + convId + '/messages');
+    }
+  } catch {}
+
+  const typeLabel = type === 'shiur_request' ? 'Shiur Request' : 'Technical Issue';
+
+  let threadHtml = `
+    <h2 style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
+      Conversation Thread
+    </h2>
+    <div style="max-height:400px;overflow-y:auto;margin-bottom:16px;" id="threadMessages">
+      <div style="background:#0f172a;border-radius:10px;padding:14px;margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span style="color:#3b82f6;font-size:12px;font-weight:600;">${esc(typeLabel)}</span>
+          <span style="color:#64748b;font-size:11px;">${esc(dateStr)}</span>
+        </div>
+        <div style="font-weight:600;font-size:14px;color:#f8fafc;margin-bottom:4px;">${esc(subject)}</div>
+        <div style="font-size:13px;color:#94a3b8;">${esc(message)}</div>
+        <div style="font-size:10px;color:#475569;margin-top:6px;">Device: ${esc(deviceId)}</div>
+      </div>`;
+
+  if (replies.length > 0) {
+    for (const r of replies) {
+      if (r.sender === 'user' && r.message === message) continue; // skip original
+      const isAdmin = r.sender === 'admin';
+      const time = new Date(r.createdAt).toLocaleString();
+      threadHtml += `
+        <div style="background:${isAdmin ? '#1e3a5f' : '#0f172a'};border-radius:10px;padding:12px;margin-bottom:6px;${isAdmin ? 'margin-left:24px;border-left:3px solid #3b82f6;' : 'margin-right:24px;'}">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+            <span style="font-size:11px;font-weight:600;color:${isAdmin ? '#60a5fa' : '#94a3b8'};">${isAdmin ? 'Admin' : 'User'}</span>
+            <span style="font-size:10px;color:#64748b;">${time}</span>
+          </div>
+          <div style="font-size:13px;color:#e2e8f0;">${esc(r.message)}</div>
+        </div>`;
+    }
+  } else {
+    threadHtml += '<div style="text-align:center;padding:20px;color:#64748b;font-size:13px;">No replies yet. Send the first reply below.</div>';
+  }
+
+  threadHtml += `
+    </div>
+    <div style="display:flex;gap:8px;">
+      <textarea id="threadReplyInput" rows="3" placeholder="Type your reply..." style="flex:1;resize:vertical;min-height:60px;"></textarea>
+      <button class="btn btn-primary" style="align-self:flex-end;padding:10px 20px;" onclick="sendThreadReply('${feedbackId}','${escJs(subject)}','${escJs(deviceId)}')">Send</button>
+    </div>
+  `;
+
+  document.getElementById('modalContent').innerHTML = threadHtml;
+  document.getElementById('modalOverlay').classList.remove('hidden');
+  document.getElementById('threadReplyInput').focus();
+}
+
+async function sendThreadReply(feedbackId, subject, deviceId) {
+  const input = document.getElementById('threadReplyInput');
+  const message = input.value.trim();
+  if (!message) return;
+
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+
+  try {
+    // Find or create conversation for this feedback
+    let convId = null;
+    const convs = await api('/api/admin/conversations');
+    const existing = convs.conversations.find(c => c.feedbackId === feedbackId);
+
+    if (existing) {
+      convId = existing.id;
+    } else {
+      // Create conversation
+      const newConv = await api('/api/conversations', {
+        method: 'POST',
+        body: JSON.stringify({ deviceId, subject: subject || 'Feedback', message: 'User submitted feedback', feedbackId })
+      });
+      convId = newConv.id;
+    }
+
+    // Send admin reply
+    await api('/api/admin/conversations/' + convId + '/reply', {
+      method: 'POST',
+      body: JSON.stringify({ message })
+    });
+
+    showAlert('Reply sent!', 'success');
+    // Refresh the thread
+    openThread(feedbackId, '', subject, '', deviceId, '');
+  } catch (e) {
+    showAlert('Failed to send: ' + (e.message || e), 'error');
+    btn.disabled = false;
+    btn.textContent = 'Send';
+  }
 }
 
 async function addFeedbackNote(id) {

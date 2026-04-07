@@ -528,6 +528,13 @@ function SettingsScreenInner() {
           />
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <SettingRow
+            icon={<Ionicons name="chatbubbles" size={20} color={colors.accent} />}
+            label="Messages"
+            value="View"
+            onPress={() => router.push('/messages')}
+          />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingRow
             icon={<Ionicons name="stats-chart" size={20} color={colors.accent} />}
             label="Listening History"
             value="View"

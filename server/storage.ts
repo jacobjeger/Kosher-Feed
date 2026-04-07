@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { isApiOnlyUrl } from "./alldaf";
-import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals, queueItems, notificationTaps, feedMergeHistory, appConfig, deviceProfiles } from "@shared/schema";
-import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor, NotificationPreference, Announcement, AnnouncementDismissal, NotificationTap, AppConfig, DeviceProfile } from "@shared/schema";
+import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals, queueItems, notificationTaps, feedMergeHistory, appConfig, deviceProfiles, conversations, conversationMessages } from "@shared/schema";
+import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor, NotificationPreference, Announcement, AnnouncementDismissal, NotificationTap, AppConfig, DeviceProfile, Conversation, ConversationMessage } from "@shared/schema";
 import { eq, and, desc, asc, inArray, sql, count, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
@@ -1876,4 +1876,59 @@ export async function getDeviceAnalytics(): Promise<{
     newUsersThisWeek: Number(newWeek.count),
     newUsersThisMonth: Number(newMonth.count),
   };
+}
+
+// Conversations & Messages
+export async function createConversation(deviceId: string, subject: string, firstMessage: string, feedbackId?: string): Promise<Conversation> {
+  const [conv] = await db.insert(conversations).values({ deviceId, subject, feedbackId: feedbackId || null }).returning();
+  await db.insert(conversationMessages).values({ conversationId: conv.id, sender: "user", message: firstMessage });
+  return conv;
+}
+
+export async function addMessage(conversationId: string, sender: "user" | "admin", message: string): Promise<ConversationMessage> {
+  const [msg] = await db.insert(conversationMessages).values({ conversationId, sender, message }).returning();
+  await db.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, conversationId));
+  return msg;
+}
+
+export async function getConversationsForDevice(deviceId: string): Promise<(Conversation & { lastMessage?: string; unreadCount: number })[]> {
+  const convs = await db.select().from(conversations).where(eq(conversations.deviceId, deviceId)).orderBy(desc(conversations.updatedAt));
+  const result = [];
+  for (const c of convs) {
+    const msgs = await db.select().from(conversationMessages).where(eq(conversationMessages.conversationId, c.id)).orderBy(desc(conversationMessages.createdAt)).limit(1);
+    const [unread] = await db.select({ count: count() }).from(conversationMessages).where(and(eq(conversationMessages.conversationId, c.id), eq(conversationMessages.sender, "admin"), sql`${conversationMessages.readAt} IS NULL`));
+    result.push({ ...c, lastMessage: msgs[0]?.message, unreadCount: Number(unread.count) });
+  }
+  return result;
+}
+
+export async function getConversationMessages(conversationId: string): Promise<ConversationMessage[]> {
+  return db.select().from(conversationMessages).where(eq(conversationMessages.conversationId, conversationId)).orderBy(asc(conversationMessages.createdAt));
+}
+
+export async function markMessagesRead(conversationId: string, sender: "user" | "admin"): Promise<void> {
+  await db.update(conversationMessages).set({ readAt: new Date() }).where(and(eq(conversationMessages.conversationId, conversationId), eq(conversationMessages.sender, sender), sql`${conversationMessages.readAt} IS NULL`));
+}
+
+export async function getAdminConversations(opts: { page: number; limit: number; status?: string }): Promise<{ conversations: any[]; total: number; page: number; totalPages: number }> {
+  const conditions = [];
+  if (opts.status) conditions.push(eq(conversations.status, opts.status));
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const [{ total }] = await db.select({ total: count() }).from(conversations).where(where);
+  const convs = await db.select().from(conversations).where(where).orderBy(desc(conversations.updatedAt)).limit(opts.limit).offset((opts.page - 1) * opts.limit);
+
+  const result = [];
+  for (const c of convs) {
+    const msgs = await db.select().from(conversationMessages).where(eq(conversationMessages.conversationId, c.id)).orderBy(desc(conversationMessages.createdAt)).limit(1);
+    const [unread] = await db.select({ count: count() }).from(conversationMessages).where(and(eq(conversationMessages.conversationId, c.id), eq(conversationMessages.sender, "user"), sql`${conversationMessages.readAt} IS NULL`));
+    const profile = await getDeviceProfile(c.deviceId);
+    result.push({ ...c, lastMessage: msgs[0]?.message, lastSender: msgs[0]?.sender, unreadCount: Number(unread.count), deviceModel: profile?.deviceModel, deviceBrand: profile?.deviceBrand });
+  }
+
+  return { conversations: result, total: Number(total), page: opts.page, totalPages: Math.ceil(Number(total) / opts.limit) };
+}
+
+export async function closeConversation(id: string): Promise<void> {
+  await db.update(conversations).set({ status: "closed" }).where(eq(conversations.id, id));
 }
