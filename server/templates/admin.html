@@ -2173,28 +2173,66 @@ async function showDeviceProfile(deviceId) {
     const data = await api('/api/admin/device/' + deviceId);
     const p = data.profile || {};
     const u = data.usage || {};
-    const info = [
-      p.deviceModel ? 'Model: ' + p.deviceModel : null,
-      p.deviceBrand ? 'Brand: ' + p.deviceBrand : null,
-      p.platform ? 'Platform: ' + p.platform : null,
-      p.osVersion ? 'OS: ' + p.osVersion : null,
-      p.screenWidth ? 'Screen: ' + p.screenWidth + 'x' + p.screenHeight : null,
-      p.appVersion ? 'App: v' + p.appVersion : null,
-      p.locale ? 'Locale: ' + p.locale : null,
-      p.timezone ? 'TZ: ' + p.timezone : null,
-      p.country ? 'Location: ' + (p.city ? p.city + ', ' : '') + p.country : null,
-      p.lastSeenAt ? 'Last seen: ' + new Date(p.lastSeenAt).toLocaleString() : null,
-      '---',
-      'Total listens: ' + (u.totalListens || 0),
-      'Listening time: ' + (u.totalListeningMinutes || 0) + ' minutes',
-      'Subscribed feeds: ' + (u.subscribedFeeds || 0),
-      'Favorites: ' + (u.totalFavorites || 0),
-      'Days since first use: ' + (u.daysSinceFirstUse || 0),
-      u.lastListenDate ? 'Last listen: ' + new Date(u.lastListenDate).toLocaleString() : null,
-    ].filter(Boolean).join('\n');
-    alert('Device Profile\n\n' + info);
+
+    function row(label, value) { return value ? '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1e293b;"><span style="color:#94a3b8;font-size:13px;">' + esc(label) + '</span><span style="color:#e2e8f0;font-size:13px;font-weight:600;">' + esc(String(value)) + '</span></div>' : ''; }
+
+    document.getElementById('modalContent').innerHTML = `
+      <h2 style="margin-bottom:16px;">Device Profile</h2>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div>
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#64748b;margin-bottom:8px;font-weight:600;">Device</div>
+          ${row('Model', p.deviceModel)}
+          ${row('Brand', p.deviceBrand)}
+          ${row('Platform', p.platform)}
+          ${row('OS Version', p.osVersion)}
+          ${row('Screen', p.screenWidth ? p.screenWidth + ' × ' + p.screenHeight : null)}
+          ${row('App Version', p.appVersion ? 'v' + p.appVersion : null)}
+        </div>
+        <div>
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#64748b;margin-bottom:8px;font-weight:600;">Location & Locale</div>
+          ${row('Location', p.country ? (p.city ? p.city + ', ' : '') + p.country : null)}
+          ${row('Timezone', p.timezone)}
+          ${row('Locale', p.locale)}
+          ${row('Last Seen', p.lastSeenAt ? new Date(p.lastSeenAt).toLocaleString() : null)}
+          ${row('First Seen', p.createdAt ? new Date(p.createdAt).toLocaleString() : null)}
+        </div>
+      </div>
+      <div style="margin-top:16px;">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#64748b;margin-bottom:8px;font-weight:600;">Usage</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+          <div style="background:#0f172a;border-radius:8px;padding:12px;text-align:center;">
+            <div style="font-size:22px;font-weight:700;color:#f8fafc;">${u.totalListens || 0}</div>
+            <div style="font-size:11px;color:#64748b;">Listens</div>
+          </div>
+          <div style="background:#0f172a;border-radius:8px;padding:12px;text-align:center;">
+            <div style="font-size:22px;font-weight:700;color:#f8fafc;">${u.totalListeningMinutes || 0}</div>
+            <div style="font-size:11px;color:#64748b;">Minutes</div>
+          </div>
+          <div style="background:#0f172a;border-radius:8px;padding:12px;text-align:center;">
+            <div style="font-size:22px;font-weight:700;color:#f8fafc;">${u.subscribedFeeds || 0}</div>
+            <div style="font-size:11px;color:#64748b;">Feeds</div>
+          </div>
+          <div style="background:#0f172a;border-radius:8px;padding:12px;text-align:center;">
+            <div style="font-size:22px;font-weight:700;color:#f8fafc;">${u.totalFavorites || 0}</div>
+            <div style="font-size:11px;color:#64748b;">Favorites</div>
+          </div>
+          <div style="background:#0f172a;border-radius:8px;padding:12px;text-align:center;">
+            <div style="font-size:22px;font-weight:700;color:#f8fafc;">${u.daysSinceFirstUse || 0}</div>
+            <div style="font-size:11px;color:#64748b;">Days Active</div>
+          </div>
+          <div style="background:#0f172a;border-radius:8px;padding:12px;text-align:center;">
+            <div style="font-size:22px;font-weight:700;color:#f8fafc;">${u.lastListenDate ? new Date(u.lastListenDate).toLocaleDateString() : '—'}</div>
+            <div style="font-size:11px;color:#64748b;">Last Listen</div>
+          </div>
+        </div>
+      </div>
+      <div style="text-align:right;margin-top:16px;">
+        <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+      </div>
+    `;
+    document.getElementById('modalOverlay').classList.remove('hidden');
   } catch(e) {
-    alert('Could not load profile: ' + (e.message || e));
+    showAlert('Could not load profile: ' + (e.message || e), 'error');
   }
 }
 
