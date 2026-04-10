@@ -739,7 +739,7 @@ function SettingsScreenInner() {
                 <Text style={[feedbackStyles.label, { color: colors.textSecondary }]}>Contact Info (optional)</Text>
                 <TextInput
                   style={[feedbackStyles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
-                  placeholder="Email or phone if you'd like a response"
+                  placeholder="Email or phone (optional — we'll reply in Messages)"
                   placeholderTextColor={colors.textSecondary}
                   value={feedbackContact}
                   onChangeText={setFeedbackContact}
