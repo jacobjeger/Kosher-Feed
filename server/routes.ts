@@ -849,6 +849,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { deviceId, feedId } = req.body;
       if (!deviceId || !feedId) return res.status(400).json({ error: "deviceId and feedId required" });
       const sub = await storage.addSubscription(deviceId, feedId);
+
+      // Auto-activate inactive feeds when a user subscribes, so they enter the refresh cycle
+      try {
+        const feed = await storage.getFeed(feedId);
+        if (feed && !feed.isActive) {
+          await storage.updateFeed(feedId, { isActive: true });
+        }
+      } catch {}
+
       res.json(sub || { ok: true });
     } catch (e: any) {
       publicError(res, e);
@@ -2502,6 +2511,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!feed || !feed.rssUrl) {
         res.status(404).json({ error: "Feed not found" });
         return;
+      }
+
+      // Auto-activate feed when admin force-syncs it
+      if (!feed.isActive) {
+        await storage.updateFeed(feedId, { isActive: true });
       }
 
       const start = Date.now();
