@@ -11,6 +11,7 @@ import { eq, desc } from "drizzle-orm";
 import { syncTATSpeakers, refreshTATFeedEpisodes, fetchAllSpeakers } from "./torahanytime";
 import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, OU_PLATFORMS, type OUPlatformKey } from "./alldaf";
 import { syncKHSpeakers, refreshKHFeedEpisodes, reloadKHClient, getHeaders as getKHHeaders } from "./kolhalashon";
+import { extractKhRavId, extractTatSpeakerId } from "./feed-utils";
 import multer from "multer";
 import path from "node:path";
 import fs from "node:fs";
@@ -81,7 +82,7 @@ async function onDemandRefreshFeed(feedId: string): Promise<void> {
 
     // TAT feed: refresh from TorahAnytime API
     const isOnDemandTatUrl = feed.rssUrl.startsWith("tat://");
-    const onDemandTatId = feed.tatSpeakerId ?? (isOnDemandTatUrl ? parseInt(feed.rssUrl.replace("tat://speaker/", ""), 10) || null : null);
+    const onDemandTatId = extractTatSpeakerId(feed);
     if (onDemandTatId) {
       await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: onDemandTatId });
       // Also refresh RSS if this is a merged feed (has real RSS URL)
@@ -112,7 +113,7 @@ async function onDemandRefreshFeed(feedId: string): Promise<void> {
 
     // Kol Halashon feed
     const isKhUrl = feed.rssUrl.startsWith("kh://");
-    const onDemandKhId = (feed as any).kolhalashonRavId ?? (isKhUrl ? parseInt(feed.rssUrl.replace("kh://rav/", ""), 10) || null : null);
+    const onDemandKhId = extractKhRavId(feed as any);
     if (onDemandKhId) {
       await refreshKHFeedEpisodes({ id: feed.id, title: feed.title, kolhalashonRavId: onDemandKhId }, feed);
       if (!isKhUrl) {
@@ -527,7 +528,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // TAT refresh
       const isTatFeedUrl = feed.rssUrl.startsWith("tat://");
-      const effectiveSpeakerId = feed.tatSpeakerId ?? (isTatFeedUrl ? parseInt(feed.rssUrl.replace("tat://speaker/", ""), 10) || null : null);
+      const effectiveSpeakerId = extractTatSpeakerId(feed);
       if (effectiveSpeakerId) {
         const tatResult = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveSpeakerId });
         totalNew += tatResult.newEpisodes;
@@ -542,7 +543,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // KH refresh
       const isKhFeedUrl = feed.rssUrl.startsWith("kh://");
-      const effectiveKhId = (feed as any).kolhalashonRavId ?? (isKhFeedUrl ? parseInt(feed.rssUrl.replace("kh://rav/", ""), 10) || null : null);
+      const effectiveKhId = extractKhRavId(feed as any);
       if (effectiveKhId) {
         const khResult = await refreshKHFeedEpisodes({ id: feed.id, title: feed.title, kolhalashonRavId: effectiveKhId }, feed);
         totalNew += khResult.newEpisodes;
@@ -587,7 +588,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           // TAT feed refresh
           const isTatUrl = feed.rssUrl.startsWith("tat://");
-          const effectiveTatId = feed.tatSpeakerId ?? (isTatUrl ? parseInt(feed.rssUrl.replace("tat://speaker/", ""), 10) || null : null);
+          const effectiveTatId = extractTatSpeakerId(feed);
           if (effectiveTatId) {
             const tatResult = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveTatId });
             totalNew += tatResult.newEpisodes;
@@ -600,7 +601,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           // KH feed refresh
           const isKhRssUrl = feed.rssUrl.startsWith("kh://");
-          const bulkKhId = (feed as any).kolhalashonRavId ?? (isKhRssUrl ? parseInt(feed.rssUrl.replace("kh://rav/", ""), 10) || null : null);
+          const bulkKhId = extractKhRavId(feed as any);
           if (bulkKhId) {
             const khResult = await refreshKHFeedEpisodes({ id: feed.id, title: feed.title, kolhalashonRavId: bulkKhId }, feed);
             totalNew += khResult.newEpisodes;
@@ -850,13 +851,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!deviceId || !feedId) return res.status(400).json({ error: "deviceId and feedId required" });
       const sub = await storage.addSubscription(deviceId, feedId);
 
-      // Auto-activate inactive feeds when a user subscribes, so they enter the refresh cycle
-      try {
-        const feed = await storage.getFeedById(feedId);
-        if (feed && !feed.isActive) {
-          await storage.updateFeed(feedId, { isActive: true });
-        }
-      } catch (e: any) { console.debug("Auto-activate on subscribe failed:", e.message); }
+      // Auto-activate inactive feeds so they enter the refresh cycle (no-op if already active)
+      try { await storage.activateFeedIfInactive(feedId); }
+      catch (e: any) { console.debug("Auto-activate on subscribe failed:", e.message); }
 
       res.json(sub || { ok: true });
     } catch (e: any) {
@@ -2087,7 +2084,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             (message as string).substring(0, 5000),
             fb.id,
           );
-        } catch {}
+        } catch (e: any) { console.error("Auto-create conversation for feedback failed:", e.message); }
       }
 
       res.json({ ok: true, id: fb.id });
@@ -2514,14 +2511,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Auto-activate feed when admin force-syncs it
       if (!feed.isActive) {
-        await storage.updateFeed(feedId, { isActive: true });
+        await storage.activateFeedIfInactive(feedId);
       }
 
       const start = Date.now();
       try {
         // Handle TAT feeds
         const isForceTatUrl = feed.rssUrl.startsWith("tat://");
-        const forceTatId = feed.tatSpeakerId ?? (isForceTatUrl ? parseInt(feed.rssUrl.replace("tat://speaker/", ""), 10) || null : null);
+        const forceTatId = extractTatSpeakerId(feed);
         if (forceTatId) {
           const tatResult = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: forceTatId });
           res.json({ status: "ok", method: "tat", newEpisodes: tatResult.newEpisodes, durationMs: Date.now() - start });
@@ -2538,7 +2535,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Handle KH feeds
         const isForceKhUrl = feed.rssUrl.startsWith("kh://");
-        const forceKhId = (feed as any).kolhalashonRavId ?? (isForceKhUrl ? parseInt(feed.rssUrl.replace("kh://rav/", ""), 10) || null : null);
+        const forceKhId = extractKhRavId(feed as any);
         if (forceKhId) {
           const khResult = await refreshKHFeedEpisodes({ id: feed.id, title: feed.title, kolhalashonRavId: forceKhId }, feed);
           res.json({ status: "ok", method: "kh", newEpisodes: khResult.newEpisodes, durationMs: Date.now() - start });

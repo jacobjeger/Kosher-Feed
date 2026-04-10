@@ -3,6 +3,7 @@ import * as storage from "./storage";
 import { sendNewEpisodePushes } from "./push";
 import { normalizeName } from "./name-utils";
 import { filterCrossSourceDuplicates, isMergedFeed } from "./episode-dedup";
+import { extractKhRavId } from "./feed-utils";
 
 // KH API base URL
 const KH_API_BASE = "https://srv.kolhalashon.com/api";
@@ -243,7 +244,7 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
       existingKHFeeds.set((feed as any).kolhalashonRavId, feed.id);
     }
     if (feed.rssUrl.startsWith("kh://")) {
-      const id = parseInt(feed.rssUrl.replace("kh://rav/", ""), 10);
+      const id = extractKhRavId(feed as any);
       if (id) existingKHFeeds.set(id, feed.id);
     }
   }

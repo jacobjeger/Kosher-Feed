@@ -46,6 +46,10 @@ export async function getAllActiveFeedsForSync(): Promise<Feed[]> {
   return db.select().from(feeds).where(eq(feeds.isActive, true)).orderBy(feeds.title);
 }
 
+export async function activateFeedIfInactive(feedId: string): Promise<void> {
+  await db.update(feeds).set({ isActive: true }).where(and(eq(feeds.id, feedId), eq(feeds.isActive, false)));
+}
+
 export async function getInactiveKHFeedsForSlowSync(batchSize: number): Promise<Feed[]> {
   const cutoff = new Date(Date.now() - 72 * 60 * 60 * 1000); // 72 hours
   return db.select().from(feeds)

@@ -16,6 +16,7 @@ import { refreshTATFeedEpisodes, syncTATSpeakers, fetchAllSpeakers } from "./tor
 import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, fetchAuthorById, OU_PLATFORMS, isApiOnlyUrl, type OUPlatformKey } from "./alldaf";
 import { refreshKHFeedEpisodes, syncKHSpeakers } from "./kolhalashon";
 import { autoCategorizeFeeds } from "./auto-categorize";
+import { extractKhRavId, extractTatSpeakerId } from "./feed-utils";
 import * as fs from "fs";
 import * as path from "path";
 import pLimit from "p-limit";
@@ -648,7 +649,7 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
 
   // TAT feed: refresh from TorahAnytime API
   const isTatUrl = feed.rssUrl.startsWith("tat://");
-  const effectiveTatSpeakerId = feed.tatSpeakerId ?? (isTatUrl ? parseInt(feed.rssUrl.replace("tat://speaker/", ""), 10) || null : null);
+  const effectiveTatSpeakerId = extractTatSpeakerId(feed);
 
   if (effectiveTatSpeakerId && isTatUrl) {
     const result = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveTatSpeakerId });
@@ -666,7 +667,7 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
 
   // KH feed: refresh from Kol Halashon API
   const isKhUrl = feed.rssUrl.startsWith("kh://");
-  const effectiveKhRavId = feed.kolhalashonRavId ?? (isKhUrl ? parseInt(feed.rssUrl.replace("kh://rav/", ""), 10) || null : null);
+  const effectiveKhRavId = extractKhRavId(feed);
 
   if (effectiveKhRavId && isKhUrl) {
     const result = await refreshKHFeedEpisodes({ id: feed.id, title: feed.title, kolhalashonRavId: effectiveKhRavId }, feed);
@@ -1098,7 +1099,7 @@ async function slowRefreshInactiveKH() {
     let ok = 0, fail = 0;
     await Promise.all(batch.map(feed => limiter(async () => {
       try {
-        const khRavId = feed.kolhalashonRavId ?? (feed.rssUrl.startsWith("kh://") ? parseInt(feed.rssUrl.replace("kh://rav/", ""), 10) || null : null);
+        const khRavId = extractKhRavId(feed);
         if (!khRavId) { await storage.updateFeed(feed.id, { lastFetchedAt: new Date() }); return; }
         await refreshKHFeedEpisodes({ id: feed.id, title: feed.title, kolhalashonRavId: khRavId }, feed);
         ok++;
