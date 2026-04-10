@@ -293,8 +293,8 @@ export async function refreshTATFeedEpisodes(feed: { id: string; title: string; 
 
   const lectures = await fetchAllSpeakerLectures(feed.tatSpeakerId);
 
-  // Filter out private and inactive lectures
-  const validLectures = lectures.filter(l => !l.private && l.display_active);
+  // Filter out private, inactive, and lectures with no audio URL
+  const validLectures = lectures.filter(l => !l.private && l.display_active && l.mp3_url);
 
   let episodeData = validLectures.map(l => mapTATLectureToEpisodeData(l, feed.id));
 
