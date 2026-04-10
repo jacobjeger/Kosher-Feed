@@ -852,11 +852,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Auto-activate inactive feeds when a user subscribes, so they enter the refresh cycle
       try {
-        const feed = await storage.getFeed(feedId);
+        const feed = await storage.getFeedById(feedId);
         if (feed && !feed.isActive) {
           await storage.updateFeed(feedId, { isActive: true });
         }
-      } catch {}
+      } catch (e: any) { console.debug("Auto-activate on subscribe failed:", e.message); }
 
       res.json(sub || { ok: true });
     } catch (e: any) {
@@ -1994,14 +1994,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!message) return res.status(400).json({ error: "message required" });
       const msg = await storage.addMessage(req.params.id, "admin", message);
 
-      // Send push notification to alert user
+      // Send push notification to alert user (direct lookup, not N+1)
       try {
-        const allConvs = await storage.getAdminConversations({ page: 1, limit: 1, status: undefined });
-        const conv = allConvs.conversations.find((c: any) => c.id === req.params.id);
+        const conv = await storage.getConversationById(req.params.id);
         if (conv?.deviceId) {
           await sendCustomPush("ShiurPod Team", message.substring(0, 100), conv.deviceId);
         }
-      } catch {}
+      } catch (e: any) { console.debug("Push on reply failed:", e.message); }
 
       res.json(msg);
     } catch (e: any) { publicError(res, e); }

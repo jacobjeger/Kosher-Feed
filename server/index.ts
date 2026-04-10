@@ -1088,7 +1088,7 @@ async function updateSpeakerBios(): Promise<number> {
 // With ~4800 inactive KH feeds / 72h = ~67 per hour, batch 35 every 30 min
 let isSlowKHRefreshing = false;
 async function slowRefreshInactiveKH() {
-  if (isSlowKHRefreshing) return;
+  if (isSlowKHRefreshing || isAutoRefreshing) return; // skip if main cycle is running
   isSlowKHRefreshing = true;
   try {
     const batch = await storage.getInactiveKHFeedsForSlowSync(35);

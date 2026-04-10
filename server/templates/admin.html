@@ -838,6 +838,7 @@ let searchTimeout = null;
 let selectedSearchResult = null;
 let allAdminFeeds = [];
 let allSpeakers = [];
+let _activeTab = null;
 let feedPage = 1;
 const FEEDS_PER_PAGE = 50;
 
@@ -2052,7 +2053,6 @@ async function deleteSpeaker(id) {
   }
 }
 
-let _activeTab = null;
 function switchTab(tab, btn) {
   if (_activeTab === tab) return; // already on this tab
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));

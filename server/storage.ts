@@ -1931,6 +1931,11 @@ export async function getConversationByFeedbackId(feedbackId: string): Promise<C
   return conv || null;
 }
 
+export async function getConversationById(conversationId: string): Promise<Conversation | null> {
+  const [conv] = await db.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1);
+  return conv || null;
+}
+
 export async function getAdminConversations(opts: { page: number; limit: number; status?: string }): Promise<{ conversations: any[]; total: number; page: number; totalPages: number }> {
   const conditions = [];
   if (opts.status) conditions.push(eq(conversations.status, opts.status));

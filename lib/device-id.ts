@@ -86,11 +86,11 @@ export async function getDeviceId(): Promise<string> {
     }
 
     await AsyncStorage.setItem(DEVICE_ID_KEY, id);
-  }
 
-  // Always persist to Keychain on iOS so it survives reinstalls
-  if (Platform.OS === "ios") {
-    setSecureStoreId(id).catch(() => {});
+    // Persist to Keychain on iOS so it survives reinstalls (only on first generation)
+    if (Platform.OS === "ios") {
+      setSecureStoreId(id).catch(() => {});
+    }
   }
 
   cachedDeviceId = id;
