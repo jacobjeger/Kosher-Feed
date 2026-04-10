@@ -691,8 +691,9 @@ function SettingsScreenInner() {
             style={feedbackStyles.overlay}
             onPress={() => setShowFeedbackModal(false)}
           >
-            <View
+            <Pressable
               style={[feedbackStyles.modal, { backgroundColor: colors.surface }]}
+              onPress={(e) => e.stopPropagation()}
             >
               <View style={feedbackStyles.modalHeader}>
                 <Text style={[feedbackStyles.modalTitle, { color: colors.text }]}>
@@ -759,7 +760,7 @@ function SettingsScreenInner() {
                   )}
                 </FocusableView>
               </ScrollView>
-            </View>
+            </Pressable>
           </Pressable>
         </KeyboardAvoidingView>
       </Modal>
