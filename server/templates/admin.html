@@ -285,7 +285,7 @@
         </div>
         <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center;">
           <div style="flex:1;position:relative;">
-            <input type="text" id="feedSearchInput" placeholder="Search feeds by title, author, or URL..." oninput="filterFeeds(this.value)" style="width:100%;padding:10px 14px 10px 36px;">
+            <input type="text" id="feedSearchInput" placeholder="Search feeds by title, author, or URL..." oninput="debounce('feedSearch', () => filterFeeds(this.value), 250)" style="width:100%;padding:10px 14px 10px 36px;">
             <svg style="position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;fill:none;stroke:#64748b;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           </div>
           <select id="feedCategoryFilter" onchange="filterFeeds(document.getElementById('feedSearchInput').value)" style="width:auto;padding:10px 14px;font-size:13px;min-width:140px;">
@@ -354,7 +354,7 @@
         <div class="card-header">
           <h2>Error Reports</h2>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <input type="text" id="errorSearchInput" placeholder="Search errors..." oninput="loadErrorReports(1)" style="width:180px;padding:6px 10px;font-size:12px;">
+            <input type="text" id="errorSearchInput" placeholder="Search errors..." oninput="debounce('errorSearch', () => loadErrorReports(1), 400)" style="width:180px;padding:6px 10px;font-size:12px;">
             <select id="errorLevelFilter" onchange="loadErrorReports(1)" style="width:auto;padding:6px 10px;font-size:12px;">
               <option value="">All Levels</option>
               <option value="error">Errors Only</option>
@@ -538,7 +538,7 @@
         <div class="card-header">
           <h2>Feed Audit Table</h2>
           <div style="display:flex;gap:8px;align-items:center;">
-            <input type="text" id="vitalsSearchInput" placeholder="Search feeds..." oninput="filterVitalsAudit(this.value)" style="padding:8px 12px;font-size:13px;width:200px;">
+            <input type="text" id="vitalsSearchInput" placeholder="Search feeds..." oninput="debounce('vitalsSearch', () => filterVitalsAudit(this.value), 250)" style="padding:8px 12px;font-size:13px;width:200px;">
             <select id="vitalsSourceFilter" onchange="filterVitalsAudit(document.getElementById('vitalsSearchInput').value)" style="padding:8px 12px;font-size:13px;min-width:120px;">
               <option value="">All Sources</option>
               <option value="rss">RSS</option>
@@ -759,7 +759,7 @@
         <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
           <h2>KH Speakers</h2>
           <div style="display:flex;gap:8px;align-items:center;">
-            <input type="text" id="khSpeakerSearch" placeholder="Search speakers..." oninput="filterKHSpeakers(this.value)" style="padding:8px 12px;font-size:13px;width:200px;">
+            <input type="text" id="khSpeakerSearch" placeholder="Search speakers..." oninput="debounce('khSpeakerSearch', () => filterKHSpeakers(this.value), 250)" style="padding:8px 12px;font-size:13px;width:200px;">
             <span id="khSpeakerCount" style="font-size:12px;color:#64748b;white-space:nowrap;"></span>
           </div>
         </div>
@@ -784,7 +784,7 @@
         <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
           <h2>KH Feed Vitals</h2>
           <div style="display:flex;gap:8px;align-items:center;">
-            <input type="text" id="khVitalsSearch" placeholder="Search..." oninput="filterKHVitals(this.value)" style="padding:8px 12px;font-size:13px;width:160px;">
+            <input type="text" id="khVitalsSearch" placeholder="Search..." oninput="debounce('khVitalsSearch', () => filterKHVitals(this.value), 250)" style="padding:8px 12px;font-size:13px;width:160px;">
             <select id="khVitalsStatusFilter" onchange="filterKHVitals(document.getElementById('khVitalsSearch').value)" style="padding:8px 12px;font-size:13px;min-width:110px;">
               <option value="">All</option>
               <option value="stale">Stale (>2h)</option>
@@ -831,11 +831,19 @@
 <script>
 let token = localStorage.getItem('admin_token') || '';
 let categories = [];
+let categoryMap = new Map();
 let analyticsData = null;
 let searchTimeout = null;
 let selectedSearchResult = null;
 let allAdminFeeds = [];
 let allSpeakers = [];
+
+// Debounce utility — prevents rapid-fire calls on input/keystroke
+const _debounceTimers = {};
+function debounce(key, fn, ms) {
+  clearTimeout(_debounceTimers[key]);
+  _debounceTimers[key] = setTimeout(fn, ms || 300);
+}
 
 // Track in-flight requests to prevent duplicate submissions
 const _inflightRequests = new Map();
@@ -924,10 +932,8 @@ async function loadAnalytics() {
     renderTopEpisodes();
     renderFeedPerformance();
     if (enhanced) renderEnhancedStats();
-    // Fire remaining analytics in parallel (non-blocking)
-    loadListenerAnalytics();
-    loadSourceBreakdown();
-    loadDeviceAnalytics();
+    // Defer secondary analytics to avoid thundering herd
+    setTimeout(() => { loadListenerAnalytics(); loadSourceBreakdown(); loadDeviceAnalytics(); }, 500);
   } catch(e) {
     console.error('Analytics error:', e);
   }
@@ -1263,7 +1269,7 @@ function filterFeeds(query) {
       ${f.imageUrl ? '<img src="' + f.imageUrl + '" class="feed-img" onerror="this.style.display=\'none\'">' : '<div class="feed-img"></div>'}
       <div class="feed-info">
         <div class="feed-title"><span class="health-tooltip health-dot ${healthInfo.cls}" data-tip="${esc(healthInfo.tip)}"></span>${esc(f.title)}${scheduledBadge}${getFeedSourceBadges(f)}</div>
-        <div class="feed-meta">${esc(f.author || 'Unknown')} &bull; ${(f.categoryIds && f.categoryIds.length > 0) ? f.categoryIds.map(cid => categories.find(c => c.id === cid)?.name || '').filter(Boolean).join(', ') || 'Uncategorized' : (categories.find(c => c.id === f.categoryId)?.name || 'Uncategorized')}</div>
+        <div class="feed-meta">${esc(f.author || 'Unknown')} &bull; ${(f.categoryIds && f.categoryIds.length > 0) ? f.categoryIds.map(cid => categoryMap.get(cid)?.name || '').filter(Boolean).join(', ') || 'Uncategorized' : (categoryMap.get(f.categoryId)?.name || 'Uncategorized')}</div>
         <div class="feed-meta" style="font-size:11px;margin-top:2px;color:#3b82f6;">Episodes: ${f.episodeCount || 0} &bull; Subscribers: ${f.subscriberCount || 0} &bull; Listens: ${f.listenCount || 0}</div>
       </div>
       <button class="toggle-btn ${f.isActive ? 'on' : 'off'}" onclick="toggleFeedActive('${f.id}', ${!f.isActive})" title="${f.isActive ? 'Active' : 'Inactive'}"></button>
@@ -1282,6 +1288,7 @@ function filterFeeds(query) {
 async function loadCategories() {
   try {
     categories = await api('/api/categories');
+    categoryMap = new Map(categories.map(c => [c.id, c]));
     const list = document.getElementById('categoryList');
     updateFeedCategoryFilter();
     if (categories.length === 0) {
@@ -2037,8 +2044,8 @@ function switchTab(tab, btn) {
   if (tab === 'pushtracker') { loadPushTokens(); loadNotificationHistory(); }
   if (tab === 'vitals') loadVitals();
   if (tab === 'announcements') loadAnnouncements();
-  if (tab === 'kolhalashon') { loadKHStatus(); loadKHSpeakers(); loadKHVitals(); }
-  if (tab === 'settings') { loadTATStatus(); loadAllOUStatuses(); loadMergers(); loadGlobalMergeHistory(); loadRemoteConfig(); }
+  if (tab === 'kolhalashon') { loadKHStatus(); loadKHSpeakers(); setTimeout(loadKHVitals, 300); }
+  if (tab === 'settings') { loadTATStatus(); loadRemoteConfig(); setTimeout(() => { loadAllOUStatuses(); loadMergers(); loadGlobalMergeHistory(); }, 300); }
 }
 
 function formatDate(dateStr) {
@@ -4271,7 +4278,7 @@ function renderKHSpeakers(searchQuery) {
     <td style="text-align:right;">${s.subscriberCount.toLocaleString()}</td>
     <td style="text-align:right;">${s.listenCount.toLocaleString()}</td>
     <td style="text-align:center;"><button class="toggle-btn ${s.showInBrowse ? 'on' : 'off'}" onclick="toggleKHBrowse('${s.id}', ${!s.showInBrowse})" title="${s.showInBrowse ? 'Visible in browse' : 'Hidden from browse'}"></button></td>
-    <td style="text-align:center;"><button class="toggle-btn ${s.isActive ? 'on' : 'off'}" onclick="toggleFeedActive('${s.id}', ${!s.isActive}); setTimeout(loadKHSpeakers, 500);" title="${s.isActive ? 'Active' : 'Inactive'}"></button></td>
+    <td style="text-align:center;"><button class="toggle-btn ${s.isActive ? 'on' : 'off'}" onclick="toggleFeedActive('${s.id}', ${!s.isActive}).then(loadKHSpeakers);" title="${s.isActive ? 'Active' : 'Inactive'}"></button></td>
     <td>${s.platforms.map(p => '<span style="display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;background:#1e293b;color:#94a3b8;margin:1px;">' + esc(p) + '</span>').join('')}${s.isMerged ? ' <span style="color:#d97706;font-size:10px;">merged</span>' : ''}</td>
   </tr>`).join('');
 }
