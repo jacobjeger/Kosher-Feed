@@ -843,6 +843,9 @@ async function autoRefreshFeeds() {
             const errMsg = (e as Error)?.message || String(e);
             log(`  [${completed}/${staleFeeds.length}] ${feed.title}: FAIL — ${errMsg.slice(0, 120)}`);
 
+            // Always update lastFetchedAt so failed feeds don't stay permanently stale
+            try { await storage.updateFeed(feed.id, { lastFetchedAt: new Date() }); } catch {}
+
             recordFeedResult({
               feedId: feed.id,
               feedTitle: feed.title,
