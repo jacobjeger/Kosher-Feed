@@ -1444,6 +1444,15 @@ export async function dismissAnnouncement(announcementId: string, deviceId: stri
     .onConflictDoNothing();
 }
 
+export async function getAnnouncementDismissCounts(announcementIds: string[]): Promise<Map<string, number>> {
+  if (announcementIds.length === 0) return new Map();
+  const rows = await db.select({ announcementId: announcementDismissals.announcementId, count: count() })
+    .from(announcementDismissals)
+    .where(inArray(announcementDismissals.announcementId, announcementIds))
+    .groupBy(announcementDismissals.announcementId);
+  return new Map(rows.map(r => [r.announcementId, Number(r.count)]));
+}
+
 export async function getAnnouncementDismissCount(announcementId: string): Promise<number> {
   const [result] = await db.select({ count: count() })
     .from(announcementDismissals)
@@ -1912,14 +1921,20 @@ export async function addMessage(conversationId: string, sender: "user" | "admin
 }
 
 export async function getConversationsForDevice(deviceId: string): Promise<(Conversation & { lastMessage?: string; unreadCount: number })[]> {
-  const convs = await db.select().from(conversations).where(eq(conversations.deviceId, deviceId)).orderBy(desc(conversations.updatedAt));
-  const result = [];
-  for (const c of convs) {
-    const msgs = await db.select().from(conversationMessages).where(eq(conversationMessages.conversationId, c.id)).orderBy(desc(conversationMessages.createdAt)).limit(1);
-    const [unread] = await db.select({ count: count() }).from(conversationMessages).where(and(eq(conversationMessages.conversationId, c.id), eq(conversationMessages.sender, "admin"), sql`${conversationMessages.readAt} IS NULL`));
-    result.push({ ...c, lastMessage: msgs[0]?.message, unreadCount: Number(unread.count) });
-  }
-  return result;
+  const results = await db.select({
+    id: conversations.id,
+    deviceId: conversations.deviceId,
+    subject: conversations.subject,
+    status: conversations.status,
+    feedbackId: conversations.feedbackId,
+    createdAt: conversations.createdAt,
+    updatedAt: conversations.updatedAt,
+    lastMessage: sql<string>`(SELECT ${conversationMessages.message} FROM ${conversationMessages} WHERE ${conversationMessages.conversationId} = ${conversations.id} ORDER BY ${conversationMessages.createdAt} DESC LIMIT 1)`,
+    unreadCount: sql<number>`(SELECT COUNT(*) FROM ${conversationMessages} WHERE ${conversationMessages.conversationId} = ${conversations.id} AND ${conversationMessages.sender} = 'admin' AND ${conversationMessages.readAt} IS NULL)`,
+  }).from(conversations)
+    .where(eq(conversations.deviceId, deviceId))
+    .orderBy(desc(conversations.updatedAt));
+  return results.map(r => ({ ...r, unreadCount: Number(r.unreadCount) }));
 }
 
 export async function getConversationMessages(conversationId: string): Promise<ConversationMessage[]> {
@@ -1946,15 +1961,28 @@ export async function getAdminConversations(opts: { page: number; limit: number;
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
   const [{ total }] = await db.select({ total: count() }).from(conversations).where(where);
-  const convs = await db.select().from(conversations).where(where).orderBy(desc(conversations.updatedAt)).limit(opts.limit).offset((opts.page - 1) * opts.limit);
+  const convs = await db.select({
+    id: conversations.id,
+    deviceId: conversations.deviceId,
+    subject: conversations.subject,
+    status: conversations.status,
+    feedbackId: conversations.feedbackId,
+    createdAt: conversations.createdAt,
+    updatedAt: conversations.updatedAt,
+    lastMessage: sql<string>`(SELECT ${conversationMessages.message} FROM ${conversationMessages} WHERE ${conversationMessages.conversationId} = ${conversations.id} ORDER BY ${conversationMessages.createdAt} DESC LIMIT 1)`,
+    lastSender: sql<string>`(SELECT ${conversationMessages.sender} FROM ${conversationMessages} WHERE ${conversationMessages.conversationId} = ${conversations.id} ORDER BY ${conversationMessages.createdAt} DESC LIMIT 1)`,
+    unreadCount: sql<number>`(SELECT COUNT(*) FROM ${conversationMessages} WHERE ${conversationMessages.conversationId} = ${conversations.id} AND ${conversationMessages.sender} = 'user' AND ${conversationMessages.readAt} IS NULL)`,
+  }).from(conversations).where(where).orderBy(desc(conversations.updatedAt)).limit(opts.limit).offset((opts.page - 1) * opts.limit);
 
-  const result = [];
-  for (const c of convs) {
-    const msgs = await db.select().from(conversationMessages).where(eq(conversationMessages.conversationId, c.id)).orderBy(desc(conversationMessages.createdAt)).limit(1);
-    const [unread] = await db.select({ count: count() }).from(conversationMessages).where(and(eq(conversationMessages.conversationId, c.id), eq(conversationMessages.sender, "user"), sql`${conversationMessages.readAt} IS NULL`));
-    const profile = await getDeviceProfile(c.deviceId);
-    result.push({ ...c, lastMessage: msgs[0]?.message, lastSender: msgs[0]?.sender, unreadCount: Number(unread.count), deviceModel: profile?.deviceModel, deviceBrand: profile?.deviceBrand });
-  }
+  // Batch fetch device profiles instead of N+1
+  const deviceIds = [...new Set(convs.map(c => c.deviceId))];
+  const profiles = deviceIds.length > 0 ? await db.select().from(deviceProfiles).where(inArray(deviceProfiles.deviceId, deviceIds)) : [];
+  const profileMap = new Map(profiles.map(p => [p.deviceId, p]));
+
+  const result = convs.map(c => {
+    const profile = profileMap.get(c.deviceId);
+    return { ...c, unreadCount: Number(c.unreadCount), deviceModel: profile?.deviceModel, deviceBrand: profile?.deviceBrand };
+  });
 
   return { conversations: result, total: Number(total), page: opts.page, totalPages: Math.ceil(Number(total) / opts.limit) };
 }

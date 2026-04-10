@@ -749,12 +749,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const recs = await storage.getRecommendations(deviceId, limit);
       recommendationCache.set(deviceId, { data: recs, ts: Date.now() });
-      // Clean old cache entries
-      if (recommendationCache.size > 1000) {
-        const now = Date.now();
-        for (const [key, val] of recommendationCache) {
-          if (now - val.ts > 10 * 60 * 1000) recommendationCache.delete(key);
-        }
+      // Evict stale entries and enforce hard cap
+      const now = Date.now();
+      for (const [key, val] of recommendationCache) {
+        if (now - val.ts > 10 * 60 * 1000) recommendationCache.delete(key);
+      }
+      // Hard cap: drop oldest entries if cache grows too large
+      while (recommendationCache.size > 500) {
+        const oldest = recommendationCache.keys().next().value;
+        if (oldest) recommendationCache.delete(oldest);
+        else break;
       }
       res.setHeader("Cache-Control", "public, max-age=60");
       res.json(recs.map((f: any) => addDefaultImage(f, baseUrl)));
@@ -2634,11 +2638,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/admin/announcements", adminAuth as any, async (_req: Request, res: Response) => {
     try {
       const anns = await storage.getAllAnnouncements();
-      // Add dismiss counts
-      const result = await Promise.all(anns.map(async (ann) => ({
-        ...ann,
-        dismissCount: await storage.getAnnouncementDismissCount(ann.id),
-      })));
+      const dismissCounts = await storage.getAnnouncementDismissCounts(anns.map(a => a.id));
+      const result = anns.map(ann => ({ ...ann, dismissCount: dismissCounts.get(ann.id) || 0 }));
       res.json(result);
     } catch (e: any) {
       publicError(res, e);

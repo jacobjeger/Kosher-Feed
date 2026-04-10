@@ -72,7 +72,11 @@ export const episodeListens = pgTable("episode_listens", {
   deviceId: text("device_id").notNull(),
   listenedAt: timestamp("listened_at").defaultNow().notNull(),
   durationListenedMs: integer("duration_listened_ms").default(0),
-});
+}, (table) => [
+  index("episode_listens_device_id_idx").on(table.deviceId),
+  index("episode_listens_listened_at_idx").on(table.listenedAt),
+  index("episode_listens_episode_id_idx").on(table.episodeId),
+]);
 
 export const adminUsers = pgTable("admin_users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
