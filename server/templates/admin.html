@@ -2388,12 +2388,11 @@ async function updateFeedbackStatus(id, status) {
 
 
 async function openThread(feedbackId, type, subject, message, deviceId, dateStr) {
-  // Check if conversation exists for this feedback, or show original + reply box
+  // Fast lookup by feedbackId instead of loading all conversations
   let convId = null;
   let replies = [];
   try {
-    const convs = await api('/api/admin/conversations');
-    const existing = convs.conversations.find(c => c.feedbackId === feedbackId);
+    const existing = await api('/api/admin/conversations/by-feedback/' + feedbackId);
     if (existing) {
       convId = existing.id;
       replies = await api('/api/admin/conversations/' + convId + '/messages');
@@ -2460,8 +2459,7 @@ async function sendThreadReply(feedbackId, subject, deviceId) {
   try {
     // Find or create conversation for this feedback
     let convId = null;
-    const convs = await api('/api/admin/conversations');
-    const existing = convs.conversations.find(c => c.feedbackId === feedbackId);
+    const existing = await api('/api/admin/conversations/by-feedback/' + feedbackId);
 
     if (existing) {
       convId = existing.id;

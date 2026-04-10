@@ -1963,6 +1963,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (e: any) { publicError(res, e); }
   });
 
+  // Fast lookup: find conversation by feedbackId (avoids loading all conversations)
+  app.get("/api/admin/conversations/by-feedback/:feedbackId", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const conv = await storage.getConversationByFeedbackId(req.params.feedbackId);
+      res.json(conv || null);
+    } catch (e: any) { publicError(res, e); }
+  });
+
   app.get("/api/admin/conversations/:id/messages", adminAuth as any, async (req: Request, res: Response) => {
     try {
       const msgs = await storage.getConversationMessages(req.params.id);

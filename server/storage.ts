@@ -1913,6 +1913,11 @@ export async function markMessagesRead(conversationId: string, sender: "user" | 
   await db.update(conversationMessages).set({ readAt: new Date() }).where(and(eq(conversationMessages.conversationId, conversationId), eq(conversationMessages.sender, sender), sql`${conversationMessages.readAt} IS NULL`));
 }
 
+export async function getConversationByFeedbackId(feedbackId: string): Promise<Conversation | null> {
+  const [conv] = await db.select().from(conversations).where(eq(conversations.feedbackId, feedbackId)).limit(1);
+  return conv || null;
+}
+
 export async function getAdminConversations(opts: { page: number; limit: number; status?: string }): Promise<{ conversations: any[]; total: number; page: number; totalPages: number }> {
   const conditions = [];
   if (opts.status) conditions.push(eq(conversations.status, opts.status));
