@@ -285,7 +285,7 @@
         </div>
         <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center;">
           <div style="flex:1;position:relative;">
-            <input type="text" id="feedSearchInput" placeholder="Search feeds by title, author, or URL..." oninput="debounce('feedSearch', () => filterFeeds(this.value), 250)" style="width:100%;padding:10px 14px 10px 36px;">
+            <input type="text" id="feedSearchInput" placeholder="Search feeds by title, author, or URL..." oninput="debounce('feedSearch', () => { feedPage=1; filterFeeds(this.value); }, 250)" style="width:100%;padding:10px 14px 10px 36px;">
             <svg style="position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;fill:none;stroke:#64748b;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           </div>
           <select id="feedCategoryFilter" onchange="filterFeeds(document.getElementById('feedSearchInput').value)" style="width:auto;padding:10px 14px;font-size:13px;min-width:140px;">
@@ -317,6 +317,7 @@
           <span id="feedCountLabel" style="font-size:12px;color:#64748b;white-space:nowrap;"></span>
         </div>
         <div id="feedList"></div>
+        <div id="feedPagination" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 0;"></div>
       </div>
     </div>
 
@@ -837,6 +838,8 @@ let searchTimeout = null;
 let selectedSearchResult = null;
 let allAdminFeeds = [];
 let allSpeakers = [];
+let feedPage = 1;
+const FEEDS_PER_PAGE = 50;
 
 // Debounce utility — prevents rapid-fire calls on input/keystroke
 const _debounceTimers = {};
@@ -1258,10 +1261,17 @@ function filterFeeds(query) {
     list.innerHTML = allAdminFeeds.length === 0
       ? '<p style="color:#64748b;text-align:center;padding:20px;">No feeds added yet. Click "Add Feed" to get started.</p>'
       : '<p style="color:#64748b;text-align:center;padding:20px;">No feeds match your search.</p>';
+    document.getElementById('feedPagination').innerHTML = '';
     return;
   }
 
-  list.innerHTML = (bulkMode ? '<div class="bulk-bar" id="bulkActionBar"><input type="checkbox" id="bulkSelectAll" onchange="toggleBulkSelectAll(this.checked)" style="width:18px;height:18px;accent-color:#3b82f6;"><span class="bulk-count" id="bulkSelectedCount">0 selected</span><button class="btn btn-success btn-sm" onclick="bulkAction(\'activate\')">Activate</button><button class="btn btn-secondary btn-sm" onclick="bulkAction(\'deactivate\')">Deactivate</button><button class="btn btn-primary btn-sm" onclick="bulkAction(\'refresh\')">Refresh</button><button class="btn btn-danger btn-sm" onclick="bulkAction(\'delete\')">Delete</button></div>' : '') + filtered.map(f => {
+  // Paginate: only render FEEDS_PER_PAGE at a time
+  const totalPages = Math.ceil(filtered.length / FEEDS_PER_PAGE);
+  if (feedPage > totalPages) feedPage = totalPages;
+  const start = (feedPage - 1) * FEEDS_PER_PAGE;
+  const pageFeeds = filtered.slice(start, start + FEEDS_PER_PAGE);
+
+  list.innerHTML = (bulkMode ? '<div class="bulk-bar" id="bulkActionBar"><input type="checkbox" id="bulkSelectAll" onchange="toggleBulkSelectAll(this.checked)" style="width:18px;height:18px;accent-color:#3b82f6;"><span class="bulk-count" id="bulkSelectedCount">0 selected</span><button class="btn btn-success btn-sm" onclick="bulkAction(\'activate\')">Activate</button><button class="btn btn-secondary btn-sm" onclick="bulkAction(\'deactivate\')">Deactivate</button><button class="btn btn-primary btn-sm" onclick="bulkAction(\'refresh\')">Refresh</button><button class="btn btn-danger btn-sm" onclick="bulkAction(\'delete\')">Delete</button></div>' : '') + pageFeeds.map(f => {
     const healthInfo = getFeedHealthInfo(f);
     const scheduledBadge = f.scheduledPublishAt ? '<span class="scheduled-badge">Scheduled ' + new Date(f.scheduledPublishAt).toLocaleDateString() + '</span>' : '';
     return `<div class="feed-item">
@@ -1283,6 +1293,18 @@ function filterFeeds(query) {
       </div>
     </div>`;
   }).join('');
+
+  // Render feed pagination
+  const pag = document.getElementById('feedPagination');
+  if (totalPages > 1) {
+    let html = '';
+    if (feedPage > 1) html += '<button class="btn btn-secondary btn-sm" onclick="feedPage=' + (feedPage-1) + ';filterFeeds(document.getElementById(\'feedSearchInput\').value)">Prev</button>';
+    html += '<span style="font-size:13px;color:#94a3b8;padding:6px;">Page ' + feedPage + ' of ' + totalPages + ' (' + filtered.length + ' feeds)</span>';
+    if (feedPage < totalPages) html += '<button class="btn btn-secondary btn-sm" onclick="feedPage=' + (feedPage+1) + ';filterFeeds(document.getElementById(\'feedSearchInput\').value)">Next</button>';
+    pag.innerHTML = html;
+  } else {
+    pag.innerHTML = '';
+  }
 }
 
 async function loadCategories() {
