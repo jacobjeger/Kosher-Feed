@@ -1084,13 +1084,46 @@ async function updateSpeakerBios(): Promise<number> {
   return updated;
 }
 
+// Slow cycle: refresh inactive KH feeds over 72 hours
+// With ~4800 inactive KH feeds / 72h = ~67 per hour, batch 35 every 30 min
+let isSlowKHRefreshing = false;
+async function slowRefreshInactiveKH() {
+  if (isSlowKHRefreshing) return;
+  isSlowKHRefreshing = true;
+  try {
+    const batch = await storage.getInactiveKHFeedsForSlowSync(35);
+    if (batch.length === 0) return;
+    log(`KH slow-refresh: processing ${batch.length} inactive KH feed(s)`);
+    const limiter = pLimit(3);
+    let ok = 0, fail = 0;
+    await Promise.all(batch.map(feed => limiter(async () => {
+      try {
+        const khRavId = feed.kolhalashonRavId ?? (feed.rssUrl.startsWith("kh://") ? parseInt(feed.rssUrl.replace("kh://rav/", ""), 10) || null : null);
+        if (!khRavId) { await storage.updateFeed(feed.id, { lastFetchedAt: new Date() }); return; }
+        await refreshKHFeedEpisodes({ id: feed.id, title: feed.title, kolhalashonRavId: khRavId }, feed);
+        ok++;
+      } catch (e: any) {
+        fail++;
+        try { await storage.updateFeed(feed.id, { lastFetchedAt: new Date() }); } catch {}
+      }
+    })));
+    log(`KH slow-refresh complete: ${ok} ok, ${fail} failed`);
+  } catch (e: any) {
+    log(`KH slow-refresh error: ${(e as Error).message}`);
+  } finally {
+    isSlowKHRefreshing = false;
+  }
+}
+
 function startAutoRefresh() {
   log(`Auto-refresh enabled: checking feeds every ${FEED_REFRESH_INTERVAL / 60000} minutes (sequential, retry on timeout)`);
   setInterval(autoRefreshFeeds, FEED_REFRESH_INTERVAL);
+  setInterval(slowRefreshInactiveKH, 30 * 60 * 1000); // every 30 min
   setTimeout(async () => {
     await networkSanityCheck();
     autoRefreshFeeds();
   }, 5000);
+  setTimeout(slowRefreshInactiveKH, 60000); // first run after 1 min
   startKeepAlive();
 }
 

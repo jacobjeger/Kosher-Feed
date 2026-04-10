@@ -46,6 +46,18 @@ export async function getAllActiveFeedsForSync(): Promise<Feed[]> {
   return db.select().from(feeds).where(eq(feeds.isActive, true)).orderBy(feeds.title);
 }
 
+export async function getInactiveKHFeedsForSlowSync(batchSize: number): Promise<Feed[]> {
+  const cutoff = new Date(Date.now() - 72 * 60 * 60 * 1000); // 72 hours
+  return db.select().from(feeds)
+    .where(and(
+      eq(feeds.isActive, false),
+      sql`${feeds.rssUrl} LIKE 'kh://%'`,
+      sql`(${feeds.lastFetchedAt} IS NULL OR ${feeds.lastFetchedAt} < ${cutoff})`,
+    ))
+    .orderBy(feeds.lastFetchedAt) // oldest first
+    .limit(batchSize);
+}
+
 export async function getFeedsByCategory(categoryId: string): Promise<Feed[]> {
   return db.select().from(feeds).where(and(eq(feeds.categoryId, categoryId), eq(feeds.isActive, true))).orderBy(feeds.title);
 }
@@ -1604,9 +1616,10 @@ export async function getSourceBreakdown() {
 
 export async function searchFeeds(query: string, limit: number = 50): Promise<Feed[]> {
   const pattern = `%${query}%`;
+  // Include active feeds + inactive KH feeds (so users can discover and follow KH speakers)
   return db.select().from(feeds)
     .where(and(
-      eq(feeds.isActive, true),
+      sql`(${feeds.isActive} = true OR ${feeds.rssUrl} LIKE 'kh://%')`,
       sql`(${feeds.title} ILIKE ${pattern} OR ${feeds.author} ILIKE ${pattern})`
     ))
     .orderBy(feeds.title)
