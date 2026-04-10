@@ -304,7 +304,13 @@ export async function refreshTATFeedEpisodes(feed: { id: string; title: string; 
     episodeData = filterCrossSourceDuplicates(episodeData, existingEpisodes, "tat-");
   }
 
-  const inserted = await storage.upsertTATEpisodes(feed.id, episodeData);
+  let inserted: any[] = [];
+  try {
+    inserted = await storage.upsertTATEpisodes(feed.id, episodeData);
+  } catch (e: any) {
+    console.error(`TAT refresh: ${feed.title} — batch insert failed: ${e.message}`);
+    // Still update lastFetchedAt so the feed doesn't stay permanently stale
+  }
 
   await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
 
