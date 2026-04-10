@@ -2481,7 +2481,7 @@ async function sendThreadReply(feedbackId, subject, deviceId) {
     // Also send push notification so the user sees it immediately
     if (deviceId) {
       api('/api/admin/send-push', { method: 'POST', body: JSON.stringify({
-        title: 'Re: ' + (subject || 'Your Feedback'),
+        title: 'ShiurPod Team',
         body: message.substring(0, 200),
         deviceId
       }) }).catch(() => {});

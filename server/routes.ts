@@ -1990,7 +1990,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const allConvs = await storage.getAdminConversations({ page: 1, limit: 1, status: undefined });
         const conv = allConvs.conversations.find((c: any) => c.id === req.params.id);
         if (conv?.deviceId) {
-          await sendCustomPush("New reply from ShiurPod", message.substring(0, 100), conv.deviceId);
+          await sendCustomPush("ShiurPod Team", message.substring(0, 100), conv.deviceId);
         }
       } catch {}
 
@@ -2069,6 +2069,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         contactInfo: contactInfo ? (contactInfo as string).substring(0, 200) : null,
         deviceLogs: logsStr,
       });
+
+      // Auto-create a conversation so the feedback appears in the user's message center
+      if (deviceId) {
+        try {
+          await storage.createConversation(
+            deviceId,
+            (subject as string).substring(0, 200),
+            (message as string).substring(0, 5000),
+            fb.id,
+          );
+        } catch {}
+      }
+
       res.json({ ok: true, id: fb.id });
     } catch (e: any) {
       publicError(res, e);
