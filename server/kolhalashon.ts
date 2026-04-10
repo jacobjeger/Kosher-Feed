@@ -351,7 +351,14 @@ export async function refreshKHFeedEpisodes(
   }
 
   // Quick check: fetch first page only to see if there's anything new
-  const firstPage = await getSpeakerShiurim(feed.kolhalashonRavId, 0, 24);
+  let firstPage: any[];
+  try {
+    firstPage = await getSpeakerShiurim(feed.kolhalashonRavId, 0, 24);
+  } catch (e: any) {
+    console.error(`KH refresh: ${feed.title} — fetch failed: ${e.message}`);
+    await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
+    return { newEpisodes: 0 };
+  }
   if (!Array.isArray(firstPage) || firstPage.length === 0) {
     await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
     return { newEpisodes: 0 };
@@ -369,7 +376,14 @@ export async function refreshKHFeedEpisodes(
   }
 
   // New content detected — do full pagination
-  const shiurim = await getAllSpeakerShiurim(feed.kolhalashonRavId);
+  let shiurim: any[];
+  try {
+    shiurim = await getAllSpeakerShiurim(feed.kolhalashonRavId);
+  } catch (e: any) {
+    console.error(`KH refresh: ${feed.title} — full fetch failed: ${e.message}`);
+    await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
+    return { newEpisodes: 0 };
+  }
 
   if (!Array.isArray(shiurim) || shiurim.length === 0) {
     await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
