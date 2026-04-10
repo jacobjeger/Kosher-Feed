@@ -271,7 +271,7 @@ export function mapOUPostToEpisodeData(post: OUPost, feedId: string, guidPrefix:
   const audioUrl = getAudioUrl(post);
   if (!audioUrl) return null;
 
-  const topicStr = post.topics?.length > 0 ? post.topics.join(", ") : null;
+  const topicStr = Array.isArray(post.topics) && post.topics.length > 0 ? post.topics.join(", ") : null;
   const seriesStr = post.series?.name || null;
   const descParts = [seriesStr, topicStr].filter(Boolean);
 
