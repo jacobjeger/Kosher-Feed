@@ -97,7 +97,8 @@ export function addLog(
   notifyListeners();
   persistLogs();
 
-  if (REPORT_LEVELS.has(level) && source !== "fetch") {
+  // Report errors/warns to server (skip 4xx fetch noise, but include 5xx and network failures)
+  if (REPORT_LEVELS.has(level) && !(source === "fetch" && level === "warn")) {
     queueForServerReport(entry);
   }
 }

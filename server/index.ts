@@ -17,6 +17,7 @@ import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, fetchAu
 import { refreshKHFeedEpisodes, syncKHSpeakers } from "./kolhalashon";
 import { autoCategorizeFeeds } from "./auto-categorize";
 import { extractKhRavId, extractTatSpeakerId } from "./feed-utils";
+import rateLimit from "express-rate-limit";
 import * as fs from "fs";
 import * as path from "path";
 import pLimit from "p-limit";
@@ -1135,6 +1136,30 @@ function startAutoRefresh() {
 
   setupCors(app);
   app.use(compression());
+
+  // Rate limiting — general (200 req/min per IP) and strict for write endpoints (30 req/min)
+  const generalLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 200,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "unknown",
+    skip: (req) => req.path.startsWith("/api/admin"), // admin has its own auth
+  });
+  const writeLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "unknown",
+    message: { error: "Too many requests, please try again later" },
+  });
+  app.use("/api/", generalLimiter);
+  app.use("/api/feedback", writeLimiter);
+  app.use("/api/contact", writeLimiter);
+  app.use("/api/error-reports", writeLimiter);
+  app.use("/api/analytics/pageview", writeLimiter);
+
   setupBodyParsing(app);
   setupRequestLogging(app);
 

@@ -66,6 +66,7 @@
     "expo-updates": "~29.0.16",
     "expo-web-browser": "~15.0.10",
     "express": "^5.0.1",
+    "express-rate-limit": "^8.3.2",
     "http-proxy-middleware": "^3.0.5",
     "multer": "^2.0.2",
     "p-limit": "^7.3.0",
