@@ -12,6 +12,7 @@ import { syncTATSpeakers, refreshTATFeedEpisodes, fetchAllSpeakers } from "./tor
 import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, OU_PLATFORMS, type OUPlatformKey } from "./alldaf";
 import { syncKHSpeakers, refreshKHFeedEpisodes, reloadKHClient, getHeaders as getKHHeaders } from "./kolhalashon";
 import { extractKhRavId, extractTatSpeakerId } from "./feed-utils";
+import { trackErrorForAlert, sendFeedbackNotification } from "./error-alerts";
 import multer from "multer";
 import path from "node:path";
 import fs from "node:fs";
@@ -1817,6 +1818,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         appVersion: appVersion || null,
         metadata: metadata ? (metadata as string).substring(0, 2000) : null,
       });
+      trackErrorForAlert({ level: level || "error", message: message as string, source, platform, appVersion });
       res.json({ ok: true, id: report.id });
     } catch (e: any) {
       publicError(res, e);
@@ -1842,6 +1844,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           appVersion: r.appVersion || null,
           metadata: r.metadata ? (r.metadata as string).substring(0, 2000) : null,
         });
+        trackErrorForAlert({ level: r.level || "error", message: r.message, source: r.source, platform: r.platform, appVersion: r.appVersion });
         results.push(report.id);
       }
       res.json({ ok: true, count: results.length });
@@ -2094,6 +2097,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin: Grouped Error Reports (by message)
+  app.get("/api/admin/error-reports/grouped", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit as string) || 30, 100);
+      const data = await storage.getGroupedErrorReports(limit);
+      res.json(data);
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
+  // Admin: Occurrences of a specific grouped error
+  app.get("/api/admin/error-reports/grouped/:messageHash/occurrences", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
+      const data = await storage.getErrorOccurrences(req.params.messageHash, limit);
+      res.json(data);
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
   app.put("/api/admin/error-reports/:id/resolve", adminAuth as any, async (req: Request, res: Response) => {
     try {
       const report = await storage.resolveErrorReport(req.params.id);
@@ -2144,6 +2169,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
           );
         } catch (e: any) { console.error("Auto-create conversation for feedback failed:", e.message); }
       }
+
+      // Email notification with full dashboard info
+      try {
+        const profile = deviceId ? await storage.getDeviceProfile(deviceId) : null;
+        sendFeedbackNotification({
+          type: type || "shiur_request",
+          subject: subject as string,
+          message: message as string,
+          contactInfo: contactInfo as string || null,
+          deviceId: deviceId || null,
+          deviceModel: profile?.deviceModel || null,
+          deviceBrand: profile?.deviceBrand || null,
+          platform: profile?.platform || null,
+          osVersion: profile?.osVersion || null,
+          appVersion: profile?.appVersion || null,
+          country: profile?.country || null,
+          city: profile?.city || null,
+          deviceLogs: logsStr,
+        });
+      } catch {}
 
       res.json({ ok: true, id: fb.id });
     } catch (e: any) {

@@ -1019,6 +1019,33 @@ export async function getErrorReports(opts: {
   };
 }
 
+export async function getGroupedErrorReports(limit: number = 30): Promise<{ messageHash: string; message: string; count: number; lastSeen: string; firstSeen: string; source: string | null; platforms: string; appVersions: string; deviceCount: number }[]> {
+  const d30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const rows = await db.select({
+    messageHash: sql<string>`md5(LEFT(${errorReports.message}, 200))`,
+    message: sql<string>`LEFT(${errorReports.message}, 200)`,
+    count: count(),
+    lastSeen: sql<string>`MAX(${errorReports.createdAt})`,
+    firstSeen: sql<string>`MIN(${errorReports.createdAt})`,
+    source: sql<string>`MODE() WITHIN GROUP (ORDER BY ${errorReports.source})`,
+    platforms: sql<string>`string_agg(DISTINCT ${errorReports.platform}, ', ')`,
+    appVersions: sql<string>`string_agg(DISTINCT ${errorReports.appVersion}, ', ')`,
+    deviceCount: sql<number>`COUNT(DISTINCT ${errorReports.deviceId})`,
+  }).from(errorReports)
+    .where(and(eq(errorReports.resolved, false), sql`${errorReports.createdAt} > ${d30}`))
+    .groupBy(sql`md5(LEFT(${errorReports.message}, 200))`, sql`LEFT(${errorReports.message}, 200)`)
+    .orderBy(desc(count()))
+    .limit(limit);
+  return rows.map(r => ({ ...r, count: Number(r.count), deviceCount: Number(r.deviceCount) }));
+}
+
+export async function getErrorOccurrences(messageHash: string, limit: number = 20): Promise<ErrorReport[]> {
+  return db.select().from(errorReports)
+    .where(sql`md5(LEFT(${errorReports.message}, 200)) = ${messageHash}`)
+    .orderBy(desc(errorReports.createdAt))
+    .limit(limit);
+}
+
 export async function resolveErrorReport(id: string): Promise<ErrorReport> {
   const [report] = await db.update(errorReports)
     .set({ resolved: true })

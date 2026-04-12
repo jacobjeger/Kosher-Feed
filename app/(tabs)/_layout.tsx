@@ -4,11 +4,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { Platform, StyleSheet, View, Text, Pressable, Dimensions } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Colors from "@/constants/colors";
 import MiniPlayer from "@/components/MiniPlayer";
 import { router } from "expo-router";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { setErrorContext } from "@/lib/error-logger";
 
 const DESKTOP_BREAKPOINT = 768;
 
@@ -127,6 +128,8 @@ export default function TabLayout() {
   const isDesktopWeb = useIsDesktopWeb();
 
   useKeyboardShortcuts();
+  const pathname = usePathname();
+  useEffect(() => { setErrorContext(pathname || "home"); }, [pathname]);
 
   const showTopNav = isDesktopWeb;
   const showBottomTabs = !isDesktopWeb;

@@ -4,6 +4,18 @@ import { getApiUrl } from "@/lib/query-client";
 
 let _appVersion: string | null = null;
 let _metadata: string | null = null;
+let _currentScreen: string = "unknown";
+let _currentAction: string = "idle";
+
+// Called by navigation/screens to track what the user is doing when errors occur
+export function setErrorContext(screen: string, action?: string) {
+  _currentScreen = screen;
+  if (action) _currentAction = action;
+}
+
+export function getErrorContext(): { screen: string; action: string } {
+  return { screen: _currentScreen, action: _currentAction };
+}
 
 function getAppVersion(): string | null {
   if (_appVersion !== null) return _appVersion;
@@ -143,6 +155,7 @@ async function flushReportsToServer() {
     const url = new URL("/api/error-reports/batch", baseUrl).toString();
 
     const appVersion = getAppVersion();
+    const ctx = getErrorContext();
     const reports = batch.map(entry => ({
       deviceId,
       level: entry.level,
@@ -151,7 +164,7 @@ async function flushReportsToServer() {
       source: entry.source || null,
       platform: Platform.OS,
       appVersion,
-      metadata: _metadata,
+      metadata: JSON.stringify({ ...((_metadata && JSON.parse(_metadata)) || {}), screen: ctx.screen, action: ctx.action }),
     }));
 
     const origFetch = (globalThis as any).__origFetch || globalThis.fetch;

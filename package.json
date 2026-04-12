@@ -83,6 +83,7 @@
     "react-native-svg": "15.12.1",
     "react-native-web": "^0.21.0",
     "react-native-worklets": "0.5.1",
+    "resend": "^6.10.0",
     "rss-parser": "^3.13.0",
     "sax": "^1.4.4",
     "shaka-player": "^4.16.18",
