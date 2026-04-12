@@ -147,6 +147,100 @@ export async function sendFeedbackNotification(feedback: {
   }).catch(e => console.error("Failed to send feedback notification:", e.message));
 }
 
+export async function sendDailyErrorDigest(stats: {
+  lastHour: number; last24h: number; last7d: number;
+  topErrors: { message: string; source: string | null; count: number; lastSeen: Date }[];
+  bySource: { source: string; count: number }[];
+  byPlatform: { platform: string; count: number }[];
+}, groupedErrors: { message: string; count: number; deviceCount: number; platforms: string; appVersions: string; lastSeen: string }[]) {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) return;
+
+  const resend = new Resend(apiKey);
+  const statusColor = stats.last24h > 50 ? "#ef4444" : stats.last24h > 10 ? "#f59e0b" : "#059669";
+  const statusLabel = stats.last24h > 50 ? "Critical" : stats.last24h > 10 ? "Elevated" : "Healthy";
+
+  const topErrorsHtml = groupedErrors.slice(0, 10).map(g => {
+    const ago = Math.round((Date.now() - new Date(g.lastSeen).getTime()) / 60000);
+    const agoStr = ago < 60 ? ago + "m ago" : ago < 1440 ? Math.round(ago / 60) + "h ago" : Math.round(ago / 1440) + "d ago";
+    return `<tr>
+      <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#1e293b;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(g.message.substring(0, 100))}</td>
+      <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:14px;font-weight:700;color:#ef4444;text-align:center;">×${g.count}</td>
+      <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#64748b;text-align:center;">${g.deviceCount}</td>
+      <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#94a3b8;">${escHtml(g.platforms || "")}</td>
+      <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#94a3b8;">${escHtml(g.appVersions || "")}</td>
+      <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#94a3b8;">${agoStr}</td>
+    </tr>`;
+  }).join("");
+
+  const sourceBreakdownHtml = stats.bySource.slice(0, 8).map(s =>
+    `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;"><span style="color:#475569;">${escHtml(s.source)}</span><strong style="color:#1e293b;">${s.count}</strong></div>`
+  ).join("");
+
+  const platformBreakdownHtml = stats.byPlatform.map(p =>
+    `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;"><span style="color:#475569;">${escHtml(p.platform)}</span><strong style="color:#1e293b;">${p.count}</strong></div>`
+  ).join("");
+
+  await resend.emails.send({
+    from: "ShiurPod Alerts <alerts@shiurpod.com>",
+    to: ALERT_EMAIL,
+    subject: `📊 ShiurPod Daily Error Report — ${stats.last24h} errors (${statusLabel})`,
+    html: `
+      <div style="font-family:system-ui,sans-serif;max-width:700px;margin:0 auto;padding:20px;">
+        <h2 style="margin-bottom:16px;color:#1e293b;">Daily Error Report</h2>
+        <p style="color:#64748b;margin-bottom:20px;">${new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</p>
+
+        <div style="display:flex;gap:12px;margin-bottom:24px;">
+          <div style="flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;text-align:center;">
+            <div style="font-size:28px;font-weight:700;color:${statusColor};">${stats.last24h}</div>
+            <div style="font-size:12px;color:#94a3b8;">Last 24h</div>
+          </div>
+          <div style="flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;text-align:center;">
+            <div style="font-size:28px;font-weight:700;color:#1e293b;">${stats.lastHour}</div>
+            <div style="font-size:12px;color:#94a3b8;">Last Hour</div>
+          </div>
+          <div style="flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;text-align:center;">
+            <div style="font-size:28px;font-weight:700;color:#1e293b;">${stats.last7d}</div>
+            <div style="font-size:12px;color:#94a3b8;">Last 7 Days</div>
+          </div>
+        </div>
+
+        ${groupedErrors.length > 0 ? `
+        <h3 style="margin-bottom:12px;color:#1e293b;">Top Errors</h3>
+        <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">
+          <thead><tr style="background:#f8fafc;">
+            <th style="padding:8px;text-align:left;font-size:12px;color:#64748b;font-weight:600;">Error</th>
+            <th style="padding:8px;text-align:center;font-size:12px;color:#64748b;font-weight:600;">Count</th>
+            <th style="padding:8px;text-align:center;font-size:12px;color:#64748b;font-weight:600;">Devices</th>
+            <th style="padding:8px;text-align:left;font-size:12px;color:#64748b;font-weight:600;">Platform</th>
+            <th style="padding:8px;text-align:left;font-size:12px;color:#64748b;font-weight:600;">Version</th>
+            <th style="padding:8px;text-align:left;font-size:12px;color:#64748b;font-weight:600;">Last Seen</th>
+          </tr></thead>
+          <tbody>${topErrorsHtml}</tbody>
+        </table>` : "<p style='color:#059669;margin-bottom:24px;'>✅ No unresolved errors in the last 30 days!</p>"}
+
+        <div style="display:flex;gap:16px;margin-bottom:24px;">
+          <div style="flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;">
+            <h4 style="margin:0 0 8px;font-size:13px;color:#1e293b;">By Source</h4>
+            ${sourceBreakdownHtml || "<p style='color:#94a3b8;font-size:12px;'>No data</p>"}
+          </div>
+          <div style="flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;">
+            <h4 style="margin:0 0 8px;font-size:13px;color:#1e293b;">By Platform</h4>
+            ${platformBreakdownHtml || "<p style='color:#94a3b8;font-size:12px;'>No data</p>"}
+          </div>
+        </div>
+
+        <a href="https://kosher-feed-production.up.railway.app/admin"
+           style="display:inline-block;background:#3b82f6;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600;">
+          View Full Dashboard →
+        </a>
+      </div>
+    `,
+  }).catch(e => console.error("Failed to send daily error digest:", e.message));
+
+  console.log(`Daily error digest sent: ${stats.last24h} errors in last 24h`);
+}
+
 function escHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

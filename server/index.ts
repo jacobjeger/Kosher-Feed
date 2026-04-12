@@ -18,6 +18,7 @@ import { refreshKHFeedEpisodes, syncKHSpeakers } from "./kolhalashon";
 import { autoCategorizeFeeds } from "./auto-categorize";
 import { extractKhRavId, extractTatSpeakerId } from "./feed-utils";
 import rateLimit from "express-rate-limit";
+import { sendDailyErrorDigest } from "./error-alerts";
 import * as fs from "fs";
 import * as path from "path";
 import pLimit from "p-limit";
@@ -1128,6 +1129,27 @@ function startAutoRefresh() {
   }, 5000);
   setTimeout(slowRefreshInactiveKH, 60000); // first run after 1 min
   startKeepAlive();
+
+  // Daily error digest — send at 8am EST (13:00 UTC)
+  function scheduleDailyDigest() {
+    const now = new Date();
+    const next = new Date(now);
+    next.setUTCHours(13, 0, 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1);
+    const delay = next.getTime() - now.getTime();
+    setTimeout(async () => {
+      try {
+        const [health, grouped] = await Promise.all([
+          storage.getErrorHealth(),
+          storage.getGroupedErrorReports(10),
+        ]);
+        await sendDailyErrorDigest(health, grouped);
+      } catch (e: any) { console.error("Daily digest failed:", e.message); }
+      scheduleDailyDigest(); // reschedule for next day
+    }, delay);
+    log(`Daily error digest scheduled in ${Math.round(delay / 3600000)}h`);
+  }
+  scheduleDailyDigest();
 }
 
 (async () => {
