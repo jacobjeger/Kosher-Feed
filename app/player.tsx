@@ -42,7 +42,7 @@ const SLEEP_OPTIONS = [15, 30, 45, 60, "endOfEpisode" as const, "cancel" as cons
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 const isSmallScreen = SCREEN_HEIGHT < 750;
 const isTinyScreen = SCREEN_HEIGHT <= 640;
-const artworkMaxSize = isTinyScreen ? 100 : isSmallScreen ? 140 : 220;
+const artworkMaxSize = isTinyScreen ? 160 : isSmallScreen ? 180 : 220;
 
 export default function PlayerScreen() {
   const insets = useSafeAreaInsets();
@@ -246,7 +246,7 @@ export default function PlayerScreen() {
       style={[styles.container, { backgroundColor: colors.background }]} 
       contentContainerStyle={[styles.scrollContent, Platform.OS === "web" && styles.scrollContentWeb]}
     >
-      <View style={[styles.header, { paddingTop: insets.top + (Platform.OS === "web" ? 12 : 8) }]}>
+      <View style={[styles.header, { paddingTop: insets.top + (isTinyScreen ? 2 : Platform.OS === "web" ? 12 : 8) }]}>
         <Pressable onPress={() => safeGoBack()} hitSlop={12}>
           <Ionicons name="chevron-down" size={28} color={colors.text} />
         </Pressable>
@@ -254,7 +254,7 @@ export default function PlayerScreen() {
         <View style={{ width: 28 }} />
       </View>
 
-      <View style={[styles.artworkContainer, isSmallScreen && styles.artworkContainerSmall, isTinyScreen && { marginVertical: 4 }]}>
+      <View style={[styles.artworkContainer, isSmallScreen && styles.artworkContainerSmall, isTinyScreen && { marginVertical: 0, paddingVertical: 0, paddingHorizontal: 20 }]}>
         {currentFeed.imageUrl && !isTinyScreen && (
           <View style={styles.artworkGlow}>
             {Platform.OS === "web" ? (
@@ -281,10 +281,10 @@ export default function PlayerScreen() {
           style={{ transform: [{ translateX: swipeAnim }] }}
         >
           {currentFeed.imageUrl ? (
-            <View style={[{ borderRadius: 16 }, cardShadow("lg", colors.shadowColor)]}>
+            <View style={[{ borderRadius: 16, overflow: "hidden" }, cardShadow("lg", colors.shadowColor)]}>
               <Image
                 source={{ uri: currentFeed.imageUrl }}
-                style={[styles.artwork, { maxWidth: artworkMaxSize }]}
+                style={[styles.artwork, { maxWidth: artworkMaxSize, borderRadius: 16 }]}
                 contentFit="cover"
                 cachePolicy="memory-disk"
                 recyclingKey={currentFeed.imageUrl}
@@ -415,7 +415,7 @@ export default function PlayerScreen() {
         </FocusableView>
       </View>
 
-      <View style={styles.secondaryControls}>
+      <View style={[styles.secondaryControls, isTinyScreen && { gap: 8, paddingHorizontal: 16, paddingVertical: 2 }]}>
         <FocusableView
           focusRadius={10}
           onPress={handleSleepTimerPress}
@@ -507,7 +507,7 @@ export default function PlayerScreen() {
         </View>
       )}
 
-      <View style={{ height: insets.bottom + 20 }} />
+      <View style={{ height: insets.bottom + (isTinyScreen ? 4 : 20) }} />
 
       <OptionPickerModal
         visible={sleepModalVisible}
