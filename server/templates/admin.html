@@ -2605,7 +2605,8 @@ async function sendThreadReply(feedbackId, subject, deviceId) {
       api('/api/admin/send-push', { method: 'POST', body: JSON.stringify({
         title: 'ShiurPod Team',
         body: message.substring(0, 200),
-        deviceId
+        deviceId,
+        data: { screen: 'messages', conversationId: convId }
       }) }).catch(() => {});
     }
 

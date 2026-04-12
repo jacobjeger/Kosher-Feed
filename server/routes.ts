@@ -2056,7 +2056,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         const conv = await storage.getConversationById(req.params.id);
         if (conv?.deviceId) {
-          await sendCustomPush("ShiurPod Team", message.substring(0, 100), conv.deviceId);
+          await sendCustomPush("ShiurPod Team", message.substring(0, 100), conv.deviceId, { screen: "messages", conversationId: req.params.id });
         }
       } catch (e: any) { console.debug("Push on reply failed:", e.message); }
 
@@ -2568,12 +2568,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/admin/send-push", adminAuth as any, async (req: Request, res: Response) => {
     try {
-      const { title, body, deviceId } = req.body;
+      const { title, body, deviceId, data } = req.body;
       if (!title || !body) {
         res.status(400).json({ error: "Title and body are required" });
         return;
       }
-      const result = await sendCustomPush(title, body, deviceId || undefined);
+      const result = await sendCustomPush(title, body, deviceId || undefined, data || undefined);
       res.json(result);
     } catch (e: any) {
       publicError(res, e);

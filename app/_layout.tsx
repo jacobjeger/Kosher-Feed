@@ -104,15 +104,18 @@ function handleNotificationResponse(response: Notifications.NotificationResponse
       }
     })();
 
-    if (data.feedId) {
-      setTimeout(() => {
-        try {
+    // Route to the appropriate screen based on notification data
+    setTimeout(() => {
+      try {
+        if (data.screen === "messages") {
+          router.push("/messages" as any);
+        } else if (data.feedId) {
           router.push(`/podcast/${data.feedId}` as any);
-        } catch (e) {
-          addLog("warn", `Notification navigation failed: ${(e as any)?.message}`, undefined, "notifications");
         }
-      }, 500);
-    }
+      } catch (e) {
+        addLog("warn", `Notification navigation failed: ${(e as any)?.message}`, undefined, "notifications");
+      }
+    }, 500);
   } catch (e) {
     addLog("error", `Notification tap handler error: ${(e as any)?.message || e}`, undefined, "push");
   }

@@ -264,6 +264,8 @@ export function getNotificationData(response: Notifications.NotificationResponse
   episodeId?: string;
   feedId?: string;
   type?: string;
+  screen?: string;
+  conversationId?: string;
 } {
   const data = response.notification.request.content.data as Record<string, any> | undefined;
   if (!data) return {};
@@ -271,5 +273,7 @@ export function getNotificationData(response: Notifications.NotificationResponse
     episodeId: data.episodeId as string | undefined,
     feedId: data.feedId as string | undefined,
     type: data.type as string | undefined,
+    screen: data.screen as string | undefined,
+    conversationId: data.conversationId as string | undefined,
   };
 }

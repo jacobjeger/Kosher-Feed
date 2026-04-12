@@ -72,7 +72,8 @@ async function sendPushyNotification(tokens: string[], title: string, body: stri
 export async function sendCustomPush(
   title: string,
   body: string,
-  targetDeviceId?: string
+  targetDeviceId?: string,
+  extraData?: Record<string, any>,
 ): Promise<{ sent: number; failed: number; details: string[] }> {
   const details: string[] = [];
   let sent = 0;
@@ -107,7 +108,7 @@ export async function sendCustomPush(
         sound: "default",
         title,
         body,
-        data: { type: "custom" },
+        data: { type: "custom", ...extraData },
         priority: "high",
         channelId: "default",
       });
@@ -147,7 +148,7 @@ export async function sendCustomPush(
         failed += pushyTokenList.length;
       } else {
         try {
-          await sendPushyNotification(pushyTokenList, title, body, { type: "custom" });
+          await sendPushyNotification(pushyTokenList, title, body, { type: "custom", ...extraData });
           sent += pushyTokenList.length;
           details.push(`Pushy push sent to ${pushyTokenList.length} device(s)`);
         } catch (e: any) {
