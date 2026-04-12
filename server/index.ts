@@ -1101,13 +1101,16 @@ async function slowRefreshInactiveKH() {
     const limiter = pLimit(3);
     let ok = 0, fail = 0;
     await Promise.all(batch.map(feed => limiter(async () => {
+      const feedStart = Date.now();
       try {
         const khRavId = extractKhRavId(feed);
         if (!khRavId) { await storage.updateFeed(feed.id, { lastFetchedAt: new Date() }); return; }
-        await refreshKHFeedEpisodes({ id: feed.id, title: feed.title, kolhalashonRavId: khRavId }, feed);
+        const result = await refreshKHFeedEpisodes({ id: feed.id, title: feed.title, kolhalashonRavId: khRavId }, feed);
         ok++;
+        recordFeedResult({ feedId: feed.id, feedTitle: feed.title, method: 'stream', success: true, durationMs: Date.now() - feedStart, episodesFound: result.newEpisodes, newEpisodes: result.newEpisodes, timestamp: Date.now() });
       } catch (e: any) {
         fail++;
+        recordFeedResult({ feedId: feed.id, feedTitle: feed.title, method: 'stream', success: false, durationMs: Date.now() - feedStart, episodesFound: 0, newEpisodes: 0, error: (e as Error).message?.slice(0, 200), timestamp: Date.now() });
         try { await storage.updateFeed(feed.id, { lastFetchedAt: new Date() }); } catch {}
       }
     })));
