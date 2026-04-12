@@ -270,6 +270,21 @@
         <div id="deviceAnalytics" class="stats" style="margin-bottom:16px;"></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;" id="deviceBreakdowns"></div>
       </div>
+
+      <div class="card" style="margin-top:16px;">
+        <div class="card-header"><h2>Website Analytics</h2></div>
+        <div id="websiteStats" class="stats" style="margin-bottom:16px;"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div class="card" style="grid-column:1/3;">
+            <div class="card-header"><h2>Page Views (Last 30 Days)</h2></div>
+            <div id="websiteChart" class="chart-container"></div>
+          </div>
+          <div id="websiteTopPages" style="background:#0f172a;border-radius:10px;padding:14px;"></div>
+          <div id="websiteReferrers" style="background:#0f172a;border-radius:10px;padding:14px;"></div>
+          <div id="websiteDeviceTypes" style="background:#0f172a;border-radius:10px;padding:14px;"></div>
+          <div id="websiteCountries" style="background:#0f172a;border-radius:10px;padding:14px;"></div>
+        </div>
+      </div>
     </div>
 
     <div id="feedsTab" class="hidden">
@@ -938,7 +953,7 @@ async function loadAnalytics() {
     renderFeedPerformance();
     if (enhanced) renderEnhancedStats();
     // Defer secondary analytics to avoid thundering herd
-    setTimeout(() => { loadListenerAnalytics(); loadSourceBreakdown(); loadDeviceAnalytics(); }, 500);
+    setTimeout(() => { loadListenerAnalytics(); loadSourceBreakdown(); loadDeviceAnalytics(); loadWebsiteAnalytics(); }, 500);
   } catch(e) {
     console.error('Analytics error:', e);
   }
@@ -4197,6 +4212,51 @@ async function loadDeviceAnalytics() {
       }).join('') + '</div>';
   } catch(e) {
     console.error('Device analytics load failed:', e);
+  }
+}
+
+async function loadWebsiteAnalytics() {
+  try {
+    const data = await api('/api/admin/analytics/website');
+    // Stat cards
+    document.getElementById('websiteStats').innerHTML = `
+      <div class="stat-card"><div class="stat-value">${data.views24h.toLocaleString()}</div><div class="stat-label">Views (24h)</div></div>
+      <div class="stat-card"><div class="stat-value">${data.uniqueVisitors24h.toLocaleString()}</div><div class="stat-label">Visitors (24h)</div></div>
+      <div class="stat-card"><div class="stat-value">${data.views7d.toLocaleString()}</div><div class="stat-label">Views (7d)</div></div>
+      <div class="stat-card"><div class="stat-value">${data.uniqueVisitors7d.toLocaleString()}</div><div class="stat-label">Visitors (7d)</div></div>
+      <div class="stat-card"><div class="stat-value">${data.views30d.toLocaleString()}</div><div class="stat-label">Views (30d)</div></div>
+      <div class="stat-card"><div class="stat-value">${data.uniqueVisitors30d.toLocaleString()}</div><div class="stat-label">Visitors (30d)</div></div>
+    `;
+
+    // Daily views chart
+    const chart = document.getElementById('websiteChart');
+    if (data.dailyViews && data.dailyViews.length > 0) {
+      const maxCount = Math.max(...data.dailyViews.map(d => d.count), 1);
+      const bars = data.dailyViews.map(d => {
+        const height = Math.max((d.count / maxCount) * 100, 2);
+        const label = new Date(d.day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        return '<div class="chart-bar" style="height:' + height + '%;background:#8b5cf6;" data-tooltip="' + d.count + ' views on ' + label + '"></div>';
+      }).join('');
+      chart.innerHTML = '<div class="chart-bar-container">' + bars + '</div>';
+    } else {
+      chart.innerHTML = '<p style="color:#64748b;text-align:center;padding:40px;">No website data yet</p>';
+    }
+
+    // Breakdowns
+    function renderWebBreakdown(containerId, title, items, keyField) {
+      const el = document.getElementById(containerId);
+      if (!items || items.length === 0) { el.innerHTML = '<div style="font-size:14px;font-weight:600;color:#f8fafc;margin-bottom:10px;">' + esc(title) + '</div><p style="color:#64748b;font-size:12px;">No data yet</p>'; return; }
+      el.innerHTML = '<div style="font-size:14px;font-weight:600;color:#f8fafc;margin-bottom:10px;">' + esc(title) + '</div>' +
+        items.map(function(item) {
+          return '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;"><span style="color:#94a3b8;">' + esc(String(item[keyField])) + '</span><strong style="color:#e2e8f0;">' + item.count.toLocaleString() + '</strong></div>';
+        }).join('');
+    }
+    renderWebBreakdown('websiteTopPages', 'Top Pages', data.topPages, 'path');
+    renderWebBreakdown('websiteReferrers', 'Top Referrers', data.topReferrers, 'referrer');
+    renderWebBreakdown('websiteDeviceTypes', 'Device Types', data.byDeviceType, 'deviceType');
+    renderWebBreakdown('websiteCountries', 'Countries', data.byCountry, 'country');
+  } catch(e) {
+    console.error('Website analytics load failed:', e);
   }
 }
 

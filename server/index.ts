@@ -91,6 +91,7 @@ function renderSeoPage(opts: { title: string; description: string; canonicalUrl:
   <footer class="footer">
     <p>&copy; ${new Date().getFullYear()} <a href="${escHtml(opts.baseUrl)}">ShiurPod</a> &middot; <a href="${escHtml(opts.baseUrl)}/privacy">Privacy</a> &middot; <a href="${escHtml(opts.baseUrl)}/terms">Terms</a></p>
   </footer>
+  <script>(function(){try{var s=sessionStorage.getItem('_pvs')||Math.random().toString(36).slice(2);sessionStorage.setItem('_pvs',s);fetch('/api/analytics/pageview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:location.pathname,referrer:document.referrer||null,sessionId:s}),keepalive:true}).catch(function(){});}catch(e){}})();</script>
 </body>
 </html>`;
 }

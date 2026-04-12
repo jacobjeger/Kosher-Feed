@@ -378,3 +378,21 @@ export const conversationMessages = pgTable("conversation_messages", {
 });
 
 export type ConversationMessage = typeof conversationMessages.$inferSelect;
+
+export const pageViews = pgTable("page_views", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  path: text("path").notNull(),
+  referrer: text("referrer"),
+  userAgent: text("user_agent"),
+  ipAddress: text("ip_address"),
+  country: text("country"),
+  city: text("city"),
+  deviceType: text("device_type"), // "mobile" | "desktop" | "tablet"
+  sessionId: text("session_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("page_views_created_at_idx").on(table.createdAt),
+  index("page_views_path_idx").on(table.path),
+]);
+
+export type PageView = typeof pageViews.$inferSelect;

@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { isApiOnlyUrl } from "./alldaf";
-import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals, queueItems, notificationTaps, feedMergeHistory, appConfig, deviceProfiles, conversations, conversationMessages } from "@shared/schema";
-import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor, NotificationPreference, Announcement, AnnouncementDismissal, NotificationTap, AppConfig, DeviceProfile, Conversation, ConversationMessage } from "@shared/schema";
+import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals, queueItems, notificationTaps, feedMergeHistory, appConfig, deviceProfiles, conversations, conversationMessages, pageViews } from "@shared/schema";
+import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor, NotificationPreference, Announcement, AnnouncementDismissal, NotificationTap, AppConfig, DeviceProfile, Conversation, ConversationMessage, PageView } from "@shared/schema";
 import { eq, and, desc, asc, inArray, sql, count, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
@@ -1989,4 +1989,51 @@ export async function getAdminConversations(opts: { page: number; limit: number;
 
 export async function closeConversation(id: string): Promise<void> {
   await db.update(conversations).set({ status: "closed" }).where(eq(conversations.id, id));
+}
+
+// Website Analytics
+export async function recordPageView(data: { path: string; referrer?: string; userAgent?: string; ipAddress?: string; country?: string; city?: string; deviceType?: string; sessionId?: string }): Promise<void> {
+  await db.insert(pageViews).values(data);
+}
+
+export async function getWebsiteAnalytics(): Promise<{
+  views24h: number; views7d: number; views30d: number;
+  uniqueVisitors24h: number; uniqueVisitors7d: number; uniqueVisitors30d: number;
+  topPages: { path: string; count: number }[];
+  topReferrers: { referrer: string; count: number }[];
+  byDeviceType: { deviceType: string; count: number }[];
+  byCountry: { country: string; count: number }[];
+  dailyViews: { day: string; count: number }[];
+}> {
+  const now = new Date();
+  const h24 = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const d7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const d30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  const [[v24], [v7], [v30], [u24], [u7], [u30]] = await Promise.all([
+    db.select({ count: count() }).from(pageViews).where(sql`${pageViews.createdAt} > ${h24}`),
+    db.select({ count: count() }).from(pageViews).where(sql`${pageViews.createdAt} > ${d7}`),
+    db.select({ count: count() }).from(pageViews).where(sql`${pageViews.createdAt} > ${d30}`),
+    db.select({ count: sql<number>`COUNT(DISTINCT ${pageViews.ipAddress})` }).from(pageViews).where(sql`${pageViews.createdAt} > ${h24}`),
+    db.select({ count: sql<number>`COUNT(DISTINCT ${pageViews.ipAddress})` }).from(pageViews).where(sql`${pageViews.createdAt} > ${d7}`),
+    db.select({ count: sql<number>`COUNT(DISTINCT ${pageViews.ipAddress})` }).from(pageViews).where(sql`${pageViews.createdAt} > ${d30}`),
+  ]);
+
+  const [topPages, topReferrers, byDeviceType, byCountry, dailyViews] = await Promise.all([
+    db.select({ path: pageViews.path, count: count() }).from(pageViews).where(sql`${pageViews.createdAt} > ${d30}`).groupBy(pageViews.path).orderBy(desc(count())).limit(15),
+    db.select({ referrer: sql<string>`COALESCE(${pageViews.referrer}, 'Direct')`, count: count() }).from(pageViews).where(sql`${pageViews.createdAt} > ${d30}`).groupBy(sql`COALESCE(${pageViews.referrer}, 'Direct')`).orderBy(desc(count())).limit(10),
+    db.select({ deviceType: sql<string>`COALESCE(${pageViews.deviceType}, 'Unknown')`, count: count() }).from(pageViews).where(sql`${pageViews.createdAt} > ${d30}`).groupBy(sql`COALESCE(${pageViews.deviceType}, 'Unknown')`).orderBy(desc(count())),
+    db.select({ country: sql<string>`COALESCE(${pageViews.country}, 'Unknown')`, count: count() }).from(pageViews).where(sql`${pageViews.createdAt} > ${d30} AND ${pageViews.country} IS NOT NULL`).groupBy(sql`COALESCE(${pageViews.country}, 'Unknown')`).orderBy(desc(count())).limit(15),
+    db.select({ day: sql<string>`DATE(${pageViews.createdAt})`, count: count() }).from(pageViews).where(sql`${pageViews.createdAt} > ${d30}`).groupBy(sql`DATE(${pageViews.createdAt})`).orderBy(sql`DATE(${pageViews.createdAt})`),
+  ]);
+
+  return {
+    views24h: Number(v24.count), views7d: Number(v7.count), views30d: Number(v30.count),
+    uniqueVisitors24h: Number(u24.count), uniqueVisitors7d: Number(u7.count), uniqueVisitors30d: Number(u30.count),
+    topPages: topPages.map(p => ({ ...p, count: Number(p.count) })),
+    topReferrers: topReferrers.map(r => ({ ...r, count: Number(r.count) })),
+    byDeviceType: byDeviceType.map(d => ({ ...d, count: Number(d.count) })),
+    byCountry: byCountry.map(c => ({ ...c, count: Number(c.count) })),
+    dailyViews: dailyViews.map(d => ({ ...d, count: Number(d.count) })),
+  };
 }

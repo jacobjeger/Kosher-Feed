@@ -1904,6 +1904,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Website Analytics: record page view (public, called from landing page JS)
+  const _pvRateLimit = new Map<string, number>();
+  app.post("/api/analytics/pageview", async (req: Request, res: Response) => {
+    try {
+      const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
+      // Rate limit: max 10 page views per IP per minute
+      const now = Date.now();
+      const lastHit = _pvRateLimit.get(clientIp) || 0;
+      if (now - lastHit < 6000) return res.json({ ok: true }); // silently skip
+      _pvRateLimit.set(clientIp, now);
+      // Clean old entries every 1000 hits
+      if (_pvRateLimit.size > 1000) {
+        for (const [ip, ts] of _pvRateLimit) { if (now - ts > 60000) _pvRateLimit.delete(ip); }
+      }
+
+      const ua = req.headers["user-agent"] || "";
+      const isMobile = /Mobile|Android|iPhone|iPad/i.test(ua);
+      const isTablet = /iPad|Tablet/i.test(ua);
+      const deviceType = isTablet ? "tablet" : isMobile ? "mobile" : "desktop";
+
+      // Geo resolve (reuse ip-api.com pattern)
+      let country: string | null = null;
+      let city: string | null = null;
+      if (clientIp && clientIp !== "127.0.0.1" && clientIp !== "::1") {
+        try {
+          const geoRes = await fetch(`http://ip-api.com/json/${clientIp}?fields=country,city`, { signal: AbortSignal.timeout(2000) });
+          if (geoRes.ok) { const geo = await geoRes.json() as any; country = geo.country || null; city = geo.city || null; }
+        } catch {}
+      }
+
+      await storage.recordPageView({
+        path: (req.body.path || "/").substring(0, 500),
+        referrer: req.body.referrer ? String(req.body.referrer).substring(0, 1000) : null,
+        userAgent: ua.substring(0, 500),
+        ipAddress: clientIp,
+        country, city, deviceType,
+        sessionId: req.body.sessionId || null,
+      });
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.json({ ok: true }); // don't fail the page load
+    }
+  });
+
+  // Admin: Website Analytics
+  app.get("/api/admin/analytics/website", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const data = await storage.getWebsiteAnalytics();
+      res.json(data);
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
   // Admin: Device Usage Stats for a specific device
   app.get("/api/admin/device/:deviceId", adminAuth as any, async (req: Request, res: Response) => {
     try {
