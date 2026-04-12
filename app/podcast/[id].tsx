@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect, memo } from "react";
-import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Platform, Switch, Alert, TextInput, RefreshControl } from "react-native";
+import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Platform, Switch, Alert, TextInput, RefreshControl, Dimensions } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
 import { Ionicons, Feather } from "@expo/vector-icons";
@@ -659,8 +659,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   artwork: {
-    width: 100,
-    height: 100,
+    width: Dimensions.get("window").height <= 640 ? 80 : 100,
+    height: Dimensions.get("window").height <= 640 ? 80 : 100,
     borderRadius: 14,
   },
   podcastMeta: {

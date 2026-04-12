@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback } from "react";
-import { View, Text, Pressable, StyleSheet, useWindowDimensions, Animated as RNAnimated, Platform } from "react-native";
+import { View, Text, Pressable, StyleSheet, useWindowDimensions, Animated as RNAnimated, Platform, Dimensions } from "react-native";
 import FocusableView from "@/components/FocusableView";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
@@ -243,8 +243,8 @@ const styles = StyleSheet.create({
   },
 
   smallContainer: {
-    width: Platform.OS === "web" ? 170 : 155,
-    height: Platform.OS === "web" ? 240 : 220,
+    width: Platform.OS === "web" ? 170 : Dimensions.get("window").height <= 640 ? 130 : 155,
+    height: Platform.OS === "web" ? 240 : Dimensions.get("window").height <= 640 ? 185 : 220,
     marginRight: 12,
     borderRadius: 14,
     borderWidth: Platform.OS === "web" ? 0 : 1,
@@ -254,7 +254,7 @@ const styles = StyleSheet.create({
   },
   smallImage: {
     width: "100%" as any,
-    height: Platform.OS === "web" ? 140 : 130,
+    height: Platform.OS === "web" ? 140 : Dimensions.get("window").height <= 640 ? 105 : 130,
   },
   smallInfo: {
     padding: 10,
