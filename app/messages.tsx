@@ -90,7 +90,7 @@ export default function MessagesScreen() {
   if (selectedConv) {
     const conv = convsQuery.data?.find((c: any) => c.id === selectedConv);
     return (
-      <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.background }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.background }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <View style={[styles.header, { paddingTop: insets.top + 8, borderBottomColor: colors.border }]}>
           <FocusableView autoFocus onPress={() => setSelectedConv(null)} hitSlop={12}>
             <Ionicons name="arrow-back" size={24} color={colors.text} />
