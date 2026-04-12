@@ -22,6 +22,10 @@ android/
 *.key
 *.mobileprovision
 
+# Firebase credentials
+google-services.json
+GoogleService-Info.plist
+
 # Metro
 .metro-health-check*
 
