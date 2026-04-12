@@ -370,6 +370,12 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
     </>
   );
 
+  const progressBar = savedProgress && !played && savedProgress.durationMs > 0 ? (
+    <View style={{ height: 3, backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)", borderBottomLeftRadius: 12, borderBottomRightRadius: 12, overflow: "hidden" }}>
+      <View style={{ height: 3, width: `${Math.min(Math.round((savedProgress.positionMs / savedProgress.durationMs) * 100), 100)}%`, backgroundColor: colors.accent, borderRadius: 3 } as any} />
+    </View>
+  ) : null;
+
   if (!isNative || !panResponder) {
     return (
       <View
@@ -379,6 +385,7 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
         ]}
       >
         {cardContent}
+        {progressBar}
       </View>
     );
   }
@@ -426,6 +433,7 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
         {...panResponder.panHandlers}
       >
         {cardContent}
+        {progressBar}
       </RNAnimated.View>
     </View>
   );

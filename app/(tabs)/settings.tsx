@@ -694,6 +694,7 @@ function SettingsScreenInner() {
             <Pressable
               style={[feedbackStyles.modal, { backgroundColor: colors.surface }]}
               onPress={(e) => e.stopPropagation()}
+              accessibilityViewIsModal={true}
             >
               <View style={feedbackStyles.modalHeader}>
                 <Text style={[feedbackStyles.modalTitle, { color: colors.text }]}>

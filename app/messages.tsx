@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
-import { View, Text, FlatList, TextInput, Pressable, StyleSheet, Platform, ActivityIndicator, KeyboardAvoidingView } from "react-native";
+import { View, Text, FlatList, TextInput, Pressable, StyleSheet, Platform, ActivityIndicator, KeyboardAvoidingView, RefreshControl } from "react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -158,6 +158,7 @@ export default function MessagesScreen() {
         data={convsQuery.data || []}
         keyExtractor={(item: any) => item.id}
         contentContainerStyle={{ padding: 16 }}
+        refreshControl={<RefreshControl refreshing={convsQuery.isRefetching} onRefresh={() => convsQuery.refetch()} tintColor={colors.accent} />}
         renderItem={({ item }: { item: any }) => (
           <FocusableView
             focusRadius={12}

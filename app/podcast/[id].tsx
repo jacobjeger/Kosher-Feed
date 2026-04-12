@@ -556,7 +556,20 @@ function PodcastDetailScreenInner() {
 
   const emptyElement = useMemo(() => {
     if (episodesInfiniteQuery.isLoading) {
-      return <ActivityIndicator size="small" color={colors.accent} style={{ marginTop: 20 }} />;
+      const skeletonBg = isDark ? "#1e293b" : "#e2e8f0";
+      return (
+        <View style={{ paddingTop: 12, gap: 12 }}>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 12, padding: 12, backgroundColor: colors.surface, borderRadius: 12 }}>
+              <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: skeletonBg }} />
+              <View style={{ flex: 1, gap: 6 }}>
+                <View style={{ height: 14, width: "80%", backgroundColor: skeletonBg, borderRadius: 4 }} />
+                <View style={{ height: 10, width: "50%", backgroundColor: skeletonBg, borderRadius: 4 }} />
+              </View>
+            </View>
+          ))}
+        </View>
+      );
     }
     return (
       <View style={styles.emptyState}>
@@ -564,7 +577,7 @@ function PodcastDetailScreenInner() {
         <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No episodes found</Text>
       </View>
     );
-  }, [episodesInfiniteQuery.isLoading, colors]);
+  }, [episodesInfiniteQuery.isLoading, colors, isDark]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>

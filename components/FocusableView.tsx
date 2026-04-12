@@ -55,14 +55,15 @@ export default function FocusableView({
 
   const isAndroid = Platform.OS === "android";
 
-  // Visible focus: border + background tint (per D-pad UX guide)
+  // Visible focus: thick border + background tint + subtle scale for d-pad visibility
   const focusRingStyle: ViewStyle | undefined =
     isAndroid && isFocused
       ? focusStyle ?? {
-          borderWidth: 2,
-          borderColor: colors.accent,
+          borderWidth: 3,
+          borderColor: "#60a5fa",
           borderRadius: focusRadius,
-          backgroundColor: isDark ? "rgba(59,130,246,0.12)" : "rgba(37,99,235,0.08)",
+          backgroundColor: isDark ? "rgba(96,165,250,0.15)" : "rgba(37,99,235,0.10)",
+          transform: [{ scale: 1.02 }],
         }
       : undefined;
 

@@ -93,15 +93,14 @@ export default function MiniPlayer() {
             </View>
           </View>
 
-          {isWeb && (
-            <Pressable
-              onPress={(e) => { e.stopPropagation(); seekTo(Math.max(0, position.positionMs - 15000)); }}
-              hitSlop={8}
-              style={styles.skipBtn}
-            >
-              <Ionicons name="play-back" size={18} color="rgba(255,255,255,0.7)" />
-            </Pressable>
-          )}
+          <FocusableView
+            focusRadius={14}
+            onPress={(e) => { e.stopPropagation(); seekTo(Math.max(0, position.positionMs - 15000)); }}
+            hitSlop={8}
+            style={styles.skipBtn}
+          >
+            <Ionicons name="play-back" size={18} color="rgba(255,255,255,0.7)" />
+          </FocusableView>
 
           <FocusableView
             focusRadius={20}
@@ -123,15 +122,14 @@ export default function MiniPlayer() {
             )}
           </FocusableView>
 
-          {isWeb && (
-            <Pressable
-              onPress={(e) => { e.stopPropagation(); seekTo(Math.min(position.durationMs, position.positionMs + 30000)); }}
-              hitSlop={8}
-              style={styles.skipBtn}
-            >
-              <Ionicons name="play-forward" size={18} color="rgba(255,255,255,0.7)" />
-            </Pressable>
-          )}
+          <FocusableView
+            focusRadius={14}
+            onPress={(e) => { e.stopPropagation(); seekTo(Math.min(position.durationMs, position.positionMs + 30000)); }}
+            hitSlop={8}
+            style={styles.skipBtn}
+          >
+            <Ionicons name="play-forward" size={18} color="rgba(255,255,255,0.7)" />
+          </FocusableView>
         </View>
       </FocusableView>
     </Animated.View>

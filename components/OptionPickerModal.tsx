@@ -35,7 +35,7 @@ function OptionPickerModal({ visible, title, subtitle, options, onClose }: Props
       statusBarTranslucent
     >
       <Pressable style={styles.overlay} onPress={onClose}>
-        <Pressable style={[styles.sheet, { backgroundColor: colors.surface }]} onPress={(e) => e.stopPropagation()}>
+        <Pressable style={[styles.sheet, { backgroundColor: colors.surface }]} onPress={(e) => e.stopPropagation()} accessibilityViewIsModal={true}>
           <View style={styles.headerRow}>
             <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
             <FocusableView onPress={onClose} hitSlop={10} style={[styles.closeBtn, { backgroundColor: colors.surfaceAlt }]} focusRadius={15}>

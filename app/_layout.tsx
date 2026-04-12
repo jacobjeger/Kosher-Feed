@@ -41,7 +41,7 @@ setupPushNotificationChannels();
 
 function RootLayoutNav({ initialRoute }: { initialRoute: string }) {
   return (
-    <Stack screenOptions={{ headerBackTitle: "Back" }} initialRouteName={initialRoute}>
+    <Stack screenOptions={{ headerBackTitle: "Back", gestureEnabled: true, gestureDirection: "horizontal" }} initialRouteName={initialRoute}>
       <Stack.Screen name="onboarding" options={{ headerShown: false, animation: "none" }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen
