@@ -1,8 +1,16 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getApiUrl } from "@/lib/query-client";
+import { setAudioProxyRules } from "@/lib/audio-url";
+import { applyDownloadConfig } from "@/contexts/DownloadsContext";
+import { setAutoDeleteDelay } from "@/lib/auto-delete-download";
 
 const CACHE_KEY = "@shiurpod_remote_config";
+
+export interface AudioProxyRule {
+  match: string; // regex pattern to match audio URLs
+  replace: string; // replacement template ($1, $2 for capture groups)
+}
 
 export interface RemoteConfig {
   homeSections: string[];
@@ -12,6 +20,15 @@ export interface RemoteConfig {
   carouselAutoScrollMs: number;
   featureFlags: Record<string, boolean>;
   minAppVersion: string;
+  // Audio proxy rules — allows adding new source proxies without app update
+  audioProxyRules: AudioProxyRule[];
+  // Download settings
+  maxConcurrentDownloads: number;
+  maxDownloadRetries: number;
+  downloadRetryDelayMs: number;
+  autoDeleteDelayMs: number;
+  // Pagination limits
+  recommendationsLimit: number;
   [key: string]: any;
 }
 
@@ -28,12 +45,26 @@ const DEFAULT_CONFIG: RemoteConfig = {
     showContinueListening: true,
   },
   minAppVersion: "1.0.0",
+  audioProxyRules: [
+    { match: "https?://srv\\.kolhalashon\\.com/api/files/(?:GetMp3FileToPlay|getLocationOfFileToVideo)/(\\d+)", replace: "/api/audio/kh/$1" },
+  ],
+  maxConcurrentDownloads: 1,
+  maxDownloadRetries: 2,
+  downloadRetryDelayMs: 10000,
+  autoDeleteDelayMs: 48 * 60 * 60 * 1000,
+  recommendationsLimit: 10,
 };
 
 interface RemoteConfigContextValue {
   config: RemoteConfig;
   isLoaded: boolean;
   refresh: () => Promise<void>;
+}
+
+function applyConfig(cfg: RemoteConfig) {
+  if (cfg.audioProxyRules) setAudioProxyRules(cfg.audioProxyRules);
+  applyDownloadConfig({ maxConcurrentDownloads: cfg.maxConcurrentDownloads, maxDownloadRetries: cfg.maxDownloadRetries, downloadRetryDelayMs: cfg.downloadRetryDelayMs });
+  if (cfg.autoDeleteDelayMs) setAutoDeleteDelay(cfg.autoDeleteDelayMs);
 }
 
 const RemoteConfigContext = createContext<RemoteConfigContextValue | null>(null);
@@ -50,6 +81,7 @@ export function RemoteConfigProvider({ children }: { children: ReactNode }) {
         const data = await res.json();
         const merged = { ...DEFAULT_CONFIG, ...data };
         setConfig(merged);
+        applyConfig(merged);
         await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(merged)).catch(() => {});
         return;
       }
@@ -58,7 +90,9 @@ export function RemoteConfigProvider({ children }: { children: ReactNode }) {
     try {
       const cached = await AsyncStorage.getItem(CACHE_KEY);
       if (cached) {
-        setConfig({ ...DEFAULT_CONFIG, ...JSON.parse(cached) });
+        const merged = { ...DEFAULT_CONFIG, ...JSON.parse(cached) };
+        setConfig(merged);
+        applyConfig(merged);
       }
     } catch {}
   }, []);

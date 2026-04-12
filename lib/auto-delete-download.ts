@@ -4,7 +4,11 @@ import { addLog } from "@/lib/error-logger";
 
 const DOWNLOADS_KEY = "@shiurpod_downloads";
 const COMPLETED_KEY = "@shiurpod_completed_downloads";
-const DELETE_DELAY_MS = 48 * 60 * 60 * 1000;
+let DELETE_DELAY_MS = 48 * 60 * 60 * 1000;
+
+export function setAutoDeleteDelay(ms: number) {
+  if (ms > 0) DELETE_DELAY_MS = ms;
+}
 
 export async function markDownloadCompleted(episodeId: string): Promise<void> {
   try {

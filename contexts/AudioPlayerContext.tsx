@@ -16,15 +16,7 @@ let expoAudioModule: any = null;
 let createAudioPlayerFn: any = null;
 let setAudioModeAsyncFn: any = null;
 
-// Rewrite KH direct audio URLs to go through our server proxy
-function resolveAudioUrl(audioUrl: string): string {
-  const khMatch = audioUrl.match(/https?:\/\/srv\.kolhalashon\.com\/api\/files\/(?:GetMp3FileToPlay|getLocationOfFileToVideo)\/(\d+)/);
-  if (khMatch) {
-    const fileId = khMatch[1];
-    return `${getApiUrl()}/api/audio/kh/${fileId}`;
-  }
-  return audioUrl;
-}
+import { resolveAudioUrl } from "@/lib/audio-url";
 
 if (Platform.OS !== "web") {
   try {

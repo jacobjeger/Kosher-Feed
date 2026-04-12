@@ -9,21 +9,20 @@ import { getApiUrl } from "@/lib/query-client";
 import { getDeviceId } from "@/lib/device-id";
 import { addLog } from "@/lib/error-logger";
 
+import { resolveAudioUrl } from "@/lib/audio-url";
+
 const PROGRESS_THROTTLE_MS = 4000;
 const PROGRESS_UPDATE_MIN_CHANGE = 0.10;
-const MAX_CONCURRENT_DOWNLOADS = 1;
-const MAX_RETRY_COUNT = 2;
+// These are fallback defaults — overridden by remote config at runtime
+let MAX_CONCURRENT_DOWNLOADS = 1;
+let MAX_RETRY_COUNT = 2;
+let RETRY_BASE_DELAY_MS = 10000;
 
-// Rewrite KH direct audio URLs to go through our server proxy
-function resolveAudioUrl(audioUrl: string): string {
-  const khMatch = audioUrl.match(/https?:\/\/srv\.kolhalashon\.com\/api\/files\/(?:GetMp3FileToPlay|getLocationOfFileToVideo)\/(\d+)/);
-  if (khMatch) {
-    const fileId = khMatch[1];
-    return `${getApiUrl()}/api/audio/kh/${fileId}`;
-  }
-  return audioUrl;
+export function applyDownloadConfig(config: { maxConcurrentDownloads?: number; maxDownloadRetries?: number; downloadRetryDelayMs?: number }) {
+  if (config.maxConcurrentDownloads) MAX_CONCURRENT_DOWNLOADS = config.maxConcurrentDownloads;
+  if (config.maxDownloadRetries) MAX_RETRY_COUNT = config.maxDownloadRetries;
+  if (config.downloadRetryDelayMs) RETRY_BASE_DELAY_MS = config.downloadRetryDelayMs;
 }
-const RETRY_BASE_DELAY_MS = 10000;
 
 interface FailedDownloadInfo {
   retryCount: number;
