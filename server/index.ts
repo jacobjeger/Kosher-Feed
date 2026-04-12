@@ -1086,13 +1086,13 @@ async function updateSpeakerBios(): Promise<number> {
 }
 
 // Slow cycle: refresh inactive KH feeds over 72 hours
-// With ~4800 inactive KH feeds / 72h = ~67 per hour, batch 35 every 30 min
+// With ~4800 inactive KH feeds / 72h = ~67 per hour, batch 50 every 30 min = 2400/day
 let isSlowKHRefreshing = false;
 async function slowRefreshInactiveKH() {
-  if (isSlowKHRefreshing || isAutoRefreshing) return; // skip if main cycle is running
+  if (isSlowKHRefreshing) return;
   isSlowKHRefreshing = true;
   try {
-    const batch = await storage.getInactiveKHFeedsForSlowSync(35);
+    const batch = await storage.getInactiveKHFeedsForSlowSync(50);
     if (batch.length === 0) return;
     log(`KH slow-refresh: processing ${batch.length} inactive KH feed(s)`);
     const limiter = pLimit(3);
