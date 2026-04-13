@@ -1096,7 +1096,7 @@ async function slowRefreshInactiveKH() {
   isSlowKHRefreshing = true;
   try {
     const batch = await storage.getInactiveKHFeedsForSlowSync(50);
-    if (batch.length === 0) return;
+    if (batch.length === 0) { log("KH slow-refresh: no stale inactive feeds"); return; }
     log(`KH slow-refresh: processing ${batch.length} inactive KH feed(s)`);
     const limiter = pLimit(3);
     let ok = 0, fail = 0;
