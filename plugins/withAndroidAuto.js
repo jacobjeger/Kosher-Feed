@@ -99,22 +99,32 @@ function addAutoXmlAndDependencies(config) {
         `<?xml version="1.0" encoding="utf-8"?>\n<automotiveApp>\n    <uses name="media" />\n</automotiveApp>\n`
       );
 
-      // Add Guava dependency to expo-audio (required by ShiurPodAutoService)
-      const expoAudioBuildGradle = path.join(
+      // Copy ShiurPodAutoService.kt into the app's own source directory
+      // (expo-audio module build doesn't compile it — class not in dex)
+      const serviceSource = path.join(
         config.modRequest.projectRoot,
-        "node_modules",
-        "expo-audio",
-        "android",
-        "build.gradle"
+        "node_modules", "expo-audio", "android", "src", "main", "java",
+        "expo", "modules", "audio", "service", "ShiurPodAutoService.kt"
       );
-      if (fs.existsSync(expoAudioBuildGradle)) {
-        let content = fs.readFileSync(expoAudioBuildGradle, "utf-8");
+      const serviceDestDir = path.join(
+        platformRoot, "app", "src", "main", "java",
+        "expo", "modules", "audio", "service"
+      );
+      if (fs.existsSync(serviceSource)) {
+        fs.mkdirSync(serviceDestDir, { recursive: true });
+        fs.copyFileSync(serviceSource, path.join(serviceDestDir, "ShiurPodAutoService.kt"));
+      }
+
+      // Add Guava dependency to app build.gradle (required by ShiurPodAutoService)
+      const appBuildGradle = path.join(platformRoot, "app", "build.gradle");
+      if (fs.existsSync(appBuildGradle)) {
+        let content = fs.readFileSync(appBuildGradle, "utf-8");
         if (!content.includes("guava")) {
           content = content.replace(
             /dependencies\s*\{/,
-            `dependencies {\n  implementation "com.google.guava:guava:32.1.3-android"`
+            `dependencies {\n    implementation "com.google.guava:guava:32.1.3-android"`
           );
-          fs.writeFileSync(expoAudioBuildGradle, content);
+          fs.writeFileSync(appBuildGradle, content);
         }
       }
 
