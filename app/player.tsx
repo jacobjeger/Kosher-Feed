@@ -14,6 +14,7 @@ import { cardShadow } from "@/constants/shadows";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import { getBookmarks, addBookmark, removeBookmark, type Bookmark } from "@/lib/bookmarks";
 import { useSettings } from "@/contexts/SettingsContext";
+import TinyPlayerLayout from "@/components/TinyPlayerLayout";
 import { useFavorites } from "@/contexts/FavoritesContext";
 import OptionPickerModal, { type PickerOption } from "@/components/OptionPickerModal";
 
@@ -236,88 +237,38 @@ export default function PlayerScreen() {
       : formatTimerRemaining(sleepTimer.remainingMs)
     : null;
 
-  // Compact layout for tiny screens (480x640) — no ScrollView, horizontal artwork+info
+  // Compact layout for tiny screens (480x640) — separate component, no ScrollView
   if (isTinyScreen) {
     return (
-      <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
-        {/* Header */}
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 4 }}>
-          <Pressable onPress={() => safeGoBack()} hitSlop={12}>
-            <Ionicons name="chevron-down" size={24} color={colors.text} />
-          </Pressable>
-          <Text style={{ fontSize: 11, fontWeight: "600", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 1 }}>Now Playing</Text>
-          <View style={{ width: 24 }} />
-        </View>
-
-        {/* Artwork + Info row */}
-        <View style={{ flexDirection: "row", paddingHorizontal: 16, paddingVertical: 8, gap: 12, alignItems: "center" }}>
-          {currentFeed.imageUrl ? (
-            <Image source={{ uri: currentFeed.imageUrl }} style={{ width: 100, height: 100, borderRadius: 12 }} contentFit="cover" cachePolicy="memory-disk" transition={0} />
-          ) : (
-            <View style={{ width: 100, height: 100, borderRadius: 12, backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }}>
-              <Ionicons name="mic" size={40} color={colors.textSecondary} />
-            </View>
-          )}
-          <View style={{ flex: 1, gap: 2 }}>
-            <Text style={{ fontSize: 14, fontWeight: "700", color: colors.text, lineHeight: 18 }} numberOfLines={2}>{currentEpisode.title}</Text>
-            <Pressable onPress={() => { router.back(); router.push(`/podcast/${currentFeed.id}`); }} hitSlop={8}>
-              <Text style={{ fontSize: 12, color: colors.accent, textDecorationLine: "underline" }} numberOfLines={1}>{currentFeed.title}</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        {/* Slider */}
-        <View style={{ paddingHorizontal: 16, marginBottom: 4 }}>
-          <Slider
-            style={{ width: "100%", height: 30 }}
-            minimumValue={0} maximumValue={1} value={progress}
-            onSlidingStart={() => setIsSeeking(true)}
-            onValueChange={(val) => setSeekValue(val * position.durationMs)}
-            onSlidingComplete={async (val) => { await seekTo(val * position.durationMs); setIsSeeking(false); }}
-            minimumTrackTintColor={colors.accent} maximumTrackTintColor={colors.border} thumbTintColor={colors.accent}
-          />
-          <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-            <Text style={{ fontSize: 11, color: colors.textSecondary }}>{formatTime(isSeeking ? seekValue : position.positionMs)}</Text>
-            <Text style={{ fontSize: 11, color: colors.textSecondary }}>-{formatTime(Math.max(0, position.durationMs - (isSeeking ? seekValue : position.positionMs)))}</Text>
-          </View>
-        </View>
-
-        {/* Main controls */}
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 6 }}>
-          <FocusableView focusRadius={12} onPress={cycleRate} style={{ width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceAlt }}>
-            <Text style={{ fontSize: 12, fontWeight: "700", color: colors.text }}>{playback.playbackRate}x</Text>
-          </FocusableView>
-          <FocusableView focusRadius={20} onPress={() => { lightHaptic(); skip(-settings.skipBackwardSeconds); }} hitSlop={8} style={{ width: 40, height: 40, alignItems: "center", justifyContent: "center" }}>
-            <MaterialIcons name={getSkipBackwardIcon()} size={26} color={colors.text} />
-          </FocusableView>
-          <FocusableView autoFocus focusRadius={28} onPress={() => { if (playback.isLoading) return; mediumHaptic(); playback.isPlaying ? pause() : resume(); }} hitSlop={12} style={{ width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", backgroundColor: colors.accent }}>
-            {playback.isLoading ? <ActivityIndicator size={24} color="#fff" /> : <Ionicons name={playback.isPlaying ? "pause" : "play"} size={28} color="#fff" style={playback.isPlaying ? undefined : { marginLeft: 2 }} />}
-          </FocusableView>
-          <FocusableView focusRadius={20} onPress={() => { lightHaptic(); skip(settings.skipForwardSeconds); }} hitSlop={8} style={{ width: 40, height: 40, alignItems: "center", justifyContent: "center" }}>
-            <MaterialIcons name={getSkipForwardIcon()} size={26} color={colors.text} />
-          </FocusableView>
-          <FocusableView focusRadius={12} onPress={() => { lightHaptic(); stop(); safeGoBack(); }} hitSlop={8} style={{ width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceAlt }}>
-            <Ionicons name="stop" size={16} color={colors.danger} />
-          </FocusableView>
-        </View>
-
-        {/* Secondary controls */}
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12, paddingVertical: 4 }}>
-          <FocusableView focusRadius={10} onPress={handleSleepTimerPress} style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: sleepTimer.active ? colors.accentLight : colors.surfaceAlt }}>
-            <Ionicons name="moon-outline" size={16} color={sleepTimer.active ? colors.accent : colors.textSecondary} />
-            {sleepButtonLabel ? <Text style={{ fontSize: 11, color: colors.accent }}>{sleepButtonLabel}</Text> : null}
-          </FocusableView>
-          <FocusableView focusRadius={10} onPress={handleAddBookmark} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: colors.surfaceAlt }}>
-            <Ionicons name={bookmarkSaved ? "checkmark" : "bookmark-outline"} size={16} color={bookmarkSaved ? colors.success : colors.textSecondary} />
-          </FocusableView>
-          <FocusableView focusRadius={10} onPress={handleToggleFavorite} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: colors.surfaceAlt }}>
-            <Ionicons name={isFavorite(currentEpisode.id) ? "star" : "star-outline"} size={16} color={isFavorite(currentEpisode.id) ? colors.accent : colors.textSecondary} />
-          </FocusableView>
-          <FocusableView focusRadius={10} onPress={() => { lightHaptic(); router.push("/queue"); }} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: colors.surfaceAlt }}>
-            <Ionicons name="list" size={16} color={colors.textSecondary} />
-          </FocusableView>
-        </View>
-
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        <TinyPlayerLayout
+          episode={currentEpisode}
+          feed={currentFeed}
+          playback={playback}
+          position={position}
+          colors={colors}
+          insetTop={insets.top}
+          onBack={() => safeGoBack()}
+          onPause={pause}
+          onResume={resume}
+          onSeekTo={seekTo}
+          onSkip={skip}
+          onSetRate={setRate}
+          onStop={async () => { await stop(); safeGoBack(); }}
+          skipForwardSeconds={settings.skipForwardSeconds}
+          skipBackwardSeconds={settings.skipBackwardSeconds}
+          skipBackwardIcon={getSkipBackwardIcon()}
+          skipForwardIcon={getSkipForwardIcon()}
+          onSleepPress={handleSleepTimerPress}
+          onBookmarkPress={handleAddBookmark}
+          onFavoritePress={handleToggleFavorite}
+          onQueuePress={() => { lightHaptic(); router.push("/queue"); }}
+          sleepLabel={sleepButtonLabel}
+          sleepActive={sleepTimer.active}
+          bookmarkSaved={bookmarkSaved}
+          isFavorited={isFavorite(currentEpisode.id)}
+          onOpenPodcast={() => { router.back(); router.push(`/podcast/${currentFeed.id}`); }}
+        />
         <OptionPickerModal visible={sleepModalVisible} title="Sleep Timer" subtitle={sleepTimer.active ? `Timer active: ${sleepTimer.mode === "endOfEpisode" ? "End of Episode" : formatTimerRemaining(sleepTimer.remainingMs)}` : "Stop playback after:"} options={sleepModalOptions} onClose={() => setSleepModalVisible(false)} />
       </View>
     );
