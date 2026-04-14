@@ -243,8 +243,8 @@ const styles = StyleSheet.create({
   },
 
   smallContainer: {
-    width: Platform.OS === "web" ? 170 : Dimensions.get("window").height <= 640 ? 130 : 155,
-    height: Platform.OS === "web" ? 240 : Dimensions.get("window").height <= 640 ? 185 : 220,
+    width: Platform.OS === "web" ? 170 : Dimensions.get("window").height <= 640 ? 120 : 155,
+    height: Platform.OS === "web" ? 240 : Dimensions.get("window").height <= 640 ? 170 : 220,
     marginRight: 12,
     borderRadius: 14,
     borderWidth: Platform.OS === "web" ? 0 : 1,
@@ -254,20 +254,20 @@ const styles = StyleSheet.create({
   },
   smallImage: {
     width: "100%" as any,
-    height: Platform.OS === "web" ? 140 : Dimensions.get("window").height <= 640 ? 105 : 130,
+    height: Platform.OS === "web" ? 140 : Dimensions.get("window").height <= 640 ? 85 : 130,
   },
   smallInfo: {
-    padding: 10,
-    gap: 3,
+    padding: Dimensions.get("window").height <= 640 ? 6 : 10,
+    gap: 2,
     flex: 1,
   },
   smallTitle: {
-    fontSize: 13,
+    fontSize: Dimensions.get("window").height <= 640 ? 11 : 13,
     fontWeight: "600" as const,
-    lineHeight: 17,
+    lineHeight: Dimensions.get("window").height <= 640 ? 14 : 17,
   },
   smallAuthor: {
-    fontSize: 11,
+    fontSize: Dimensions.get("window").height <= 640 ? 9 : 11,
   },
   networkBadge: {
     flexDirection: "row" as const,
