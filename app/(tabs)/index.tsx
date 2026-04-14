@@ -708,8 +708,8 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    padding: 18,
-    gap: 4,
+    padding: isTinyScreen ? 10 : 18,
+    gap: isTinyScreen ? 2 : 4,
   },
   carouselBadge: {
     flexDirection: "row" as const,
@@ -731,13 +731,13 @@ const styles = StyleSheet.create({
   },
   carouselTitle: {
     color: "#fff",
-    fontSize: 20,
+    fontSize: isTinyScreen ? 15 : 20,
     fontWeight: "800" as const,
-    lineHeight: 24,
+    lineHeight: isTinyScreen ? 19 : 24,
   },
   carouselAuthor: {
     color: "rgba(255,255,255,0.7)",
-    fontSize: 13,
+    fontSize: isTinyScreen ? 11 : 13,
   },
   carouselDots: {
     flexDirection: "row" as const,
