@@ -254,7 +254,7 @@ export default function PlayerScreen() {
         <View style={{ width: 28 }} />
       </View>
 
-      <View style={[styles.artworkContainer, isSmallScreen && styles.artworkContainerSmall, isTinyScreen && { marginVertical: 0, paddingVertical: 0, paddingHorizontal: 20 }]}>
+      <View style={[styles.artworkContainer, isSmallScreen && styles.artworkContainerSmall, isTinyScreen && { marginVertical: 0, paddingVertical: 0, paddingHorizontal: 20, justifyContent: "flex-start" as const }]}>
         {currentFeed.imageUrl && !isTinyScreen && (
           <View style={styles.artworkGlow}>
             {Platform.OS === "web" ? (
