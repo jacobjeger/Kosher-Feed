@@ -115,14 +115,14 @@ function addAutoXmlAndDependencies(config) {
         fs.copyFileSync(serviceSource, path.join(serviceDestDir, "ShiurPodAutoService.kt"));
       }
 
-      // Add Guava dependency to app build.gradle (required by ShiurPodAutoService)
+      // Add Guava + media3 dependencies to app build.gradle (required by ShiurPodAutoService)
       const appBuildGradle = path.join(platformRoot, "app", "build.gradle");
       if (fs.existsSync(appBuildGradle)) {
         let content = fs.readFileSync(appBuildGradle, "utf-8");
         if (!content.includes("guava")) {
           content = content.replace(
             /dependencies\s*\{/,
-            `dependencies {\n    implementation "com.google.guava:guava:32.1.3-android"`
+            `dependencies {\n    implementation "com.google.guava:guava:32.1.3-android"\n    implementation "androidx.media3:media3-session:1.8.0"\n    implementation "androidx.media3:media3-exoplayer:1.8.0"\n    implementation "androidx.media3:media3-common:1.8.0"`
           );
           fs.writeFileSync(appBuildGradle, content);
         }

@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { View, Text, Pressable, StyleSheet, Platform, Alert, ScrollView, PanResponder, Animated as RNAnimated, Dimensions, ActivityIndicator } from "react-native";
-import FocusableView from "@/components/FocusableView";
-import { useBackHandler } from "@/hooks/useBackHandler";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
@@ -42,7 +40,7 @@ const SLEEP_OPTIONS = [15, 30, 45, 60, "endOfEpisode" as const, "cancel" as cons
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 const isSmallScreen = SCREEN_HEIGHT < 750;
 const isTinyScreen = SCREEN_HEIGHT <= 640;
-const artworkMaxSize = isTinyScreen ? 150 : isSmallScreen ? 180 : 220;
+const artworkMaxSize = isSmallScreen ? 140 : 220;
 
 export default function PlayerScreen() {
   const insets = useSafeAreaInsets();
@@ -66,9 +64,6 @@ export default function PlayerScreen() {
   const [sleepModalVisible, setSleepModalVisible] = useState(false);
 
   const swipeAnim = useRef(new RNAnimated.Value(0)).current;
-
-  // D-pad: hardware back dismisses player
-  useBackHandler(useCallback(() => { safeGoBack(); return true; }, []));
 
   useEffect(() => {
     if (episodeCompleted) {
@@ -241,14 +236,99 @@ export default function PlayerScreen() {
       : formatTimerRemaining(sleepTimer.remainingMs)
     : null;
 
-  const Wrapper = isTinyScreen ? View : ScrollView;
-  const wrapperProps = isTinyScreen
-    ? { style: [styles.container, { backgroundColor: colors.background, flex: 1 }] }
-    : { style: [styles.container, { backgroundColor: colors.background }], contentContainerStyle: [styles.scrollContent, { flexGrow: 1 }, Platform.OS === "web" && styles.scrollContentWeb] };
+  // Compact layout for tiny screens (480x640) — no ScrollView, horizontal artwork+info
+  if (isTinyScreen) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
+        {/* Header */}
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 4 }}>
+          <Pressable onPress={() => safeGoBack()} hitSlop={12}>
+            <Ionicons name="chevron-down" size={24} color={colors.text} />
+          </Pressable>
+          <Text style={{ fontSize: 11, fontWeight: "600", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 1 }}>Now Playing</Text>
+          <View style={{ width: 24 }} />
+        </View>
+
+        {/* Artwork + Info row */}
+        <View style={{ flexDirection: "row", paddingHorizontal: 16, paddingVertical: 8, gap: 12, alignItems: "center" }}>
+          {currentFeed.imageUrl ? (
+            <Image source={{ uri: currentFeed.imageUrl }} style={{ width: 100, height: 100, borderRadius: 12 }} contentFit="cover" cachePolicy="memory-disk" transition={0} />
+          ) : (
+            <View style={{ width: 100, height: 100, borderRadius: 12, backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }}>
+              <Ionicons name="mic" size={40} color={colors.textSecondary} />
+            </View>
+          )}
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={{ fontSize: 14, fontWeight: "700", color: colors.text, lineHeight: 18 }} numberOfLines={2}>{currentEpisode.title}</Text>
+            <Pressable onPress={() => { router.back(); router.push(`/podcast/${currentFeed.id}`); }} hitSlop={8}>
+              <Text style={{ fontSize: 12, color: colors.accent, textDecorationLine: "underline" }} numberOfLines={1}>{currentFeed.title}</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* Slider */}
+        <View style={{ paddingHorizontal: 16, marginBottom: 4 }}>
+          <Slider
+            style={{ width: "100%", height: 30 }}
+            minimumValue={0} maximumValue={1} value={progress}
+            onSlidingStart={() => setIsSeeking(true)}
+            onValueChange={(val) => setSeekValue(val * position.durationMs)}
+            onSlidingComplete={async (val) => { await seekTo(val * position.durationMs); setIsSeeking(false); }}
+            minimumTrackTintColor={colors.accent} maximumTrackTintColor={colors.border} thumbTintColor={colors.accent}
+          />
+          <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+            <Text style={{ fontSize: 11, color: colors.textSecondary }}>{formatTime(isSeeking ? seekValue : position.positionMs)}</Text>
+            <Text style={{ fontSize: 11, color: colors.textSecondary }}>-{formatTime(Math.max(0, position.durationMs - (isSeeking ? seekValue : position.positionMs)))}</Text>
+          </View>
+        </View>
+
+        {/* Main controls */}
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 6 }}>
+          <FocusableView focusRadius={12} onPress={cycleRate} style={{ width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceAlt }}>
+            <Text style={{ fontSize: 12, fontWeight: "700", color: colors.text }}>{playback.playbackRate}x</Text>
+          </FocusableView>
+          <FocusableView focusRadius={20} onPress={() => { lightHaptic(); skip(-settings.skipBackwardSeconds); }} hitSlop={8} style={{ width: 40, height: 40, alignItems: "center", justifyContent: "center" }}>
+            <MaterialIcons name={getSkipBackwardIcon()} size={26} color={colors.text} />
+          </FocusableView>
+          <FocusableView autoFocus focusRadius={28} onPress={() => { if (playback.isLoading) return; mediumHaptic(); playback.isPlaying ? pause() : resume(); }} hitSlop={12} style={{ width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", backgroundColor: colors.accent }}>
+            {playback.isLoading ? <ActivityIndicator size={24} color="#fff" /> : <Ionicons name={playback.isPlaying ? "pause" : "play"} size={28} color="#fff" style={playback.isPlaying ? undefined : { marginLeft: 2 }} />}
+          </FocusableView>
+          <FocusableView focusRadius={20} onPress={() => { lightHaptic(); skip(settings.skipForwardSeconds); }} hitSlop={8} style={{ width: 40, height: 40, alignItems: "center", justifyContent: "center" }}>
+            <MaterialIcons name={getSkipForwardIcon()} size={26} color={colors.text} />
+          </FocusableView>
+          <FocusableView focusRadius={12} onPress={() => { lightHaptic(); stop(); safeGoBack(); }} hitSlop={8} style={{ width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceAlt }}>
+            <Ionicons name="stop" size={16} color={colors.danger} />
+          </FocusableView>
+        </View>
+
+        {/* Secondary controls */}
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12, paddingVertical: 4 }}>
+          <FocusableView focusRadius={10} onPress={handleSleepTimerPress} style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: sleepTimer.active ? colors.accentLight : colors.surfaceAlt }}>
+            <Ionicons name="moon-outline" size={16} color={sleepTimer.active ? colors.accent : colors.textSecondary} />
+            {sleepButtonLabel ? <Text style={{ fontSize: 11, color: colors.accent }}>{sleepButtonLabel}</Text> : null}
+          </FocusableView>
+          <FocusableView focusRadius={10} onPress={handleAddBookmark} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: colors.surfaceAlt }}>
+            <Ionicons name={bookmarkSaved ? "checkmark" : "bookmark-outline"} size={16} color={bookmarkSaved ? colors.success : colors.textSecondary} />
+          </FocusableView>
+          <FocusableView focusRadius={10} onPress={handleToggleFavorite} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: colors.surfaceAlt }}>
+            <Ionicons name={isFavorite(currentEpisode.id) ? "star" : "star-outline"} size={16} color={isFavorite(currentEpisode.id) ? colors.accent : colors.textSecondary} />
+          </FocusableView>
+          <FocusableView focusRadius={10} onPress={() => { lightHaptic(); router.push("/queue"); }} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: colors.surfaceAlt }}>
+            <Ionicons name="list" size={16} color={colors.textSecondary} />
+          </FocusableView>
+        </View>
+
+        <OptionPickerModal visible={sleepModalVisible} title="Sleep Timer" subtitle={sleepTimer.active ? `Timer active: ${sleepTimer.mode === "endOfEpisode" ? "End of Episode" : formatTimerRemaining(sleepTimer.remainingMs)}` : "Stop playback after:"} options={sleepModalOptions} onClose={() => setSleepModalVisible(false)} />
+      </View>
+    );
+  }
 
   return (
-    <Wrapper {...wrapperProps}>
-      <View style={[styles.header, { paddingTop: insets.top + (isTinyScreen ? 2 : Platform.OS === "web" ? 12 : 8) }]}>
+    <ScrollView 
+      style={[styles.container, { backgroundColor: colors.background }]} 
+      contentContainerStyle={[styles.scrollContent, Platform.OS === "web" && styles.scrollContentWeb]}
+    >
+      <View style={[styles.header, { paddingTop: insets.top + (Platform.OS === "web" ? 12 : 8) }]}>
         <Pressable onPress={() => safeGoBack()} hitSlop={12}>
           <Ionicons name="chevron-down" size={28} color={colors.text} />
         </Pressable>
@@ -256,8 +336,8 @@ export default function PlayerScreen() {
         <View style={{ width: 28 }} />
       </View>
 
-      <View style={[styles.artworkContainer, isSmallScreen && styles.artworkContainerSmall, isTinyScreen && { marginVertical: 0, paddingVertical: 4, paddingHorizontal: 20 }]}>
-        {currentFeed.imageUrl && !isTinyScreen && (
+      <View style={[styles.artworkContainer, isSmallScreen && styles.artworkContainerSmall]}>
+        {currentFeed.imageUrl && (
           <View style={styles.artworkGlow}>
             {Platform.OS === "web" ? (
               <Image
@@ -283,10 +363,10 @@ export default function PlayerScreen() {
           style={{ transform: [{ translateX: swipeAnim }] }}
         >
           {currentFeed.imageUrl ? (
-            <View style={{ borderRadius: 16, overflow: "hidden" }}>
+            <View style={[{ borderRadius: 16 }, cardShadow("lg", colors.shadowColor)]}>
               <Image
                 source={{ uri: currentFeed.imageUrl }}
-                style={[styles.artwork, { maxWidth: artworkMaxSize, borderRadius: 16 }]}
+                style={[styles.artwork, { maxWidth: artworkMaxSize }]}
                 contentFit="cover"
                 cachePolicy="memory-disk"
                 recyclingKey={currentFeed.imageUrl}
@@ -308,20 +388,20 @@ export default function PlayerScreen() {
         </View>
       )}
 
-      <View style={[styles.infoSection, isSmallScreen && styles.infoSectionSmall, isTinyScreen && { marginBottom: 0, gap: 0, paddingHorizontal: 16 }]}>
-        <Text style={[styles.episodeTitle, { color: colors.text }, isSmallScreen && styles.episodeTitleSmall, isTinyScreen && { fontSize: 14, lineHeight: 18 }]} numberOfLines={isTinyScreen ? 1 : 2}>
+      <View style={[styles.infoSection, isSmallScreen && styles.infoSectionSmall]}>
+        <Text style={[styles.episodeTitle, { color: colors.text }, isSmallScreen && styles.episodeTitleSmall]} numberOfLines={2}>
           {currentEpisode.title}
         </Text>
         <Pressable
           onPress={() => { router.back(); router.push(`/podcast/${currentFeed.id}`); }}
-          style={{ zIndex: 10, paddingVertical: isTinyScreen ? 2 : 6, marginBottom: isTinyScreen ? 0 : 4 }}
+          style={{ zIndex: 10, paddingVertical: 6, marginBottom: 4 }}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Text style={[styles.feedName, { color: colors.accent, textDecorationLine: "underline" }, isTinyScreen && { fontSize: 12 }]} numberOfLines={1}>
+          <Text style={[styles.feedName, { color: colors.accent, textDecorationLine: "underline" }]} numberOfLines={1}>
             {currentFeed.title}
           </Text>
         </Pressable>
-        {currentFeed.sourceNetwork && !isTinyScreen && (
+        {currentFeed.sourceNetwork && (
           <View style={styles.sourceNetworkBadge}>
             <Ionicons name="globe-outline" size={11} color="#fff" />
             <Text style={styles.sourceNetworkText}>{currentFeed.sourceNetwork}</Text>
@@ -329,7 +409,7 @@ export default function PlayerScreen() {
         )}
       </View>
 
-      <View style={[styles.sliderSection, isSmallScreen && styles.sliderSectionSmall, isTinyScreen && { marginBottom: 2, paddingHorizontal: 16 }]}>
+      <View style={[styles.sliderSection, isSmallScreen && styles.sliderSectionSmall]}>
         <Slider
           style={styles.slider}
           minimumValue={0}
@@ -355,36 +435,32 @@ export default function PlayerScreen() {
         </View>
       </View>
 
-      <View style={[styles.controls, isSmallScreen && styles.controlsSmall, isTinyScreen && { gap: 8, paddingBottom: 2 }]}>
-        <FocusableView
-          focusRadius={12}
+      <View style={[styles.controls, isSmallScreen && styles.controlsSmall]}>
+        <Pressable
           onPress={cycleRate}
           style={[styles.rateBtn, { backgroundColor: colors.surfaceAlt }]}
         >
           <Text style={[styles.rateText, { color: colors.text }]}>
             {playback.playbackRate}x
           </Text>
-        </FocusableView>
+        </Pressable>
 
-        <FocusableView
-          focusRadius={24}
+        <Pressable
           onPress={() => { lightHaptic(); skip(-settings.skipBackwardSeconds); }}
           hitSlop={8}
           style={styles.skipBtn}
         >
           <MaterialIcons name={getSkipBackwardIcon()} size={isSmallScreen ? 28 : 32} color={colors.text} />
-        </FocusableView>
+        </Pressable>
 
-        <FocusableView
-          autoFocus
-          focusRadius={32}
+        <Pressable
           onPress={() => {
             if (playback.isLoading) return;
             mediumHaptic();
             playback.isPlaying ? pause() : resume();
           }}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          style={[styles.playBtn, isSmallScreen && styles.playBtnSmall, isTinyScreen && { width: 56, height: 56, borderRadius: 28 }, { backgroundColor: colors.accent }]}
+          style={[styles.playBtn, isSmallScreen && styles.playBtnSmall, { backgroundColor: colors.accent }]}
         >
           {playback.isLoading ? (
             <ActivityIndicator size={isSmallScreen ? 28 : 32} color="#fff" />
@@ -396,30 +472,27 @@ export default function PlayerScreen() {
               style={playback.isPlaying ? undefined : { marginLeft: 3 }}
             />
           )}
-        </FocusableView>
+        </Pressable>
 
-        <FocusableView
-          focusRadius={24}
+        <Pressable
           onPress={() => { lightHaptic(); skip(settings.skipForwardSeconds); }}
           hitSlop={8}
           style={styles.skipBtn}
         >
           <MaterialIcons name={getSkipForwardIcon()} size={isSmallScreen ? 28 : 32} color={colors.text} />
-        </FocusableView>
+        </Pressable>
 
-        <FocusableView
-          focusRadius={12}
+        <Pressable
           onPress={() => { lightHaptic(); stop(); safeGoBack(); }}
           hitSlop={8}
           style={[styles.rateBtn, { backgroundColor: colors.surfaceAlt }]}
         >
           <Ionicons name="stop" size={18} color={colors.danger} />
-        </FocusableView>
+        </Pressable>
       </View>
 
-      <View style={[styles.secondaryControls, isTinyScreen && { gap: 8, paddingHorizontal: 16, paddingVertical: 2 }]}>
-        <FocusableView
-          focusRadius={10}
+      <View style={styles.secondaryControls}>
+        <Pressable
           onPress={handleSleepTimerPress}
           style={[
             styles.secondaryBtn,
@@ -436,10 +509,9 @@ export default function PlayerScreen() {
               {sleepButtonLabel}
             </Text>
           ) : null}
-        </FocusableView>
+        </Pressable>
 
-        <FocusableView
-          focusRadius={10}
+        <Pressable
           onPress={handleAddBookmark}
           style={[styles.secondaryBtn, { backgroundColor: colors.surfaceAlt }]}
         >
@@ -448,11 +520,10 @@ export default function PlayerScreen() {
             size={18}
             color={bookmarkSaved ? colors.success : colors.textSecondary}
           />
-        </FocusableView>
+        </Pressable>
 
 
-        <FocusableView
-          focusRadius={10}
+        <Pressable
           onPress={handleToggleFavorite}
           style={[styles.secondaryBtn, { backgroundColor: colors.surfaceAlt }]}
         >
@@ -461,26 +532,24 @@ export default function PlayerScreen() {
             size={18}
             color={isFavorite(currentEpisode.id) ? colors.accent : colors.textSecondary}
           />
-        </FocusableView>
+        </Pressable>
 
-        <FocusableView
-          focusRadius={10}
+        <Pressable
           onPress={() => { lightHaptic(); router.push("/queue"); }}
           style={[styles.secondaryBtn, { backgroundColor: colors.surfaceAlt }]}
         >
           <Ionicons name="list" size={18} color={colors.textSecondary} />
-        </FocusableView>
+        </Pressable>
       </View>
 
-      {bookmarks.length > 0 && !isTinyScreen && (
+      {bookmarks.length > 0 && (
         <View style={styles.bookmarksSection}>
           <Text style={[styles.bookmarksTitle, { color: colors.textSecondary }]}>Bookmarks</Text>
           {bookmarks
             .sort((a, b) => a.positionMs - b.positionMs)
             .map((bm) => (
-              <FocusableView
+              <Pressable
                 key={bm.id}
-                focusRadius={10}
                 style={[styles.bookmarkItem, { backgroundColor: colors.surfaceAlt }]}
                 onPress={() => {
                   lightHaptic();
@@ -494,8 +563,7 @@ export default function PlayerScreen() {
                 <Text style={[styles.bookmarkTime, { color: colors.textSecondary }]}>
                   {formatTime(bm.positionMs)}
                 </Text>
-                <FocusableView
-                  focusRadius={8}
+                <Pressable
                   onPress={(e) => {
                     e.stopPropagation();
                     handleRemoveBookmark(bm.id);
@@ -503,13 +571,13 @@ export default function PlayerScreen() {
                   hitSlop={8}
                 >
                   <Ionicons name="close" size={16} color={colors.textSecondary} />
-                </FocusableView>
-              </FocusableView>
+                </Pressable>
+              </Pressable>
             ))}
         </View>
       )}
 
-      <View style={{ height: insets.bottom + (isTinyScreen ? 4 : 20) }} />
+      <View style={{ height: insets.bottom + 20 }} />
 
       <OptionPickerModal
         visible={sleepModalVisible}
@@ -520,7 +588,7 @@ export default function PlayerScreen() {
         options={sleepModalOptions}
         onClose={() => setSleepModalVisible(false)}
       />
-    </Wrapper>
+    </ScrollView>
   );
 }
 
@@ -529,6 +597,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
+    flexGrow: 1,
   },
   scrollContentWeb: {
     maxWidth: 500,
