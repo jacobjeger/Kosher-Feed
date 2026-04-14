@@ -85,29 +85,38 @@ function addAutoMetaData(config) {
   });
 }
 
-function addAutoXmlResource(config) {
+function addAutoXmlAndDependencies(config) {
   return withDangerousMod(config, [
     "android",
     async (config) => {
-      const resDir = path.join(
-        config.modRequest.platformProjectRoot,
-        "app",
-        "src",
-        "main",
-        "res",
-        "xml"
-      );
-      fs.mkdirSync(resDir, { recursive: true });
+      const platformRoot = config.modRequest.platformProjectRoot;
 
-      const xmlContent = `<?xml version="1.0" encoding="utf-8"?>
-<automotiveApp>
-    <uses name="media" />
-</automotiveApp>
-`;
+      // Create automotive_app_desc.xml
+      const resDir = path.join(platformRoot, "app", "src", "main", "res", "xml");
+      fs.mkdirSync(resDir, { recursive: true });
       fs.writeFileSync(
         path.join(resDir, "automotive_app_desc.xml"),
-        xmlContent
+        `<?xml version="1.0" encoding="utf-8"?>\n<automotiveApp>\n    <uses name="media" />\n</automotiveApp>\n`
       );
+
+      // Add Guava dependency to expo-audio (required by ShiurPodAutoService)
+      const expoAudioBuildGradle = path.join(
+        config.modRequest.projectRoot,
+        "node_modules",
+        "expo-audio",
+        "android",
+        "build.gradle"
+      );
+      if (fs.existsSync(expoAudioBuildGradle)) {
+        let content = fs.readFileSync(expoAudioBuildGradle, "utf-8");
+        if (!content.includes("guava")) {
+          content = content.replace(
+            /dependencies\s*\{/,
+            `dependencies {\n  implementation "com.google.guava:guava:32.1.3-android"`
+          );
+          fs.writeFileSync(expoAudioBuildGradle, content);
+        }
+      }
 
       return config;
     },
@@ -116,6 +125,6 @@ function addAutoXmlResource(config) {
 
 module.exports = function withAndroidAuto(config) {
   config = addAutoMetaData(config);
-  config = addAutoXmlResource(config);
+  config = addAutoXmlAndDependencies(config);
   return config;
 };
