@@ -42,7 +42,7 @@ const SLEEP_OPTIONS = [15, 30, 45, 60, "endOfEpisode" as const, "cancel" as cons
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 const isSmallScreen = SCREEN_HEIGHT < 750;
 const isTinyScreen = SCREEN_HEIGHT <= 640;
-const artworkMaxSize = isTinyScreen ? 120 : isSmallScreen ? 180 : 220;
+const artworkMaxSize = isTinyScreen ? 100 : isSmallScreen ? 180 : 220;
 
 export default function PlayerScreen() {
   const insets = useSafeAreaInsets();
@@ -244,7 +244,7 @@ export default function PlayerScreen() {
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: colors.background }]} 
-      contentContainerStyle={[styles.scrollContent, Platform.OS === "web" && styles.scrollContentWeb]}
+      contentContainerStyle={[styles.scrollContent, Platform.OS === "web" && styles.scrollContentWeb, isTinyScreen && { flexGrow: 0 }]}
     >
       <View style={[styles.header, { paddingTop: insets.top + (isTinyScreen ? 2 : Platform.OS === "web" ? 12 : 8) }]}>
         <Pressable onPress={() => safeGoBack()} hitSlop={12}>
@@ -382,7 +382,7 @@ export default function PlayerScreen() {
             playback.isPlaying ? pause() : resume();
           }}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          style={[styles.playBtn, isSmallScreen && styles.playBtnSmall, { backgroundColor: colors.accent }]}
+          style={[styles.playBtn, isSmallScreen && styles.playBtnSmall, isTinyScreen && { width: 56, height: 56, borderRadius: 28 }, { backgroundColor: colors.accent }]}
         >
           {playback.isLoading ? (
             <ActivityIndicator size={isSmallScreen ? 28 : 32} color="#fff" />
