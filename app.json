@@ -68,8 +68,7 @@
         }
       ],
       "expo-localization",
-      "expo-secure-store",
-      "./plugins/withAndroidAuto.js"
+      "expo-secure-store"
     ],
     "updates": {
       "url": "https://u.expo.dev/3318cca6-05bb-4658-a9c5-6dccc573953c",
