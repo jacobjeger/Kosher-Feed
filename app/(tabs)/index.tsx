@@ -43,7 +43,7 @@ interface TrendingEpisode extends Episode {
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 const isTinyScreen = screenHeight <= 640;
 const CAROUSEL_WIDTH = Platform.OS === "web" ? Math.min(screenWidth - 40, 920) : screenWidth - 40;
-const CAROUSEL_HEIGHT = Platform.OS === "web" ? 280 : isTinyScreen ? 140 : 180;
+const CAROUSEL_HEIGHT = Platform.OS === "web" ? 280 : isTinyScreen ? 160 : 180;
 const AUTO_SCROLL_INTERVAL = 5000;
 
 const FeaturedCarousel = React.memo(function FeaturedCarousel({ feeds, colors, autoScrollMs }: { feeds: Feed[]; colors: any; autoScrollMs?: number }) {
