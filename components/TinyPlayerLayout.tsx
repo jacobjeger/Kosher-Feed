@@ -7,6 +7,8 @@ import { BlurView } from "expo-blur";
 import Slider from "@react-native-community/slider";
 import type { Episode, Feed } from "@/lib/types";
 
+const RATES = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+
 function formatTime(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
   const h = Math.floor(totalSec / 3600);
@@ -59,7 +61,6 @@ export default function TinyPlayerLayout(props: Props) {
   const [seekValue, setSeekValue] = useState(0);
   const progress = position.durationMs > 0 ? (isSeeking ? seekValue : position.positionMs) / position.durationMs : 0;
 
-  const RATES = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
   const currentRateIndex = RATES.indexOf(playback.playbackRate);
   const cycleRate = useCallback(async () => {
     const nextIndex = (currentRateIndex + 1) % RATES.length;
