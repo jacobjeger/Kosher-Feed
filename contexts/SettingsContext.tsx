@@ -27,7 +27,7 @@ export interface FeedSettings {
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
-  notificationsEnabled: false,
+  notificationsEnabled: true,
   autoDownloadOnWifi: false,
   maxEpisodesPerFeed: 5,
   skipForwardSeconds: 30,
