@@ -247,6 +247,7 @@ export default function PlayerScreen() {
           playback={playback}
           position={position}
           colors={colors}
+          isDark={isDark}
           insetTop={insets.top}
           onBack={() => safeGoBack()}
           onPause={pause}
