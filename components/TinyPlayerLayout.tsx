@@ -77,17 +77,19 @@ export default function TinyPlayerLayout(props: Props) {
 
       {/* Artwork + Info */}
       <View style={styles.artRow}>
-        {feed.imageUrl ? (
-          <Image source={{ uri: feed.imageUrl }} style={styles.artwork} contentFit="cover" cachePolicy="memory-disk" transition={0} />
-        ) : (
-          <View style={[styles.artwork, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
-            <Ionicons name="mic" size={36} color={colors.textSecondary} />
-          </View>
-        )}
+        <View style={[styles.artwork, { backgroundColor: colors.surfaceAlt }]}>
+          {feed.imageUrl ? (
+            <Image source={{ uri: feed.imageUrl }} style={styles.artwork} contentFit="cover" cachePolicy="memory-disk" transition={200} />
+          ) : (
+            <View style={[styles.artwork, { alignItems: "center", justifyContent: "center" }]}>
+              <Ionicons name="mic" size={36} color={colors.textSecondary} />
+            </View>
+          )}
+        </View>
         <View style={styles.artInfo}>
-          <Text style={[styles.title, { color: colors.text }]} numberOfLines={2}>{episode.title}</Text>
+          <Text style={[styles.title, { color: colors.text }]} numberOfLines={3}>{episode.title}</Text>
           <Pressable onPress={onOpenPodcast} hitSlop={8}>
-            <Text style={[styles.feedName, { color: colors.accent }]} numberOfLines={1}>{feed.title}</Text>
+            <Text style={[styles.feedName, { color: colors.accent }]} numberOfLines={2}>{feed.title}</Text>
           </Pressable>
         </View>
       </View>
@@ -156,7 +158,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 2 },
   headerTitle: { fontSize: 10, fontWeight: "600", textTransform: "uppercase", letterSpacing: 1 },
   artRow: { flexDirection: "row", paddingHorizontal: 14, paddingVertical: 4, gap: 12, alignItems: "center" },
-  artwork: { width: 150, height: 150, borderRadius: 14 },
+  artwork: { width: 150, height: 150, borderRadius: 14, overflow: "hidden" as const },
   artInfo: { flex: 1, gap: 4 },
   title: { fontSize: 18, fontWeight: "700", lineHeight: 23 },
   feedName: { fontSize: 14, textDecorationLine: "underline" },
