@@ -367,20 +367,6 @@ function PodcastDetailScreenInner() {
                 {isFollowing ? "Following" : "Follow"}
               </Text>
             </FocusableView>
-            {isFollowing && (
-              <FocusableView
-                focusRadius={20}
-                onPress={handleToggleMute}
-                style={[styles.followBtn, { backgroundColor: colors.surfaceAlt, borderColor: colors.border, borderWidth: 1, paddingHorizontal: 10 }]}
-                hitSlop={8}
-              >
-                <Ionicons
-                  name={isMuted ? "notifications-off-outline" : "notifications-outline"}
-                  size={18}
-                  color={isMuted ? colors.textSecondary : colors.accent}
-                />
-              </FocusableView>
-            )}
           </View>
         </View>
       </View>
