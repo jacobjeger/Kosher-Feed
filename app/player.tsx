@@ -244,7 +244,7 @@ export default function PlayerScreen() {
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: colors.background }]} 
-      contentContainerStyle={[styles.scrollContent, Platform.OS === "web" && styles.scrollContentWeb, isTinyScreen && { flexGrow: 0, justifyContent: "flex-start" }]}
+      contentContainerStyle={[styles.scrollContent, !isTinyScreen && { flexGrow: 1 }, Platform.OS === "web" && styles.scrollContentWeb]}
     >
       <View style={[styles.header, { paddingTop: insets.top + (isTinyScreen ? 2 : Platform.OS === "web" ? 12 : 8) }]}>
         <Pressable onPress={() => safeGoBack()} hitSlop={12}>
@@ -527,7 +527,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    flexGrow: 1,
   },
   scrollContentWeb: {
     maxWidth: 500,
