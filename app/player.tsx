@@ -42,7 +42,7 @@ const SLEEP_OPTIONS = [15, 30, 45, 60, "endOfEpisode" as const, "cancel" as cons
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 const isSmallScreen = SCREEN_HEIGHT < 750;
 const isTinyScreen = SCREEN_HEIGHT <= 640;
-const artworkMaxSize = isTinyScreen ? 160 : isSmallScreen ? 180 : 220;
+const artworkMaxSize = isTinyScreen ? 120 : isSmallScreen ? 180 : 220;
 
 export default function PlayerScreen() {
   const insets = useSafeAreaInsets();
@@ -281,7 +281,7 @@ export default function PlayerScreen() {
           style={{ transform: [{ translateX: swipeAnim }] }}
         >
           {currentFeed.imageUrl ? (
-            <View style={[{ borderRadius: 16, overflow: "hidden" }, cardShadow("lg", colors.shadowColor)]}>
+            <View style={{ borderRadius: 16, overflow: "hidden" }}>
               <Image
                 source={{ uri: currentFeed.imageUrl }}
                 style={[styles.artwork, { maxWidth: artworkMaxSize, borderRadius: 16 }]}
@@ -306,20 +306,20 @@ export default function PlayerScreen() {
         </View>
       )}
 
-      <View style={[styles.infoSection, isSmallScreen && styles.infoSectionSmall]}>
-        <Text style={[styles.episodeTitle, { color: colors.text }, isSmallScreen && styles.episodeTitleSmall]} numberOfLines={2}>
+      <View style={[styles.infoSection, isSmallScreen && styles.infoSectionSmall, isTinyScreen && { marginBottom: 0, gap: 0, paddingHorizontal: 16 }]}>
+        <Text style={[styles.episodeTitle, { color: colors.text }, isSmallScreen && styles.episodeTitleSmall, isTinyScreen && { fontSize: 14, lineHeight: 18 }]} numberOfLines={isTinyScreen ? 1 : 2}>
           {currentEpisode.title}
         </Text>
         <Pressable
           onPress={() => { router.back(); router.push(`/podcast/${currentFeed.id}`); }}
-          style={{ zIndex: 10, paddingVertical: 6, marginBottom: 4 }}
+          style={{ zIndex: 10, paddingVertical: isTinyScreen ? 2 : 6, marginBottom: isTinyScreen ? 0 : 4 }}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Text style={[styles.feedName, { color: colors.accent, textDecorationLine: "underline" }]} numberOfLines={1}>
+          <Text style={[styles.feedName, { color: colors.accent, textDecorationLine: "underline" }, isTinyScreen && { fontSize: 12 }]} numberOfLines={1}>
             {currentFeed.title}
           </Text>
         </Pressable>
-        {currentFeed.sourceNetwork && (
+        {currentFeed.sourceNetwork && !isTinyScreen && (
           <View style={styles.sourceNetworkBadge}>
             <Ionicons name="globe-outline" size={11} color="#fff" />
             <Text style={styles.sourceNetworkText}>{currentFeed.sourceNetwork}</Text>
@@ -327,7 +327,7 @@ export default function PlayerScreen() {
         )}
       </View>
 
-      <View style={[styles.sliderSection, isSmallScreen && styles.sliderSectionSmall]}>
+      <View style={[styles.sliderSection, isSmallScreen && styles.sliderSectionSmall, isTinyScreen && { marginBottom: 2, paddingHorizontal: 16 }]}>
         <Slider
           style={styles.slider}
           minimumValue={0}
@@ -353,7 +353,7 @@ export default function PlayerScreen() {
         </View>
       </View>
 
-      <View style={[styles.controls, isSmallScreen && styles.controlsSmall]}>
+      <View style={[styles.controls, isSmallScreen && styles.controlsSmall, isTinyScreen && { gap: 8, paddingBottom: 2 }]}>
         <FocusableView
           focusRadius={12}
           onPress={cycleRate}
@@ -470,7 +470,7 @@ export default function PlayerScreen() {
         </FocusableView>
       </View>
 
-      {bookmarks.length > 0 && (
+      {bookmarks.length > 0 && !isTinyScreen && (
         <View style={styles.bookmarksSection}>
           <Text style={[styles.bookmarksTitle, { color: colors.textSecondary }]}>Bookmarks</Text>
           {bookmarks
