@@ -120,8 +120,8 @@ export default function TinyPlayerLayout(props: Props) {
         <FocusableView focusRadius={20} onPress={() => onSkip(-skipBackwardSeconds)} hitSlop={8} style={styles.skipBtn}>
           <MaterialIcons name={skipBackwardIcon as any} size={26} color={colors.text} />
         </FocusableView>
-        <FocusableView autoFocus focusRadius={28} onPress={() => { playback.isPlaying ? onPause() : onResume(); }} hitSlop={12} style={[styles.playBtn, { backgroundColor: colors.accent }]}>
-          {playback.isLoading ? <ActivityIndicator size={24} color="#fff" /> : <Ionicons name={playback.isPlaying ? "pause" : "play"} size={28} color="#fff" style={playback.isPlaying ? undefined : { marginLeft: 2 }} />}
+        <FocusableView autoFocus focusRadius={32} onPress={() => { playback.isPlaying ? onPause() : onResume(); }} hitSlop={12} style={[styles.playBtn, { backgroundColor: colors.accent }]}>
+          {playback.isLoading ? <ActivityIndicator size={28} color="#fff" /> : <Ionicons name={playback.isPlaying ? "pause" : "play"} size={32} color="#fff" style={playback.isPlaying ? undefined : { marginLeft: 3 }} />}
         </FocusableView>
         <FocusableView focusRadius={20} onPress={() => onSkip(skipForwardSeconds)} hitSlop={8} style={styles.skipBtn}>
           <MaterialIcons name={skipForwardIcon as any} size={26} color={colors.text} />
@@ -152,22 +152,22 @@ export default function TinyPlayerLayout(props: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 4 },
+  container: { flex: 1, justifyContent: "space-between" as const },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 8 },
   headerTitle: { fontSize: 11, fontWeight: "600", textTransform: "uppercase", letterSpacing: 1 },
-  artRow: { flexDirection: "row", paddingHorizontal: 16, paddingVertical: 8, gap: 12, alignItems: "center" },
-  artwork: { width: 100, height: 100, borderRadius: 12 },
-  artInfo: { flex: 1, gap: 4 },
-  title: { fontSize: 14, fontWeight: "700", lineHeight: 18 },
-  feedName: { fontSize: 12, textDecorationLine: "underline" },
-  sliderWrap: { paddingHorizontal: 16, marginBottom: 4 },
-  slider: { width: "100%" as any, height: 30 },
+  artRow: { flexDirection: "row", paddingHorizontal: 16, paddingVertical: 12, gap: 14, alignItems: "center" },
+  artwork: { width: 110, height: 110, borderRadius: 14 },
+  artInfo: { flex: 1, gap: 6 },
+  title: { fontSize: 15, fontWeight: "700", lineHeight: 20 },
+  feedName: { fontSize: 13, textDecorationLine: "underline" },
+  sliderWrap: { paddingHorizontal: 20, marginBottom: 8 },
+  slider: { width: "100%" as any, height: 36 },
   timeRow: { flexDirection: "row", justifyContent: "space-between" },
-  timeText: { fontSize: 11, fontWeight: "500" },
-  controls: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 6 },
-  smallBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
-  skipBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
-  playBtn: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
-  secondary: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12, paddingVertical: 4 },
-  secBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  timeText: { fontSize: 12, fontWeight: "500" },
+  controls: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 16, paddingHorizontal: 16, paddingVertical: 10 },
+  smallBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  skipBtn: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  playBtn: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center" },
+  secondary: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 14, paddingVertical: 8, paddingBottom: 16 },
+  secBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
 });
