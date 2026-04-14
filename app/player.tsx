@@ -241,11 +241,13 @@ export default function PlayerScreen() {
       : formatTimerRemaining(sleepTimer.remainingMs)
     : null;
 
+  const Wrapper = isTinyScreen ? View : ScrollView;
+  const wrapperProps = isTinyScreen
+    ? { style: [styles.container, { backgroundColor: colors.background, flex: 1 }] }
+    : { style: [styles.container, { backgroundColor: colors.background }], contentContainerStyle: [styles.scrollContent, { flexGrow: 1 }, Platform.OS === "web" && styles.scrollContentWeb] };
+
   return (
-    <ScrollView 
-      style={[styles.container, { backgroundColor: colors.background }]} 
-      contentContainerStyle={[styles.scrollContent, !isTinyScreen && { flexGrow: 1 }, Platform.OS === "web" && styles.scrollContentWeb]}
-    >
+    <Wrapper {...wrapperProps}>
       <View style={[styles.header, { paddingTop: insets.top + (isTinyScreen ? 2 : Platform.OS === "web" ? 12 : 8) }]}>
         <Pressable onPress={() => safeGoBack()} hitSlop={12}>
           <Ionicons name="chevron-down" size={28} color={colors.text} />
@@ -518,7 +520,7 @@ export default function PlayerScreen() {
         options={sleepModalOptions}
         onClose={() => setSleepModalVisible(false)}
       />
-    </ScrollView>
+    </Wrapper>
   );
 }
 
