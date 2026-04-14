@@ -254,7 +254,7 @@ export default function PlayerScreen() {
         <View style={{ width: 28 }} />
       </View>
 
-      <View style={[styles.artworkContainer, isSmallScreen && styles.artworkContainerSmall, isTinyScreen && { marginVertical: 0, paddingVertical: 0, paddingHorizontal: 20, justifyContent: "flex-start" as const }]}>
+      <View style={[styles.artworkContainer, isSmallScreen && styles.artworkContainerSmall, isTinyScreen && { marginVertical: 0, paddingVertical: 4, paddingHorizontal: 20, height: 110 }]}>
         {currentFeed.imageUrl && !isTinyScreen && (
           <View style={styles.artworkGlow}>
             {Platform.OS === "web" ? (
@@ -527,7 +527,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    flexGrow: isTinyScreen ? 0 : 1,
+    flexGrow: 1,
   },
   scrollContentWeb: {
     maxWidth: 500,
