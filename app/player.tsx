@@ -42,7 +42,7 @@ const SLEEP_OPTIONS = [15, 30, 45, 60, "endOfEpisode" as const, "cancel" as cons
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 const isSmallScreen = SCREEN_HEIGHT < 750;
 const isTinyScreen = SCREEN_HEIGHT <= 640;
-const artworkMaxSize = isTinyScreen ? 100 : isSmallScreen ? 180 : 220;
+const artworkMaxSize = isTinyScreen ? 150 : isSmallScreen ? 180 : 220;
 
 export default function PlayerScreen() {
   const insets = useSafeAreaInsets();
@@ -244,7 +244,7 @@ export default function PlayerScreen() {
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: colors.background }]} 
-      contentContainerStyle={[styles.scrollContent, Platform.OS === "web" && styles.scrollContentWeb]}
+      contentContainerStyle={[styles.scrollContent, Platform.OS === "web" && styles.scrollContentWeb, isTinyScreen && { flexGrow: 0, justifyContent: "flex-start" }]}
     >
       <View style={[styles.header, { paddingTop: insets.top + (isTinyScreen ? 2 : Platform.OS === "web" ? 12 : 8) }]}>
         <Pressable onPress={() => safeGoBack()} hitSlop={12}>
@@ -254,7 +254,7 @@ export default function PlayerScreen() {
         <View style={{ width: 28 }} />
       </View>
 
-      <View style={[styles.artworkContainer, isSmallScreen && styles.artworkContainerSmall, isTinyScreen && { marginVertical: 0, paddingVertical: 4, paddingHorizontal: 20, height: 110 }]}>
+      <View style={[styles.artworkContainer, isSmallScreen && styles.artworkContainerSmall, isTinyScreen && { marginVertical: 0, paddingVertical: 4, paddingHorizontal: 20 }]}>
         {currentFeed.imageUrl && !isTinyScreen && (
           <View style={styles.artworkGlow}>
             {Platform.OS === "web" ? (
