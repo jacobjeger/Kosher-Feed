@@ -20,8 +20,8 @@ import fs from "node:fs";
 const ON_DEMAND_STALE_MS = 5 * 60 * 1000;
 
 // Default logos for platform feeds without artwork
-const KH_DEFAULT_LOGO_PATH = "/api/images/kol-halashon-logo.svg";
-const OU_DEFAULT_LOGO_PATH = "/api/images/ou-torah-logo.svg";
+const KH_DEFAULT_LOGO_PATH = "/api/images/kol-halashon-logo.png";
+const OU_DEFAULT_LOGO_PATH = "/api/images/ou-torah-logo.png";
 const OU_LOGO_NETWORKS = new Set(["AllDaf", "AllMishnah", "AllParsha", "AllHalacha", "OU Torah"]);
 
 function addDefaultImage(feed: any, baseUrl?: string): any {
@@ -706,8 +706,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/playback-positions/:deviceId/recent", async (req: Request, res: Response) => {
     try {
       const limit = Math.min(parseInt(req.query.limit as string) || 15, 30);
+      const baseUrl = `${req.protocol}://${req.get("host")}`;
       const results = await storage.getRecentlyPlayed(req.params.deviceId, limit);
-      res.json(results);
+      res.json(results.map((r: any) => ({
+        ...r,
+        feedImageUrl: r.feedImageUrl || `${baseUrl}/api/images/icon.png`,
+      })));
     } catch (e: any) {
       publicError(res, e);
     }
