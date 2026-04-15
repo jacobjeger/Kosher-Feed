@@ -101,11 +101,17 @@ function addAutoXmlAndDependencies(config) {
 
       // Copy ShiurPodAutoService.kt into the app's own source directory
       // (expo-audio module build doesn't compile it — class not in dex)
-      const serviceSource = path.join(
+      // Use project-local copy (survives npm install) with fallback to node_modules
+      const projectServiceSource = path.join(
+        config.modRequest.projectRoot,
+        "native", "android-auto", "ShiurPodAutoService.kt"
+      );
+      const nmServiceSource = path.join(
         config.modRequest.projectRoot,
         "node_modules", "expo-audio", "android", "src", "main", "java",
         "expo", "modules", "audio", "service", "ShiurPodAutoService.kt"
       );
+      const serviceSource = fs.existsSync(projectServiceSource) ? projectServiceSource : nmServiceSource;
       const serviceDestDir = path.join(
         platformRoot, "app", "src", "main", "java",
         "expo", "modules", "audio", "service"
