@@ -546,6 +546,30 @@ export async function getCompletedEpisodes(deviceId: string): Promise<PlaybackPo
   return db.select().from(playbackPositions).where(and(eq(playbackPositions.deviceId, deviceId), eq(playbackPositions.completed, true))).orderBy(desc(playbackPositions.updatedAt));
 }
 
+export async function getRecentlyPlayed(deviceId: string, limit: number = 15) {
+  return db.select({
+    episodeId: playbackPositions.episodeId,
+    feedId: playbackPositions.feedId,
+    positionMs: playbackPositions.positionMs,
+    durationMs: playbackPositions.durationMs,
+    completed: playbackPositions.completed,
+    updatedAt: playbackPositions.updatedAt,
+    episodeTitle: episodes.title,
+    audioUrl: episodes.audioUrl,
+    episodeImageUrl: episodes.imageUrl,
+    duration: episodes.duration,
+    feedTitle: feeds.title,
+    feedAuthor: feeds.author,
+    feedImageUrl: feeds.imageUrl,
+  })
+    .from(playbackPositions)
+    .innerJoin(episodes, eq(playbackPositions.episodeId, episodes.id))
+    .innerJoin(feeds, eq(playbackPositions.feedId, feeds.id))
+    .where(and(eq(playbackPositions.deviceId, deviceId), eq(playbackPositions.completed, false)))
+    .orderBy(desc(playbackPositions.updatedAt))
+    .limit(limit);
+}
+
 export async function getListeningStats(deviceId: string) {
   const positions = await db.select().from(playbackPositions).where(eq(playbackPositions.deviceId, deviceId));
 

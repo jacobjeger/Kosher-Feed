@@ -703,6 +703,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/playback-positions/:deviceId/recent", async (req: Request, res: Response) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit as string) || 15, 30);
+      const results = await storage.getRecentlyPlayed(req.params.deviceId, limit);
+      res.json(results);
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
   app.get("/api/queue/:deviceId", async (req: Request, res: Response) => {
     try {
       const items = await storage.getQueueForDevice(req.params.deviceId);
