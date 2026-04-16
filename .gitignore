@@ -26,6 +26,9 @@ android/
 google-services.json
 GoogleService-Info.plist
 
+# Play Store signing tool
+pepk.jar
+
 # Metro
 .metro-health-check*
 
