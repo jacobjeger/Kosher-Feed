@@ -1,11 +1,14 @@
 import { useEffect } from "react";
 import { Platform } from "react-native";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
+import { usePathname } from "expo-router";
+import { navigateToTab } from "@/hooks/useDpadTabNavigation";
 
 const RATE_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 
 export function useKeyboardShortcuts() {
   const { playback, pause, resume, skip, setRate, currentEpisode } = useAudioPlayer();
+  const pathname = usePathname();
 
   useEffect(() => {
     if (Platform.OS !== "web") return;
@@ -16,11 +19,9 @@ export function useKeyboardShortcuts() {
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if ((e.target as HTMLElement)?.isContentEditable) return;
 
-      // No episode loaded — nothing to control
-      if (!currentEpisode) return;
-
       switch (e.code) {
         case "Space":
+          if (!currentEpisode) return;
           e.preventDefault();
           if (playback.isPlaying) {
             pause();
@@ -30,17 +31,29 @@ export function useKeyboardShortcuts() {
           break;
 
         case "ArrowLeft":
-          e.preventDefault();
-          skip(-15);
+          // On player page or when playing: seek audio; otherwise switch tabs
+          if (pathname === "/player" && currentEpisode) {
+            e.preventDefault();
+            skip(-15);
+          } else {
+            e.preventDefault();
+            navigateToTab("left", pathname);
+          }
           break;
 
         case "ArrowRight":
-          e.preventDefault();
-          skip(30);
+          if (pathname === "/player" && currentEpisode) {
+            e.preventDefault();
+            skip(30);
+          } else {
+            e.preventDefault();
+            navigateToTab("right", pathname);
+          }
           break;
 
         case "Equal": // + key
         case "NumpadAdd":
+          if (!currentEpisode) return;
           e.preventDefault();
           {
             const idx = RATE_STEPS.indexOf(playback.playbackRate);
@@ -52,6 +65,7 @@ export function useKeyboardShortcuts() {
 
         case "Minus":
         case "NumpadSubtract":
+          if (!currentEpisode) return;
           e.preventDefault();
           {
             const idx = RATE_STEPS.indexOf(playback.playbackRate);
@@ -65,5 +79,5 @@ export function useKeyboardShortcuts() {
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [playback.isPlaying, playback.playbackRate, currentEpisode, pause, resume, skip, setRate]);
+  }, [playback.isPlaying, playback.playbackRate, currentEpisode, pathname, pause, resume, skip, setRate]);
 }

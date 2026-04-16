@@ -11,6 +11,28 @@ import { router } from "expo-router";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { setErrorContext } from "@/lib/error-logger";
 
+/** Tab bar button that navigates on D-pad focus (Android) */
+function DpadTabButton({ children, onPress, accessibilityState, route, ...rest }: any) {
+  const handleFocus = useCallback(() => {
+    if (Platform.OS === "android" && !accessibilityState?.selected) {
+      router.push(route);
+    }
+  }, [route, accessibilityState?.selected]);
+
+  return (
+    <Pressable
+      {...rest}
+      onPress={onPress}
+      onFocus={handleFocus}
+      focusable={Platform.OS === "android"}
+      accessibilityState={accessibilityState}
+      style={rest.style}
+    >
+      {children}
+    </Pressable>
+  );
+}
+
 const DESKTOP_BREAKPOINT = 768;
 
 function useIsDesktopWeb() {
@@ -169,6 +191,7 @@ export default function TabLayout() {
             tabBarIcon: ({ color, focused }) => (
               <Ionicons name={focused ? "home" : "home-outline"} size={22} color={color} />
             ),
+            tabBarButton: (props) => <DpadTabButton {...props} route="/" />,
           }}
         />
         <Tabs.Screen
@@ -178,6 +201,7 @@ export default function TabLayout() {
             tabBarIcon: ({ color, focused }) => (
               <Ionicons name={focused ? "heart" : "heart-outline"} size={22} color={color} />
             ),
+            tabBarButton: (props) => <DpadTabButton {...props} route="/following" />,
           }}
         />
         <Tabs.Screen
@@ -187,6 +211,7 @@ export default function TabLayout() {
             tabBarIcon: ({ color, focused }) => (
               <Ionicons name={focused ? "star" : "star-outline"} size={22} color={color} />
             ),
+            tabBarButton: (props) => <DpadTabButton {...props} route="/favorites" />,
           }}
         />
         <Tabs.Screen
@@ -197,6 +222,7 @@ export default function TabLayout() {
             tabBarIcon: ({ color, focused }) => (
               <Ionicons name={focused ? "cloud-download" : "cloud-download-outline"} size={22} color={color} />
             ),
+            tabBarButton: (props) => <DpadTabButton {...props} route="/downloads" />,
           }}
         />
         <Tabs.Screen
@@ -207,6 +233,7 @@ export default function TabLayout() {
             tabBarIcon: ({ color, focused }) => (
               <Ionicons name={focused ? "settings" : "settings-outline"} size={22} color={color} />
             ),
+            tabBarButton: (props) => <DpadTabButton {...props} route="/settings" />,
           }}
         />
       </Tabs>
