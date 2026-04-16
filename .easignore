@@ -1,6 +1,8 @@
 node_modules/
 .git/
 .expo/
+android/
+ios/
 server/
 shared/
 scripts/
