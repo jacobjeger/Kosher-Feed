@@ -38,7 +38,7 @@ export async function getFeedById(feedId: string): Promise<Feed | undefined> {
 }
 
 export async function getActiveFeeds(): Promise<Feed[]> {
-  return db.select().from(feeds).where(and(eq(feeds.isActive, true), eq(feeds.showInBrowse, true))).orderBy(feeds.title);
+  return db.select().from(feeds).where(and(eq(feeds.isActive, true), eq(feeds.showInBrowse, true))).orderBy(feeds.title).limit(1000);
 }
 
 // All active feeds including those hidden from browse — used for sync/refresh
@@ -767,7 +767,7 @@ export async function getNewEpisodesForSubscribedFeeds(deviceId: string, limit: 
 }
 
 export async function getFeaturedFeeds(): Promise<Feed[]> {
-  return db.select().from(feeds).where(and(eq(feeds.isFeatured, true), eq(feeds.isActive, true))).orderBy(feeds.title);
+  return db.select().from(feeds).where(and(eq(feeds.isFeatured, true), eq(feeds.isActive, true))).orderBy(feeds.title).limit(50);
 }
 
 export async function getFeedCategoryIds(feedId: string): Promise<string[]> {
@@ -835,8 +835,8 @@ export async function getFeedsByCategories(categoryId: string): Promise<Feed[]> 
 }
 
 export async function getActiveFeedsGroupedByAuthor(): Promise<{ author: string; feeds: Feed[]; imageUrl?: string | null; bio?: string | null; profileId?: string }[]> {
-  const allActive = await db.select().from(feeds).where(and(eq(feeds.isActive, true), eq(feeds.showInBrowse, true))).orderBy(feeds.author, feeds.title);
-  const profiles = await db.select().from(maggidShiurim);
+  const allActive = await db.select().from(feeds).where(and(eq(feeds.isActive, true), eq(feeds.showInBrowse, true))).orderBy(feeds.author, feeds.title).limit(2000);
+  const profiles = await db.select().from(maggidShiurim).limit(500);
   const profileMap = new Map<string, MaggidShiur>();
   for (const p of profiles) profileMap.set(p.name.toLowerCase(), p);
 
