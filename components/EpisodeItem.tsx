@@ -69,7 +69,6 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const [expanded, setExpanded] = React.useState<boolean>(false);
-  const [mobileMenuVisible, setMobileMenuVisible] = React.useState(false);
 
   const isCurrentlyPlaying = currentEpisode?.id === episode.id;
   const canDownload = !episode.noDownload;
@@ -223,7 +222,7 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
               )}
             </View>
           )}
-          <Text style={[styles.title, { color: colors.text, opacity: played ? 0.6 : 1 }]} numberOfLines={expanded ? undefined : 1}>
+          <Text style={[styles.title, { color: colors.text, opacity: played ? 0.6 : 1 }]} numberOfLines={expanded ? undefined : 2}>
             {episode.title}
           </Text>
           <View style={styles.metaRow}>
@@ -254,65 +253,62 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
           </View>
         </Pressable>
         <View style={styles.actionsRow}>
-          {isNative ? (
+          {canDownload && isNative && (
             <FocusableView
               focusRadius={8}
-              onPress={(e) => {
-                e.stopPropagation();
-                lightHaptic();
-                setMobileMenuVisible(prev => !prev);
-              }}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              onPress={(e) => { e.stopPropagation(); handleDownload(); }}
+              hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
               style={styles.actionBtn}
             >
-              <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
-            </FocusableView>
-          ) : (
-            <>
-              <Pressable
-                onPress={(e) => {
-                  e.stopPropagation();
-                  handleToggleFavorite();
-                }}
-                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-                style={styles.actionBtn}
-              >
-                <Ionicons
-                  name={favorited ? "star" : "star-outline"}
-                  size={20}
-                  color={favorited ? colors.accent : colors.textSecondary}
-                />
-              </Pressable>
-              <Pressable
-                onPress={(e) => {
-                  e.stopPropagation();
-                  handleToggleQueue();
-                }}
-                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-                style={styles.actionBtn}
-              >
-                {isInQueue ? (
-                  <Ionicons name="list-circle" size={20} color={colors.accent} />
-                ) : (
-                  <Ionicons name="add-circle-outline" size={20} color={colors.textSecondary} />
-                )}
-              </Pressable>
-              {canDownload && (
-                <Pressable
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    if (episode.id) {
-                      const downloadUrl = `${window.location.origin}/api/episodes/${episode.id}/download`;
-                      window.open(downloadUrl, "_blank");
-                    }
-                  }}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  style={styles.downloadBtn}
-                >
-                  <Feather name="download" size={20} color={colors.textSecondary} />
-                </Pressable>
+              {downloading ? (
+                <View style={styles.downloadingIndicator}>
+                  <Text style={[styles.progressText, { color: colors.accent }]}>{Math.round(progress * 100)}%</Text>
+                </View>
+              ) : downloaded ? (
+                <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+              ) : (
+                <Feather name="download" size={17} color={colors.textSecondary} />
               )}
-            </>
+            </FocusableView>
+          )}
+          <FocusableView
+            focusRadius={8}
+            onPress={(e) => { e.stopPropagation(); handleToggleQueue(); }}
+            hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+            style={styles.actionBtn}
+          >
+            {isInQueue ? (
+              <Ionicons name="list-circle" size={18} color={colors.accent} />
+            ) : (
+              <Ionicons name="add-circle-outline" size={18} color={colors.textSecondary} />
+            )}
+          </FocusableView>
+          <FocusableView
+            focusRadius={8}
+            onPress={(e) => { e.stopPropagation(); handleToggleFavorite(); }}
+            hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+            style={styles.actionBtn}
+          >
+            <Ionicons
+              name={favorited ? "star" : "star-outline"}
+              size={17}
+              color={favorited ? colors.accent : colors.textSecondary}
+            />
+          </FocusableView>
+          {!isNative && canDownload && (
+            <Pressable
+              onPress={(e) => {
+                e.stopPropagation();
+                if (episode.id) {
+                  const downloadUrl = `${window.location.origin}/api/episodes/${episode.id}/download`;
+                  window.open(downloadUrl, "_blank");
+                }
+              }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={styles.actionBtn}
+            >
+              <Feather name="download" size={17} color={colors.textSecondary} />
+            </Pressable>
           )}
         </View>
       </View>
@@ -341,30 +337,6 @@ function EpisodeItem({ episode, feed, showFeedTitle, isOnline = true }: Props) {
               {played ? "Mark as Unplayed" : "Mark as Played"}
             </Text>
           </Pressable>
-        </View>
-      )}
-      {isNative && mobileMenuVisible && (
-        <View style={[styles.mobileMenu, { backgroundColor: colors.surfaceElevated, borderTopColor: colors.divider }]}>
-          <FocusableView autoFocus onPress={() => { handleToggleFavorite(); setMobileMenuVisible(false); }} style={styles.mobileMenuItem}>
-            <Ionicons name={favorited ? "star" : "star-outline"} size={18} color={favorited ? colors.accent : colors.textSecondary} />
-            <Text style={[styles.mobileMenuText, { color: colors.text }]}>{favorited ? "Unfavorite" : "Favorite"}</Text>
-          </FocusableView>
-          <FocusableView onPress={() => { handleToggleQueue(); setMobileMenuVisible(false); }} style={styles.mobileMenuItem}>
-            <Ionicons name={isInQueue ? "remove-circle-outline" : "add-circle-outline"} size={18} color={isInQueue ? colors.danger : colors.textSecondary} />
-            <Text style={[styles.mobileMenuText, { color: colors.text }]}>{isInQueue ? "Remove from Queue" : "Add to Queue"}</Text>
-          </FocusableView>
-          {canDownload && (
-            <FocusableView onPress={() => { handleDownload(); setMobileMenuVisible(false); }} style={styles.mobileMenuItem}>
-              {downloading ? (
-                <Text style={[styles.progressText, { color: colors.accent }]}>{Math.round(progress * 100)}%</Text>
-              ) : downloaded ? (
-                <Ionicons name="checkmark-circle" size={18} color={colors.success} />
-              ) : (
-                <Feather name="download" size={18} color={colors.textSecondary} />
-              )}
-              <Text style={[styles.mobileMenuText, { color: colors.text }]}>{downloaded ? "Downloaded" : downloading ? "Downloading..." : "Download"}</Text>
-            </FocusableView>
-          )}
         </View>
       )}
     </>
@@ -535,13 +507,6 @@ const styles = StyleSheet.create({
     justifyContent: "center" as const,
     flexShrink: 0,
   },
-  downloadBtn: {
-    width: 38,
-    height: 38,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-    flexShrink: 0,
-  },
   downloadingIndicator: {
     alignItems: "center" as const,
     justifyContent: "center" as const,
@@ -549,22 +514,6 @@ const styles = StyleSheet.create({
   progressText: {
     fontSize: 10,
     fontWeight: "700" as const,
-  },
-  mobileMenu: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    paddingLeft: 54,
-    borderTopWidth: 1,
-  },
-  mobileMenuItem: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    gap: 10,
-    paddingVertical: 8,
-  },
-  mobileMenuText: {
-    fontSize: 13,
-    fontWeight: "500" as const,
   },
   swipeActionsContainer: {
     ...StyleSheet.absoluteFillObject,
