@@ -24,6 +24,7 @@ android/
 
 # Firebase credentials
 google-services.json
+google-services*.json
 GoogleService-Info.plist
 
 # Play Store signing tool
