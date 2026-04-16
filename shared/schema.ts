@@ -33,7 +33,9 @@ export const feeds = pgTable("feeds", {
   allhalachaAuthorId: integer("allhalacha_author_id"),
   kolhalashonRavId: integer("kolhalashon_rav_id"),
   showInBrowse: boolean("show_in_browse").default(true).notNull(),
-});
+}, (table) => [
+  index("feeds_active_browse_idx").on(table.isActive, table.showInBrowse),
+]);
 
 export const episodes = pgTable("episodes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -92,6 +94,7 @@ export const favorites = pgTable("favorites", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("favorites_episode_device_idx").on(table.episodeId, table.deviceId),
+  index("favorites_device_idx").on(table.deviceId),
 ]);
 
 export const playbackPositions = pgTable("playback_positions", {
@@ -105,6 +108,7 @@ export const playbackPositions = pgTable("playback_positions", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("playback_positions_episode_device_idx").on(table.episodeId, table.deviceId),
+  index("playback_positions_device_idx").on(table.deviceId),
 ]);
 
 export const adminNotifications = pgTable("admin_notifications", {
@@ -127,7 +131,9 @@ export const errorReports = pgTable("error_reports", {
   metadata: text("metadata"),
   resolved: boolean("resolved").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  index("error_reports_created_idx").on(table.createdAt),
+]);
 
 export const pushTokens = pgTable("push_tokens", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
