@@ -435,7 +435,7 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
 
   const downloadEpisode = useCallback(async (episode: Episode, feed: Feed) => {
     if (activeDownloadsRef.current.has(episode.id) || downloadingIdsCache.has(episode.id) || downloadedIdsCache.has(episode.id)) return;
-    activeDownloadsRef.current.add(episode.id);
+    // Only mark in downloadingIdsCache for UI guard; activeDownloadsRef is set by downloadSingleEpisode
     downloadingIdsCache.add(episode.id);
     return new Promise<void>((resolve) => {
       downloadQueueRef.current.push({

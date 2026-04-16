@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import { addLog } from "@/lib/error-logger";
 
-const DOWNLOADS_KEY = "@shiurpod_downloads";
+const DOWNLOADS_KEY = "@kosher_podcast_downloads";
 const COMPLETED_KEY = "@shiurpod_completed_downloads";
 let DELETE_DELAY_MS = 48 * 60 * 60 * 1000;
 

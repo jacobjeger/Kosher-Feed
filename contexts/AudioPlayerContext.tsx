@@ -865,9 +865,10 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const skip = useCallback(async (seconds: number) => {
-    const newPos = Math.max(0, Math.min(playback.positionMs + seconds * 1000, playback.durationMs));
+    const pos = positionRef.current;
+    const newPos = Math.max(0, Math.min(pos.positionMs + seconds * 1000, pos.durationMs));
     await seekTo(newPos);
-  }, [playback.positionMs, playback.durationMs, seekTo]);
+  }, [seekTo]);
 
   const setRate = useCallback(async (rate: number) => {
     setPlayback(prev => ({ ...prev, playbackRate: rate }));
