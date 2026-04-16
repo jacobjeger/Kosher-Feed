@@ -533,8 +533,8 @@ export async function syncPlaybackPosition(episodeId: string, feedId: string, de
   return pos;
 }
 
-export async function getPlaybackPositions(deviceId: string): Promise<PlaybackPosition[]> {
-  return db.select().from(playbackPositions).where(eq(playbackPositions.deviceId, deviceId)).orderBy(desc(playbackPositions.updatedAt));
+export async function getPlaybackPositions(deviceId: string, limit: number = 500): Promise<PlaybackPosition[]> {
+  return db.select().from(playbackPositions).where(eq(playbackPositions.deviceId, deviceId)).orderBy(desc(playbackPositions.updatedAt)).limit(limit);
 }
 
 export async function getPlaybackPosition(episodeId: string, deviceId: string): Promise<PlaybackPosition | undefined> {
@@ -542,8 +542,8 @@ export async function getPlaybackPosition(episodeId: string, deviceId: string): 
   return pos;
 }
 
-export async function getCompletedEpisodes(deviceId: string): Promise<PlaybackPosition[]> {
-  return db.select().from(playbackPositions).where(and(eq(playbackPositions.deviceId, deviceId), eq(playbackPositions.completed, true))).orderBy(desc(playbackPositions.updatedAt));
+export async function getCompletedEpisodes(deviceId: string, limit: number = 500): Promise<PlaybackPosition[]> {
+  return db.select().from(playbackPositions).where(and(eq(playbackPositions.deviceId, deviceId), eq(playbackPositions.completed, true))).orderBy(desc(playbackPositions.updatedAt)).limit(limit);
 }
 
 export async function getRecentlyPlayed(deviceId: string, limit: number = 15) {
@@ -615,24 +615,33 @@ export async function getListeningStats(deviceId: string) {
     prevDay = day;
   }
 
+  // Batch: get feedId for all episodes in one query instead of N+1
+  const episodeIds = [...new Set(positions.map(p => p.episodeId))];
+  const episodeFeedRows = episodeIds.length > 0
+    ? await db.select({ id: episodes.id, feedId: episodes.feedId }).from(episodes).where(inArray(episodes.id, episodeIds))
+    : [];
+  const episodeFeedMap = new Map(episodeFeedRows.map(r => [r.id, r.feedId]));
+
   const feedTimeMap = new Map<string, { feedId: string; time: number }>();
   for (const p of positions) {
-    const ep = await db.select({ feedId: episodes.feedId }).from(episodes).where(eq(episodes.id, p.episodeId)).limit(1);
-    if (ep.length > 0) {
-      const fid = ep[0].feedId;
+    const fid = episodeFeedMap.get(p.episodeId);
+    if (fid) {
       const existing = feedTimeMap.get(fid) || { feedId: fid, time: 0 };
       existing.time += (p.positionMs || 0) / 1000;
       feedTimeMap.set(fid, existing);
     }
   }
+
+  // Batch: get feed titles for top feeds in one query
   const topFeedIds = [...feedTimeMap.values()].sort((a, b) => b.time - a.time).slice(0, 10);
-  const topFeeds = [];
-  for (const f of topFeedIds) {
-    const [feed] = await db.select({ title: feeds.title }).from(feeds).where(eq(feeds.id, f.feedId)).limit(1);
-    if (feed) {
-      topFeeds.push({ feedId: f.feedId, title: feed.title, listenTime: Math.floor(f.time) });
-    }
-  }
+  const topFeedIdList = topFeedIds.map(f => f.feedId);
+  const feedTitleRows = topFeedIdList.length > 0
+    ? await db.select({ id: feeds.id, title: feeds.title }).from(feeds).where(inArray(feeds.id, topFeedIdList))
+    : [];
+  const feedTitleMap = new Map(feedTitleRows.map(r => [r.id, r.title]));
+  const topFeeds = topFeedIds
+    .filter(f => feedTitleMap.has(f.feedId))
+    .map(f => ({ feedId: f.feedId, title: feedTitleMap.get(f.feedId)!, listenTime: Math.floor(f.time) }));
 
   // This week vs last week
   const now = new Date();
@@ -673,13 +682,17 @@ export async function getListeningStats(deviceId: string) {
   const uniqueDays = listenDays.size;
   const avgDailyTimeSeconds = uniqueDays > 0 ? Math.floor(totalListeningTimeMs / 1000 / uniqueDays) : 0;
 
-  // Top category
+  // Top category — batch query instead of N+1
   let topCategory: { name: string; timeSeconds: number } | null = null;
+  const allFeedIds = [...feedTimeMap.keys()];
+  const allFeedCats = allFeedIds.length > 0
+    ? await db.select({ feedId: feedCategories.feedId, categoryId: feedCategories.categoryId }).from(feedCategories).where(inArray(feedCategories.feedId, allFeedIds))
+    : [];
   const categoryTimeMap = new Map<string, number>();
-  for (const [feedId, data] of feedTimeMap) {
-    const cats = await db.select({ categoryId: feedCategories.categoryId }).from(feedCategories).where(eq(feedCategories.feedId, feedId));
-    for (const cat of cats) {
-      categoryTimeMap.set(cat.categoryId, (categoryTimeMap.get(cat.categoryId) || 0) + data.time);
+  for (const fc of allFeedCats) {
+    const data = feedTimeMap.get(fc.feedId);
+    if (data) {
+      categoryTimeMap.set(fc.categoryId, (categoryTimeMap.get(fc.categoryId) || 0) + data.time);
     }
   }
   if (categoryTimeMap.size > 0) {

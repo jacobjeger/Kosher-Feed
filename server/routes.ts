@@ -226,16 +226,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Cache admin auth to avoid bcrypt on every request (5 min TTL)
+  const _adminAuthCache = new Map<string, number>();
+  const ADMIN_AUTH_TTL = 5 * 60 * 1000;
+
   const adminAuth = async (req: Request, res: Response, next: Function) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Basic ")) {
       return res.status(401).json({ error: "Unauthorized" });
     }
-    const decoded = Buffer.from(authHeader.slice(6), "base64").toString();
+    const token = authHeader.slice(6);
+    const cachedAt = _adminAuthCache.get(token);
+    if (cachedAt && Date.now() - cachedAt < ADMIN_AUTH_TTL) {
+      return next();
+    }
+    const decoded = Buffer.from(token, "base64").toString();
     const [username, password] = decoded.split(":");
     const valid = await storage.verifyAdmin(username, password);
     if (!valid) {
+      _adminAuthCache.delete(token);
       return res.status(401).json({ error: "Invalid credentials" });
+    }
+    _adminAuthCache.set(token, Date.now());
+    // Evict old entries
+    if (_adminAuthCache.size > 20) {
+      const now = Date.now();
+      for (const [k, v] of _adminAuthCache) { if (now - v > ADMIN_AUTH_TTL) _adminAuthCache.delete(k); }
     }
     next();
   };
@@ -1164,9 +1180,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         const parsed = new URL(url);
         if (parsed.protocol !== "https:") return res.status(400).json({ error: "Only HTTPS URLs are supported" });
-        // Block internal/private IPs
+        // Block internal/private/reserved IPs
         const host = parsed.hostname.toLowerCase();
-        if (host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host.startsWith("10.") || host.startsWith("192.168.") || host.startsWith("172.") || host.endsWith(".internal") || host === "[::1]" || host.startsWith("[fe") || host.startsWith("[fc") || host.startsWith("[fd") || host.startsWith("[::") || host.includes("localhost")) {
+        if (host === "localhost" || host.startsWith("127.") || host === "0.0.0.0" || host.startsWith("0.") || host.startsWith("10.") || host.startsWith("192.168.") || host.startsWith("172.") || host.startsWith("169.254.") || host.endsWith(".internal") || host === "[::1]" || host.startsWith("[fe") || host.startsWith("[fc") || host.startsWith("[fd") || host.startsWith("[::") || host.includes("localhost") || host.includes("metadata.google") || host.includes("metadata.aws")) {
           return res.status(400).json({ error: "Invalid URL" });
         }
       } catch {
@@ -2300,14 +2316,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const protocol = req.protocol;
       const baseUrl = `${protocol}://${host}`;
 
+      const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      const safeTitle = esc(episode.title || "");
+      const safeFeedTitle = esc(feed?.title || "");
+      const safeImgUrl = esc(episode.imageUrl || feed?.imageUrl || "");
+      const safeAudioUrl = esc(episode.audioUrl || "");
+
       res.send(`<!DOCTYPE html>
 <html><head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>${episode.title} - ShiurPod</title>
-  <meta property="og:title" content="${episode.title}">
-  <meta property="og:description" content="${feed?.title || 'ShiurPod'}${timestamp > 0 ? ' - at ' + Math.floor(timestamp / 60000) + ':' + String(Math.floor((timestamp % 60000) / 1000)).padStart(2, '0') : ''}">
-  <meta property="og:image" content="${episode.imageUrl || feed?.imageUrl || ''}">
+  <title>${safeTitle} - ShiurPod</title>
+  <meta property="og:title" content="${safeTitle}">
+  <meta property="og:description" content="${safeFeedTitle}${timestamp > 0 ? ' - at ' + Math.floor(timestamp / 60000) + ':' + String(Math.floor((timestamp % 60000) / 1000)).padStart(2, '0') : ''}">
+  <meta property="og:image" content="${safeImgUrl}">
   <meta property="og:type" content="music.song">
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
@@ -2323,12 +2345,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   </style>
 </head><body>
   <div class="card">
-    <img class="artwork" src="${episode.imageUrl || feed?.imageUrl || ''}" alt="">
-    <h1>${episode.title}</h1>
-    <p class="feed">${feed?.title || ''}</p>
-    <a class="btn" href="shiurpod://episode/${episode.id}${timestamp > 0 ? '?t=' + timestamp : ''}">Open in ShiurPod</a>
+    <img class="artwork" src="${safeImgUrl}" alt="">
+    <h1>${safeTitle}</h1>
+    <p class="feed">${safeFeedTitle}</p>
+    <a class="btn" href="shiurpod://episode/${esc(episode.id)}${timestamp > 0 ? '?t=' + timestamp : ''}">Open in ShiurPod</a>
     <div class="audio-wrap">
-      <audio controls preload="none" src="${episode.audioUrl}"></audio>
+      <audio controls preload="none" src="${safeAudioUrl}"></audio>
     </div>
   </div>
 </body></html>`);

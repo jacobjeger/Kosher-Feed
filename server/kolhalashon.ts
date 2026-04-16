@@ -34,7 +34,7 @@ export function getHeaders(): Record<string, string> {
   if (!process.env.KH_PROXY_URL) {
     Object.assign(headers, {
       "accept-language": "he-IL,he;q=0.9,en-AU;q=0.8,en;q=0.7,en-US;q=0.6",
-      "authorization-site-key": "Bearer 8ea2pe8",
+      "authorization-site-key": process.env.KH_AUTH_TOKEN || "Bearer 8ea2pe8",
       "origin": "https://www2.kolhalashon.com",
       "referer": "https://www2.kolhalashon.com/",
       "sec-ch-ua": '"Chromium";v="120", "Google Chrome";v="120", "Not=A?Brand";v="8"',

@@ -7,7 +7,7 @@ const KH_BASE = "https://srv.kolhalashon.com";
 const KH_HEADERS = {
   "accept": "application/json, text/plain, */*",
   "accept-language": "he-IL,he;q=0.9,en-AU;q=0.8,en;q=0.7,en-US;q=0.6",
-  "authorization-site-key": "Bearer 8ea2pe8",
+  "authorization-site-key": "Bearer 8ea2pe8", // TODO: move to env.KH_AUTH_TOKEN wrangler secret
   "content-type": "application/json",
   "origin": "https://www2.kolhalashon.com",
   "referer": "https://www2.kolhalashon.com/",
