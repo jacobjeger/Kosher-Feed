@@ -37,6 +37,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
 @OptIn(UnstableApi::class)
@@ -44,14 +45,14 @@ class ShiurPodAutoService : MediaLibraryService() {
 
   private var librarySession: MediaLibrarySession? = null
   private var placeholderPlayer: ExoPlayer? = null
-  private val ioExecutor: ListeningExecutorService = MoreExecutors.listeningDecorator(Executors.newCachedThreadPool())
-  private var cachedTree: MutableMap<String, List<MediaItem>> = mutableMapOf()
-  private var cacheTimestamps: MutableMap<String, Long> = mutableMapOf()
-  private val feedMetadataCache: MutableMap<String, JSONObject> = mutableMapOf()
+  private val ioExecutor: ListeningExecutorService = MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(4))
+  private val cachedTree: ConcurrentHashMap<String, List<MediaItem>> = ConcurrentHashMap()
+  private val cacheTimestamps: ConcurrentHashMap<String, Long> = ConcurrentHashMap()
+  private val feedMetadataCache: ConcurrentHashMap<String, JSONObject> = ConcurrentHashMap()
   // Cache positions keyed by episodeId for resume support
-  private val positionCache: MutableMap<String, Long> = mutableMapOf()
-  // Cache downloaded artwork bytes keyed by URL
-  private val artworkCache: MutableMap<String, ByteArray?> = mutableMapOf()
+  private val positionCache: ConcurrentHashMap<String, Long> = ConcurrentHashMap()
+  // Cache downloaded artwork bytes keyed by URL (max ~200 entries to bound memory)
+  private val artworkCache: ConcurrentHashMap<String, ByteArray?> = ConcurrentHashMap()
   private var cacheTimestamp: Long = 0
   private val CACHE_TTL_MS = 5 * 60 * 1000L
   private val RECENTLY_PLAYED_TTL_MS = 60 * 1000L // 1 min for recently played
@@ -167,9 +168,10 @@ class ShiurPodAutoService : MediaLibraryService() {
   }
 
   private fun fetchJson(urlString: String): String? {
+    var conn: HttpURLConnection? = null
     return try {
       val url = URL(urlString)
-      val conn = url.openConnection() as HttpURLConnection
+      conn = url.openConnection() as HttpURLConnection
       conn.connectTimeout = 8000
       conn.readTimeout = 8000
       conn.requestMethod = "GET"
@@ -196,6 +198,8 @@ class ShiurPodAutoService : MediaLibraryService() {
     } catch (e: Exception) {
       Log.e(TAG, "Unexpected error fetching $urlString", e)
       null
+    } finally {
+      conn?.disconnect()
     }
   }
 
