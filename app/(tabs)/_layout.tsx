@@ -12,12 +12,14 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { setErrorContext } from "@/lib/error-logger";
 
 /** Tab bar button that navigates on D-pad focus (Android) */
-function DpadTabButton({ children, onPress, accessibilityState, route, ...rest }: any) {
-  const handleFocus = useCallback(() => {
-    if (Platform.OS === "android" && !accessibilityState?.selected) {
-      router.push(route);
+function DpadTabButton({ children, onPress, accessibilityState, ...rest }: any) {
+  // On focus: just call the tab bar's own onPress (tab-aware navigation,
+  // no stack push, no animation queueing). Much faster than router.push.
+  const handleFocus = useCallback((e: any) => {
+    if (Platform.OS === "android" && !accessibilityState?.selected && typeof onPress === "function") {
+      onPress(e);
     }
-  }, [route, accessibilityState?.selected]);
+  }, [onPress, accessibilityState?.selected]);
 
   return (
     <Pressable
@@ -162,7 +164,7 @@ export default function TabLayout() {
       <Tabs
         screenOptions={{
           headerShown: false,
-          animation: "fade" as any,
+          animation: "none" as any,
           tabBarActiveTintColor: colors.tint,
           tabBarInactiveTintColor: colors.tabIconDefault,
           tabBarStyle: showTopNav
@@ -191,7 +193,7 @@ export default function TabLayout() {
             tabBarIcon: ({ color, focused }) => (
               <Ionicons name={focused ? "home" : "home-outline"} size={22} color={color} />
             ),
-            tabBarButton: (props) => <DpadTabButton {...props} route="/" />,
+            tabBarButton: (props) => <DpadTabButton {...props} />,
           }}
         />
         <Tabs.Screen
@@ -201,7 +203,7 @@ export default function TabLayout() {
             tabBarIcon: ({ color, focused }) => (
               <Ionicons name={focused ? "heart" : "heart-outline"} size={22} color={color} />
             ),
-            tabBarButton: (props) => <DpadTabButton {...props} route="/following" />,
+            tabBarButton: (props) => <DpadTabButton {...props} />,
           }}
         />
         <Tabs.Screen
@@ -211,7 +213,7 @@ export default function TabLayout() {
             tabBarIcon: ({ color, focused }) => (
               <Ionicons name={focused ? "star" : "star-outline"} size={22} color={color} />
             ),
-            tabBarButton: (props) => <DpadTabButton {...props} route="/favorites" />,
+            tabBarButton: (props) => <DpadTabButton {...props} />,
           }}
         />
         <Tabs.Screen
@@ -222,7 +224,7 @@ export default function TabLayout() {
             tabBarIcon: ({ color, focused }) => (
               <Ionicons name={focused ? "cloud-download" : "cloud-download-outline"} size={22} color={color} />
             ),
-            tabBarButton: (props) => <DpadTabButton {...props} route="/downloads" />,
+            tabBarButton: (props) => <DpadTabButton {...props} />,
           }}
         />
         <Tabs.Screen
@@ -233,7 +235,7 @@ export default function TabLayout() {
             tabBarIcon: ({ color, focused }) => (
               <Ionicons name={focused ? "settings" : "settings-outline"} size={22} color={color} />
             ),
-            tabBarButton: (props) => <DpadTabButton {...props} route="/settings" />,
+            tabBarButton: (props) => <DpadTabButton {...props} />,
           }}
         />
       </Tabs>
