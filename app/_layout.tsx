@@ -143,8 +143,11 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    if (!fontsLoaded || !onboardingChecked) return;
-    SplashScreen.hideAsync();
+    // Hide splash as soon as onboarding check completes. Fonts can load in
+    // parallel — icon fonts falling back briefly is way better than a
+    // multi-second white screen on cold start.
+    if (!onboardingChecked) return;
+    SplashScreen.hideAsync().catch(() => {});
     setupNotificationChannel();
     checkForUpdate();
 
@@ -216,7 +219,9 @@ export default function RootLayout() {
     }
   };
 
-  if (!fontsLoaded || !onboardingChecked) return null;
+  // Only wait for onboarding check (which route to start on). Fonts will
+  // load asynchronously and icons will appear once ready — no white screen.
+  if (!onboardingChecked) return null;
 
   return (
     <ErrorBoundary>
