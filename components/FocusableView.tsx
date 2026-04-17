@@ -1,5 +1,5 @@
-import React, { useCallback, useState } from "react";
-import { Pressable, Platform, type ViewStyle, type PressableProps } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Pressable, Platform, UIManager, findNodeHandle, type ViewStyle, type PressableProps, type View } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import Colors from "@/constants/colors";
 
@@ -37,6 +37,23 @@ export default function FocusableView({
   const colorScheme = useAppColorScheme();
   const colors = Colors[colorScheme];
   const isDark = colorScheme === "dark";
+  const ref = useRef<View>(null);
+
+  // autoFocus on Android: request native focus after the view mounts. Uses a
+  // small deferral so the view is attached to the window before we call focus.
+  useEffect(() => {
+    if (!autoFocus || Platform.OS !== "android") return;
+    const handle = requestAnimationFrame(() => {
+      try {
+        const nodeHandle = findNodeHandle(ref.current);
+        if (nodeHandle != null) {
+          // React Native exposes a generic "focus" command on most views
+          UIManager.dispatchViewManagerCommand(nodeHandle, "focus" as any, []);
+        }
+      } catch {}
+    });
+    return () => cancelAnimationFrame(handle);
+  }, [autoFocus]);
 
   const handleFocus = useCallback(
     (e: any) => {
@@ -80,6 +97,7 @@ export default function FocusableView({
 
   return (
     <Pressable
+      ref={ref as any}
       {...rest}
       {...focusProps}
       style={(pressState) => {

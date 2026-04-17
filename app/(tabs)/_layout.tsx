@@ -165,6 +165,12 @@ export default function TabLayout() {
         screenOptions={{
           headerShown: false,
           animation: "none" as any,
+          // Pre-render all tabs on first mount so D-pad/tap switches are truly
+          // instant. Without this, switching to a not-yet-visited tab briefly
+          // shows the previous tab's content while the new one mounts.
+          lazy: false,
+          freezeOnBlur: false,
+          detachInactiveScreens: false,
           tabBarActiveTintColor: colors.tint,
           tabBarInactiveTintColor: colors.tabIconDefault,
           tabBarStyle: showTopNav
