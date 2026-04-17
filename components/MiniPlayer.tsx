@@ -67,7 +67,7 @@ export default function MiniPlayer() {
               contentFit="cover"
               cachePolicy="memory-disk"
               recyclingKey={currentFeed.imageUrl}
-              transition={0}
+              transition={180}
             />
           ) : (
             <View style={[styles.artwork, { backgroundColor: "rgba(255,255,255,0.1)" }]}>

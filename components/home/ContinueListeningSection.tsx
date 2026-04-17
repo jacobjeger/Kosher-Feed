@@ -31,7 +31,7 @@ const ContinueListeningCard = React.memo(function ContinueListeningCard({ episod
         <Ionicons name="close" size={12} color="#fff" />
       </FocusableView>
       {feed.imageUrl ? (
-        <Image source={{ uri: feed.imageUrl }} style={styles.continueImage} contentFit="cover" cachePolicy="disk" transition={0} />
+        <Image source={{ uri: feed.imageUrl }} style={styles.continueImage} contentFit="cover" cachePolicy="disk" transition={180} />
       ) : (
         <View style={[styles.continueImage, { backgroundColor: colors.surfaceAlt }]}>
           <Ionicons name="mic" size={24} color={colors.textSecondary} />

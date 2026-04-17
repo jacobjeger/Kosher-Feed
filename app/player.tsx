@@ -17,6 +17,7 @@ import { useSettings } from "@/contexts/SettingsContext";
 import TinyPlayerLayout from "@/components/TinyPlayerLayout";
 import { useFavorites } from "@/contexts/FavoritesContext";
 import OptionPickerModal, { type PickerOption } from "@/components/OptionPickerModal";
+import FocusableView from "@/components/FocusableView";
 
 function formatTime(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
@@ -201,9 +202,9 @@ export default function PlayerScreen() {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
         <View style={styles.header}>
-          <Pressable onPress={() => safeGoBack()} hitSlop={12}>
+          <FocusableView focusRadius={20} onPress={() => safeGoBack()} hitSlop={12}>
             <Ionicons name="chevron-down" size={28} color={colors.text} />
-          </Pressable>
+          </FocusableView>
         </View>
         <View style={styles.emptyState}>
           {playback.isLoading ? (
@@ -281,9 +282,9 @@ export default function PlayerScreen() {
       contentContainerStyle={[styles.scrollContent, Platform.OS === "web" && styles.scrollContentWeb]}
     >
       <View style={[styles.header, { paddingTop: insets.top + (Platform.OS === "web" ? 12 : 8) }]}>
-        <Pressable onPress={() => safeGoBack()} hitSlop={12}>
+        <FocusableView focusRadius={20} onPress={() => safeGoBack()} hitSlop={12}>
           <Ionicons name="chevron-down" size={28} color={colors.text} />
-        </Pressable>
+        </FocusableView>
         <Text style={[styles.headerTitle, { color: colors.textSecondary }]}>Now Playing</Text>
         <View style={{ width: 28 }} />
       </View>
@@ -322,7 +323,7 @@ export default function PlayerScreen() {
                 contentFit="cover"
                 cachePolicy="memory-disk"
                 recyclingKey={currentFeed.imageUrl}
-                transition={0}
+                transition={180}
               />
             </View>
           ) : (
@@ -344,7 +345,8 @@ export default function PlayerScreen() {
         <Text style={[styles.episodeTitle, { color: colors.text }, isSmallScreen && styles.episodeTitleSmall]} numberOfLines={2}>
           {currentEpisode.title}
         </Text>
-        <Pressable
+        <FocusableView
+          focusRadius={6}
           onPress={() => { router.back(); router.push(`/podcast/${currentFeed.id}`); }}
           style={{ zIndex: 10, paddingVertical: 6, marginBottom: 4 }}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -352,7 +354,7 @@ export default function PlayerScreen() {
           <Text style={[styles.feedName, { color: colors.accent, textDecorationLine: "underline" }]} numberOfLines={1}>
             {currentFeed.title}
           </Text>
-        </Pressable>
+        </FocusableView>
         {currentFeed.sourceNetwork && (
           <View style={styles.sourceNetworkBadge}>
             <Ionicons name="globe-outline" size={11} color="#fff" />
@@ -367,9 +369,10 @@ export default function PlayerScreen() {
           minimumValue={0}
           maximumValue={1}
           value={progress}
-          onSlidingStart={() => setIsSeeking(true)}
+          onSlidingStart={() => { lightHaptic(); setIsSeeking(true); }}
           onValueChange={(val) => setSeekValue(val * position.durationMs)}
           onSlidingComplete={async (val) => {
+            lightHaptic();
             await seekTo(val * position.durationMs);
             setIsSeeking(false);
           }}
@@ -388,24 +391,28 @@ export default function PlayerScreen() {
       </View>
 
       <View style={[styles.controls, isSmallScreen && styles.controlsSmall]}>
-        <Pressable
+        <FocusableView
+          focusRadius={12}
           onPress={cycleRate}
           style={[styles.rateBtn, { backgroundColor: colors.surfaceAlt }]}
         >
           <Text style={[styles.rateText, { color: colors.text }]}>
             {playback.playbackRate}x
           </Text>
-        </Pressable>
+        </FocusableView>
 
-        <Pressable
+        <FocusableView
+          focusRadius={20}
           onPress={() => { lightHaptic(); skip(-settings.skipBackwardSeconds); }}
           hitSlop={8}
           style={styles.skipBtn}
         >
           <MaterialIcons name={getSkipBackwardIcon()} size={isSmallScreen ? 28 : 32} color={colors.text} />
-        </Pressable>
+        </FocusableView>
 
-        <Pressable
+        <FocusableView
+          autoFocus
+          focusRadius={36}
           onPress={() => {
             if (playback.isLoading) return;
             mediumHaptic();
@@ -424,27 +431,30 @@ export default function PlayerScreen() {
               style={playback.isPlaying ? undefined : { marginLeft: 3 }}
             />
           )}
-        </Pressable>
+        </FocusableView>
 
-        <Pressable
+        <FocusableView
+          focusRadius={20}
           onPress={() => { lightHaptic(); skip(settings.skipForwardSeconds); }}
           hitSlop={8}
           style={styles.skipBtn}
         >
           <MaterialIcons name={getSkipForwardIcon()} size={isSmallScreen ? 28 : 32} color={colors.text} />
-        </Pressable>
+        </FocusableView>
 
-        <Pressable
+        <FocusableView
+          focusRadius={12}
           onPress={() => { lightHaptic(); stop(); safeGoBack(); }}
           hitSlop={8}
           style={[styles.rateBtn, { backgroundColor: colors.surfaceAlt }]}
         >
           <Ionicons name="stop" size={18} color={colors.danger} />
-        </Pressable>
+        </FocusableView>
       </View>
 
       <View style={styles.secondaryControls}>
-        <Pressable
+        <FocusableView
+          focusRadius={10}
           onPress={handleSleepTimerPress}
           style={[
             styles.secondaryBtn,
@@ -461,9 +471,10 @@ export default function PlayerScreen() {
               {sleepButtonLabel}
             </Text>
           ) : null}
-        </Pressable>
+        </FocusableView>
 
-        <Pressable
+        <FocusableView
+          focusRadius={10}
           onPress={handleAddBookmark}
           style={[styles.secondaryBtn, { backgroundColor: colors.surfaceAlt }]}
         >
@@ -472,10 +483,11 @@ export default function PlayerScreen() {
             size={18}
             color={bookmarkSaved ? colors.success : colors.textSecondary}
           />
-        </Pressable>
+        </FocusableView>
 
 
-        <Pressable
+        <FocusableView
+          focusRadius={10}
           onPress={handleToggleFavorite}
           style={[styles.secondaryBtn, { backgroundColor: colors.surfaceAlt }]}
         >
@@ -484,14 +496,15 @@ export default function PlayerScreen() {
             size={18}
             color={isFavorite(currentEpisode.id) ? colors.accent : colors.textSecondary}
           />
-        </Pressable>
+        </FocusableView>
 
-        <Pressable
+        <FocusableView
+          focusRadius={10}
           onPress={() => { lightHaptic(); router.push("/queue"); }}
           style={[styles.secondaryBtn, { backgroundColor: colors.surfaceAlt }]}
         >
           <Ionicons name="list" size={18} color={colors.textSecondary} />
-        </Pressable>
+        </FocusableView>
       </View>
 
       {bookmarks.length > 0 && (
@@ -500,7 +513,8 @@ export default function PlayerScreen() {
           {bookmarks
             .sort((a, b) => a.positionMs - b.positionMs)
             .map((bm) => (
-              <Pressable
+              <FocusableView
+                focusRadius={10}
                 key={bm.id}
                 style={[styles.bookmarkItem, { backgroundColor: colors.surfaceAlt }]}
                 onPress={() => {
@@ -515,16 +529,17 @@ export default function PlayerScreen() {
                 <Text style={[styles.bookmarkTime, { color: colors.textSecondary }]}>
                   {formatTime(bm.positionMs)}
                 </Text>
-                <Pressable
-                  onPress={(e) => {
-                    e.stopPropagation();
+                <FocusableView
+                  focusRadius={8}
+                  onPress={(e: any) => {
+                    e?.stopPropagation?.();
                     handleRemoveBookmark(bm.id);
                   }}
                   hitSlop={8}
                 >
                   <Ionicons name="close" size={16} color={colors.textSecondary} />
-                </Pressable>
-              </Pressable>
+                </FocusableView>
+              </FocusableView>
             ))}
         </View>
       )}

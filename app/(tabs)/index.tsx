@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from "react";
-import { View, Text, FlatList, ScrollView, Pressable, StyleSheet, RefreshControl, Platform, TextInput, Dimensions, NativeSyntheticEvent, NativeScrollEvent } from "react-native";
+import { View, Text, FlatList, ScrollView, Pressable, StyleSheet, RefreshControl, Platform, TextInput, Dimensions, NativeSyntheticEvent, NativeScrollEvent, InteractionManager } from "react-native";
 import FocusableView from "@/components/FocusableView";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -15,7 +15,7 @@ import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { lightHaptic } from "@/lib/haptics";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { usePlayedEpisodes } from "@/contexts/PlayedEpisodesContext";
-import { HomeScreenSkeleton } from "@/components/Skeleton";
+import { HomeScreenSkeleton, FeedRowSkeleton } from "@/components/Skeleton";
 import { useNetworkStatus } from "@/components/OfflineBanner";
 import SearchSection from "@/components/home/SearchSection";
 import ContinueListeningSection from "@/components/home/ContinueListeningSection";
@@ -45,6 +45,24 @@ const isTinyScreen = screenHeight <= 640;
 const CAROUSEL_WIDTH = Platform.OS === "web" ? Math.min(screenWidth - 40, 920) : screenWidth - 40;
 const CAROUSEL_HEIGHT = Platform.OS === "web" ? 280 : isTinyScreen ? 200 : 180;
 const AUTO_SCROLL_INTERVAL = 5000;
+
+/**
+ * Defers mounting children until after the first frame paints. Shows a
+ * skeleton placeholder in the meantime so the scroll dimensions stay
+ * stable. Used to keep home screen's initial paint fast — below-the-fold
+ * sections don't block the first render.
+ */
+function DeferredMount({ children, placeholder }: { children: React.ReactNode; placeholder?: React.ReactNode }) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const handle = InteractionManager.runAfterInteractions(() => {
+      setReady(true);
+    });
+    return () => { try { handle.cancel?.(); } catch {} };
+  }, []);
+  if (ready) return <>{children}</>;
+  return <>{placeholder ?? <FeedRowSkeleton count={4} />}</>;
+}
 
 const FeaturedCarousel = React.memo(function FeaturedCarousel({ feeds, colors, autoScrollMs }: { feeds: Feed[]; colors: any; autoScrollMs?: number }) {
   const scrollRef = useRef<FlatList>(null);
@@ -86,7 +104,7 @@ const FeaturedCarousel = React.memo(function FeaturedCarousel({ feeds, colors, a
       onPress={() => { lightHaptic(); router.push(`/podcast/${item.id}`); }}
     >
       {item.imageUrl ? (
-        <Image source={{ uri: item.imageUrl }} style={styles.carouselImage} contentFit="cover" cachePolicy="memory-disk" transition={0} />
+        <Image source={{ uri: item.imageUrl }} style={styles.carouselImage} contentFit="cover" cachePolicy="memory-disk" transition={180} />
       ) : (
         <View style={[styles.carouselImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="mic" size={56} color={colors.textSecondary} />
@@ -270,7 +288,7 @@ function SponsorBanner({ colors }: { colors: any }) {
           style={{ width: 120, height: 60, marginBottom: 12 }}
           contentFit="contain"
           cachePolicy="memory-disk"
-          transition={0}
+          transition={180}
         />
       ) : null}
       {sponsor.text ? (
@@ -606,32 +624,40 @@ function HomeScreenInner() {
         </View>
       )}
 
-      {!isSearching && homeSections.map((section) => {
-        switch (section) {
-          case "continue":
-            if (featureFlags.showContinueListening === false) return null;
-            return <ContinueListeningSection key={section} items={continueListeningItems} colors={colors} onPlay={handlePlayEpisode} onDismiss={handleDismissContinue} />;
-          case "featured":
-            if (featuredFeeds.length === 0) return null;
-            return <FeaturedCarousel key={section} feeds={featuredFeeds} colors={colors} autoScrollMs={config.carouselAutoScrollMs} />;
-          case "trending":
-            if (featureFlags.showTrending === false) return null;
-            return <TrendingSection key={section} items={quickPlayItems} colors={colors} onPlay={handlePlayEpisode} />;
-          case "allShiurim":
-            return <AllShiurimSection key={section} feeds={allFeeds} feedsWithNew={feedsWithNew} colors={colors} />;
-          case "recommended":
-            if (featureFlags.showRecommended === false) return null;
-            return <RecommendedSection key={section} feeds={recommendedFeeds} colors={colors} />;
-          case "maggidShiur":
-            if (featureFlags.showMaggidShiur === false) return null;
-            return <MaggidShiurSection key={section} maggidShiurim={maggidShiurim} colors={colors} />;
-          case "categories":
-            return <CategoriesGrid key={section} categories={categories} allFeeds={allFeeds} colors={colors} />;
-          case "recent":
-            return <RecentlyListenedSection key={section} items={recentlyListenedItems} colors={colors} isOnline={isOnline} />;
-          default:
-            return null;
-        }
+      {!isSearching && homeSections.map((section, idx) => {
+        // Render the first 2 sections immediately, defer everything else
+        // until after the first paint to keep cold start fast.
+        const deferrable = idx >= 2;
+        const node = (() => {
+          switch (section) {
+            case "continue":
+              if (featureFlags.showContinueListening === false) return null;
+              return <ContinueListeningSection items={continueListeningItems} colors={colors} onPlay={handlePlayEpisode} onDismiss={handleDismissContinue} />;
+            case "featured":
+              if (featuredFeeds.length === 0) return null;
+              return <FeaturedCarousel feeds={featuredFeeds} colors={colors} autoScrollMs={config.carouselAutoScrollMs} />;
+            case "trending":
+              if (featureFlags.showTrending === false) return null;
+              return <TrendingSection items={quickPlayItems} colors={colors} onPlay={handlePlayEpisode} />;
+            case "allShiurim":
+              return <AllShiurimSection feeds={allFeeds} feedsWithNew={feedsWithNew} colors={colors} />;
+            case "recommended":
+              if (featureFlags.showRecommended === false) return null;
+              return <RecommendedSection feeds={recommendedFeeds} colors={colors} />;
+            case "maggidShiur":
+              if (featureFlags.showMaggidShiur === false) return null;
+              return <MaggidShiurSection maggidShiurim={maggidShiurim} colors={colors} />;
+            case "categories":
+              return <CategoriesGrid categories={categories} allFeeds={allFeeds} colors={colors} />;
+            case "recent":
+              return <RecentlyListenedSection items={recentlyListenedItems} colors={colors} isOnline={isOnline} />;
+            default:
+              return null;
+          }
+        })();
+        if (node === null) return null;
+        if (!deferrable) return <React.Fragment key={section}>{node}</React.Fragment>;
+        return <DeferredMount key={section}>{node}</DeferredMount>;
       })}
      </View>
     </ScrollView>

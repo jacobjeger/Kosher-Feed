@@ -25,7 +25,7 @@ const ShiurRow = React.memo(function ShiurRow({ feed, colors }: { feed: Feed; co
       onPress={() => { lightHaptic(); router.push(`/podcast/${feed.id}`); }}
     >
       {feed.imageUrl ? (
-        <Image source={{ uri: feed.imageUrl }} style={styles.rowImage} contentFit="cover" cachePolicy="memory-disk" transition={0} />
+        <Image source={{ uri: feed.imageUrl }} style={styles.rowImage} contentFit="cover" cachePolicy="memory-disk" transition={180} />
       ) : (
         <View style={[styles.rowImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="mic" size={22} color={colors.textSecondary} />

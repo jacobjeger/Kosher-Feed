@@ -96,7 +96,7 @@ export default function TinyPlayerLayout(props: Props) {
       <View style={styles.artRow}>
         <View style={[styles.artworkWrap, { backgroundColor: colors.surfaceAlt, shadowColor: isDark ? "#000" : "#333" }]}>
           {feed.imageUrl ? (
-            <Image source={{ uri: feed.imageUrl }} style={styles.artworkImg} contentFit="cover" cachePolicy="memory-disk" recyclingKey={feed.imageUrl} priority="high" transition={0} />
+            <Image source={{ uri: feed.imageUrl }} style={styles.artworkImg} contentFit="cover" cachePolicy="memory-disk" recyclingKey={feed.imageUrl} priority="high" transition={180} />
           ) : (
             <View style={[styles.artworkImg, { alignItems: "center", justifyContent: "center" }]}>
               <Ionicons name="mic" size={40} color={colors.textSecondary} />

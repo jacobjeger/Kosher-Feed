@@ -37,7 +37,7 @@ const SpeakerCard = React.memo(function SpeakerCard({ speaker, colors }: { speak
       }}
     >
       {speaker.imageUrl ? (
-        <Image source={{ uri: speaker.imageUrl }} style={styles.avatar} contentFit="cover" cachePolicy="memory-disk" transition={0} />
+        <Image source={{ uri: speaker.imageUrl }} style={styles.avatar} contentFit="cover" cachePolicy="memory-disk" transition={180} />
       ) : (
         <View style={[styles.avatar, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="person" size={28} color={colors.textSecondary} />

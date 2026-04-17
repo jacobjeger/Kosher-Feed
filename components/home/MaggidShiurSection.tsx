@@ -17,7 +17,7 @@ const MaggidShiurCard = React.memo(function MaggidShiurCard({ author, feeds, col
       onPress={() => { lightHaptic(); router.push({ pathname: "/maggid-shiur/[author]" as any, params: { author, feedIds: feeds.map(f => f.id).join(",") } }); }}
     >
       {imageUrl ? (
-        <Image source={{ uri: imageUrl }} style={styles.maggidAvatar} contentFit="cover" cachePolicy="disk" transition={0} />
+        <Image source={{ uri: imageUrl }} style={styles.maggidAvatar} contentFit="cover" cachePolicy="disk" transition={180} />
       ) : (
         <View style={[styles.maggidAvatar, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="person" size={24} color={colors.textSecondary} />

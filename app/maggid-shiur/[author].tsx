@@ -63,7 +63,7 @@ function MaggidShiurDetailInner() {
             onPress={() => { lightHaptic(); router.push(`/podcast/${item.id}`); }}
           >
             {item.imageUrl ? (
-              <Image source={{ uri: item.imageUrl }} style={styles.feedImage} contentFit="cover" cachePolicy="memory-disk" transition={0} />
+              <Image source={{ uri: item.imageUrl }} style={styles.feedImage} contentFit="cover" cachePolicy="memory-disk" transition={180} />
             ) : (
               <View style={[styles.feedImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
                 <Ionicons name="mic" size={32} color={colors.textSecondary} />

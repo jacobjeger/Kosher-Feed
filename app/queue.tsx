@@ -105,7 +105,7 @@ export default function QueueScreen() {
           <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Now Playing</Text>
           <View style={[styles.nowPlayingCard, { backgroundColor: colors.surfaceAlt }]}>
             {currentFeed.imageUrl ? (
-              <Image source={{ uri: currentFeed.imageUrl }} style={styles.artwork} contentFit="cover" cachePolicy="memory-disk" transition={0} />
+              <Image source={{ uri: currentFeed.imageUrl }} style={styles.artwork} contentFit="cover" cachePolicy="memory-disk" transition={180} />
             ) : (
               <View style={[styles.artwork, { backgroundColor: colors.border, alignItems: "center", justifyContent: "center" }]}>
                 <Ionicons name="mic" size={18} color={colors.textSecondary} />
@@ -131,7 +131,7 @@ export default function QueueScreen() {
           <View style={[styles.queueCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
             <FocusableView focusRadius={12} onPress={() => handlePlayFromQueue(item.episode, item.feed)} style={styles.queueCardContent}>
               {item.feed.imageUrl ? (
-                <Image source={{ uri: item.feed.imageUrl }} style={styles.artwork} contentFit="cover" cachePolicy="memory-disk" transition={0} />
+                <Image source={{ uri: item.feed.imageUrl }} style={styles.artwork} contentFit="cover" cachePolicy="memory-disk" transition={180} />
               ) : (
                 <View style={[styles.artwork, { backgroundColor: colors.border, alignItems: "center", justifyContent: "center" }]}>
                   <Ionicons name="mic" size={18} color={colors.textSecondary} />

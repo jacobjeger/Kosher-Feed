@@ -30,7 +30,7 @@ const SearchResultItem = React.memo(function SearchResultItem({ feed, colors }: 
       onPress={() => { lightHaptic(); router.push(`/podcast/${feed.id}`); }}
     >
       {feed.imageUrl ? (
-        <Image source={{ uri: feed.imageUrl }} style={styles.searchResultImage} contentFit="cover" cachePolicy="memory-disk" transition={0} />
+        <Image source={{ uri: feed.imageUrl }} style={styles.searchResultImage} contentFit="cover" cachePolicy="memory-disk" transition={180} />
       ) : (
         <View style={[styles.searchResultImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="mic" size={20} color={colors.textSecondary} />
@@ -82,7 +82,7 @@ export default React.memo(function SearchSection({ searchQuery, searchResults, s
                 onPress={() => { lightHaptic(); router.push({ pathname: "/maggid-shiur/[author]" as any, params: { author: speaker.author, feedIds: speaker.feeds.map((f: Feed) => f.id).join(",") } }); }}
               >
                 {speaker.feeds[0]?.imageUrl ? (
-                  <Image source={{ uri: speaker.feeds[0].imageUrl }} style={styles.searchResultImage} contentFit="cover" cachePolicy="memory-disk" transition={0} />
+                  <Image source={{ uri: speaker.feeds[0].imageUrl }} style={styles.searchResultImage} contentFit="cover" cachePolicy="memory-disk" transition={180} />
                 ) : (
                   <View style={[styles.searchResultImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
                     <Ionicons name="person" size={20} color={colors.textSecondary} />
