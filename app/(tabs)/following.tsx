@@ -13,6 +13,7 @@ import { getApiUrl, queryClient } from "@/lib/query-client";
 import type { Feed, Episode } from "@/lib/types";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useNetworkStatus } from "@/components/OfflineBanner";
+import { FollowingListSkeleton } from "@/components/Skeleton";
 import FocusableView from "@/components/FocusableView";
 
 function FollowingScreenInner() {
@@ -88,7 +89,7 @@ function FollowingScreenInner() {
   if (isLoading) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.accent} style={{ marginTop: 100 }} />
+        <FollowingListSkeleton />
       </View>
     );
   }

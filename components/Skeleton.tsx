@@ -101,6 +101,52 @@ export function FeedRowSkeleton({ count = 4 }: { count?: number }) {
   );
 }
 
+/** Download/Queue list item skeleton — mirrors EpisodeItem card layout */
+export function DownloadItemSkeleton() {
+  return (
+    <View style={skeletonStyles.downloadItem}>
+      <SkeletonPulse style={skeletonStyles.episodePlayBtn} />
+      <View style={skeletonStyles.episodeInfo}>
+        <SkeletonPulse style={{ height: 10, width: "40%", borderRadius: 4 }} />
+        <SkeletonPulse style={{ height: 14, width: "90%", borderRadius: 4 }} />
+        <SkeletonPulse style={{ height: 10, width: "50%", borderRadius: 4 }} />
+      </View>
+      <SkeletonPulse style={{ width: 24, height: 24, borderRadius: 6 }} />
+    </View>
+  );
+}
+
+export function QueueItemSkeleton() {
+  return <DownloadItemSkeleton />;
+}
+
+/** Vertical stack for Favorites/Following/Downloads list loading state */
+export function ListSkeleton({ count = 6 }: { count?: number }) {
+  return (
+    <View style={{ paddingHorizontal: 16, paddingTop: 16, gap: 10 }}>
+      {Array.from({ length: count }).map((_, i) => (
+        <DownloadItemSkeleton key={i} />
+      ))}
+    </View>
+  );
+}
+
+/** Subscribed-feeds carousel + What's New list — Following screen loading */
+export function FollowingListSkeleton() {
+  return (
+    <View style={{ flex: 1, paddingTop: 20 }}>
+      <SkeletonPulse style={{ height: 28, width: 160, borderRadius: 6, marginLeft: 20, marginBottom: 16 }} />
+      <FeedRowSkeleton count={4} />
+      <SkeletonPulse style={{ height: 20, width: 130, borderRadius: 4, marginLeft: 20, marginTop: 24, marginBottom: 12 }} />
+      <View style={{ paddingHorizontal: 16, gap: 10 }}>
+        {Array.from({ length: 4 }).map((_, i) => (
+          <DownloadItemSkeleton key={i} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
 export function HomeScreenSkeleton() {
   return (
     <View style={skeletonStyles.homeContainer}>
@@ -218,6 +264,14 @@ const skeletonStyles = StyleSheet.create({
   feedRow: {
     flexDirection: "row" as const,
     paddingHorizontal: 20,
+  },
+  downloadItem: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 12,
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 6,
   },
   homeContainer: {
     padding: 20,

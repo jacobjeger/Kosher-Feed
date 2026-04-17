@@ -10,6 +10,7 @@ import EpisodeItem from "@/components/EpisodeItem";
 import Colors from "@/constants/colors";
 import { Ionicons } from "@expo/vector-icons";
 import type { Feed, Episode } from "@/lib/types";
+import { ListSkeleton } from "@/components/Skeleton";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useNetworkStatus } from "@/components/OfflineBanner";
 import { apiRequest } from "@/lib/query-client";
@@ -62,7 +63,7 @@ function FavoritesScreenInner() {
       </View>
 
       {isLoading ? (
-        <ActivityIndicator size="large" color={colors.accent} style={{ marginTop: 60 }} />
+        <ListSkeleton count={6} />
       ) : favoriteEpisodes.length === 0 ? (
         <View style={styles.emptyState}>
           <View style={[styles.emptyIconBadge, { backgroundColor: colors.accentLight }]}>
