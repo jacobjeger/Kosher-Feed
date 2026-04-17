@@ -1,6 +1,6 @@
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { QueryClient, QueryFunction, keepPreviousData } from "@tanstack/react-query";
 
 const apiFetch: typeof globalThis.fetch =
   Platform.OS === "web"
@@ -124,6 +124,9 @@ export const queryClient = new QueryClient({
       gcTime: 30 * 60 * 1000,
       retry: 1,
       retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 8000),
+      // Keep previous data visible while refetching — prevents screens from
+      // flashing to skeleton when switching between cached tabs.
+      placeholderData: keepPreviousData,
     },
     mutations: {
       retry: 1,
