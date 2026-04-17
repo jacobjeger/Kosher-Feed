@@ -20,6 +20,7 @@ import FocusableView from "@/components/FocusableView";
 
 const EPISODE_LIMIT_OPTIONS = [3, 5, 10, 15, 25, 50];
 const SKIP_OPTIONS = [10, 15, 30, 45, 60];
+const RESUME_REWIND_OPTIONS = [0, 3, 5, 10, 15];
 const THEME_OPTIONS: Array<'system' | 'light' | 'dark'> = ['system', 'light', 'dark'];
 const THEME_LABELS: Record<string, string> = { system: 'System', light: 'Light', dark: 'Dark' };
 const REMINDER_HOUR_OPTIONS = [6, 7, 8, 9, 10, 12, 18, 20];
@@ -215,6 +216,17 @@ function SettingsScreenInner() {
       return;
     }
     setActivePicker("skipBackward");
+  };
+
+  const handleChangeResumeRewind = () => {
+    lightHaptic();
+    if (Platform.OS === "web") {
+      const currentIndex = RESUME_REWIND_OPTIONS.indexOf(settings.resumeRewindSeconds);
+      const nextIndex = (currentIndex + 1) % RESUME_REWIND_OPTIONS.length;
+      updateSettings({ resumeRewindSeconds: RESUME_REWIND_OPTIONS[nextIndex] });
+      return;
+    }
+    setActivePicker("resumeRewind");
   };
 
   const handleVersionTap = () => {
@@ -433,6 +445,14 @@ function SettingsScreenInner() {
             label="Skip Backward"
             value={`${settings.skipBackwardSeconds}s`}
             onPress={handleChangeSkipBackward}
+          />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingRow
+            icon={<Ionicons name="reload" size={20} color={colors.accent} />}
+            label="Resume Rewind"
+            subtitle="Step back when resuming after pause"
+            value={settings.resumeRewindSeconds === 0 ? "Off" : `${settings.resumeRewindSeconds}s`}
+            onPress={handleChangeResumeRewind}
           />
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
           <SettingRow
@@ -798,6 +818,18 @@ function SettingsScreenInner() {
           label: `${n} seconds`,
           onPress: () => updateSettings({ skipBackwardSeconds: n }),
           selected: settings.skipBackwardSeconds === n,
+        }))}
+        onClose={() => setActivePicker(null)}
+      />
+
+      <OptionPickerModal
+        visible={activePicker === "resumeRewind"}
+        title="Resume Rewind"
+        subtitle="Step back when resuming after pause."
+        options={RESUME_REWIND_OPTIONS.map(n => ({
+          label: n === 0 ? "Off" : `${n} seconds`,
+          onPress: () => updateSettings({ resumeRewindSeconds: n }),
+          selected: settings.resumeRewindSeconds === n,
         }))}
         onClose={() => setActivePicker(null)}
       />

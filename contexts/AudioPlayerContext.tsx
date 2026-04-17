@@ -272,6 +272,39 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
   const positionRef = useRef<PositionState>({ positionMs: 0, durationMs: 0 });
   const positionListenersRef = useRef<Set<() => void>>(new Set());
+  // Tracks whether resume() is called after a prior pause (vs. initial play) — used for smart rewind
+  const wasPausedRef = useRef<boolean>(false);
+
+  // Apply smart-rewind seek if enabled and in a paused→play transition.
+  // Returns true if rewind was applied. Reads setting from AsyncStorage so
+  // it works from both the JS resume() path and the native status listener
+  // (when media buttons / lock screen trigger play).
+  const applySmartRewind = useCallback(async (): Promise<boolean> => {
+    if (!wasPausedRef.current) return false;
+    wasPausedRef.current = false;
+    let rewindMs = 0;
+    try {
+      const raw = await AsyncStorage.getItem("@kosher_shiurim_settings");
+      const s = raw ? JSON.parse(raw) : {};
+      const sec = typeof s.resumeRewindSeconds === "number" ? s.resumeRewindSeconds : 5;
+      if (sec >= 1) rewindMs = sec * 1000;
+    } catch {}
+    const pos = positionRef.current;
+    if (rewindMs > 0 && pos.positionMs > 3000) {
+      const target = Math.max(0, pos.positionMs - rewindMs);
+      try {
+        if (Platform.OS === "web" && audioRef.current) {
+          audioRef.current.currentTime = target / 1000;
+        } else if (nativePlayerRef.current) {
+          nativePlayerRef.current.seekTo(target / 1000);
+        }
+        positionRef.current = { ...pos, positionMs: target };
+        setPlayback(prev => ({ ...prev, positionMs: target }));
+        return true;
+      } catch {}
+    }
+    return false;
+  }, []);
 
   const subscribePosition = useCallback((cb: () => void) => {
     positionListenersRef.current.add(cb);
@@ -436,6 +469,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       nativePlayerRef.current.pause();
     }
     setPlayback(prev => ({ ...prev, isPlaying: false }));
+    wasPausedRef.current = true;
     saveCurrentPosition();
     const ep = currentEpisodeRef.current;
     const feed = currentFeedRef.current;
@@ -450,6 +484,9 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     pauseRef.current = pause;
   }, [pause]);
 
+  // Set later when fadeOutAndPause is defined; sleep timer calls through this ref
+  const fadeOutAndPauseRef = useRef<(durationMs?: number) => void>(() => {});
+
   const setSleepTimerFn = useCallback((minutes: number | "endOfEpisode") => {
     if (sleepTimerIntervalRef.current) {
       clearInterval(sleepTimerIntervalRef.current);
@@ -462,15 +499,25 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       const ms = minutes * 60 * 1000;
       const targetTime = Date.now() + ms;
       setSleepTimerState({ active: true, remainingMs: ms, mode: "time" });
+      let fadeStarted = false;
+      const FADE_MS = 3000;
 
       sleepTimerIntervalRef.current = setInterval(() => {
         const remaining = targetTime - Date.now();
+        // Start volume fade during the last FADE_MS so silence lands at 0
+        if (!fadeStarted && remaining <= FADE_MS && remaining > 0) {
+          fadeStarted = true;
+          try { fadeOutAndPauseRef.current(Math.max(500, remaining)); } catch {}
+        }
         if (remaining <= 0) {
           if (sleepTimerIntervalRef.current) {
             clearInterval(sleepTimerIntervalRef.current);
             sleepTimerIntervalRef.current = null;
           }
-          pauseRef.current();
+          if (!fadeStarted) {
+            // Fallback: no fade fired (e.g. very short timer) — pause immediately
+            pauseRef.current();
+          }
           setSleepTimerState({ active: false, remainingMs: 0, mode: "time" });
         } else {
           setSleepTimerState(prev => {
@@ -478,7 +525,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
             return { ...prev, remainingMs: remaining };
           });
         }
-      }, 500);
+      }, 250);
     }
   }, []);
 
@@ -572,6 +619,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     }
     isLoadingRef.current = true;
     loadingGuardStartRef.current = Date.now();
+    // New episode start — not resuming from pause, so no smart-rewind
+    wasPausedRef.current = false;
 
     const safetyTimeout = setTimeout(() => {
       if (isLoadingRef.current) {
@@ -701,6 +750,12 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
                 addLog("info", `Playing confirmed (expo-audio): ${episode.title} at ${feedSpeed}x`, undefined, "audio");
                 setTimeout(setupLockScreen, 1500);
               } else {
+                // Resume from pause (either JS or external via lock-screen/bluetooth/hardware).
+                // JS resume() clears wasPausedRef before calling play(), so if it's still set
+                // here, the play was triggered externally — apply smart rewind.
+                if (wasPausedRef.current) {
+                  applySmartRewind().catch(() => {});
+                }
                 setPlayback(prev => prev.isPlaying ? prev : ({ ...prev, isPlaying: true }));
               }
             }
@@ -809,6 +864,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
   const resume = useCallback(async () => {
     try {
+      await applySmartRewind();
       setPlayback(prev => ({ ...prev, isPlaying: true }));
       if (Platform.OS === "web") {
         await audioRef.current?.play();
@@ -849,7 +905,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       setPlayback(prev => ({ ...prev, isPlaying: false }));
       addLog("error", `Resume failed: ${(e as any)?.message || e}`, (e as any)?.stack, "audio");
     }
-  }, [playEpisodeInternal]);
+  }, [playEpisodeInternal, applySmartRewind]);
 
   const seekTo = useCallback(async (positionMs: number) => {
     try {
@@ -996,6 +1052,52 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       try { nativePlayerRef.current.volume = vol; } catch {}
     }
   }, []);
+
+  const getCurrentVolume = useCallback((): number => {
+    if (Platform.OS === "web" && audioRef.current) return audioRef.current.volume;
+    if (nativePlayerRef.current) {
+      try { return nativePlayerRef.current.volume ?? NORMAL_VOLUME; } catch { return NORMAL_VOLUME; }
+    }
+    return NORMAL_VOLUME;
+  }, []);
+
+  const setVolume = useCallback((vol: number) => {
+    if (Platform.OS === "web" && audioRef.current) {
+      audioRef.current.volume = vol;
+    } else if (nativePlayerRef.current) {
+      try { nativePlayerRef.current.volume = vol; } catch {}
+    }
+  }, []);
+
+  const fadeOutRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Fade audio to silence over durationMs, then pause, then restore volume.
+  const fadeOutAndPause = useCallback((durationMs = 3000) => {
+    if (fadeOutRef.current) return; // already fading
+    const startVol = getCurrentVolume();
+    if (startVol <= 0) {
+      pauseRef.current();
+      return;
+    }
+    const stepMs = 50;
+    const steps = Math.max(1, Math.floor(durationMs / stepMs));
+    let i = 0;
+    fadeOutRef.current = setInterval(() => {
+      i += 1;
+      const nextVol = Math.max(0, startVol * (1 - i / steps));
+      setVolume(nextVol);
+      if (i >= steps) {
+        if (fadeOutRef.current) { clearInterval(fadeOutRef.current); fadeOutRef.current = null; }
+        pauseRef.current();
+        // Restore volume so next play isn't silent
+        setTimeout(() => setVolume(startVol), 100);
+      }
+    }, stepMs);
+  }, [getCurrentVolume, setVolume]);
+
+  useEffect(() => {
+    fadeOutAndPauseRef.current = fadeOutAndPause;
+  }, [fadeOutAndPause]);
 
   const value = useMemo(() => ({
     currentEpisode,

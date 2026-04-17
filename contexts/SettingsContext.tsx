@@ -14,6 +14,7 @@ interface AppSettings {
   skipBackwardSeconds: number;
   audioBoostEnabled: boolean;
   continuousPlayback: boolean;
+  resumeRewindSeconds: number;
   darkModeOverride: 'system' | 'light' | 'dark';
   dailyReminderEnabled: boolean;
   dailyReminderHour: number;
@@ -34,6 +35,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   skipBackwardSeconds: 30,
   audioBoostEnabled: false,
   continuousPlayback: true,
+  resumeRewindSeconds: 5,
   darkModeOverride: 'system',
   dailyReminderEnabled: false,
   dailyReminderHour: 8,
