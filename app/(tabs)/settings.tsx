@@ -11,7 +11,7 @@ import { useDownloads } from "@/contexts/DownloadsContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { requestNotificationPermissions, checkNotificationPermission, setupNotificationChannel, scheduleDailyReminder, cancelDailyReminder } from "@/lib/notifications";
 import { registerPushToken } from "@/lib/push-notifications";
-import { lightHaptic, mediumHaptic, invalidateHapticCache } from "@/lib/haptics";
+import { lightHaptic, mediumHaptic, setHapticEnabled } from "@/lib/haptics";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { getLogsSnapshot } from "@/lib/error-logger";
@@ -476,7 +476,7 @@ function SettingsScreenInner() {
             rightElement={
               <Switch
                 value={settings.hapticFeedback}
-                onValueChange={(value: boolean) => { updateSettings({ hapticFeedback: value }); invalidateHapticCache(); if (value) mediumHaptic(); }}
+                onValueChange={(value: boolean) => { setHapticEnabled(value); updateSettings({ hapticFeedback: value }); if (value) mediumHaptic(); }}
                 trackColor={{ false: colors.border, true: colors.accent }}
                 thumbColor="#fff"
               />
@@ -693,29 +693,24 @@ function SettingsScreenInner() {
           A curated listening experience
         </Text>
         <Text style={[styles.footerVersion, { color: colors.textTertiary }]}>
-          Version 1.0.0
+          Version 2.0.0
         </Text>
       </View>
 
       <Modal
         visible={showFeedbackModal}
-        transparent
         animationType="slide"
         onRequestClose={() => setShowFeedbackModal(false)}
+        presentationStyle="fullScreen"
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={[feedbackStyles.modal, { backgroundColor: colors.surface, paddingTop: insets.top + 12 }]}
         >
-          <Pressable
-            style={feedbackStyles.overlay}
-            onPress={() => setShowFeedbackModal(false)}
+          <View
+            style={{ flex: 1 }}
+            accessibilityViewIsModal={true}
           >
-            <Pressable
-              style={[feedbackStyles.modal, { backgroundColor: colors.surface }]}
-              onPress={(e) => e.stopPropagation()}
-              accessibilityViewIsModal={true}
-            >
               <View style={feedbackStyles.modalHeader}>
                 <Text style={[feedbackStyles.modalTitle, { color: colors.text }]}>
                   {feedbackType === "shiur_request" ? "Request a Shiur" : "Report a Problem"}
@@ -781,8 +776,7 @@ function SettingsScreenInner() {
                   )}
                 </FocusableView>
               </ScrollView>
-            </Pressable>
-          </Pressable>
+          </View>
         </KeyboardAvoidingView>
       </Modal>
 
@@ -968,17 +962,10 @@ const styles = StyleSheet.create({
 });
 
 const feedbackStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "flex-end",
-  },
   modal: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    flex: 1,
     padding: 20,
     paddingBottom: Platform.OS === "web" ? 34 : 40,
-    maxHeight: "80%",
   },
   modalHeader: {
     flexDirection: "row",

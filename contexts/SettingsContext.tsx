@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { scheduleDailyReminder, cancelDailyReminder } from "@/lib/notifications";
 import { useRemoteConfig } from "@/contexts/RemoteConfigContext";
+import { setHapticEnabled } from "@/lib/haptics";
 
 const SETTINGS_KEY = "@kosher_shiurim_settings";
 const FEED_SETTINGS_KEY = "@kosher_shiurim_feed_settings";
@@ -87,6 +88,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       setIsLoaded(true);
     }).catch(() => setIsLoaded(true));
   }, []);
+
+  // Keep the haptics module's synchronous flag in sync with settings.
+  useEffect(() => {
+    setHapticEnabled(settings.hapticFeedback === true);
+  }, [settings.hapticFeedback]);
 
   const updateSettings = useCallback((partial: Partial<AppSettings>) => {
     setSettings(prev => {
