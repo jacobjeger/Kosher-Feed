@@ -13,11 +13,13 @@ import { setErrorContext } from "@/lib/error-logger";
 
 /** Tab bar button that navigates on D-pad focus (Android) */
 function DpadTabButton({ children, onPress, accessibilityState, ...rest }: any) {
-  // On focus: just call the tab bar's own onPress (tab-aware navigation,
-  // no stack push, no animation queueing). Much faster than router.push.
+  // On focus: call the tab bar's onPress synchronously (React will batch
+  // state updates with the focus state change). Previously tried a rAF
+  // defer to let the ring paint first, but that added a visible frame
+  // of delay.
   const handleFocus = useCallback((e: any) => {
     if (Platform.OS === "android" && !accessibilityState?.selected && typeof onPress === "function") {
-      onPress(e);
+      try { onPress(e); } catch {}
     }
   }, [onPress, accessibilityState?.selected]);
 
@@ -165,12 +167,13 @@ export default function TabLayout() {
         screenOptions={{
           headerShown: false,
           animation: "none" as any,
-          // Pre-render all tabs on first mount so D-pad/tap switches are truly
-          // instant. Without this, switching to a not-yet-visited tab briefly
-          // shows the previous tab's content while the new one mounts.
-          lazy: false,
-          freezeOnBlur: false,
-          detachInactiveScreens: false,
+          // Default lazy mount + no freeze. Freezing blurred tabs caused a
+          // visible "thaw" on return; no-freeze keeps already-visited tabs
+          // instantly responsive.
+          lazy: true,
+          // Hide tab labels — icons alone are enough on a 480px-wide screen
+          // and gives the icons more room to render with the focus ring.
+          tabBarShowLabel: false,
           tabBarActiveTintColor: colors.tint,
           tabBarInactiveTintColor: colors.tabIconDefault,
           tabBarStyle: showTopNav
