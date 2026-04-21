@@ -29,40 +29,17 @@ function FollowingScreenInner() {
   }, []);
 
   const feedsQuery = useQuery<Feed[]>({
-    queryKey: ["/api/subscriptions/feeds"],
-    queryFn: async () => {
-      if (!deviceId) return [];
-      const baseUrl = getApiUrl();
-      const url = new URL(`/api/subscriptions/${deviceId}/feeds`, baseUrl);
-      const res = await fetch(url.toString());
-      return res.json();
-    },
+    queryKey: [`/api/subscriptions/${deviceId}/feeds`],
     enabled: !!deviceId,
   });
 
   const episodesQuery = useQuery<Episode[]>({
-    queryKey: ["/api/subscriptions/episodes"],
-    queryFn: async () => {
-      if (!deviceId) return [];
-      const baseUrl = getApiUrl();
-      const url = new URL(`/api/subscriptions/${deviceId}/episodes`, baseUrl);
-      const res = await fetch(url.toString());
-      return res.json();
-    },
+    queryKey: [`/api/subscriptions/${deviceId}/episodes`],
     enabled: !!deviceId,
   });
 
   const whatsNewQuery = useQuery<Episode[]>({
-    queryKey: ["/api/whatsnew", deviceId],
-    queryFn: async () => {
-      if (!deviceId) return [];
-      const baseUrl = getApiUrl();
-      const url = new URL(`/api/whatsnew/${deviceId}`, baseUrl);
-      url.searchParams.set("limit", "15");
-      const res = await fetch(url.toString());
-      if (!res.ok) return [];
-      return res.json();
-    },
+    queryKey: [`/api/whatsnew/${deviceId}?limit=15`],
     enabled: !!deviceId,
   });
   const whatsNewEpisodes = whatsNewQuery.data || [];
