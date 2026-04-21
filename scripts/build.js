@@ -19,14 +19,6 @@ function stripProtocol(domain) {
 }
 
 function getDeploymentDomain() {
-  if (process.env.REPLIT_INTERNAL_APP_DOMAIN) {
-    return stripProtocol(process.env.REPLIT_INTERNAL_APP_DOMAIN);
-  }
-
-  if (process.env.REPLIT_DEV_DOMAIN) {
-    return stripProtocol(process.env.REPLIT_DEV_DOMAIN);
-  }
-
   if (process.env.EXPO_PUBLIC_DOMAIN) {
     return stripProtocol(process.env.EXPO_PUBLIC_DOMAIN);
   }
@@ -40,7 +32,7 @@ function getDeploymentDomain() {
   }
 
   console.error(
-    "ERROR: No deployment domain found. Set REPLIT_INTERNAL_APP_DOMAIN, REPLIT_DEV_DOMAIN, EXPO_PUBLIC_DOMAIN, RAILWAY_PUBLIC_DOMAIN, or DEPLOY_DOMAIN",
+    "ERROR: No deployment domain found. Set EXPO_PUBLIC_DOMAIN, RAILWAY_PUBLIC_DOMAIN, or DEPLOY_DOMAIN",
   );
   process.exit(1);
 }

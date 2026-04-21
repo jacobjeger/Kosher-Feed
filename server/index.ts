@@ -133,17 +133,7 @@ function setupCors(app: express.Application) {
   app.use((req, res, next) => {
     const origins = new Set<string>();
 
-    if (process.env.REPLIT_DEV_DOMAIN) {
-      origins.add(`https://${process.env.REPLIT_DEV_DOMAIN}`);
-    }
-
-    if (process.env.REPLIT_DOMAINS) {
-      process.env.REPLIT_DOMAINS.split(",").forEach((d) => {
-        origins.add(`https://${d.trim()}`);
-      });
-    }
-
-    // Additional allowed origins (comma-separated), e.g. for Railway
+    // Allowed origins (comma-separated), e.g. for Railway
     if (process.env.ALLOWED_ORIGINS) {
       process.env.ALLOWED_ORIGINS.split(",").forEach((o) => {
         origins.add(o.trim());

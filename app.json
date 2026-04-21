@@ -39,7 +39,7 @@
       [
         "expo-router",
         {
-          "origin": "https://kosher-feed.replit.app/"
+          "origin": "https://kosher-feed-production.up.railway.app/"
         }
       ],
       [
@@ -93,7 +93,7 @@
     },
     "extra": {
       "router": {
-        "origin": "https://kosher-feed.replit.app/"
+        "origin": "https://kosher-feed-production.up.railway.app/"
       },
       "eas": {
         "projectId": "3318cca6-05bb-4658-a9c5-6dccc573953c"
