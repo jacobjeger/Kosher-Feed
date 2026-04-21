@@ -719,7 +719,10 @@ export async function getListeningStats(deviceId: string) {
 }
 
 export async function getWeeklyPopularEpisodes(limit: number = 20) {
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  // Kept function name for compatibility; now returns the MONTHLY most-listened
+  // episodes (previously last 7 days). Users want the "Popular Shiurim" home
+  // section to reflect the last 30 days of listens.
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const result = await db
     .select({
       episodeId: episodeListens.episodeId,
@@ -734,7 +737,7 @@ export async function getWeeklyPopularEpisodes(limit: number = 20) {
     })
     .from(episodeListens)
     .innerJoin(episodes, eq(episodeListens.episodeId, episodes.id))
-    .where(sql`${episodeListens.listenedAt} > ${sevenDaysAgo}`)
+    .where(sql`${episodeListens.listenedAt} > ${thirtyDaysAgo}`)
     .groupBy(episodeListens.episodeId, episodes.id)
     .orderBy(desc(count(episodeListens.id)))
     .limit(limit);

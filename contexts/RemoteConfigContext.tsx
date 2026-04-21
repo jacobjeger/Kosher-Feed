@@ -33,7 +33,7 @@ export interface RemoteConfig {
 }
 
 const DEFAULT_CONFIG: RemoteConfig = {
-  homeSections: ["continue", "featured", "trending", "allShiurim", "recommended", "maggidShiur", "categories", "recent"],
+  homeSections: ["continue", "featured", "trending", "popular", "allShiurim", "maggidShiur", "categories", "recent"],
   defaultSkipForward: 30,
   defaultSkipBackward: 30,
   defaultMaxEpisodes: 5,

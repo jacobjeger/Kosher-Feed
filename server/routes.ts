@@ -2881,7 +2881,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/admin/config/seed", adminAuth as any, async (_req: Request, res: Response) => {
     try {
       const defaults: { key: string; value: any; description: string }[] = [
-        { key: "homeSections", value: ["continue", "featured", "trending", "allShiurim", "recommended", "maggidShiur", "categories", "recent"], description: "Home screen section order and visibility" },
+        { key: "homeSections", value: ["continue", "featured", "trending", "popular", "allShiurim", "maggidShiur", "categories", "recent"], description: "Home screen section order and visibility" },
         { key: "defaultSkipForward", value: 30, description: "Default skip forward seconds" },
         { key: "defaultSkipBackward", value: 30, description: "Default skip backward seconds" },
         { key: "defaultMaxEpisodes", value: 5, description: "Default max episodes per feed" },

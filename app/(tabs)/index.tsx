@@ -20,11 +20,11 @@ import { useNetworkStatus } from "@/components/OfflineBanner";
 import SearchSection from "@/components/home/SearchSection";
 import ContinueListeningSection from "@/components/home/ContinueListeningSection";
 import TrendingSection from "@/components/home/TrendingSection";
+import PopularSection from "@/components/home/PopularSection";
 import AllShiurimSection from "@/components/home/AllShiurimSection";
 import MaggidShiurSection from "@/components/home/MaggidShiurSection";
 import CategoriesGrid from "@/components/home/CategoriesGrid";
 import RecentlyListenedSection from "@/components/home/RecentlyListenedSection";
-import RecommendedSection from "@/components/home/RecommendedSection";
 import { getDeviceId } from "@/lib/device-id";
 import { useRemoteConfig } from "@/contexts/RemoteConfigContext";
 
@@ -326,17 +326,15 @@ function HomeScreenInner() {
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
   const latestQuery = useQuery<Episode[]>({ queryKey: ["/api/episodes/latest"] });
   const trendingQuery = useQuery<TrendingEpisode[]>({ queryKey: ["/api/episodes/trending"], staleTime: 15 * 60 * 1000 });
+  const popularQuery = useQuery<TrendingEpisode[]>({ queryKey: ["/api/episodes/popular?limit=60"], staleTime: 30 * 60 * 1000 });
   const featuredQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds/featured"], staleTime: 30 * 60 * 1000 });
   const maggidQuery = useQuery<{ author: string; feeds: Feed[] }[]>({ queryKey: ["/api/feeds/maggid-shiur"], staleTime: 30 * 60 * 1000 });
+  // Recommended section removed from home — disable the query so we don't
+  // burn JS thread time + network on data we never render.
   const recommendationsQuery = useQuery<Feed[]>({
     queryKey: ["/api/recommendations"],
-    queryFn: async () => {
-      const deviceId = await getDeviceId();
-      const baseUrl = getApiUrl();
-      const res = await fetch(`${baseUrl}/api/recommendations/${deviceId}?limit=10`);
-      if (!res.ok) return [];
-      return res.json();
-    },
+    queryFn: async () => [],
+    enabled: false,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -347,6 +345,7 @@ function HomeScreenInner() {
   const allFeeds = feedsQuery.data || [];
   const latestEpisodes = (latestQuery.data || []).slice(0, 20);
   const trendingEpisodes = trendingQuery.data || [];
+  const popularEpisodes = popularQuery.data || [];
   const featuredFeeds = featuredQuery.data || [];
   const maggidShiurim = maggidQuery.data || [];
   const recommendedFeeds = recommendationsQuery.data || [];
@@ -372,16 +371,39 @@ function HomeScreenInner() {
   const quickPlayItems = useMemo(() => {
     const trending = trendingEpisodes.length > 0 ? trendingEpisodes : latestEpisodes.map(e => ({ ...e, listenCount: 0 }));
     if (trending.length === 0) return [];
-    
+
     const items: { episode: TrendingEpisode; feed: Feed }[] = [];
     for (let i = 0; i < trending.length && items.length < 6; i++) {
       const ep = trending[i] as TrendingEpisode;
       const feed = allFeeds.find(f => f.id === ep.feedId);
       if (feed) items.push({ episode: ep, feed });
     }
-    
+
     return items;
   }, [trendingEpisodes, latestEpisodes, allFeeds]);
+
+  // Derive top popular FEEDS from popular episodes by aggregating listen
+  // counts per feed and returning the feeds themselves — so the section can
+  // use the same horizontal PodcastCard slider layout as other categories.
+  const popularFeeds = useMemo(() => {
+    if (popularEpisodes.length === 0 || allFeeds.length === 0) return [];
+    const feedCounts = new Map<string, number>();
+    for (const ep of popularEpisodes) {
+      feedCounts.set(ep.feedId, (feedCounts.get(ep.feedId) || 0) + (ep.listenCount || 0));
+    }
+    const sortedFeedIds = [...feedCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([id]) => id);
+    const seen = new Set<string>();
+    const feeds: Feed[] = [];
+    for (const id of sortedFeedIds) {
+      if (seen.has(id)) continue;
+      const feed = allFeeds.find(f => f.id === id);
+      if (feed) { feeds.push(feed); seen.add(id); }
+      if (feeds.length >= 15) break;
+    }
+    return feeds;
+  }, [popularEpisodes, allFeeds]);
 
   const continueListeningItems = useMemo(() => {
     if (inProgressPositions.length === 0 || allFeeds.length === 0) return [];
@@ -639,11 +661,11 @@ function HomeScreenInner() {
             case "trending":
               if (featureFlags.showTrending === false) return null;
               return <TrendingSection items={quickPlayItems} colors={colors} onPlay={handlePlayEpisode} />;
+            case "popular":
+              if (popularFeeds.length === 0) return null;
+              return <PopularSection feeds={popularFeeds} colors={colors} />;
             case "allShiurim":
               return <AllShiurimSection feeds={allFeeds} feedsWithNew={feedsWithNew} colors={colors} />;
-            case "recommended":
-              if (featureFlags.showRecommended === false) return null;
-              return <RecommendedSection feeds={recommendedFeeds} colors={colors} />;
             case "maggidShiur":
               if (featureFlags.showMaggidShiur === false) return null;
               return <MaggidShiurSection maggidShiurim={maggidShiurim} colors={colors} />;
