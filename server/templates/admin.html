@@ -2561,6 +2561,16 @@ async function openThread(feedbackId, type, subject, message, deviceId, dateStr)
       if (r.sender === 'user' && r.message === message) continue; // skip original
       const isAdmin = r.sender === 'admin';
       const time = new Date(r.createdAt).toLocaleString();
+      // Read receipt (admin-only display): user sees nothing in their app.
+      let readReceipt = '';
+      if (isAdmin) {
+        if (r.readAt) {
+          const readTime = new Date(r.readAt).toLocaleString();
+          readReceipt = `<div style="font-size:10px;color:#10b981;margin-top:4px;">✓✓ Read ${esc(readTime)}</div>`;
+        } else {
+          readReceipt = `<div style="font-size:10px;color:#64748b;margin-top:4px;">✓ Sent · not yet opened</div>`;
+        }
+      }
       threadHtml += `
         <div style="background:${isAdmin ? '#1e3a5f' : '#0f172a'};border-radius:10px;padding:12px;margin-bottom:6px;${isAdmin ? 'margin-left:24px;border-left:3px solid #3b82f6;' : 'margin-right:24px;'}">
           <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
@@ -2568,6 +2578,7 @@ async function openThread(feedbackId, type, subject, message, deviceId, dateStr)
             <span style="font-size:10px;color:#64748b;">${time}</span>
           </div>
           <div style="font-size:13px;color:#e2e8f0;">${esc(r.message)}</div>
+          ${readReceipt}
         </div>`;
     }
   } else {
