@@ -406,7 +406,22 @@
     <div id="messagesTab" class="hidden">
       <div class="card">
         <div class="card-header">
-          <h2>Contact Messages</h2>
+          <h2>Conversations</h2>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select id="conversationStatusFilter" onchange="loadConversationsInbox()" style="width:auto;padding:6px 10px;font-size:12px;">
+              <option value="open">Open</option>
+              <option value="closed">Closed</option>
+              <option value="">All</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" onclick="loadConversationsInbox()">Refresh</button>
+          </div>
+        </div>
+        <div id="conversationsInboxList"><p style="color:#64748b;">Loading...</p></div>
+        <div id="conversationsInboxPagination" style="display:flex;gap:8px;justify-content:center;margin-top:16px;"></div>
+      </div>
+      <div class="card" style="margin-top:16px;">
+        <div class="card-header">
+          <h2 style="font-size:14px;">Website Contact Form Submissions</h2>
           <div style="display:flex;gap:8px;align-items:center;">
             <select id="messageStatusFilter" onchange="loadMessages()" style="width:auto;padding:6px 10px;font-size:12px;">
               <option value="">All</option>
@@ -2102,7 +2117,7 @@ function switchTab(tab, btn) {
   if (tab === 'speakers') loadSpeakers();
   if (tab === 'errors') { loadErrorHealth(); loadGroupedErrors(); loadErrorReports(); }
   if (tab === 'feedback') loadFeedback();
-  if (tab === 'messages') loadMessages();
+  if (tab === 'messages') { loadConversationsInbox(); loadMessages(); }
   if (tab === 'apk') loadApks();
   if (tab === 'sponsors') loadSponsors();
   if (tab === 'pushtracker') { loadPushHealth(); loadPushErrors(); loadPushTokens(); loadNotificationHistory(); }
@@ -2687,6 +2702,53 @@ async function deleteFeedback(id) {
 }
 
 let messagesPage = 1;
+
+async function loadConversationsInbox() {
+  const list = document.getElementById('conversationsInboxList');
+  const status = document.getElementById('conversationStatusFilter')?.value || 'open';
+  list.innerHTML = '<p style="color:#64748b;">Loading...</p>';
+  try {
+    const qs = new URLSearchParams({ page: '1', limit: '50' });
+    if (status) qs.set('status', status);
+    const data = await api('/api/admin/conversations?' + qs.toString());
+    const convs = data.conversations || [];
+    if (convs.length === 0) {
+      list.innerHTML = `<p style="color:#64748b;padding:16px;text-align:center;">No ${esc(status || 'matching')} conversations</p>`;
+      return;
+    }
+    list.innerHTML = convs.map(c => {
+      const ago = c.updatedAt ? Math.round((Date.now() - new Date(c.updatedAt).getTime()) / 60000) : 0;
+      const agoStr = ago < 60 ? ago + 'm ago' : ago < 1440 ? Math.round(ago / 60) + 'h ago' : Math.round(ago / 1440) + 'd ago';
+      const lastFrom = c.lastSender === 'user' ? 'User' : c.lastSender === 'admin' ? 'You' : '—';
+      const lastFromColor = c.lastSender === 'user' ? '#10b981' : '#94a3b8';
+      const preview = (c.lastMessage || '(no messages)').slice(0, 120);
+      const unreadBadge = c.unreadCount > 0
+        ? `<span style="background:#ef4444;color:white;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;margin-left:8px;">${c.unreadCount} new</span>`
+        : '';
+      const deviceLabel = c.deviceBrand || c.deviceModel ? `${esc(c.deviceBrand || '')} ${esc(c.deviceModel || '')}`.trim() : esc(c.deviceId.slice(0, 8) + '...');
+      // JSON-stringify + HTML-escape so subjects/deviceIds with quotes don't
+      // break out of the onclick attribute.
+      const subjectLit = esc(JSON.stringify(c.subject || 'Conversation'));
+      const deviceIdLit = esc(JSON.stringify(c.deviceId));
+      const openAction = c.feedbackId
+        ? `openThread('${esc(c.feedbackId)}', '', ${subjectLit}, '', ${deviceIdLit}, '')`
+        : `alert('This conversation has no linked feedback — open from the Feedback tab')`;
+      return `<div style="background:#0f172a;border-radius:10px;padding:12px 14px;margin-bottom:8px;cursor:pointer;border-left:4px solid ${c.unreadCount > 0 ? '#ef4444' : 'transparent'};" onclick="${openAction}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:13px;font-weight:600;color:#f8fafc;">${esc(c.subject || 'Conversation')}</span>
+            ${unreadBadge}
+          </div>
+          <span style="font-size:11px;color:#64748b;">${agoStr}</span>
+        </div>
+        <div style="font-size:12px;color:${lastFromColor};margin-bottom:4px;"><strong>${esc(lastFrom)}:</strong> <span style="color:#94a3b8;">${esc(preview)}</span></div>
+        <div style="font-size:10px;color:#475569;">${deviceLabel} · ${esc(c.status || 'open')}</div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    list.innerHTML = '<p style="color:#ef4444;padding:16px;">Failed to load conversations</p>';
+  }
+}
 
 async function loadMessages(page) {
   if (page) messagesPage = page;
