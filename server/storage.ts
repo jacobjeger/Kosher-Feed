@@ -2162,38 +2162,30 @@ export async function getAdminConversations(opts: { page: number; limit: number;
 
   const convIds = convs.map(c => c.id);
 
-  // Batch fetch the last message per conversation + unread-user counts.
-  // Using plain SQL here because the prior drizzle subquery template was
-  // rendering to NULL in production (drizzle couldn't re-alias the
-  // conversationMessages table when used both in SELECT subquery and
-  // FROM context), leaving lastMessage/lastSender blank for every row.
-  const lastMsgs = await db.execute<{
-    conversation_id: string;
-    message: string;
-    sender: string;
-  }>(sql`
-    SELECT DISTINCT ON (conversation_id)
-      conversation_id, message, sender
-    FROM conversation_messages
-    WHERE conversation_id = ANY(${convIds}::text[])
-    ORDER BY conversation_id, created_at DESC
-  `);
-  const lastMap = new Map<string, { message: string; sender: string }>();
-  for (const row of (lastMsgs.rows || lastMsgs || []) as any[]) {
-    lastMap.set(row.conversation_id, { message: row.message, sender: row.sender });
-  }
+  // Fetch all messages for these conversations, then derive last + unread
+  // counts in memory. Much simpler than SQL array binding and the dataset
+  // is small (50 convs × handful of messages each).
+  const allMessages = await db.select({
+    conversationId: conversationMessages.conversationId,
+    message: conversationMessages.message,
+    sender: conversationMessages.sender,
+    createdAt: conversationMessages.createdAt,
+    readAt: conversationMessages.readAt,
+  })
+    .from(conversationMessages)
+    .where(inArray(conversationMessages.conversationId, convIds))
+    .orderBy(desc(conversationMessages.createdAt));
 
-  const unreadRows = await db.execute<{ conversation_id: string; unread: number }>(sql`
-    SELECT conversation_id, COUNT(*)::int AS unread
-    FROM conversation_messages
-    WHERE conversation_id = ANY(${convIds}::text[])
-      AND sender = 'user'
-      AND read_at IS NULL
-    GROUP BY conversation_id
-  `);
+  const lastMap = new Map<string, { message: string; sender: string }>();
   const unreadMap = new Map<string, number>();
-  for (const row of (unreadRows.rows || unreadRows || []) as any[]) {
-    unreadMap.set(row.conversation_id, Number(row.unread));
+  for (const m of allMessages) {
+    // orderBy desc means first occurrence per convId is the latest
+    if (!lastMap.has(m.conversationId)) {
+      lastMap.set(m.conversationId, { message: m.message, sender: m.sender });
+    }
+    if (m.sender === "user" && m.readAt === null) {
+      unreadMap.set(m.conversationId, (unreadMap.get(m.conversationId) ?? 0) + 1);
+    }
   }
 
   // Batch fetch device profiles instead of N+1
