@@ -233,7 +233,9 @@ export default function TabLayout() {
             tabBarIcon: ({ color, focused }) => (
               <Ionicons name={focused ? "cloud-download" : "cloud-download-outline"} size={22} color={color} />
             ),
-            tabBarButton: (props) => <DpadTabButton {...props} />,
+            // expo-router throws on web if href and tabBarButton are both set —
+            // only attach the D-pad button when the tab is actually rendered.
+            ...(isDesktopWeb ? {} : { tabBarButton: (props: any) => <DpadTabButton {...props} /> }),
           }}
         />
         <Tabs.Screen
@@ -244,7 +246,7 @@ export default function TabLayout() {
             tabBarIcon: ({ color, focused }) => (
               <Ionicons name={focused ? "settings" : "settings-outline"} size={22} color={color} />
             ),
-            tabBarButton: (props) => <DpadTabButton {...props} />,
+            ...(isDesktopWeb ? {} : { tabBarButton: (props: any) => <DpadTabButton {...props} /> }),
           }}
         />
       </Tabs>

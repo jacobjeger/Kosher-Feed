@@ -1103,7 +1103,7 @@ export async function resolveErrorReport(id: string): Promise<ErrorReport> {
 export async function resolveErrorGroup(messageHash: string): Promise<number> {
   const result = await db.update(errorReports)
     .set({ resolved: true })
-    .where(eq(errorReports.messageHash, messageHash))
+    .where(sql`md5(LEFT(${errorReports.message}, 200)) = ${messageHash}`)
     .returning({ id: errorReports.id });
   return result.length;
 }
@@ -1115,7 +1115,7 @@ export async function resolveErrorGroup(messageHash: string): Promise<number> {
 export async function reopenErrorGroup(messageHash: string): Promise<number> {
   const result = await db.update(errorReports)
     .set({ resolved: false })
-    .where(eq(errorReports.messageHash, messageHash))
+    .where(sql`md5(LEFT(${errorReports.message}, 200)) = ${messageHash}`)
     .returning({ id: errorReports.id });
   return result.length;
 }
