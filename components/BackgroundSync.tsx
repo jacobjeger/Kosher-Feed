@@ -100,16 +100,36 @@ export function BackgroundSync() {
         }
 
         // Check for new episodes and send local notifications
-        if (hasInitialized.current) {
+        // Respects the master notifications toggle + per-feed overrides from
+        // feedSettingsMap (per-feed defaults to global, see SettingsContext).
+        if (hasInitialized.current && settings.notificationsEnabled !== false) {
           try {
             const newEpisodes = await checkForNewEpisodes(feeds, episodes);
             if (newEpisodes.length > 0) {
-              addLog("info", `BackgroundSync: ${newEpisodes.length} new episode(s) detected`, undefined, "background-sync");
-              await notifyNewEpisodes(newEpisodes, feeds);
+              // Filter to only feeds the user wants notifications for.
+              const allowedFeedIds = new Set(
+                feeds
+                  .filter((f) => {
+                    const fs = feedSettingsMap?.[f.id];
+                    // If no per-feed override, inherit global (true by default).
+                    if (!fs || fs.notificationsEnabled === undefined) return true;
+                    return fs.notificationsEnabled !== false;
+                  })
+                  .map((f) => f.id)
+              );
+              const filtered = newEpisodes.filter((ep) => allowedFeedIds.has(ep.feedId));
+              if (filtered.length > 0) {
+                addLog("info", `BackgroundSync: ${filtered.length} new episode(s) to notify (${newEpisodes.length - filtered.length} suppressed by per-feed settings)`, undefined, "background-sync");
+                await notifyNewEpisodes(filtered, feeds);
+              } else {
+                addLog("info", `BackgroundSync: ${newEpisodes.length} new episode(s) detected, all suppressed by settings`, undefined, "background-sync");
+              }
             }
           } catch (e) {
             addLog("warn", `BackgroundSync: new episode check failed: ${(e as any)?.message || e}`, undefined, "background-sync");
           }
+        } else if (hasInitialized.current) {
+          addLog("info", "BackgroundSync: notifications disabled globally, skipping check", undefined, "background-sync");
         }
 
         if (settings.autoDeleteAfterListen !== false) {
@@ -136,6 +156,8 @@ export function BackgroundSync() {
     latestEpisodesQuery.data,
     settings.autoDownloadOnWifi,
     settings.maxEpisodesPerFeed,
+    settings.notificationsEnabled,
+    feedSettingsMap,
     autoDownloadNewEpisodes,
   ]);
 

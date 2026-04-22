@@ -1094,8 +1094,46 @@ export async function resolveErrorReport(id: string): Promise<ErrorReport> {
   return report;
 }
 
+/**
+ * Mark ALL error reports matching a given messageHash as resolved. Used from
+ * the admin "grouped errors" view so a fix can be marked resolved in one click,
+ * and any new occurrences (with the same hash but unresolved) make it obvious
+ * the fix didn't stick.
+ */
+export async function resolveErrorGroup(messageHash: string): Promise<number> {
+  const result = await db.update(errorReports)
+    .set({ resolved: true })
+    .where(eq(errorReports.messageHash, messageHash))
+    .returning({ id: errorReports.id });
+  return result.length;
+}
+
+/**
+ * Un-resolve (reopen) a group. Useful if the bug regresses and you want to
+ * see new occurrences surface again.
+ */
+export async function reopenErrorGroup(messageHash: string): Promise<number> {
+  const result = await db.update(errorReports)
+    .set({ resolved: false })
+    .where(eq(errorReports.messageHash, messageHash))
+    .returning({ id: errorReports.id });
+  return result.length;
+}
+
 export async function deleteResolvedErrorReports(): Promise<number> {
   const result = await db.delete(errorReports).where(eq(errorReports.resolved, true)).returning();
+  return result.length;
+}
+
+/**
+ * Delete error reports older than N days. Runs daily to keep the table from
+ * growing without bound — older reports aren't useful for ongoing triage.
+ */
+export async function deleteOldErrorReports(olderThanDays: number = 7): Promise<number> {
+  const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000);
+  const result = await db.delete(errorReports)
+    .where(sql`${errorReports.createdAt} < ${cutoff}`)
+    .returning({ id: errorReports.id });
   return result.length;
 }
 

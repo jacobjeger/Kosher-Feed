@@ -17,6 +17,9 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { getLogsSnapshot } from "@/lib/error-logger";
 import OptionPickerModal from "@/components/OptionPickerModal";
 import FocusableView from "@/components/FocusableView";
+import * as Application from "expo-application";
+
+const APP_VERSION = Application.nativeApplicationVersion ?? "2.0.0";
 
 const EPISODE_LIMIT_OPTIONS = [3, 5, 10, 15, 25, 50];
 const SKIP_OPTIONS = [10, 15, 30, 45, 60];
@@ -594,7 +597,7 @@ function SettingsScreenInner() {
           <SettingRow
             icon={<Ionicons name="information-circle" size={20} color={colors.accent} />}
             label="App Version"
-            value={devModeUnlocked ? "1.0.0 (dev)" : "1.0.0"}
+            value={devModeUnlocked ? `${APP_VERSION} (dev)` : APP_VERSION}
             onPress={handleVersionTap}
           />
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
@@ -693,7 +696,7 @@ function SettingsScreenInner() {
           A curated listening experience
         </Text>
         <Text style={[styles.footerVersion, { color: colors.textTertiary }]}>
-          Version 2.0.0
+          Version {APP_VERSION}
         </Text>
       </View>
 

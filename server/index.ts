@@ -1143,6 +1143,32 @@ function startAutoRefresh() {
     log(`Daily error digest scheduled in ${Math.round(delay / 3600000)}h`);
   }
   scheduleDailyDigest();
+
+  // Delete error reports older than 7 days — runs daily at 03:00 UTC
+  function scheduleErrorCleanup() {
+    const now = new Date();
+    const next = new Date(now);
+    next.setUTCHours(3, 0, 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1);
+    const delay = next.getTime() - now.getTime();
+    setTimeout(async () => {
+      try {
+        const deleted = await storage.deleteOldErrorReports(7);
+        log(`Error report cleanup: deleted ${deleted} report(s) older than 7 days`);
+      } catch (e: any) { console.error("Error cleanup failed:", e.message); }
+      scheduleErrorCleanup();
+    }, delay);
+    log(`Error report cleanup scheduled in ${Math.round(delay / 3600000)}h`);
+  }
+  scheduleErrorCleanup();
+
+  // Run once on boot so deploys immediately prune stale backlogs
+  setTimeout(async () => {
+    try {
+      const deleted = await storage.deleteOldErrorReports(7);
+      if (deleted > 0) log(`Error report cleanup (startup): deleted ${deleted} stale report(s)`);
+    } catch {}
+  }, 10_000);
 }
 
 (async () => {

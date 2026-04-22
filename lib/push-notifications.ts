@@ -8,7 +8,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const PUSH_TOKEN_KEY = "@shiurpod_push_token";
 const PUSH_PROVIDER_KEY = "@shiurpod_push_provider";
-const TOKEN_FETCH_TIMEOUT_MS = 10000;
+const TOKEN_FETCH_TIMEOUT_MS = 20000;
 
 let notificationReceivedListener: Notifications.EventSubscription | null = null;
 

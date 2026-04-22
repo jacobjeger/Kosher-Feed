@@ -2173,6 +2173,7 @@ async function loadGroupedErrors() {
               ${esc(g.source || 'unknown')} · ${g.deviceCount} device(s) · ${esc(g.platforms || '')} · ${esc(g.appVersions || '')} · last ${agoStr}
             </div>
           </div>
+          <button onclick="event.stopPropagation(); resolveErrorGroup('${g.messageHash}', this)" title="Mark fixed — if it recurs, a new unresolved group will appear" style="background:#10b981;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0;">Resolve</button>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2" style="flex-shrink:0;transition:transform 0.2s;"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
         <div id="group-${g.messageHash}" class="hidden" style="padding:0 14px 12px;"></div>
@@ -2180,6 +2181,23 @@ async function loadGroupedErrors() {
     }).join('');
   } catch(e) {
     list.innerHTML = '<p style="color:#ef4444;">Failed to load grouped errors</p>';
+  }
+}
+
+async function resolveErrorGroup(hash, btn) {
+  if (!confirm('Mark this error group as resolved? If the bug recurs, a new unresolved group will appear automatically — use that as your signal that the fix didn\'t work.')) return;
+  const originalText = btn.textContent;
+  btn.textContent = 'Resolving...';
+  btn.disabled = true;
+  try {
+    const result = await api('/api/admin/error-reports/grouped/' + hash + '/resolve', { method: 'PUT' });
+    btn.textContent = 'Resolved ' + (result.resolved || 0);
+    btn.style.background = '#64748b';
+    setTimeout(() => loadGroupedErrors(), 800);
+  } catch (e) {
+    btn.textContent = originalText;
+    btn.disabled = false;
+    alert('Failed to resolve: ' + (e.message || e));
   }
 }
 

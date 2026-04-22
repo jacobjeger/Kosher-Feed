@@ -4,7 +4,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
 import { Ionicons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import * as Notifications from "expo-notifications";
@@ -155,8 +155,15 @@ export default function RootLayout() {
     import("@/lib/device-profile").then(m => m.syncDeviceProfile()).catch(() => {});
 
     // Auto-register push token on startup
+    // Also retry on app foreground — if a startup attempt failed (network hiccup,
+    // slow FCM, etc.) the internal dedup skips re-registration once successful,
+    // so this is cheap when there's nothing to do.
+    let pushAppStateSub: { remove: () => void } | null = null;
     if (Platform.OS !== "web") {
       registerPushToken().catch(() => {});
+      pushAppStateSub = AppState.addEventListener("change", (state) => {
+        if (state === "active") registerPushToken().catch(() => {});
+      });
     }
 
     if (Platform.OS !== "web") {
@@ -172,6 +179,7 @@ export default function RootLayout() {
 
     return () => {
       notificationResponseListener.current?.remove();
+      pushAppStateSub?.remove();
     };
   }, [fontsLoaded, onboardingChecked]);
 
@@ -181,22 +189,34 @@ export default function RootLayout() {
   const [announcementVisible, setAnnouncementVisible] = useState(false);
 
   useEffect(() => {
-    if (!fontsLoaded || !onboardingChecked || initialRoute !== "(tabs)") return;
+    // Gate removed: previously required initialRoute === "(tabs)", but initialRoute
+    // is a mount-time snapshot that never updates after user completes onboarding,
+    // which blocked announcements forever for anyone without the onboarding flag
+    // set (fresh installs, wiped AsyncStorage, etc.).
+    if (!onboardingChecked) return;
     (async () => {
       try {
         const deviceId = await getDeviceId();
+        addLog("warn", `Announcements fetching with deviceId=[${deviceId}] (len=${deviceId?.length ?? 0})`, undefined, "announcements");
         const baseUrl = getApiUrl();
         const res = await fetch(`${baseUrl}/api/announcements/${deviceId}`);
-        if (!res.ok) return;
+        if (!res.ok) {
+          addLog("warn", `Announcements fetch returned ${res.status}`, undefined, "announcements");
+          return;
+        }
         const anns = await res.json();
+        addLog("warn", `Announcements fetch returned ${anns.length} item(s)`, undefined, "announcements");
         if (anns.length > 0) {
           setAnnouncementQueue(anns);
           setCurrentAnnouncement(anns[0]);
           setAnnouncementVisible(true);
+          addLog("warn", `Announcement modal set visible for: ${anns[0]?.title}`, undefined, "announcements");
         }
-      } catch {}
+      } catch (e) {
+        addLog("error", `Announcements fetch failed: ${(e as any)?.message || e}`, (e as any)?.stack, "announcements");
+      }
     })();
-  }, [fontsLoaded, onboardingChecked, initialRoute]);
+  }, [onboardingChecked]);
 
   const handleDismissAnnouncement = async () => {
     if (currentAnnouncement) {

@@ -639,7 +639,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
         } catch (e) {
-          console.error(`Failed to refresh feed ${feed.title}:`, e);
+          const msg = (e as Error)?.message || String(e);
+          console.log(`Failed to refresh feed ${feed.title}: ${msg.slice(0, 120)}`);
         }
       }
       res.json({ refreshed: allFeeds.length, newEpisodes: totalNew });
@@ -2162,6 +2163,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const count = await storage.deleteResolvedErrorReports();
       res.json({ ok: true, deleted: count });
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
+  // Resolve an entire error group (all errors matching the same messageHash).
+  // Use after shipping a fix — new occurrences (still unresolved) will surface
+  // immediately if the fix didn't actually work.
+  app.put("/api/admin/error-reports/grouped/:messageHash/resolve", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const count = await storage.resolveErrorGroup(req.params.messageHash);
+      res.json({ ok: true, resolved: count });
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
+  // Reopen a previously resolved group.
+  app.put("/api/admin/error-reports/grouped/:messageHash/reopen", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const count = await storage.reopenErrorGroup(req.params.messageHash);
+      res.json({ ok: true, reopened: count });
     } catch (e: any) {
       publicError(res, e);
     }
