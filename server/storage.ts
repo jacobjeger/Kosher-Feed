@@ -2154,10 +2154,47 @@ export async function getAdminConversations(opts: { page: number; limit: number;
     feedbackId: conversations.feedbackId,
     createdAt: conversations.createdAt,
     updatedAt: conversations.updatedAt,
-    lastMessage: sql<string>`(SELECT ${conversationMessages.message} FROM ${conversationMessages} WHERE ${conversationMessages.conversationId} = ${conversations.id} ORDER BY ${conversationMessages.createdAt} DESC LIMIT 1)`,
-    lastSender: sql<string>`(SELECT ${conversationMessages.sender} FROM ${conversationMessages} WHERE ${conversationMessages.conversationId} = ${conversations.id} ORDER BY ${conversationMessages.createdAt} DESC LIMIT 1)`,
-    unreadCount: sql<number>`(SELECT COUNT(*) FROM ${conversationMessages} WHERE ${conversationMessages.conversationId} = ${conversations.id} AND ${conversationMessages.sender} = 'user' AND ${conversationMessages.readAt} IS NULL)`,
   }).from(conversations).where(where).orderBy(desc(conversations.updatedAt)).limit(opts.limit).offset((opts.page - 1) * opts.limit);
+
+  if (convs.length === 0) {
+    return { conversations: [], total: Number(total), page: opts.page, totalPages: Math.ceil(Number(total) / opts.limit) };
+  }
+
+  const convIds = convs.map(c => c.id);
+
+  // Batch fetch the last message per conversation + unread-user counts.
+  // Using plain SQL here because the prior drizzle subquery template was
+  // rendering to NULL in production (drizzle couldn't re-alias the
+  // conversationMessages table when used both in SELECT subquery and
+  // FROM context), leaving lastMessage/lastSender blank for every row.
+  const lastMsgs = await db.execute<{
+    conversation_id: string;
+    message: string;
+    sender: string;
+  }>(sql`
+    SELECT DISTINCT ON (conversation_id)
+      conversation_id, message, sender
+    FROM conversation_messages
+    WHERE conversation_id = ANY(${convIds}::text[])
+    ORDER BY conversation_id, created_at DESC
+  `);
+  const lastMap = new Map<string, { message: string; sender: string }>();
+  for (const row of (lastMsgs.rows || lastMsgs || []) as any[]) {
+    lastMap.set(row.conversation_id, { message: row.message, sender: row.sender });
+  }
+
+  const unreadRows = await db.execute<{ conversation_id: string; unread: number }>(sql`
+    SELECT conversation_id, COUNT(*)::int AS unread
+    FROM conversation_messages
+    WHERE conversation_id = ANY(${convIds}::text[])
+      AND sender = 'user'
+      AND read_at IS NULL
+    GROUP BY conversation_id
+  `);
+  const unreadMap = new Map<string, number>();
+  for (const row of (unreadRows.rows || unreadRows || []) as any[]) {
+    unreadMap.set(row.conversation_id, Number(row.unread));
+  }
 
   // Batch fetch device profiles instead of N+1
   const deviceIds = [...new Set(convs.map(c => c.deviceId))];
@@ -2166,7 +2203,15 @@ export async function getAdminConversations(opts: { page: number; limit: number;
 
   const result = convs.map(c => {
     const profile = profileMap.get(c.deviceId);
-    return { ...c, unreadCount: Number(c.unreadCount), deviceModel: profile?.deviceModel, deviceBrand: profile?.deviceBrand };
+    const last = lastMap.get(c.id);
+    return {
+      ...c,
+      lastMessage: last?.message ?? null,
+      lastSender: last?.sender ?? null,
+      unreadCount: unreadMap.get(c.id) ?? 0,
+      deviceModel: profile?.deviceModel,
+      deviceBrand: profile?.deviceBrand,
+    };
   });
 
   return { conversations: result, total: Number(total), page: opts.page, totalPages: Math.ceil(Number(total) / opts.limit) };
