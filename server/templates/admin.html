@@ -534,6 +534,20 @@
       </div>
       <div class="card">
         <div class="card-header">
+          <h2>Push Health</h2>
+          <button class="btn btn-secondary btn-sm" onclick="loadPushHealth()">Refresh</button>
+        </div>
+        <div id="pushHealthContent"><p style="color:#64748b;">Loading...</p></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Push Error Logs (unresolved)</h2>
+          <button class="btn btn-secondary btn-sm" onclick="loadPushErrors()">Refresh</button>
+        </div>
+        <div id="pushErrorsList"><p style="color:#64748b;">Loading...</p></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
           <h2>Registered Push Devices</h2>
           <button class="btn btn-secondary btn-sm" onclick="loadPushTokens()">Refresh</button>
         </div>
@@ -2091,7 +2105,7 @@ function switchTab(tab, btn) {
   if (tab === 'messages') loadMessages();
   if (tab === 'apk') loadApks();
   if (tab === 'sponsors') loadSponsors();
-  if (tab === 'pushtracker') { loadPushTokens(); loadNotificationHistory(); }
+  if (tab === 'pushtracker') { loadPushHealth(); loadPushErrors(); loadPushTokens(); loadNotificationHistory(); }
   if (tab === 'vitals') loadVitals();
   if (tab === 'announcements') loadAnnouncements();
   if (tab === 'kolhalashon') { loadKHStatus(); loadKHSpeakers(); setTimeout(loadKHVitals, 300); }
@@ -3369,6 +3383,93 @@ async function removeSponsor(id) {
   } catch (e) {
     showAlert('Failed to delete sponsor', 'error');
     if (btn) btn.disabled = false;
+  }
+}
+
+async function loadPushHealth() {
+  const el = document.getElementById('pushHealthContent');
+  try {
+    const h = await api('/api/admin/push-health');
+    const coverageColor = h.coveragePct >= 80 ? '#10b981' : h.coveragePct >= 50 ? '#f59e0b' : '#ef4444';
+    const provList = (h.byProvider || []).map(p => `<span style="background:#1e293b;border-radius:4px;padding:2px 8px;margin-right:4px;">${esc(p.provider)}: ${p.count}</span>`).join('');
+    const platList = (h.byPlatform || []).map(p => `<span style="background:#1e293b;border-radius:4px;padding:2px 8px;margin-right:4px;">${esc(p.platform)}: ${p.count}</span>`).join('');
+    const deadRows = (h.deadReachConvs || []).map(d => `
+      <tr>
+        <td style="padding:6px 10px;font-family:monospace;font-size:11px;">${esc(d.deviceId.slice(0,8))}...</td>
+        <td style="padding:6px 10px;">${esc((d.deviceBrand || '') + ' ' + (d.deviceModel || '—'))}</td>
+        <td style="padding:6px 10px;text-align:center;">${d.adminReplyCount}</td>
+        <td style="padding:6px 10px;font-size:11px;color:#94a3b8;">${d.lastReplyAt ? new Date(d.lastReplyAt).toLocaleString() : '—'}</td>
+      </tr>
+    `).join('');
+
+    el.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px;">
+        <div style="background:#0f172a;border-radius:10px;padding:12px;">
+          <div style="font-size:11px;color:#64748b;margin-bottom:4px;">Coverage</div>
+          <div style="font-size:24px;font-weight:700;color:${coverageColor};">${h.coveragePct}%</div>
+          <div style="font-size:11px;color:#94a3b8;">${h.devicesWithTokens} / ${h.totalDevices} devices</div>
+        </div>
+        <div style="background:#0f172a;border-radius:10px;padding:12px;">
+          <div style="font-size:11px;color:#64748b;margin-bottom:4px;">Fresh (24h)</div>
+          <div style="font-size:24px;font-weight:700;color:#10b981;">${h.tokenFreshness.fresh24h}</div>
+        </div>
+        <div style="background:#0f172a;border-radius:10px;padding:12px;">
+          <div style="font-size:11px;color:#64748b;margin-bottom:4px;">Fresh (week)</div>
+          <div style="font-size:24px;font-weight:700;color:#3b82f6;">${h.tokenFreshness.freshWeek}</div>
+        </div>
+        <div style="background:#0f172a;border-radius:10px;padding:12px;">
+          <div style="font-size:11px;color:#64748b;margin-bottom:4px;">Older than week</div>
+          <div style="font-size:24px;font-weight:700;color:#64748b;">${h.tokenFreshness.olderThanWeek}</div>
+        </div>
+      </div>
+      <div style="margin-bottom:8px;"><strong style="font-size:12px;color:#94a3b8;">By Provider:</strong> ${provList || '<span style="color:#64748b;">none</span>'}</div>
+      <div style="margin-bottom:16px;"><strong style="font-size:12px;color:#94a3b8;">By Platform:</strong> ${platList || '<span style="color:#64748b;">none</span>'}</div>
+      ${deadRows ? `
+        <div style="background:#0f172a;border-radius:10px;padding:12px;">
+          <div style="font-size:13px;font-weight:600;color:#ef4444;margin-bottom:8px;">⚠️ Dead-Reach Conversations — admin replied but device has no push token</div>
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <thead><tr style="color:#64748b;text-align:left;"><th style="padding:6px 10px;">Device</th><th style="padding:6px 10px;">Model</th><th style="padding:6px 10px;text-align:center;">Replies</th><th style="padding:6px 10px;">Last reply</th></tr></thead>
+            <tbody>${deadRows}</tbody>
+          </table>
+        </div>
+      ` : `<div style="color:#10b981;font-size:13px;">✓ All conversations have reachable devices</div>`}
+    `;
+  } catch (e) {
+    el.innerHTML = '<p style="color:#ef4444;">Failed to load push health</p>';
+  }
+}
+
+async function loadPushErrors() {
+  const el = document.getElementById('pushErrorsList');
+  try {
+    const data = await api('/api/admin/push-errors');
+    const reports = data.reports || data || [];
+    if (reports.length === 0) {
+      el.innerHTML = '<p style="color:#10b981;padding:8px;">✓ No unresolved push errors</p>';
+      return;
+    }
+    // Group by message for easier triage
+    const groups = {};
+    for (const r of reports) {
+      const key = (r.message || '').slice(0, 120);
+      if (!groups[key]) groups[key] = { message: key, count: 0, lastSeen: r.createdAt, level: r.level, devices: new Set() };
+      groups[key].count++;
+      if (r.deviceId) groups[key].devices.add(r.deviceId);
+      if (new Date(r.createdAt) > new Date(groups[key].lastSeen)) groups[key].lastSeen = r.createdAt;
+    }
+    const rows = Object.values(groups).sort((a, b) => b.count - a.count).map(g => `
+      <div style="background:#0f172a;border-radius:8px;padding:10px 12px;margin-bottom:6px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+          <div style="flex:1;min-width:0;">
+            <div style="color:${g.level === 'error' ? '#ef4444' : '#f59e0b'};font-size:13px;word-break:break-word;">${esc(g.message)}</div>
+            <div style="font-size:11px;color:#64748b;margin-top:4px;">×${g.count} · ${g.devices.size} device(s) · last ${new Date(g.lastSeen).toLocaleString()}</div>
+          </div>
+        </div>
+      </div>
+    `).join('');
+    el.innerHTML = rows;
+  } catch (e) {
+    el.innerHTML = '<p style="color:#ef4444;">Failed to load push errors</p>';
   }
 }
 

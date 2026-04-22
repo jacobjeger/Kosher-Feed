@@ -317,10 +317,34 @@ function HomeScreenInner() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [inProgressPositions, setInProgressPositions] = useState<SavedPositionEntry[]>([]);
+  const [inProgressEpisodes, setInProgressEpisodes] = useState<Record<string, Episode>>({});
 
   useEffect(() => {
     getInProgressEpisodes().then(setInProgressPositions).catch(() => {});
   }, [getInProgressEpisodes]);
+
+  // Fetch full episode metadata for in-progress episodes that aren't in
+  // /api/episodes/latest. Without this, continue-listening silently drops
+  // episodes that are older than a few days.
+  useEffect(() => {
+    if (inProgressPositions.length === 0) return;
+    const ids = inProgressPositions.map(p => p.episodeId);
+    (async () => {
+      try {
+        const baseUrl = getApiUrl();
+        const res = await fetch(new URL("/api/episodes/batch", baseUrl).toString(), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids }),
+        });
+        if (!res.ok) return;
+        const eps: Episode[] = await res.json();
+        const map: Record<string, Episode> = {};
+        for (const ep of eps) map[ep.id] = ep;
+        setInProgressEpisodes(map);
+      } catch {}
+    })();
+  }, [inProgressPositions]);
 
   const categoriesQuery = useQuery<Category[]>({ queryKey: ["/api/categories"], staleTime: 60 * 60 * 1000 });
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
@@ -411,14 +435,17 @@ function HomeScreenInner() {
     const episodeMap = new Map(allEpisodes.map(ep => [ep.id, ep]));
     return inProgressPositions
       .map(pos => {
-        const episode = episodeMap.get(pos.episodeId);
+        // Look in latest first, fall back to batch-fetched episodes — older
+        // in-progress episodes aren't in /api/episodes/latest but are still
+        // loaded via /api/episodes/batch above.
+        const episode = episodeMap.get(pos.episodeId) || inProgressEpisodes[pos.episodeId];
         const feed = allFeeds.find(f => f.id === pos.feedId);
         if (episode && feed) return { episode, feed, position: pos };
         return null;
       })
       .filter(Boolean)
       .slice(0, 10) as { episode: Episode; feed: Feed; position: SavedPositionEntry }[];
-  }, [inProgressPositions, latestQuery.data, allFeeds]);
+  }, [inProgressPositions, latestQuery.data, allFeeds, inProgressEpisodes]);
 
   const recentlyListenedItems = useMemo(() => {
     if (recentlyPlayed.length === 0) return [];

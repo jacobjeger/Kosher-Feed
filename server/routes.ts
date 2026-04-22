@@ -2624,6 +2624,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/admin/push-health", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const stats = await storage.getPushHealthStats();
+      res.json(stats);
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
+  // Push-related error logs (filtered from error_reports)
+  app.get("/api/admin/push-errors", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const reports = await storage.getErrorReports({ page: 1, limit: 50, source: "push", resolved: false });
+      res.json(reports);
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
   app.delete("/api/admin/push-tokens/:id", adminAuth as any, async (req: Request, res: Response) => {
     try {
       await storage.removePushTokenById(req.params.id);

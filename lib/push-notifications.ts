@@ -12,6 +12,33 @@ const TOKEN_FETCH_TIMEOUT_MS = 20000;
 
 let notificationReceivedListener: Notifications.EventSubscription | null = null;
 
+// Dedupe concurrent registration attempts (AppState listener + startup + manual
+// button can all fire at once — without this, they race and abort each other's
+// network calls, which is the root cause of the "Aborted" error flood).
+let _inflightRegistration: Promise<{ token: string | null; steps: string[] }> | null = null;
+
+// Throttle retries when permission is denied — retrying every AppState change
+// spams the error log with 20+ warnings in 3 seconds and accomplishes nothing
+// (user has to manually enable in phone settings).
+let _lastDenialAt = 0;
+const DENIAL_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
+
+// Background-retry scheduler — if registration fails, try again with backoff
+// so transient network issues eventually resolve without user action.
+let _retryTimer: any = null;
+const RETRY_DELAYS = [30_000, 2 * 60_000, 10 * 60_000, 30 * 60_000]; // 30s, 2m, 10m, 30m
+let _retryAttempt = 0;
+
+function scheduleBackgroundRetry() {
+  if (_retryTimer) return; // already scheduled
+  const delay = RETRY_DELAYS[Math.min(_retryAttempt, RETRY_DELAYS.length - 1)];
+  _retryTimer = setTimeout(() => {
+    _retryTimer = null;
+    _retryAttempt++;
+    registerPushToken().catch(() => {});
+  }, delay);
+}
+
 export function setupForegroundNotificationHandler() {
   if (Platform.OS === "web") return;
   addLog("info", "Setting up foreground notification handler", undefined, "push");
@@ -139,40 +166,58 @@ async function tryGetPushyToken(): Promise<string | null> {
 }
 
 export async function registerPushToken(verbose = false): Promise<{ token: string | null; steps: string[] }> {
-  const steps: string[] = [];
-  const log = (level: "info" | "warn" | "error", msg: string, stack?: string) => {
-    steps.push(`[${level.toUpperCase()}] ${msg}`);
-    addLog(level, msg, stack, "push");
-  };
+  // Dedupe concurrent calls — the same race was causing network aborts.
+  // Verbose manual calls bypass the cache so the dev settings button always
+  // does a fresh attempt.
+  if (_inflightRegistration && !verbose) return _inflightRegistration;
 
-  if (Platform.OS === "web") {
-    log("info", "Push notifications not supported on web");
-    return { token: null, steps };
-  }
+  const run = async (): Promise<{ token: string | null; steps: string[] }> => {
+    const steps: string[] = [];
+    const log = (level: "info" | "warn" | "error", msg: string, stack?: string) => {
+      steps.push(`[${level.toUpperCase()}] ${msg}`);
+      // Mirror to console so we can see in logcat during debugging.
+      // eslint-disable-next-line no-console
+      console.warn(`[push] ${msg}`);
+      addLog(level, msg, stack, "push");
+    };
 
-  try {
-    log("info", `Platform: ${Platform.OS}, Version: ${Platform.Version}`);
-
-    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-    log("info", `EAS Project ID: ${projectId || "NOT FOUND"}`);
-    log("info", `App ID: ${Constants.expoConfig?.ios?.bundleIdentifier || Constants.expoConfig?.android?.package || "unknown"}`);
-
-    log("info", "Checking notification permissions...");
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    log("info", `Current permission status: ${existingStatus}`);
-
-    let finalStatus = existingStatus;
-    if (existingStatus !== "granted") {
-      log("info", "Requesting notification permissions...");
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-      log("info", `Permission after request: ${finalStatus}`);
-    }
-
-    if (finalStatus !== "granted") {
-      log("warn", `Push notification permission denied (status: ${finalStatus})`);
+    if (Platform.OS === "web") {
+      log("info", "Push notifications not supported on web");
       return { token: null, steps };
     }
+
+    try {
+      log("info", `Platform: ${Platform.OS}, Version: ${Platform.Version}`);
+
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+      log("info", `EAS Project ID: ${projectId || "NOT FOUND"}`);
+      log("info", `App ID: ${Constants.expoConfig?.ios?.bundleIdentifier || Constants.expoConfig?.android?.package || "unknown"}`);
+
+      log("info", "Checking notification permissions...");
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      log("info", `Current permission status: ${existingStatus}`);
+
+      let finalStatus = existingStatus;
+      if (existingStatus !== "granted") {
+        // Cooldown: don't re-prompt + re-log every time AppState flips if the
+        // user has already denied recently. Still try once per hour in case
+        // they enabled it in system settings.
+        if (existingStatus === "denied" && Date.now() - _lastDenialAt < DENIAL_COOLDOWN_MS && !verbose) {
+          return { token: null, steps };
+        }
+        log("info", "Requesting notification permissions...");
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+        log("info", `Permission after request: ${finalStatus}`);
+      }
+
+      if (finalStatus !== "granted") {
+        if (_lastDenialAt === 0 || Date.now() - _lastDenialAt > DENIAL_COOLDOWN_MS) {
+          log("warn", `Push notification permission denied (status: ${finalStatus})`);
+        }
+        _lastDenialAt = Date.now();
+        return { token: null, steps };
+      }
 
     let token: string | null = null;
     let provider: string = "expo";
@@ -241,11 +286,25 @@ export async function registerPushToken(verbose = false): Promise<{ token: strin
     }
 
     return { token, steps };
-  } catch (e) {
-    const msg = (e as any)?.message || String(e);
-    log("error", `Push registration failed: ${msg}`, (e as any)?.stack);
-    return { token: null, steps };
+    } catch (e) {
+      const msg = (e as any)?.message || String(e);
+      log("error", `Push registration failed: ${msg}`, (e as any)?.stack);
+      return { token: null, steps };
+    }
+  };
+
+  _inflightRegistration = run().finally(() => { _inflightRegistration = null; });
+  const result = await _inflightRegistration;
+
+  // Schedule a background retry on failure — common on slow kosher phones
+  // where the startup network saturation aborts the first attempt.
+  if (!result.token && Platform.OS !== "web") {
+    scheduleBackgroundRetry();
+  } else if (result.token) {
+    _retryAttempt = 0; // reset on success
   }
+
+  return result;
 }
 
 export async function initPushNotifications(): Promise<void> {

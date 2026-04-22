@@ -1259,6 +1259,86 @@ export async function getAllPushTokens(): Promise<PushToken[]> {
   return db.select().from(pushTokens).orderBy(desc(pushTokens.updatedAt));
 }
 
+export async function getPushHealthStats(): Promise<{
+  totalDevices: number;
+  devicesWithTokens: number;
+  coveragePct: number;
+  byProvider: { provider: string; count: number }[];
+  byPlatform: { platform: string; count: number }[];
+  tokenFreshness: { fresh24h: number; freshWeek: number; olderThanWeek: number };
+  deadReachConvs: { conversationId: string; deviceId: string; adminReplyCount: number; lastReplyAt: string; deviceModel: string | null; deviceBrand: string | null }[];
+}> {
+  const [totals] = await db.select({
+    totalDevices: sql<number>`(SELECT COUNT(DISTINCT device_id) FROM ${deviceProfiles})`,
+    devicesWithTokens: sql<number>`(SELECT COUNT(DISTINCT device_id) FROM ${pushTokens})`,
+  }).from(sql`(SELECT 1) dummy`);
+
+  const byProvider = await db.select({
+    provider: pushTokens.provider,
+    count: count(),
+  }).from(pushTokens).groupBy(pushTokens.provider);
+
+  const byPlatform = await db.select({
+    platform: pushTokens.platform,
+    count: count(),
+  }).from(pushTokens).groupBy(pushTokens.platform);
+
+  const now = Date.now();
+  const [freshness] = await db.select({
+    fresh24h: sql<number>`COUNT(*) FILTER (WHERE ${pushTokens.updatedAt} > ${new Date(now - 24 * 60 * 60 * 1000)})`,
+    freshWeek: sql<number>`COUNT(*) FILTER (WHERE ${pushTokens.updatedAt} > ${new Date(now - 7 * 24 * 60 * 60 * 1000)} AND ${pushTokens.updatedAt} <= ${new Date(now - 24 * 60 * 60 * 1000)})`,
+    olderThanWeek: sql<number>`COUNT(*) FILTER (WHERE ${pushTokens.updatedAt} <= ${new Date(now - 7 * 24 * 60 * 60 * 1000)})`,
+  }).from(pushTokens);
+
+  // Dead-reach: conversations where admin replied but the recipient device has no push token
+  const deadReach = await db.execute<{
+    conversation_id: string;
+    device_id: string;
+    admin_reply_count: number;
+    last_reply_at: string;
+    device_model: string | null;
+    device_brand: string | null;
+  }>(sql`
+    SELECT
+      c.id AS conversation_id,
+      c.device_id,
+      (SELECT COUNT(*) FROM conversation_messages WHERE conversation_id = c.id AND sender = 'admin') AS admin_reply_count,
+      (SELECT MAX(created_at) FROM conversation_messages WHERE conversation_id = c.id AND sender = 'admin') AS last_reply_at,
+      dp.device_model,
+      dp.device_brand
+    FROM conversations c
+    LEFT JOIN device_profiles dp ON dp.device_id = c.device_id
+    WHERE c.device_id NOT IN (SELECT device_id FROM push_tokens)
+      AND EXISTS (SELECT 1 FROM conversation_messages WHERE conversation_id = c.id AND sender = 'admin')
+    ORDER BY last_reply_at DESC
+    LIMIT 20
+  `);
+
+  const totalDevices = Number(totals.totalDevices);
+  const devicesWithTokens = Number(totals.devicesWithTokens);
+
+  return {
+    totalDevices,
+    devicesWithTokens,
+    coveragePct: totalDevices > 0 ? Math.round((devicesWithTokens / totalDevices) * 100) : 0,
+    byProvider: byProvider.map(r => ({ provider: r.provider, count: Number(r.count) })),
+    byPlatform: byPlatform.map(r => ({ platform: r.platform, count: Number(r.count) })),
+    tokenFreshness: {
+      fresh24h: Number(freshness.fresh24h),
+      freshWeek: Number(freshness.freshWeek),
+      olderThanWeek: Number(freshness.olderThanWeek),
+    },
+    deadReachConvs: (deadReach.rows || deadReach || []).map((r: any) => ({
+      conversationId: r.conversation_id,
+      deviceId: r.device_id,
+      adminReplyCount: Number(r.admin_reply_count),
+      lastReplyAt: r.last_reply_at,
+      deviceModel: r.device_model,
+      deviceBrand: r.device_brand,
+    })),
+  };
+}
+
 export async function getPushTokensForDevices(deviceIds: string[]): Promise<PushToken[]> {
   if (deviceIds.length === 0) return [];
   return db.select().from(pushTokens).where(inArray(pushTokens.deviceId, deviceIds));

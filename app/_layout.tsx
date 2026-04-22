@@ -154,15 +154,21 @@ export default function RootLayout() {
     // Sync device profile (model, OS, screen size, locale)
     import("@/lib/device-profile").then(m => m.syncDeviceProfile()).catch(() => {});
 
-    // Auto-register push token on startup
-    // Also retry on app foreground — if a startup attempt failed (network hiccup,
-    // slow FCM, etc.) the internal dedup skips re-registration once successful,
-    // so this is cheap when there's nothing to do.
+    // Auto-register push token on startup + retry on foreground.
+    // The internal dedupe + denial cooldown + background retry schedule in
+    // push-notifications.ts handle race conditions and transient FCM failures.
+    // Throttle the foreground retry to once per 2 minutes so AppState flips
+    // don't cause a log spam loop.
     let pushAppStateSub: { remove: () => void } | null = null;
+    let lastForegroundRegister = 0;
     if (Platform.OS !== "web") {
       registerPushToken().catch(() => {});
       pushAppStateSub = AppState.addEventListener("change", (state) => {
-        if (state === "active") registerPushToken().catch(() => {});
+        if (state !== "active") return;
+        const now = Date.now();
+        if (now - lastForegroundRegister < 2 * 60 * 1000) return;
+        lastForegroundRegister = now;
+        registerPushToken().catch(() => {});
       });
     }
 
