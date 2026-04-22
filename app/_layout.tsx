@@ -195,32 +195,24 @@ export default function RootLayout() {
   const [announcementVisible, setAnnouncementVisible] = useState(false);
 
   useEffect(() => {
-    // Gate removed: previously required initialRoute === "(tabs)", but initialRoute
-    // is a mount-time snapshot that never updates after user completes onboarding,
-    // which blocked announcements forever for anyone without the onboarding flag
-    // set (fresh installs, wiped AsyncStorage, etc.).
+    // Gate: wait for onboarding check to complete. Previously required
+    // initialRoute === "(tabs)" but that was a mount-time snapshot that
+    // never updated after the user finished onboarding, which blocked
+    // announcements forever for any user without the flag set.
     if (!onboardingChecked) return;
     (async () => {
       try {
         const deviceId = await getDeviceId();
-        addLog("warn", `Announcements fetching with deviceId=[${deviceId}] (len=${deviceId?.length ?? 0})`, undefined, "announcements");
         const baseUrl = getApiUrl();
         const res = await fetch(`${baseUrl}/api/announcements/${deviceId}`);
-        if (!res.ok) {
-          addLog("warn", `Announcements fetch returned ${res.status}`, undefined, "announcements");
-          return;
-        }
+        if (!res.ok) return;
         const anns = await res.json();
-        addLog("warn", `Announcements fetch returned ${anns.length} item(s)`, undefined, "announcements");
         if (anns.length > 0) {
           setAnnouncementQueue(anns);
           setCurrentAnnouncement(anns[0]);
           setAnnouncementVisible(true);
-          addLog("warn", `Announcement modal set visible for: ${anns[0]?.title}`, undefined, "announcements");
         }
-      } catch (e) {
-        addLog("error", `Announcements fetch failed: ${(e as any)?.message || e}`, (e as any)?.stack, "announcements");
-      }
+      } catch {}
     })();
   }, [onboardingChecked]);
 
