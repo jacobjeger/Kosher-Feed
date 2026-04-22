@@ -2086,10 +2086,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Send push notification to alert user (direct lookup, not N+1)
       try {
         const conv = await storage.getConversationById(req.params.id);
-        if (conv?.deviceId) {
-          await sendCustomPush("ShiurPod Team", message.substring(0, 100), conv.deviceId, { screen: "messages", conversationId: req.params.id });
+        if (!conv?.deviceId) {
+          console.warn(`Reply push: conversation ${req.params.id} has no deviceId — cannot notify`);
+        } else {
+          const result = await sendCustomPush(
+            "ShiurPod Team",
+            message.substring(0, 100),
+            conv.deviceId,
+            { screen: "messages", conversationId: req.params.id },
+          );
+          console.log(`Reply push to ${conv.deviceId}: sent=${result.sent} failed=${result.failed} — ${result.details.slice(0, 3).join(" | ")}`);
         }
-      } catch (e: any) { console.debug("Push on reply failed:", e.message); }
+      } catch (e: any) { console.error(`Push on reply FAILED for conv ${req.params.id}:`, e.message); }
 
       res.json(msg);
     } catch (e: any) { publicError(res, e); }
