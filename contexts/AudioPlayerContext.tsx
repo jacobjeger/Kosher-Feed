@@ -270,6 +270,9 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   const preBufferRef = useRef<HTMLAudioElement | null>(null);
   const preBufferEpisodeIdRef = useRef<string | null>(null);
 
+  const listenedMsRef = useRef(0);
+  const listenEpisodeIdRef = useRef<string | null>(null);
+
   const positionRef = useRef<PositionState>({ positionMs: 0, durationMs: 0 });
   const positionListenersRef = useRef<Set<() => void>>(new Set());
   // Tracks whether resume() is called after a prior pause (vs. initial play) — used for smart rewind
@@ -378,10 +381,23 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const flushListenDuration = useCallback(() => {
+    const episodeId = listenEpisodeIdRef.current;
+    const ms = listenedMsRef.current;
+    if (!episodeId || ms < 1000) return;
+    listenedMsRef.current = 0;
+    getDeviceId().then(deviceId => {
+      return apiRequest("POST", "/api/listens/duration", { episodeId, deviceId, durationMs: ms });
+    }).catch(err => addLog("warn", `Failed to record listen duration: ${(err as any)?.message || err}`, undefined, "audio"));
+  }, []);
+
   useEffect(() => {
-    const positionSaveInterval = setInterval(saveCurrentPosition, 60000);
+    const positionSaveInterval = setInterval(() => {
+      saveCurrentPosition();
+      flushListenDuration();
+    }, 60000);
     return () => clearInterval(positionSaveInterval);
-  }, [saveCurrentPosition]);
+  }, [saveCurrentPosition, flushListenDuration]);
 
   const getSavedPosition = useCallback(async (episodeId: string): Promise<number> => {
     try {
@@ -435,6 +451,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         const newIsPlaying = !audioRef.current.paused;
         positionRef.current = { positionMs: newPos, durationMs: newDur };
         playbackRef.current = { ...playbackRef.current, positionMs: newPos, durationMs: newDur, isPlaying: newIsPlaying };
+        if (newIsPlaying && listenEpisodeIdRef.current) listenedMsRef.current += 1000;
         notifyPositionListeners();
         setPlayback(prev => {
           if (prev.isPlaying !== newIsPlaying) {
@@ -450,6 +467,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           const newIsPlaying = !!player.playing;
           positionRef.current = { positionMs: newPos, durationMs: newDur };
           playbackRef.current = { ...playbackRef.current, positionMs: newPos, durationMs: newDur, isPlaying: newIsPlaying };
+          if (newIsPlaying && listenEpisodeIdRef.current) listenedMsRef.current += 1000;
           notifyPositionListeners();
           setPlayback(prev => {
             if (prev.isPlaying !== newIsPlaying) {
@@ -471,13 +489,14 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     setPlayback(prev => ({ ...prev, isPlaying: false }));
     wasPausedRef.current = true;
     saveCurrentPosition();
+    flushListenDuration();
     const ep = currentEpisodeRef.current;
     const feed = currentFeedRef.current;
     const pb = playbackRef.current;
     if (ep && feed) {
       updateHistoryPosition(ep.id, pb.positionMs, pb.durationMs).catch(() => {});
     }
-  }, [saveCurrentPosition]);
+  }, [saveCurrentPosition, flushListenDuration]);
 
   const pauseRef = useRef(pause);
   useEffect(() => {
@@ -539,6 +558,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
   const handleEpisodeEnd = useCallback((episode: Episode, feed: Feed) => {
     setPlayback(prev => ({ ...prev, isPlaying: false }));
+    flushListenDuration();
     savePosition(episode.id, feed.id, 0, 0);
     removeSavedPosition(episode.id).catch(() => {});
     updateHistoryPosition(episode.id, 0, 0).catch(() => {});
@@ -601,7 +621,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         stopRef.current();
       });
     }
-  }, [cancelSleepTimer, removeSavedPosition]);
+  }, [cancelSleepTimer, removeSavedPosition, flushListenDuration]);
 
   const handleEpisodeEndRef = useRef(handleEpisodeEnd);
   useEffect(() => { handleEpisodeEndRef.current = handleEpisodeEnd; }, [handleEpisodeEnd]);
@@ -821,6 +841,11 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         }).catch(() => {});
       }
 
+      if (listenEpisodeIdRef.current && listenEpisodeIdRef.current !== episode.id) {
+        flushListenDuration();
+      }
+      listenEpisodeIdRef.current = episode.id;
+      listenedMsRef.current = 0;
       getDeviceId().then(deviceId => {
         return apiRequest("POST", "/api/listens", { episodeId: episode.id, deviceId });
       }).catch(err => addLog("warn", `Failed to record listen: ${(err as any)?.message || err}`, undefined, "audio"));
@@ -831,7 +856,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       isLoadingRef.current = false;
       clearTimeout(safetyTimeout);
     }
-  }, [startPositionTracking, getSavedPosition, getFeedSpeed, saveCurrentPosition, addRecentlyPlayed, cancelSleepTimer]);
+  }, [startPositionTracking, getSavedPosition, getFeedSpeed, saveCurrentPosition, addRecentlyPlayed, cancelSleepTimer, flushListenDuration]);
 
   const playEpisode = useCallback(async (episode: Episode, feed: Feed) => {
     await playEpisodeInternal(episode, feed, false);
