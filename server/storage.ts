@@ -1654,9 +1654,24 @@ export async function getQueueForDevice(deviceId: string) {
 
 export async function saveQueue(deviceId: string, items: { episodeId: string; feedId: string; position: number }[]) {
   await db.delete(queueItems).where(eq(queueItems.deviceId, deviceId));
-  if (items.length > 0) {
+  if (items.length === 0) return;
+
+  // Drop items whose episode or feed no longer exists server-side. Without
+  // this, a single stale ref from the client's local queue fails the whole
+  // bulk insert with an FK violation.
+  const episodeIds = [...new Set(items.map(i => i.episodeId))];
+  const feedIds = [...new Set(items.map(i => i.feedId))];
+  const [okEps, okFeeds] = await Promise.all([
+    db.select({ id: episodes.id }).from(episodes).where(inArray(episodes.id, episodeIds)),
+    db.select({ id: feeds.id }).from(feeds).where(inArray(feeds.id, feedIds)),
+  ]);
+  const epSet = new Set(okEps.map(r => r.id));
+  const feedSet = new Set(okFeeds.map(r => r.id));
+  const valid = items.filter(i => epSet.has(i.episodeId) && feedSet.has(i.feedId));
+
+  if (valid.length > 0) {
     await db.insert(queueItems).values(
-      items.map(item => ({
+      valid.map(item => ({
         deviceId,
         episodeId: item.episodeId,
         feedId: item.feedId,
