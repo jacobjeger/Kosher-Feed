@@ -758,19 +758,6 @@
         <p style="font-size:12px;color:#64748b;margin:0 0 12px;">Feeds pulling content from multiple platforms. You can unlink a platform to stop merging.</p>
         <div id="mergersArea" style="color:#94a3b8;font-size:13px;">Loading...</div>
       </div>
-      <div class="card" style="max-width:900px;margin-bottom:20px;">
-        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-          <h2>Remote Config</h2>
-          <div style="display:flex;gap:8px;">
-            <button class="btn btn-secondary btn-sm" onclick="seedConfigDefaults()">Seed Defaults</button>
-            <button class="btn btn-primary btn-sm" onclick="showAddConfigDialog()">Add Config</button>
-            <button class="btn btn-secondary btn-sm" onclick="loadRemoteConfig()">Refresh</button>
-          </div>
-        </div>
-        <p style="font-size:12px;color:#64748b;margin:0 0 12px;">Key-value configuration that drives the app remotely. Changes take effect within 5 minutes (or on app restart).</p>
-        <div id="remoteConfigArea" style="color:#94a3b8;font-size:13px;">Loading...</div>
-      </div>
-
       <div class="card" style="max-width:500px;">
         <div class="card-header">
           <h2>Change Password</h2>
@@ -2124,7 +2111,7 @@ function switchTab(tab, btn) {
   if (tab === 'vitals') loadVitals();
   if (tab === 'announcements') loadAnnouncements();
   if (tab === 'kolhalashon') { loadKHStatus(); loadKHSpeakers(); setTimeout(loadKHVitals, 300); }
-  if (tab === 'settings') { loadTATStatus(); loadRemoteConfig(); setTimeout(() => { loadAllOUStatuses(); loadMergers(); loadGlobalMergeHistory(); }, 300); }
+  if (tab === 'settings') { loadTATStatus(); setTimeout(() => { loadAllOUStatuses(); loadMergers(); loadGlobalMergeHistory(); }, 300); }
 }
 
 function formatDate(dateStr) {
@@ -3295,96 +3282,6 @@ async function unlinkPlatform(feedId, platform, btn) {
     showAlert('Failed: ' + e.message, 'error');
     btn.disabled = false;
     btn.textContent = 'Unlink ' + platform;
-  }
-}
-
-// Remote Config
-async function loadRemoteConfig() {
-  const area = document.getElementById('remoteConfigArea');
-  try {
-    const entries = await api('/api/admin/config');
-    if (!entries || entries.length === 0) {
-      area.innerHTML = '<p style="color:#94a3b8;">No config entries yet. Click "Seed Defaults" to populate.</p>';
-      return;
-    }
-    let html = '<table class="feed-table"><thead><tr><th>Key</th><th>Value</th><th>Description</th><th>Updated</th><th style="text-align:center;">Actions</th></tr></thead><tbody>';
-    for (const e of entries) {
-      const val = e.value.length > 80 ? e.value.substring(0, 80) + '...' : e.value;
-      const updated = e.updatedAt ? new Date(e.updatedAt).toLocaleDateString() : '-';
-      html += '<tr>';
-      html += '<td><code style="background:#1e293b;padding:2px 6px;border-radius:4px;font-size:12px;">' + esc(e.key) + '</code></td>';
-      html += '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;">' + esc(val) + '</td>';
-      html += '<td style="font-size:12px;color:#94a3b8;">' + esc(e.description || '') + '</td>';
-      html += '<td style="font-size:12px;color:#64748b;">' + updated + '</td>';
-      html += '<td style="text-align:center;white-space:nowrap;">';
-      html += '<button class="btn btn-secondary btn-sm" onclick="editConfigEntry(\'' + esc(e.key) + '\')">Edit</button> ';
-      html += '<button class="btn btn-sm" style="background:#ef4444;color:#fff;" onclick="deleteConfigEntry(\'' + esc(e.key) + '\')">Delete</button>';
-      html += '</td></tr>';
-    }
-    html += '</tbody></table>';
-    area.innerHTML = html;
-  } catch (err) {
-    area.innerHTML = '<p style="color:#ef4444;">Failed to load config: ' + esc(err.message) + '</p>';
-  }
-}
-
-async function seedConfigDefaults() {
-  if (!confirm('Seed default config values? Existing values will NOT be overwritten.')) return;
-  try {
-    const result = await api('/api/admin/config/seed', { method: 'POST' });
-    showAlert('Seeded ' + result.seeded + ' of ' + result.total + ' config defaults.');
-    loadRemoteConfig();
-  } catch (err) {
-    showAlert('Failed to seed: ' + err.message, 'error');
-  }
-}
-
-function showAddConfigDialog() {
-  const key = prompt('Config key (e.g. "myFeature"):');
-  if (!key) return;
-  const valueStr = prompt('Value (JSON or plain text):', '');
-  if (valueStr === null) return;
-  const description = prompt('Description (optional):', '') || '';
-  let value;
-  try { value = JSON.parse(valueStr); } catch { value = valueStr; }
-  api('/api/admin/config/' + encodeURIComponent(key), {
-    method: 'PUT',
-    body: JSON.stringify({ value, description })
-  }).then(() => {
-    loadRemoteConfig();
-  }).catch(err => {
-    alert('Failed to add config: ' + err.message);
-  });
-}
-
-function editConfigEntry(key) {
-  api('/api/admin/config').then(entries => {
-    const entry = entries.find(e => e.key === key);
-    if (!entry) return alert('Entry not found');
-    const currentValue = entry.value;
-    const newValueStr = prompt('Edit value for "' + key + '":\n(Enter valid JSON for objects/arrays, or plain text)', currentValue);
-    if (newValueStr === null) return;
-    let value;
-    try { value = JSON.parse(newValueStr); } catch { value = newValueStr; }
-    const description = prompt('Description:', entry.description || '') || entry.description;
-    api('/api/admin/config/' + encodeURIComponent(key), {
-      method: 'PUT',
-      body: JSON.stringify({ value, description })
-    }).then(() => {
-      loadRemoteConfig();
-    }).catch(err => {
-      alert('Failed to update: ' + err.message);
-    });
-  });
-}
-
-async function deleteConfigEntry(key) {
-  if (!confirm('Delete config "' + key + '"? The app will fall back to its default value.')) return;
-  try {
-    await api('/api/admin/config/' + encodeURIComponent(key), { method: 'DELETE' });
-    loadRemoteConfig();
-  } catch (err) {
-    alert('Failed to delete: ' + err.message);
   }
 }
 

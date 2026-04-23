@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView, Platform, Switch, Alert, ActivityIndicator, TextInput, Modal, KeyboardAvoidingView } from "react-native";
+import { View, Text, Pressable, StyleSheet, ScrollView, Platform, Switch, Alert, ActivityIndicator } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import Colors from "@/constants/colors";
 import { getDeviceId } from "@/lib/device-id";
-import { getApiUrl, apiRequest } from "@/lib/query-client";
+import { getApiUrl } from "@/lib/query-client";
 import { useDownloads } from "@/contexts/DownloadsContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { requestNotificationPermissions, checkNotificationPermission, setupNotificationChannel, scheduleDailyReminder, cancelDailyReminder } from "@/lib/notifications";
@@ -14,7 +14,6 @@ import { registerPushToken } from "@/lib/push-notifications";
 import { lightHaptic, mediumHaptic, setHapticEnabled } from "@/lib/haptics";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { getLogsSnapshot } from "@/lib/error-logger";
 import OptionPickerModal from "@/components/OptionPickerModal";
 import FocusableView from "@/components/FocusableView";
 import * as Application from "expo-application";
@@ -84,12 +83,6 @@ function SettingsScreenInner() {
   const [connectionError, setConnectionError] = useState("");
   const [devModeUnlocked, setDevModeUnlocked] = useState(false);
   const [devTapCount, setDevTapCount] = useState(0);
-  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
-  const [feedbackType, setFeedbackType] = useState<"shiur_request" | "technical_issue">("shiur_request");
-  const [feedbackSubject, setFeedbackSubject] = useState("");
-  const [feedbackMessage, setFeedbackMessage] = useState("");
-  const [feedbackContact, setFeedbackContact] = useState("");
-  const [feedbackSending, setFeedbackSending] = useState(false);
   const [activePicker, setActivePicker] = useState<string | null>(null);
   const [sponsor, setSponsor] = useState<{ name: string; text?: string; logoUrl?: string; linkUrl?: string } | null>(null);
 
@@ -147,45 +140,6 @@ function SettingsScreenInner() {
   const handleToggleAutoDownload = (value: boolean) => {
     lightHaptic();
     updateSettings({ autoDownloadOnWifi: value });
-  };
-
-  const handleSubmitFeedback = async () => {
-    if (!feedbackSubject.trim() || !feedbackMessage.trim()) {
-      Alert.alert("Missing Info", "Please fill in both the subject and details.");
-      return;
-    }
-    setFeedbackSending(true);
-    try {
-      let deviceLogs: string | null = null;
-      if (feedbackType === "technical_issue") {
-        try {
-          const logs = getLogsSnapshot();
-          if (logs.length > 0) {
-            deviceLogs = JSON.stringify(logs.slice(0, 100));
-          }
-        } catch {}
-      }
-      await apiRequest("POST", "/api/feedback", {
-        deviceId,
-        type: feedbackType,
-        subject: feedbackSubject.trim(),
-        message: feedbackMessage.trim(),
-        contactInfo: feedbackContact.trim() || null,
-        deviceLogs,
-      });
-      mediumHaptic();
-      setShowFeedbackModal(false);
-      setFeedbackSubject("");
-      setFeedbackMessage("");
-      setFeedbackContact("");
-      Alert.alert("Thank You", feedbackType === "shiur_request"
-        ? "Your shiur request has been submitted. We'll review it soon!"
-        : "Your report has been submitted. We'll look into it!");
-    } catch (e: any) {
-      Alert.alert("Error", "Failed to send feedback. Please try again.");
-    } finally {
-      setFeedbackSending(false);
-    }
   };
 
   const handleChangeEpisodeLimit = () => {
@@ -364,32 +318,13 @@ function SettingsScreenInner() {
       </View>
 
       <View style={[styles.section, { borderColor: colors.cardBorder }]}>
-        <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>FEEDBACK</Text>
+        <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>FEEDBACK & MESSAGES</Text>
         <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
           <SettingRow
-            icon={<Ionicons name="musical-notes" size={20} color={colors.accent} />}
-            label="Request a Shiur"
-            onPress={() => { lightHaptic(); setFeedbackType("shiur_request"); setShowFeedbackModal(true); }}
-          />
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <SettingRow
-            icon={<Ionicons name="construct" size={20} color="#f59e0b" />}
-            label="Report a Problem"
-            onPress={() => { lightHaptic(); setFeedbackType("technical_issue"); setShowFeedbackModal(true); }}
-          />
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <SettingRow
             icon={<Ionicons name="chatbubbles" size={20} color={colors.accent} />}
-            label="Messages"
-            value="View"
-            onPress={() => router.push('/messages')}
+            label="Feedback & Messages"
+            onPress={() => { lightHaptic(); router.push('/feedback'); }}
           />
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <View style={styles.settingDescription}>
-            <Text style={[styles.descriptionText, { color: colors.textSecondary }]}>
-              Request new shiurim, report issues, or view messages from the ShiurPod team.
-            </Text>
-          </View>
         </View>
       </View>
 
@@ -700,89 +635,6 @@ function SettingsScreenInner() {
         </Text>
       </View>
 
-      <Modal
-        visible={showFeedbackModal}
-        animationType="slide"
-        onRequestClose={() => setShowFeedbackModal(false)}
-        presentationStyle="fullScreen"
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={[feedbackStyles.modal, { backgroundColor: colors.surface, paddingTop: insets.top + 12 }]}
-        >
-          <View
-            style={{ flex: 1 }}
-            accessibilityViewIsModal={true}
-          >
-              <View style={feedbackStyles.modalHeader}>
-                <Text style={[feedbackStyles.modalTitle, { color: colors.text }]}>
-                  {feedbackType === "shiur_request" ? "Request a Shiur" : "Report a Problem"}
-                </Text>
-                <FocusableView onPress={() => setShowFeedbackModal(false)} hitSlop={8}>
-                  <Ionicons name="close" size={24} color={colors.textSecondary} />
-                </FocusableView>
-              </View>
-
-              <ScrollView
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-                bounces={false}
-              >
-                <Text style={[feedbackStyles.label, { color: colors.textSecondary, marginTop: 0 }]}>
-                  {feedbackType === "shiur_request" ? "Shiur / Speaker Name" : "What went wrong?"}
-                </Text>
-                <TextInput
-                  style={[feedbackStyles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
-                  placeholder={feedbackType === "shiur_request" ? "e.g. Rabbi Ploni - Gemara Shiur" : "e.g. Audio stops playing"}
-                  placeholderTextColor={colors.textSecondary}
-                  value={feedbackSubject}
-                  onChangeText={setFeedbackSubject}
-                  maxLength={200}
-                />
-
-                <Text style={[feedbackStyles.label, { color: colors.textSecondary }]}>Details</Text>
-                <TextInput
-                  style={[feedbackStyles.input, feedbackStyles.textArea, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
-                  placeholder={feedbackType === "shiur_request"
-                    ? "Any details about where to find this shiur, RSS feed link, etc."
-                    : "Please describe the issue in detail. What were you doing when it happened?"}
-                  placeholderTextColor={colors.textSecondary}
-                  value={feedbackMessage}
-                  onChangeText={setFeedbackMessage}
-                  multiline
-                  numberOfLines={3}
-                  textAlignVertical="top"
-                  maxLength={5000}
-                />
-
-                <Text style={[feedbackStyles.label, { color: colors.textSecondary }]}>Contact Info (optional)</Text>
-                <TextInput
-                  style={[feedbackStyles.input, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
-                  placeholder="Email or phone (optional — we'll reply in Messages)"
-                  placeholderTextColor={colors.textSecondary}
-                  value={feedbackContact}
-                  onChangeText={setFeedbackContact}
-                  maxLength={200}
-                  autoCapitalize="none"
-                />
-
-                <FocusableView
-                  style={[feedbackStyles.submitBtn, { backgroundColor: colors.accent, opacity: feedbackSending ? 0.6 : 1 }]}
-                  onPress={handleSubmitFeedback}
-                  disabled={feedbackSending}
-                  focusRadius={12}
-                >
-                  {feedbackSending ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={feedbackStyles.submitBtnText}>Submit</Text>
-                  )}
-                </FocusableView>
-              </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
       <OptionPickerModal
         visible={activePicker === "episodeLimit"}
         title="Episodes Per Shiur"
@@ -964,46 +816,3 @@ const styles = StyleSheet.create({
   },
 });
 
-const feedbackStyles = StyleSheet.create({
-  modal: {
-    flex: 1,
-    padding: 20,
-    paddingBottom: Platform.OS === "web" ? 34 : 40,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: "600",
-    marginBottom: 6,
-    marginTop: 12,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 15,
-  },
-  textArea: {
-    minHeight: 80,
-  },
-  submitBtn: {
-    marginTop: 20,
-    borderRadius: 12,
-    padding: 14,
-    alignItems: "center",
-  },
-  submitBtnText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-});
