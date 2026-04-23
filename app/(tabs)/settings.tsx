@@ -364,6 +364,36 @@ function SettingsScreenInner() {
       </View>
 
       <View style={[styles.section, { borderColor: colors.cardBorder }]}>
+        <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>FEEDBACK</Text>
+        <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+          <SettingRow
+            icon={<Ionicons name="musical-notes" size={20} color={colors.accent} />}
+            label="Request a Shiur"
+            onPress={() => { lightHaptic(); setFeedbackType("shiur_request"); setShowFeedbackModal(true); }}
+          />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingRow
+            icon={<Ionicons name="construct" size={20} color="#f59e0b" />}
+            label="Report a Problem"
+            onPress={() => { lightHaptic(); setFeedbackType("technical_issue"); setShowFeedbackModal(true); }}
+          />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <SettingRow
+            icon={<Ionicons name="chatbubbles" size={20} color={colors.accent} />}
+            label="Messages"
+            value="View"
+            onPress={() => router.push('/messages')}
+          />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <View style={styles.settingDescription}>
+            <Text style={[styles.descriptionText, { color: colors.textSecondary }]}>
+              Request new shiurim, report issues, or view messages from the ShiurPod team.
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      <View style={[styles.section, { borderColor: colors.cardBorder }]}>
         <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>NOTIFICATIONS</Text>
         <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
           <SettingRow
@@ -558,36 +588,6 @@ function SettingsScreenInner() {
             value="View"
             onPress={() => router.push('/stats')}
           />
-        </View>
-      </View>
-
-      <View style={[styles.section, { borderColor: colors.cardBorder }]}>
-        <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>FEEDBACK</Text>
-        <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
-          <SettingRow
-            icon={<Ionicons name="musical-notes" size={20} color={colors.accent} />}
-            label="Request a Shiur"
-            onPress={() => { lightHaptic(); setFeedbackType("shiur_request"); setShowFeedbackModal(true); }}
-          />
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <SettingRow
-            icon={<Ionicons name="construct" size={20} color="#f59e0b" />}
-            label="Report a Problem"
-            onPress={() => { lightHaptic(); setFeedbackType("technical_issue"); setShowFeedbackModal(true); }}
-          />
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <SettingRow
-            icon={<Ionicons name="chatbubbles" size={20} color={colors.accent} />}
-            label="Messages"
-            value="View"
-            onPress={() => router.push('/messages')}
-          />
-          <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <View style={styles.settingDescription}>
-            <Text style={[styles.descriptionText, { color: colors.textSecondary }]}>
-              Request new shiurim, report issues, or view messages from the ShiurPod team.
-            </Text>
-          </View>
         </View>
       </View>
 

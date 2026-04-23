@@ -2678,6 +2678,95 @@ async function sendThreadReply(feedbackId, subject, deviceId) {
   }
 }
 
+async function openThreadByConvId(convId, subject, deviceId) {
+  let replies = [];
+  try {
+    replies = await api('/api/admin/conversations/' + convId + '/messages');
+  } catch {}
+
+  let threadHtml = `
+    <h2 style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
+      Conversation Thread
+    </h2>
+    <div style="background:#0f172a;border-radius:10px;padding:14px;margin-bottom:12px;">
+      <div style="font-weight:600;font-size:14px;color:#f8fafc;margin-bottom:4px;">${esc(subject || 'Conversation')}</div>
+      <div style="font-size:10px;color:#475569;">Device: ${esc(deviceId || '')}</div>
+    </div>
+    <div style="max-height:400px;overflow-y:auto;margin-bottom:16px;" id="threadMessages">`;
+
+  if (replies.length === 0) {
+    threadHtml += '<div style="text-align:center;padding:20px;color:#64748b;font-size:13px;">No messages yet. Send the first reply below.</div>';
+  } else {
+    for (const r of replies) {
+      const isAdmin = r.sender === 'admin';
+      const time = new Date(r.createdAt).toLocaleString();
+      let readReceipt = '';
+      if (isAdmin) {
+        if (r.readAt) {
+          const readTime = new Date(r.readAt).toLocaleString();
+          readReceipt = `<div style="font-size:10px;color:#10b981;margin-top:4px;">✓✓ Read ${esc(readTime)}</div>`;
+        } else {
+          readReceipt = `<div style="font-size:10px;color:#64748b;margin-top:4px;">✓ Sent · not yet opened</div>`;
+        }
+      }
+      threadHtml += `
+        <div style="background:${isAdmin ? '#1e3a5f' : '#0f172a'};border-radius:10px;padding:12px;margin-bottom:6px;${isAdmin ? 'margin-left:24px;border-left:3px solid #3b82f6;' : 'margin-right:24px;'}">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+            <span style="font-size:11px;font-weight:600;color:${isAdmin ? '#60a5fa' : '#94a3b8'};">${isAdmin ? 'Admin' : 'User'}</span>
+            <span style="font-size:10px;color:#64748b;">${time}</span>
+          </div>
+          <div style="font-size:13px;color:#e2e8f0;">${esc(r.message)}</div>
+          ${readReceipt}
+        </div>`;
+    }
+  }
+
+  threadHtml += `
+    </div>
+    <div style="display:flex;gap:8px;">
+      <textarea id="threadReplyInput" rows="3" placeholder="Type your reply..." style="flex:1;resize:vertical;min-height:60px;"></textarea>
+      <button class="btn btn-primary" style="align-self:flex-end;padding:10px 20px;" onclick="sendThreadReplyByConvId('${escJs(convId)}','${escJs(subject)}','${escJs(deviceId)}')">Send</button>
+    </div>
+  `;
+
+  document.getElementById('modalContent').innerHTML = threadHtml;
+  document.getElementById('modalOverlay').classList.remove('hidden');
+  document.getElementById('threadReplyInput').focus();
+}
+
+async function sendThreadReplyByConvId(convId, subject, deviceId) {
+  const input = document.getElementById('threadReplyInput');
+  const message = input.value.trim();
+  if (!message) return;
+
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+
+  try {
+    await api('/api/admin/conversations/' + convId + '/reply', {
+      method: 'POST',
+      body: JSON.stringify({ message })
+    });
+
+    if (deviceId) {
+      api('/api/admin/send-push', { method: 'POST', body: JSON.stringify({
+        title: 'ShiurPod Team',
+        body: message.substring(0, 200),
+        deviceId,
+        data: { screen: 'messages', conversationId: convId }
+      }) }).catch(() => {});
+    }
+
+    showAlert('Reply sent!', 'success');
+    openThreadByConvId(convId, subject, deviceId);
+  } catch (e) {
+    showAlert('Failed to send: ' + (e.message || e), 'error');
+    btn.disabled = false;
+    btn.textContent = 'Send';
+  }
+}
+
 async function addFeedbackNote(id) {
   const note = prompt('Enter admin note:');
   if (note === null) return;
@@ -2730,9 +2819,8 @@ async function loadConversationsInbox() {
       // break out of the onclick attribute.
       const subjectLit = esc(JSON.stringify(c.subject || 'Conversation'));
       const deviceIdLit = esc(JSON.stringify(c.deviceId));
-      const openAction = c.feedbackId
-        ? `openThread('${esc(c.feedbackId)}', '', ${subjectLit}, '', ${deviceIdLit}, '')`
-        : `alert('This conversation has no linked feedback — open from the Feedback tab')`;
+      const convIdLit = esc(JSON.stringify(c.id));
+      const openAction = `openThreadByConvId(${convIdLit}, ${subjectLit}, ${deviceIdLit})`;
       return `<div style="background:#0f172a;border-radius:10px;padding:12px 14px;margin-bottom:8px;cursor:pointer;border-left:4px solid ${c.unreadCount > 0 ? '#ef4444' : 'transparent'};" onclick="${openAction}">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
           <div style="display:flex;align-items:center;gap:8px;">
