@@ -124,12 +124,19 @@ function WebNavBar() {
         </View>
 
         <View style={webStyles.rightNav}>
-          {rightNavItems.length === 0 ? (
-            // Invisible spacer to balance the logo area on the left so the
-            // centered nav links stay centered. Keep roughly the width of
-            // the old settings icon button.
-            <View style={{ width: 40 }} />
-          ) : rightNavItems.map((item) => {
+          <Pressable
+            onPress={() => {
+              if (typeof window !== "undefined") window.location.href = "/";
+            }}
+            style={({ hovered }: any) => [
+              webStyles.websiteLink,
+              { backgroundColor: hovered ? (isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)") : "transparent" },
+            ]}
+          >
+            <Ionicons name="globe-outline" size={16} color={colors.textSecondary} style={{ marginRight: 6 }} />
+            <Text style={[webStyles.websiteLinkText, { color: colors.textSecondary }]}>Website</Text>
+          </Pressable>
+          {rightNavItems.map((item) => {
             const active = isActive(item.route);
             return (
               <Pressable
@@ -331,5 +338,17 @@ const webStyles = StyleSheet.create({
     alignItems: "center" as const,
     justifyContent: "center" as const,
     ...(Platform.OS === "web" ? { transition: "background-color 0.15s ease" as any, cursor: "pointer" as any } : {}),
+  },
+  websiteLink: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    ...(Platform.OS === "web" ? { transition: "background-color 0.15s ease" as any, cursor: "pointer" as any } : {}),
+  },
+  websiteLinkText: {
+    fontSize: 13,
+    fontWeight: "600" as const,
   },
 });
