@@ -480,6 +480,7 @@ export async function getAnalytics() {
     })
     .from(feeds)
     .leftJoin(episodes, eq(feeds.id, episodes.feedId))
+    .where(notDisabledTat)
     .groupBy(feeds.id)
     .orderBy(desc(count(episodes.id)));
 
@@ -1826,7 +1827,10 @@ export async function getKHSpeakerStats() {
 }
 
 export async function getSourceBreakdown() {
-  const allFeeds = await db.select().from(feeds);
+  // Exclude admin-disabled TAT feeds so the Sources chart doesn't still
+  // report a huge "Torah Anytime" bucket after admin toggled TAT off.
+  const allFeeds = await db.select().from(feeds)
+    .where(sql`NOT (${feeds.rssUrl} LIKE 'tat://%' AND ${feeds.isActive} = false)`);
   const stats = await getAllFeedStats();
 
   const sources: Record<string, { feedCount: number; episodeCount: number }> = {
