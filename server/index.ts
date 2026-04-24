@@ -1003,7 +1003,7 @@ async function syncAllPlatformSpeakers(): Promise<void> {
   // the full speaker list doesn't get recreated + re-activated on every
   // deploy.
   try {
-    const allFeeds = await storage.getAllFeeds();
+    const allFeeds = await storage.getAllFeedsIncludingDisabledTAT();
     const hasActiveTAT = allFeeds.some(f => f.tatSpeakerId && f.rssUrl.startsWith("tat://") && f.isActive);
     if (hasActiveTAT) {
       const tatResult = await syncTATSpeakers();

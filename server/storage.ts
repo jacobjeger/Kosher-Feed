@@ -19,6 +19,18 @@ export async function deleteCategory(id: string): Promise<void> {
 }
 
 export async function getAllFeeds(): Promise<Feed[]> {
+  // Exclude admin-disabled TAT feeds from the default "all feeds" list.
+  // When TAT is toggled off, those feeds are soft-deleted (is_active=false)
+  // and shouldn't appear in admin analytics / feeds list / vitals. Code
+  // that explicitly needs them (the TAT toggle itself) uses
+  // getAllFeedsIncludingDisabledTAT() below.
+  return db.select().from(feeds)
+    .where(sql`NOT (${feeds.rssUrl} LIKE 'tat://%' AND ${feeds.isActive} = false)`)
+    .orderBy(desc(feeds.createdAt));
+}
+
+/** Includes soft-disabled TAT feeds — only use from the TAT toggle/sync paths. */
+export async function getAllFeedsIncludingDisabledTAT(): Promise<Feed[]> {
   return db.select().from(feeds).orderBy(desc(feeds.createdAt));
 }
 
@@ -435,9 +447,13 @@ export async function getTrendingEpisodes(limit: number = 20): Promise<(Episode 
 }
 
 export async function getAnalytics() {
-  const [feedCount] = await db.select({ count: count() }).from(feeds);
-  const [activeFeedCount] = await db.select({ count: count() }).from(feeds).where(eq(feeds.isActive, true));
-  const [episodeCount] = await db.select({ count: count() }).from(episodes);
+  // Exclude admin-disabled TAT feeds from all counts — they're soft-deleted
+  // and shouldn't inflate admin stats.
+  const notDisabledTat = sql`NOT (${feeds.rssUrl} LIKE 'tat://%' AND ${feeds.isActive} = false)`;
+  const [feedCount] = await db.select({ count: count() }).from(feeds).where(notDisabledTat);
+  const [activeFeedCount] = await db.select({ count: count() }).from(feeds).where(and(eq(feeds.isActive, true), notDisabledTat));
+  const [episodeCount] = await db.select({ count: count() }).from(episodes)
+    .where(sql`${episodes.feedId} IN (SELECT id FROM ${feeds} WHERE NOT (${feeds.rssUrl} LIKE 'tat://%' AND ${feeds.isActive} = false))`);
   const [categoryCount] = await db.select({ count: count() }).from(categories);
   const [listenCount] = await db.select({ count: count() }).from(episodeListens);
 
