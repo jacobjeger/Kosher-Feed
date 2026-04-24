@@ -134,6 +134,12 @@ export default function RootLayout() {
   const [initialRoute, setInitialRoute] = useState("(tabs)");
 
   useEffect(() => {
+    // Skip onboarding on web — the mobile-focused 3-slide flow doesn't
+    // render well on desktop and isn't appropriate for anonymous web users.
+    if (Platform.OS === "web") {
+      setOnboardingChecked(true);
+      return;
+    }
     AsyncStorage.getItem(ONBOARDING_KEY).then((value) => {
       if (value !== "true") {
         setInitialRoute("onboarding");

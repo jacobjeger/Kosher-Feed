@@ -67,9 +67,11 @@ function WebNavBar() {
     { label: "Favorites", route: "/favorites", icon: "star" as const },
   ];
 
-  const rightNavItems = [
-    { label: "Settings", route: "/settings", icon: "settings-outline" as const },
-  ];
+  // Settings intentionally removed from web — downloads, haptics, push
+  // toggles, etc. are irrelevant in a browser. Users manage those in the
+  // mobile app. Keeping rightNavItems empty means the right side of the
+  // nav is just the spacer.
+  const rightNavItems: Array<{ label: string; route: string; icon: any }> = [];
 
   const isActive = (route: string) => {
     if (route === "/") return pathname === "/" || pathname === "/index";
@@ -122,7 +124,12 @@ function WebNavBar() {
         </View>
 
         <View style={webStyles.rightNav}>
-          {rightNavItems.map((item) => {
+          {rightNavItems.length === 0 ? (
+            // Invisible spacer to balance the logo area on the left so the
+            // centered nav links stay centered. Keep roughly the width of
+            // the old settings icon button.
+            <View style={{ width: 40 }} />
+          ) : rightNavItems.map((item) => {
             const active = isActive(item.route);
             return (
               <Pressable
@@ -228,7 +235,9 @@ export default function TabLayout() {
           name="downloads"
           options={{
             title: "Downloads",
-            href: isDesktopWeb ? null : undefined,
+            // Hidden on ALL web (browser can't do persistent downloads
+            // and settings is stripped from web entirely).
+            href: isWeb ? null : undefined,
             tabBarIcon: ({ color, focused }) => (
               <Ionicons name={focused ? "cloud-download" : "cloud-download-outline"} size={22} color={color} />
             ),
@@ -241,7 +250,9 @@ export default function TabLayout() {
           name="settings"
           options={{
             title: "Settings",
-            href: isDesktopWeb ? null : undefined,
+            // Hidden on ALL web (browser can't do persistent downloads
+            // and settings is stripped from web entirely).
+            href: isWeb ? null : undefined,
             tabBarIcon: ({ color, focused }) => (
               <Ionicons name={focused ? "settings" : "settings-outline"} size={22} color={color} />
             ),
