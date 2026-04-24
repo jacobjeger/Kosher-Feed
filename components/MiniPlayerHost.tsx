@@ -45,10 +45,10 @@ export default function MiniPlayerHost() {
 
   // Always render the container — only hide visually via opacity + disable
   // pointer events. Unmounting MiniPlayer during a navigation transition
-  // (which happens the instant the user taps the mini player to open the
-  // full /player route) caused a NullPointerException in Android's
-  // ViewGroup.dispatchGetDisplayList because the renderer still held a
-  // reference to the just-detached View. Keeping it mounted fixes that.
+  // would crash Android's renderer. Adding `elevation` on Android so the
+  // mini player actually paints on top of the screen content (zIndex alone
+  // doesn't cross stacking contexts on Android — was rendering UNDER the
+  // tab screen's ScrollView and appearing as an empty dark rectangle).
   const containerStyle = isWeb && isTabRoute
     ? ({
         position: "fixed" as any,
@@ -64,6 +64,7 @@ export default function MiniPlayerHost() {
         left: 0,
         right: 0,
         zIndex: 50,
+        elevation: 8,
         opacity: isHidden ? 0 : 1,
       } as const);
 
