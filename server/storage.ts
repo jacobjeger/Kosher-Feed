@@ -141,7 +141,13 @@ export async function getEpisodeCountByFeed(feedId: string): Promise<number> {
 }
 
 export async function getLatestEpisodes(limit: number = 50): Promise<Episode[]> {
-  return db.select().from(episodes).orderBy(desc(episodes.publishedAt)).limit(limit);
+  const rows = await db.select({ episode: episodes })
+    .from(episodes)
+    .innerJoin(feeds, eq(episodes.feedId, feeds.id))
+    .where(eq(feeds.isActive, true))
+    .orderBy(desc(episodes.publishedAt))
+    .limit(limit);
+  return rows.map(r => r.episode);
 }
 
 export async function episodeExistsByGuid(feedId: string, guid: string): Promise<boolean> {
@@ -400,7 +406,11 @@ export async function getTrendingEpisodes(limit: number = 20): Promise<(Episode 
     })
     .from(episodes)
     .innerJoin(episodeListens, eq(episodes.id, episodeListens.episodeId))
-    .where(sql`${episodeListens.listenedAt} > ${fortyEightHoursAgo}`)
+    .innerJoin(feeds, eq(episodes.feedId, feeds.id))
+    .where(and(
+      sql`${episodeListens.listenedAt} > ${fortyEightHoursAgo}`,
+      eq(feeds.isActive, true),
+    ))
     .groupBy(episodes.id)
     .orderBy(desc(count(episodeListens.id)), desc(episodes.publishedAt))
     .limit(limit);

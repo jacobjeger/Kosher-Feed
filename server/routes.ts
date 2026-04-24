@@ -403,7 +403,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/feeds/:id", async (req: Request, res: Response) => {
     try {
       const feed = await storage.getFeedById(req.params.id);
-      if (!feed) return res.status(404).json({ error: "Feed not found" });
+      if (!feed || !feed.isActive) return res.status(404).json({ error: "Feed not found" });
       const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
       const host = req.header("x-forwarded-host") || req.get("host");
       const baseUrl = `${protocol}://${host}`;
@@ -418,6 +418,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/feeds/:id/episodes", async (req: Request, res: Response) => {
     try {
       const feedId = req.params.id;
+      const feed = await storage.getFeedById(feedId);
+      if (!feed || !feed.isActive) return res.status(404).json({ error: "Feed not found" });
       const refresh = req.query.refresh === "1";
 
       if (refresh) {
