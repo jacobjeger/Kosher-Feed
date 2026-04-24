@@ -997,10 +997,20 @@ async function syncAllPlatformSpeakers(): Promise<void> {
   // First remove any women feeds that may have slipped through
   await removeWomenFeeds().catch(e => log(`Women feed removal error: ${e.message}`));
 
-  // TAT
+  // TAT — only sync if admin has TAT enabled. "Enabled" = at least one
+  // TAT-only feed is currently is_active=true. If admin has toggled TAT
+  // off, all TAT-only feeds are is_active=false, and we skip the sync so
+  // the full speaker list doesn't get recreated + re-activated on every
+  // deploy.
   try {
-    const tatResult = await syncTATSpeakers();
-    log(`TAT speaker sync: ${tatResult.created} created, ${tatResult.linked} linked`);
+    const allFeeds = await storage.getAllFeeds();
+    const hasActiveTAT = allFeeds.some(f => f.tatSpeakerId && f.rssUrl.startsWith("tat://") && f.isActive);
+    if (hasActiveTAT) {
+      const tatResult = await syncTATSpeakers();
+      log(`TAT speaker sync: ${tatResult.created} created, ${tatResult.linked} linked`);
+    } else {
+      log("TAT speaker sync: skipped (admin has disabled TAT)");
+    }
   } catch (e: any) {
     log(`TAT speaker sync error: ${e.message}`);
   }

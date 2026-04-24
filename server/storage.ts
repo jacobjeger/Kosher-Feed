@@ -80,6 +80,22 @@ export async function deleteFeed(id: string): Promise<void> {
   await db.delete(feeds).where(eq(feeds.id, id));
 }
 
+/**
+ * Bulk enable/disable every TAT-only feed in a single SQL statement.
+ * The per-feed loop version was timing out on ~1000+ feeds.
+ */
+export async function bulkToggleTATFeeds(enabled: boolean): Promise<number> {
+  const result = await db.update(feeds)
+    .set({ isActive: enabled })
+    .where(and(
+      sql`${feeds.rssUrl} LIKE 'tat://%'`,
+      sql`${feeds.tatSpeakerId} IS NOT NULL`,
+      sql`${feeds.isActive} <> ${enabled}`,
+    ))
+    .returning({ id: feeds.id });
+  return result.length;
+}
+
 export async function mergeFeeds(sourceId: string, targetId: string): Promise<{ episodesMoved: number; subscriptionsMoved: number }> {
   // Move episodes from source to target (skip duplicates by guid) — batch update
   const sourceEps = await db.select().from(episodes).where(eq(episodes.feedId, sourceId));

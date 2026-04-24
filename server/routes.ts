@@ -1311,18 +1311,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      const allFeeds = await storage.getAllFeeds();
-      const tatOnlyFeeds = allFeeds.filter(f => f.tatSpeakerId != null && f.rssUrl.startsWith("tat://"));
-      console.log(`TAT toggle: enabled=${enabled}, found ${tatOnlyFeeds.length} TAT-only feeds`);
-      let updated = 0;
-      for (const feed of tatOnlyFeeds) {
-        if (feed.isActive !== enabled) {
-          await storage.updateFeed(feed.id, { isActive: enabled });
-          updated++;
-        }
-      }
-      console.log(`TAT toggle: updated ${updated} feeds`);
-      res.json({ updated, enabled, totalFound: tatOnlyFeeds.length, sync: syncResult });
+      // Batch-update with a single SQL statement instead of looping
+      // N feeds × one UPDATE each (which was taking minutes on ~1100 feeds).
+      const updated = await storage.bulkToggleTATFeeds(enabled);
+      console.log(`TAT toggle: updated ${updated} feeds to is_active=${enabled}`);
+      res.json({ updated, enabled, sync: syncResult });
     } catch (e: any) {
       console.error("TAT toggle error:", e);
       publicError(res, e);
