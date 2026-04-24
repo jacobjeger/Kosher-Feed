@@ -4,13 +4,13 @@ import { usePathname } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import MiniPlayer from "@/components/MiniPlayer";
 
-// Routes where we explicitly do NOT show the MiniPlayer.
+// Routes where we explicitly hide the MiniPlayer.
 // - /player and /queue are full-screen modals that already have a player UI
-// - /onboarding is the first-time setup screen, user isn't playing anything yet
+// - /onboarding is the first-time setup screen
 const HIDE_ON_ROUTES = ["/player", "/queue", "/onboarding"];
 
 // Tab routes — these have a bottom tab bar, so the MiniPlayer has to sit
-// above it. The tab bar itself is ~56dp (Android) or 80dp (iOS) + safe area.
+// above it.
 const TAB_ROUTES = new Set([
   "/",
   "/index",
@@ -22,7 +22,7 @@ const TAB_ROUTES = new Set([
 
 const ANDROID_TAB_BAR = 56;
 const IOS_TAB_BAR = 80;
-const WEB_TAB_BAR = 56 + 34; // tab height + paddingBottom from (tabs)/_layout
+const WEB_TAB_BAR = 56 + 34;
 
 export default function MiniPlayerHost() {
   const pathname = usePathname();
@@ -30,15 +30,12 @@ export default function MiniPlayerHost() {
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
 
-  if (HIDE_ON_ROUTES.some((r) => pathname === r || pathname.startsWith(r + "/"))) {
-    return null;
-  }
-
+  const isHidden = HIDE_ON_ROUTES.some(
+    (r) => pathname === r || pathname.startsWith(r + "/"),
+  );
   const isTabRoute = TAB_ROUTES.has(pathname);
 
-  // Compute bottom offset:
-  // - On tab routes: above the tab bar + safe area
-  // - On non-tab routes: just the safe area (no tab bar in the way)
+  // Compute bottom offset
   let bottom: number;
   if (isTabRoute) {
     bottom = isWeb ? WEB_TAB_BAR : (isIOS ? IOS_TAB_BAR : ANDROID_TAB_BAR) + insets.bottom;
@@ -46,14 +43,32 @@ export default function MiniPlayerHost() {
     bottom = insets.bottom;
   }
 
-  // On desktop web we have a top nav, no bottom tabs — pin to very bottom.
-  // This matches the previous desktop-web behavior from (tabs)/_layout.tsx.
+  // Always render the container — only hide visually via opacity + disable
+  // pointer events. Unmounting MiniPlayer during a navigation transition
+  // (which happens the instant the user taps the mini player to open the
+  // full /player route) caused a NullPointerException in Android's
+  // ViewGroup.dispatchGetDisplayList because the renderer still held a
+  // reference to the just-detached View. Keeping it mounted fixes that.
   const containerStyle = isWeb && isTabRoute
-    ? ({ position: "fixed" as any, bottom: 0, left: 0, right: 0, zIndex: 200 } as const)
-    : ({ position: "absolute" as const, bottom, left: 0, right: 0, zIndex: 50 } as const);
+    ? ({
+        position: "fixed" as any,
+        bottom: 0,
+        left: 0,
+        right: 0,
+        zIndex: 200,
+        opacity: isHidden ? 0 : 1,
+      } as const)
+    : ({
+        position: "absolute" as const,
+        bottom,
+        left: 0,
+        right: 0,
+        zIndex: 50,
+        opacity: isHidden ? 0 : 1,
+      } as const);
 
   return (
-    <View pointerEvents="box-none" style={containerStyle}>
+    <View pointerEvents={isHidden ? "none" : "box-none"} style={containerStyle}>
       <MiniPlayer />
     </View>
   );
