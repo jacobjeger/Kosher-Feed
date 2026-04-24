@@ -241,10 +241,12 @@ export async function syncTATSpeakers(): Promise<{ created: number; linked: numb
     }
 
     if (matchedFeed) {
-      // Link existing feed to this TAT speaker
+      // Link existing feed to this TAT speaker. Do NOT touch sourceNetwork
+      // — merged feeds should keep their primary network (usually the RSS
+      // origin), otherwise the UI shows a misleading 'Torah Anytime' badge
+      // on podcasts whose main source is actually RSS.
       await storage.updateFeed(matchedFeed.id, {
         tatSpeakerId: speaker.id,
-        sourceNetwork: matchedFeed.sourceNetwork || "Torah Anytime",
       } as any);
       linked++;
       console.log(`TAT Sync: linked "${speakerName}" to existing feed "${matchedFeed.title}"`);
