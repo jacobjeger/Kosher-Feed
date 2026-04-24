@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from "react";
-import { View, Text, FlatList, ScrollView, Pressable, StyleSheet, RefreshControl, Platform, TextInput, Dimensions, NativeSyntheticEvent, NativeScrollEvent, InteractionManager } from "react-native";
+import { View, Text, FlatList, ScrollView, Pressable, StyleSheet, RefreshControl, Platform, TextInput, Dimensions, NativeSyntheticEvent, NativeScrollEvent, InteractionManager, useWindowDimensions } from "react-native";
 import FocusableView from "@/components/FocusableView";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -42,9 +42,22 @@ interface TrendingEpisode extends Episode {
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 const isTinyScreen = screenHeight <= 640;
-const CAROUSEL_WIDTH = Platform.OS === "web" ? Math.min(screenWidth - 40, 920) : screenWidth - 40;
-const CAROUSEL_HEIGHT = Platform.OS === "web" ? 280 : isTinyScreen ? 200 : 180;
 const AUTO_SCROLL_INTERVAL = 5000;
+
+// Width/height are computed at render via useCarouselDims() so resizing the
+// browser window actually re-layouts the carousel. The previous module-load
+// constant made the card span the full desktop viewport.
+function useCarouselDims() {
+  const { width, height } = useWindowDimensions();
+  if (Platform.OS === "web") {
+    // Cap at 720 on desktop so the carousel card doesn't become an
+    // awkwardly-stretched billboard. Leave native untouched.
+    const cardWidth = Math.min(width - 40, 720);
+    const cardHeight = width >= 768 ? 260 : 200;
+    return { cardWidth, cardHeight };
+  }
+  return { cardWidth: width - 40, cardHeight: height <= 640 ? 200 : 180 };
+}
 
 /**
  * Defers mounting children until after the first frame paints. Shows a
@@ -69,6 +82,7 @@ const FeaturedCarousel = React.memo(function FeaturedCarousel({ feeds, colors, a
   const activeIndexRef = useRef(0);
   const [activeIndex, setActiveIndex] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { cardWidth: CAROUSEL_WIDTH, cardHeight: CAROUSEL_HEIGHT } = useCarouselDims();
 
   const startAutoScroll = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -100,13 +114,13 @@ const FeaturedCarousel = React.memo(function FeaturedCarousel({ feeds, colors, a
   const renderItem = useCallback(({ item }: { item: Feed }) => (
     <FocusableView
       focusRadius={20}
-      style={({ pressed }) => [styles.carouselSlide, { opacity: pressed ? 0.95 : 1 }]}
+      style={({ pressed }) => [styles.carouselSlide, { width: CAROUSEL_WIDTH, height: CAROUSEL_HEIGHT, opacity: pressed ? 0.95 : 1 }]}
       onPress={() => { lightHaptic(); router.push(`/podcast/${item.id}`); }}
     >
       {item.imageUrl ? (
-        <Image source={{ uri: item.imageUrl }} style={styles.carouselImage} contentFit="cover" cachePolicy="memory-disk" transition={180} />
+        <Image source={{ uri: item.imageUrl }} style={[styles.carouselImage, { height: CAROUSEL_HEIGHT }]} contentFit="cover" cachePolicy="memory-disk" transition={180} />
       ) : (
-        <View style={[styles.carouselImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
+        <View style={[styles.carouselImage, { height: CAROUSEL_HEIGHT, backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="mic" size={56} color={colors.textSecondary} />
         </View>
       )}
@@ -127,8 +141,12 @@ const FeaturedCarousel = React.memo(function FeaturedCarousel({ feeds, colors, a
     </FocusableView>
   ), [colors]);
 
+  // Center the carousel on desktop web so the card doesn't hug the left edge.
+  const containerStyle: any = Platform.OS === "web"
+    ? [styles.carouselContainer, { maxWidth: CAROUSEL_WIDTH + 40, marginHorizontal: "auto", width: "100%" }]
+    : styles.carouselContainer;
   return (
-    <View style={styles.carouselContainer}>
+    <View style={containerStyle}>
       <FlatList
         ref={scrollRef}
         data={feeds}
@@ -761,8 +779,6 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   carouselSlide: {
-    width: CAROUSEL_WIDTH,
-    height: CAROUSEL_HEIGHT,
     borderRadius: 20,
     overflow: "hidden",
     position: "relative" as const,
@@ -770,7 +786,6 @@ const styles = StyleSheet.create({
   },
   carouselImage: {
     width: "100%" as any,
-    height: CAROUSEL_HEIGHT,
     alignItems: "center" as const,
     justifyContent: "center" as const,
   },
