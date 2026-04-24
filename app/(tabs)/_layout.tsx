@@ -6,7 +6,6 @@ import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useState, useEffect, useCallback } from "react";
 import Colors from "@/constants/colors";
-import MiniPlayer from "@/components/MiniPlayer";
 import { router } from "expo-router";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { setErrorContext } from "@/lib/error-logger";
@@ -250,15 +249,9 @@ export default function TabLayout() {
           }}
         />
       </Tabs>
-      {showTopNav ? (
-        <View style={webStyles.miniPlayerWeb}>
-          <MiniPlayer />
-        </View>
-      ) : (
-        <View style={{ position: "absolute", bottom: (isWeb ? 56 + 34 : (isIOS ? 80 : 56) + safeAreaInsets.bottom), left: 0, right: 0 }}>
-          <MiniPlayer />
-        </View>
-      )}
+      {/* MiniPlayer is rendered at the root via <MiniPlayerHost /> so it
+          appears on every screen (podcast detail, category, stats, etc.),
+          not just the 5 tab routes. */}
     </>
   );
 }
@@ -327,12 +320,5 @@ const webStyles = StyleSheet.create({
     alignItems: "center" as const,
     justifyContent: "center" as const,
     ...(Platform.OS === "web" ? { transition: "background-color 0.15s ease" as any, cursor: "pointer" as any } : {}),
-  },
-  miniPlayerWeb: {
-    position: "fixed" as any,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    zIndex: 200,
   },
 });

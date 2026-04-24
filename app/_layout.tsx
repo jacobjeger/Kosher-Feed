@@ -25,6 +25,7 @@ import { DeepLinkHandler } from "@/components/DeepLinkHandler";
 import { getNotificationData, setupForegroundNotificationHandler, setupPushNotificationChannels, registerPushToken } from "@/lib/push-notifications";
 import { addLog } from "@/lib/error-logger";
 import AnnouncementModal from "@/components/AnnouncementModal";
+import MiniPlayerHost from "@/components/MiniPlayerHost";
 import { RemoteConfigProvider } from "@/contexts/RemoteConfigContext";
 import { getDeviceId } from "@/lib/device-id";
 import { getApiUrl, apiRequest } from "@/lib/query-client";
@@ -258,6 +259,7 @@ export default function RootLayout() {
                         <OfflineBanner />
                         <DeepLinkHandler />
                         <RootLayoutNav initialRoute={initialRoute} />
+                        <MiniPlayerHost />
                         <AnnouncementModal
                           announcement={currentAnnouncement}
                           visible={announcementVisible}
