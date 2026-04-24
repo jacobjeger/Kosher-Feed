@@ -1290,11 +1290,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Admin: Toggle all TAT feeds active/inactive
+  // Admin: Toggle all TAT feeds active/inactive.
+  // When enabling: run syncTATSpeakers first so any speakers whose feed
+  // rows were deleted get recreated. Then set is_active=true on all
+  // TAT-only feeds (so the toggle is idempotent — click to enable and
+  // the full TAT catalog reappears even after the feeds were pruned).
   app.post("/api/admin/tat/toggle", adminAuth as any, async (req: Request, res: Response) => {
     try {
       const { enabled } = req.body;
       if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) required" });
+
+      let syncResult: { created: number; linked: number; total: number } | null = null;
+      if (enabled) {
+        // Re-sync first so missing TAT-only feeds are recreated.
+        try {
+          syncResult = await syncTATSpeakers();
+          console.log(`TAT toggle: sync created=${syncResult.created} linked=${syncResult.linked} total=${syncResult.total}`);
+        } catch (e: any) {
+          console.error("TAT toggle: sync failed:", e.message);
+        }
+      }
+
       const allFeeds = await storage.getAllFeeds();
       const tatOnlyFeeds = allFeeds.filter(f => f.tatSpeakerId != null && f.rssUrl.startsWith("tat://"));
       console.log(`TAT toggle: enabled=${enabled}, found ${tatOnlyFeeds.length} TAT-only feeds`);
@@ -1306,7 +1322,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       console.log(`TAT toggle: updated ${updated} feeds`);
-      res.json({ updated, enabled, totalFound: tatOnlyFeeds.length });
+      res.json({ updated, enabled, totalFound: tatOnlyFeeds.length, sync: syncResult });
     } catch (e: any) {
       console.error("TAT toggle error:", e);
       publicError(res, e);
