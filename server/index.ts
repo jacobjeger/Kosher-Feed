@@ -559,17 +559,48 @@ function configureExpoAndLanding(app: express.Application) {
     res.send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\n\nSitemap: ${protocol}://${host}/sitemap.xml\n`);
   });
 
-  // Serve favicon from assets
+  // Serve favicon — real .ico (multi-size) at /favicon.ico, PNG variants at
+  // /favicon.png and /apple-touch-icon.png for browsers/devices that prefer
+  // those. All come from assets/images/*.
   app.get("/favicon.ico", (_req: Request, res: Response) => {
-    const faviconPath = path.resolve(process.cwd(), "assets", "images", "favicon.png");
-    if (fs.existsSync(faviconPath)) {
+    const icoPath = path.resolve(process.cwd(), "assets", "images", "favicon.ico");
+    const pngPath = path.resolve(process.cwd(), "assets", "images", "favicon.png");
+    if (fs.existsSync(icoPath)) {
+      res.setHeader("Content-Type", "image/x-icon");
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.sendFile(icoPath);
+    } else if (fs.existsSync(pngPath)) {
       res.setHeader("Content-Type", "image/png");
       res.setHeader("Cache-Control", "public, max-age=86400");
-      res.sendFile(faviconPath);
+      res.sendFile(pngPath);
     } else {
       res.status(204).end();
     }
   });
+
+  app.get("/favicon.png", (_req: Request, res: Response) => {
+    const p = path.resolve(process.cwd(), "assets", "images", "favicon.png");
+    if (fs.existsSync(p)) {
+      res.setHeader("Content-Type", "image/png");
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.sendFile(p);
+    } else {
+      res.status(404).end();
+    }
+  });
+
+  app.get("/apple-touch-icon.png", (_req: Request, res: Response) => {
+    const p = path.resolve(process.cwd(), "assets", "images", "apple-touch-icon.png");
+    if (fs.existsSync(p)) {
+      res.setHeader("Content-Type", "image/png");
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.sendFile(p);
+    } else {
+      res.status(404).end();
+    }
+  });
+  // iOS also probes the unsuffixed name + a precomposed variant.
+  app.get("/apple-touch-icon-precomposed.png", (_req: Request, res: Response) => res.redirect(301, "/apple-touch-icon.png"));
 
   app.use("/assets", (req: Request, res: Response, next: NextFunction) => {
     const localPath = path.resolve(process.cwd(), "assets", req.path);
