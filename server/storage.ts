@@ -536,19 +536,29 @@ export async function getAnalytics() {
     .groupBy(sql`DATE(${episodeListens.listenedAt})`)
     .orderBy(sql`DATE(${episodeListens.listenedAt})`);
 
-  // Active-user totals across rolling windows
-  const [dauTodayRow] = await db
-    .select({ count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})` })
-    .from(episodeListens)
-    .where(sql`${episodeListens.listenedAt} > ${oneDayAgo}`);
-  const [dauWeekRow] = await db
-    .select({ count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})` })
-    .from(episodeListens)
-    .where(sql`${episodeListens.listenedAt} > ${sevenDaysAgo}`);
-  const [dauMonthRow] = await db
-    .select({ count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})` })
-    .from(episodeListens)
-    .where(sql`${episodeListens.listenedAt} > ${thirtyDaysAgo}`);
+  // Active-user totals across rolling windows + app-open and growth metrics.
+  const [
+    [dauTodayRow], [dauWeekRow], [dauMonthRow],
+    [appOpens24Row], [appOpens7Row], [appOpens30Row],
+    [newUsers24Row], [newUsers7Row], [newUsers30Row],
+    [listenTime7Row], [listenTime30Row], [listenTimeAllRow],
+    [completedAllRow], [completedRecentRow],
+  ] = await Promise.all([
+    db.select({ count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})` }).from(episodeListens).where(sql`${episodeListens.listenedAt} > ${oneDayAgo}`),
+    db.select({ count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})` }).from(episodeListens).where(sql`${episodeListens.listenedAt} > ${sevenDaysAgo}`),
+    db.select({ count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})` }).from(episodeListens).where(sql`${episodeListens.listenedAt} > ${thirtyDaysAgo}`),
+    db.select({ count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.lastSeenAt} > ${oneDayAgo}`),
+    db.select({ count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.lastSeenAt} > ${sevenDaysAgo}`),
+    db.select({ count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.lastSeenAt} > ${thirtyDaysAgo}`),
+    db.select({ count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.createdAt} > ${oneDayAgo}`),
+    db.select({ count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.createdAt} > ${sevenDaysAgo}`),
+    db.select({ count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.createdAt} > ${thirtyDaysAgo}`),
+    db.select({ total: sql<number>`COALESCE(SUM(${episodeListens.durationListenedMs}), 0)` }).from(episodeListens).where(sql`${episodeListens.listenedAt} > ${sevenDaysAgo}`),
+    db.select({ total: sql<number>`COALESCE(SUM(${episodeListens.durationListenedMs}), 0)` }).from(episodeListens).where(sql`${episodeListens.listenedAt} > ${thirtyDaysAgo}`),
+    db.select({ total: sql<number>`COALESCE(SUM(${episodeListens.durationListenedMs}), 0)` }).from(episodeListens),
+    db.select({ count: count() }).from(playbackPositions).where(eq(playbackPositions.completed, true)),
+    db.select({ count: count() }).from(playbackPositions).where(and(eq(playbackPositions.completed, true), sql`${playbackPositions.updatedAt} > ${sevenDaysAgo}`)),
+  ]);
 
   const topEpisodes = await db
     .select({
@@ -578,6 +588,17 @@ export async function getAnalytics() {
     dauToday: Number(dauTodayRow?.count || 0),
     dauLast7: Number(dauWeekRow?.count || 0),
     dauLast30: Number(dauMonthRow?.count || 0),
+    appOpensToday: Number(appOpens24Row?.count || 0),
+    appOpensLast7: Number(appOpens7Row?.count || 0),
+    appOpensLast30: Number(appOpens30Row?.count || 0),
+    newUsersToday: Number(newUsers24Row?.count || 0),
+    newUsersLast7: Number(newUsers7Row?.count || 0),
+    newUsersLast30: Number(newUsers30Row?.count || 0),
+    listeningTimeMsLast7: Number(listenTime7Row?.total || 0),
+    listeningTimeMsLast30: Number(listenTime30Row?.total || 0),
+    listeningTimeMsTotal: Number(listenTimeAllRow?.total || 0),
+    completedEpisodesTotal: Number(completedAllRow?.count || 0),
+    completedEpisodesLast7: Number(completedRecentRow?.count || 0),
     topEpisodes: topEpisodes.map(e => ({ ...e, listenCount: Number(e.listenCount) })),
   };
 }

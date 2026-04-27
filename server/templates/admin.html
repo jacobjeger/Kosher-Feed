@@ -1109,16 +1109,54 @@ function renderStats() {
   const avgListenTimeMin = Math.round(avgListenTimeMs / 60000);
   const totalFavorites = d.feedStats ? d.feedStats.reduce((sum, f) => sum, 0) : 0;
   
+  const totalHoursAll = ((d.listeningTimeMsTotal || enhanced.totalListeningTimeMs || 0) / 3600000);
+  const hoursLast7 = ((d.listeningTimeMsLast7 || 0) / 3600000);
+  const hoursLast30 = ((d.listeningTimeMsLast30 || 0) / 3600000);
+  const playRate7 = (d.appOpensLast7 ? Math.round((d.dauLast7 / d.appOpensLast7) * 100) : 0);
+  const stickiness = (d.dauLast30 ? Math.round((d.dauToday / d.dauLast30) * 100) : 0);
+  const listensPerActiveUser7 = (d.dauLast7 ? (d.recentListens / d.dauLast7).toFixed(1) : '0');
+  const minutesPerActiveUser7 = (d.dauLast7 ? Math.round((d.listeningTimeMsLast7 / 60000) / d.dauLast7) : 0);
+
   document.getElementById('statsArea').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-value">${(d.dauLast7 || 0).toLocaleString()}</div>
+      <div class="stat-label">Active Users (7d)</div>
+      <div class="stat-sub">${(d.dauToday || 0).toLocaleString()} today &middot; ${(d.dauLast30 || 0).toLocaleString()} in 30d</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${(d.appOpensLast7 || 0).toLocaleString()}</div>
+      <div class="stat-label">App Opens (7d)</div>
+      <div class="stat-sub">${(d.appOpensToday || 0).toLocaleString()} today &middot; ${(d.appOpensLast30 || 0).toLocaleString()} in 30d</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${(d.newUsersLast7 || 0).toLocaleString()}</div>
+      <div class="stat-label">New Users (7d)</div>
+      <div class="stat-sub">${(d.newUsersToday || 0).toLocaleString()} today &middot; ${(d.newUsersLast30 || 0).toLocaleString()} in 30d</div>
+    </div>
     <div class="stat-card">
       <div class="stat-value">${d.totalListens.toLocaleString()}</div>
       <div class="stat-label">Total Listens</div>
       <div class="stat-sub">${d.recentListens.toLocaleString()} this week</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value">${(d.dauLast7 || 0).toLocaleString()}</div>
-      <div class="stat-label">Active Users (7d)</div>
-      <div class="stat-sub">${(d.dauToday || 0).toLocaleString()} today &middot; ${(d.dauLast30 || 0).toLocaleString()} in 30d</div>
+      <div class="stat-value">${hoursLast7.toFixed(0)}h</div>
+      <div class="stat-label">Listening Time (7d)</div>
+      <div class="stat-sub">${hoursLast30.toFixed(0)}h in 30d &middot; ${totalHoursAll.toFixed(0)}h all-time</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${listensPerActiveUser7}</div>
+      <div class="stat-label">Listens / Active User (7d)</div>
+      <div class="stat-sub">${minutesPerActiveUser7} min avg per user</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${playRate7}%</div>
+      <div class="stat-label">Play Rate (7d)</div>
+      <div class="stat-sub">opened &amp; played at least once</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${stickiness}%</div>
+      <div class="stat-label">Stickiness (DAU/MAU)</div>
+      <div class="stat-sub">today &divide; 30-day actives</div>
     </div>
     <div class="stat-card">
       <div class="stat-value">${d.uniqueDevices.toLocaleString()}</div>
@@ -1126,27 +1164,23 @@ function renderStats() {
       <div class="stat-sub">${d.totalSubscriptions.toLocaleString()} subscriptions</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value">${d.activeFeeds}</div>
-      <div class="stat-label">Active Feeds</div>
-      <div class="stat-sub">${d.totalFeeds} total</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-value">${d.totalEpisodes.toLocaleString()}</div>
-      <div class="stat-label">Total Episodes</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-value">${d.totalCategories}</div>
-      <div class="stat-label">Categories</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-value">${enhanced.completedEpisodes ? enhanced.completedEpisodes.toLocaleString() : '0'}</div>
+      <div class="stat-value">${(d.completedEpisodesTotal || enhanced.completedEpisodes || 0).toLocaleString()}</div>
       <div class="stat-label">Completed Episodes</div>
-      <div class="stat-sub">${enhanced.totalListeningTimeMs ? (enhanced.totalListeningTimeMs / 3600000).toFixed(0) + ' hours total' : 'No data'}</div>
+      <div class="stat-sub">${(d.completedEpisodesLast7 || 0).toLocaleString()} in last 7d</div>
     </div>
     <div class="stat-card">
       <div class="stat-value">${avgListenTimeMin}</div>
       <div class="stat-label">Avg Listen Time</div>
       <div class="stat-sub">minutes per session</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${d.activeFeeds}</div>
+      <div class="stat-label">Active Feeds</div>
+      <div class="stat-sub">${d.totalFeeds} total &middot; ${d.totalCategories} categories</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${d.totalEpisodes.toLocaleString()}</div>
+      <div class="stat-label">Total Episodes</div>
     </div>
   `;
 }
