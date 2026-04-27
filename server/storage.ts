@@ -2208,6 +2208,76 @@ export async function getDeviceAnalytics(): Promise<{
   };
 }
 
+export async function diagnoseListenPattern() {
+  // Total rows + zero-duration rows + duration sum
+  const [tot] = await db.select({
+    rows: count(),
+    zeroRows: sql<number>`SUM(CASE WHEN COALESCE(${episodeListens.durationListenedMs}, 0) = 0 THEN 1 ELSE 0 END)`,
+    totalMs: sql<number>`COALESCE(SUM(${episodeListens.durationListenedMs}), 0)`,
+    distinctDeviceEpisode: sql<number>`COUNT(DISTINCT (${episodeListens.deviceId}, ${episodeListens.episodeId}))`,
+  }).from(episodeListens);
+
+  // Distribution of rows per (device, episode) pair
+  const buckets = await db.execute(sql`
+    SELECT bucket, COUNT(*) AS pairs FROM (
+      SELECT CASE
+        WHEN n = 1 THEN '1'
+        WHEN n BETWEEN 2 AND 3 THEN '2-3'
+        WHEN n BETWEEN 4 AND 6 THEN '4-6'
+        WHEN n BETWEEN 7 AND 10 THEN '7-10'
+        ELSE '11+'
+      END AS bucket
+      FROM (
+        SELECT ${episodeListens.deviceId} AS d, ${episodeListens.episodeId} AS e, COUNT(*) AS n
+        FROM ${episodeListens}
+        GROUP BY ${episodeListens.deviceId}, ${episodeListens.episodeId}
+      ) sub
+    ) tagged
+    GROUP BY bucket
+    ORDER BY bucket
+  `);
+
+  // Top 10 (device, episode) pairs by row count, with span and total duration
+  const topDupes = await db.execute(sql`
+    SELECT
+      ${episodeListens.deviceId} AS "deviceId",
+      ${episodeListens.episodeId} AS "episodeId",
+      COUNT(*) AS rows,
+      MIN(${episodeListens.listenedAt}) AS first_at,
+      MAX(${episodeListens.listenedAt}) AS last_at,
+      EXTRACT(EPOCH FROM (MAX(${episodeListens.listenedAt}) - MIN(${episodeListens.listenedAt}))) AS span_sec,
+      COALESCE(SUM(${episodeListens.durationListenedMs}), 0) AS total_ms
+    FROM ${episodeListens}
+    GROUP BY ${episodeListens.deviceId}, ${episodeListens.episodeId}
+    HAVING COUNT(*) > 1
+    ORDER BY rows DESC
+    LIMIT 10
+  `);
+
+  // Inter-row gap signature for a sample heavy pair: are rows ~60s apart?
+  const sampleRows = topDupes.rows && topDupes.rows[0]
+    ? await db.execute(sql`
+        SELECT id, ${episodeListens.listenedAt} AS at, ${episodeListens.durationListenedMs} AS dur
+        FROM ${episodeListens}
+        WHERE ${episodeListens.deviceId} = ${(topDupes.rows[0] as any).deviceId}
+          AND ${episodeListens.episodeId} = ${(topDupes.rows[0] as any).episodeId}
+        ORDER BY ${episodeListens.listenedAt}
+      `)
+    : { rows: [] };
+
+  return {
+    totals: {
+      rows: Number(tot.rows),
+      zeroDurationRows: Number(tot.zeroRows),
+      totalMs: Number(tot.totalMs),
+      distinctDeviceEpisodePairs: Number(tot.distinctDeviceEpisode),
+    },
+    rowsPerPair: buckets.rows,
+    topDupes: topDupes.rows,
+    sampleHeavyPairTimeline: (sampleRows as any).rows,
+  };
+}
+
 export async function listUsers(opts: {
   search?: string;
   sort?: "lastSeen" | "firstSeen" | "listens" | "minutes";
