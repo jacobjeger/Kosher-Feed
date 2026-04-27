@@ -2003,16 +2003,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // TEMP diagnostic: examine episode_listens duplication pattern.
-  app.get("/api/admin/diagnostics/listens", adminAuth as any, async (_req: Request, res: Response) => {
-    try {
-      const data = await storage.diagnoseListenPattern();
-      res.json(data);
-    } catch (e: any) {
-      publicError(res, e);
-    }
-  });
-
   // Admin: Paginated, searchable user list
   app.get("/api/admin/users", adminAuth as any, async (req: Request, res: Response) => {
     try {
