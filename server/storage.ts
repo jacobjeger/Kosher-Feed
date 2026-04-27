@@ -984,7 +984,30 @@ export async function markNotificationSent(id: string): Promise<void> {
 }
 
 export async function recordListenWithDuration(episodeId: string, deviceId: string, durationMs: number): Promise<void> {
-  await db.insert(episodeListens).values({ episodeId, deviceId, durationListenedMs: durationMs });
+  // Progress pings fire every ~60s while playing. We must NOT insert a new row each
+  // time — that would inflate listen counts ~10x for a typical session. Instead,
+  // accumulate onto the most recent listen for this (episode, device) within a
+  // 4-hour session window. Fall back to insert if no recent row exists.
+  if (durationMs <= 0) return;
+  const sessionStart = new Date(Date.now() - 4 * 60 * 60 * 1000);
+  const [recent] = await db
+    .select({ id: episodeListens.id, durationListenedMs: episodeListens.durationListenedMs })
+    .from(episodeListens)
+    .where(and(
+      eq(episodeListens.episodeId, episodeId),
+      eq(episodeListens.deviceId, deviceId),
+      sql`${episodeListens.listenedAt} > ${sessionStart}`,
+    ))
+    .orderBy(desc(episodeListens.listenedAt))
+    .limit(1);
+
+  if (recent) {
+    await db.update(episodeListens)
+      .set({ durationListenedMs: (recent.durationListenedMs || 0) + durationMs })
+      .where(eq(episodeListens.id, recent.id));
+  } else {
+    await db.insert(episodeListens).values({ episodeId, deviceId, durationListenedMs: durationMs });
+  }
 }
 
 export async function getEnhancedAnalytics() {
