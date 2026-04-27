@@ -2003,6 +2003,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin: Paginated, searchable user list
+  app.get("/api/admin/users", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const search = typeof req.query.search === "string" ? req.query.search : "";
+      const sort = (typeof req.query.sort === "string" ? req.query.sort : "lastSeen") as any;
+      const limit = req.query.limit ? Math.min(parseInt(req.query.limit as string, 10) || 50, 200) : 50;
+      const offset = req.query.offset ? Math.max(parseInt(req.query.offset as string, 10) || 0, 0) : 0;
+      const data = await storage.listUsers({ search, sort, limit, offset });
+      res.json(data);
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
   // Admin: Device Usage Stats for a specific device
   app.get("/api/admin/device/:deviceId", adminAuth as any, async (req: Request, res: Response) => {
     try {

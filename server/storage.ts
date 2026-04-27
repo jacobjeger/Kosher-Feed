@@ -512,15 +512,43 @@ export async function getAnalytics() {
     subscriberCount: subMap.get(f.feedId) || 0,
   }));
 
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
   const dailyListens = await db
     .select({
       day: sql<string>`DATE(${episodeListens.listenedAt})`,
       count: count(),
     })
     .from(episodeListens)
-    .where(sql`${episodeListens.listenedAt} > ${new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)}`)
+    .where(sql`${episodeListens.listenedAt} > ${thirtyDaysAgo}`)
     .groupBy(sql`DATE(${episodeListens.listenedAt})`)
     .orderBy(sql`DATE(${episodeListens.listenedAt})`);
+
+  // Daily Active Users — distinct deviceId per day from listen events, 30-day window
+  const dailyActiveDevices = await db
+    .select({
+      day: sql<string>`DATE(${episodeListens.listenedAt})`,
+      count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})`,
+    })
+    .from(episodeListens)
+    .where(sql`${episodeListens.listenedAt} > ${thirtyDaysAgo}`)
+    .groupBy(sql`DATE(${episodeListens.listenedAt})`)
+    .orderBy(sql`DATE(${episodeListens.listenedAt})`);
+
+  // Active-user totals across rolling windows
+  const [dauTodayRow] = await db
+    .select({ count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})` })
+    .from(episodeListens)
+    .where(sql`${episodeListens.listenedAt} > ${oneDayAgo}`);
+  const [dauWeekRow] = await db
+    .select({ count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})` })
+    .from(episodeListens)
+    .where(sql`${episodeListens.listenedAt} > ${sevenDaysAgo}`);
+  const [dauMonthRow] = await db
+    .select({ count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})` })
+    .from(episodeListens)
+    .where(sql`${episodeListens.listenedAt} > ${thirtyDaysAgo}`);
 
   const topEpisodes = await db
     .select({
@@ -546,6 +574,10 @@ export async function getAnalytics() {
     totalSubscriptions: Number(subscriptionCount.count),
     feedStats: enrichedFeedStats,
     dailyListens: dailyListens.map(d => ({ day: d.day, count: Number(d.count) })),
+    dailyActiveDevices: dailyActiveDevices.map(d => ({ day: d.day, count: Number(d.count) })),
+    dauToday: Number(dauTodayRow?.count || 0),
+    dauLast7: Number(dauWeekRow?.count || 0),
+    dauLast30: Number(dauMonthRow?.count || 0),
     topEpisodes: topEpisodes.map(e => ({ ...e, listenCount: Number(e.listenCount) })),
   };
 }
@@ -2151,6 +2183,99 @@ export async function getDeviceAnalytics(): Promise<{
     newUsersThisWeek: Number(newWeek.count),
     newUsersThisMonth: Number(newMonth.count),
   };
+}
+
+export async function listUsers(opts: {
+  search?: string;
+  sort?: "lastSeen" | "firstSeen" | "listens" | "minutes";
+  limit?: number;
+  offset?: number;
+}): Promise<{
+  total: number;
+  users: Array<{
+    deviceId: string;
+    platform: string | null;
+    deviceModel: string | null;
+    appVersion: string | null;
+    country: string | null;
+    city: string | null;
+    lastSeenAt: Date;
+    createdAt: Date;
+    totalListens: number;
+    totalMinutes: number;
+    subscribedFeeds: number;
+  }>;
+}> {
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+  const offset = Math.max(opts.offset ?? 0, 0);
+  const search = (opts.search || "").trim();
+  const sort = opts.sort || "lastSeen";
+
+  // Per-device listen aggregates
+  const listenAgg = await db
+    .select({
+      deviceId: episodeListens.deviceId,
+      listens: count(),
+      durationMs: sql<number>`COALESCE(SUM(${episodeListens.durationListenedMs}), 0)`,
+    })
+    .from(episodeListens)
+    .groupBy(episodeListens.deviceId);
+  const listenMap = new Map(listenAgg.map(r => [r.deviceId, { listens: Number(r.listens), durationMs: Number(r.durationMs) }]));
+
+  // Per-device subscription counts
+  const subAgg = await db
+    .select({ deviceId: subscriptions.deviceId, c: count() })
+    .from(subscriptions)
+    .groupBy(subscriptions.deviceId);
+  const subMap = new Map(subAgg.map(r => [r.deviceId, Number(r.c)]));
+
+  // Filter device profiles by search
+  const filter = search
+    ? sql`(
+        ${deviceProfiles.deviceId} ILIKE ${"%" + search + "%"} OR
+        COALESCE(${deviceProfiles.deviceModel}, '') ILIKE ${"%" + search + "%"} OR
+        COALESCE(${deviceProfiles.country}, '') ILIKE ${"%" + search + "%"} OR
+        COALESCE(${deviceProfiles.city}, '') ILIKE ${"%" + search + "%"} OR
+        COALESCE(${deviceProfiles.platform}, '') ILIKE ${"%" + search + "%"} OR
+        COALESCE(${deviceProfiles.appVersion}, '') ILIKE ${"%" + search + "%"}
+      )`
+    : sql`TRUE`;
+
+  const [{ count: totalCount }] = await db.select({ count: count() }).from(deviceProfiles).where(filter);
+
+  // For listens/minutes sort we need to sort in JS after merging — fetch a wider window.
+  // For lastSeen / firstSeen we can sort + paginate in SQL.
+  const needsJsSort = sort === "listens" || sort === "minutes";
+  const profilesQuery = db.select().from(deviceProfiles).where(filter);
+  const profiles = needsJsSort
+    ? await profilesQuery.orderBy(desc(deviceProfiles.lastSeenAt))
+    : await profilesQuery.orderBy(sort === "firstSeen" ? desc(deviceProfiles.createdAt) : desc(deviceProfiles.lastSeenAt)).limit(limit).offset(offset);
+
+  let merged = profiles.map(p => {
+    const l = listenMap.get(p.deviceId) || { listens: 0, durationMs: 0 };
+    return {
+      deviceId: p.deviceId,
+      platform: p.platform,
+      deviceModel: p.deviceModel,
+      appVersion: p.appVersion,
+      country: p.country,
+      city: p.city,
+      lastSeenAt: p.lastSeenAt,
+      createdAt: p.createdAt,
+      totalListens: l.listens,
+      totalMinutes: Math.round(l.durationMs / 60000),
+      subscribedFeeds: subMap.get(p.deviceId) || 0,
+    };
+  });
+
+  if (needsJsSort) {
+    merged.sort((a, b) =>
+      sort === "listens" ? b.totalListens - a.totalListens : b.totalMinutes - a.totalMinutes
+    );
+    merged = merged.slice(offset, offset + limit);
+  }
+
+  return { total: Number(totalCount), users: merged };
 }
 
 // Conversations & Messages

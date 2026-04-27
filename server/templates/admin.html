@@ -196,6 +196,7 @@
 
     <div class="tabs">
       <button class="tab active" onclick="switchTab('analytics', this)">Analytics</button>
+      <button class="tab" onclick="switchTab('users', this)">Users</button>
       <button class="tab" onclick="switchTab('feeds', this)">Feeds</button>
       <button class="tab" onclick="switchTab('categories', this)">Categories</button>
       <button class="tab" onclick="switchTab('speakers', this)">Speakers</button>
@@ -222,6 +223,13 @@
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
         <div class="card" style="grid-column:1/3;">
           <div class="card-header">
+            <h2>Daily Active Users (Last 30 Days)</h2>
+          </div>
+          <div id="dauChart" class="chart-container"></div>
+        </div>
+
+        <div class="card" style="grid-column:1/3;">
+          <div class="card-header">
             <h2>Listens (Last 30 Days)</h2>
           </div>
           <div id="listenChart" class="chart-container"></div>
@@ -236,7 +244,7 @@
 
         <div class="card">
           <div class="card-header">
-            <h2>Feed Performance</h2>
+            <h2>Top Feeds</h2>
           </div>
           <div id="feedPerformance" style="max-height:400px;overflow-y:auto;"></div>
         </div>
@@ -283,6 +291,29 @@
           <div id="websiteReferrers" style="background:#0f172a;border-radius:10px;padding:14px;"></div>
           <div id="websiteDeviceTypes" style="background:#0f172a;border-radius:10px;padding:14px;"></div>
           <div id="websiteCountries" style="background:#0f172a;border-radius:10px;padding:14px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="usersTab" class="hidden">
+      <div class="card">
+        <div class="card-header"><h2>Users</h2><div id="usersCount" style="color:#64748b;font-size:13px;"></div></div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+          <input type="text" id="userSearchInput" placeholder="Search by device id, model, country, city, platform, app version..." oninput="debounce('userSearch', () => { userListPage = 0; loadUsers(); }, 300)" style="flex:1;padding:10px 14px;">
+          <select id="userSortSelect" onchange="userListPage = 0; loadUsers();" style="width:auto;padding:10px 14px;font-size:13px;">
+            <option value="lastSeen">Sort: Last Seen</option>
+            <option value="firstSeen">Sort: First Seen</option>
+            <option value="listens">Sort: Most Listens</option>
+            <option value="minutes">Sort: Most Minutes</option>
+          </select>
+        </div>
+        <div id="usersTableArea" style="overflow-x:auto;">
+          <p style="color:#64748b;text-align:center;padding:40px;">Loading users...</p>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;">
+          <button class="btn btn-secondary btn-sm" onclick="userListPage = Math.max(0, userListPage - 1); loadUsers();" id="usersPrevBtn">Previous</button>
+          <span id="usersPageInfo" style="color:#64748b;font-size:13px;"></span>
+          <button class="btn btn-secondary btn-sm" onclick="userListPage += 1; loadUsers();" id="usersNextBtn">Next</button>
         </div>
       </div>
     </div>
@@ -973,6 +1004,7 @@ async function loadAnalytics() {
     analyticsData = base;
     if (enhanced) analyticsData.enhanced = enhanced;
     renderStats();
+    renderDauChart();
     renderListenChart();
     renderTopEpisodes();
     renderFeedPerformance();
@@ -1084,8 +1116,13 @@ function renderStats() {
       <div class="stat-sub">${d.recentListens.toLocaleString()} this week</div>
     </div>
     <div class="stat-card">
+      <div class="stat-value">${(d.dauLast7 || 0).toLocaleString()}</div>
+      <div class="stat-label">Active Users (7d)</div>
+      <div class="stat-sub">${(d.dauToday || 0).toLocaleString()} today &middot; ${(d.dauLast30 || 0).toLocaleString()} in 30d</div>
+    </div>
+    <div class="stat-card">
       <div class="stat-value">${d.uniqueDevices.toLocaleString()}</div>
-      <div class="stat-label">Active Devices</div>
+      <div class="stat-label">Subscribed Devices</div>
       <div class="stat-sub">${d.totalSubscriptions.toLocaleString()} subscriptions</div>
     </div>
     <div class="stat-card">
@@ -1110,6 +1147,34 @@ function renderStats() {
       <div class="stat-value">${avgListenTimeMin}</div>
       <div class="stat-label">Avg Listen Time</div>
       <div class="stat-sub">minutes per session</div>
+    </div>
+  `;
+}
+
+function renderDauChart() {
+  if (!analyticsData) return;
+  const container = document.getElementById('dauChart');
+  if (!container) return;
+  const data = analyticsData.dailyActiveDevices || [];
+
+  if (data.length === 0) {
+    container.innerHTML = '<p style="color:#64748b;text-align:center;padding:40px;">No active-user data yet.</p>';
+    return;
+  }
+
+  const maxCount = Math.max(...data.map(d => d.count), 1);
+  const bars = data.map(d => {
+    const height = Math.max((d.count / maxCount) * 100, 2);
+    const date = new Date(d.day);
+    const label = `${date.getMonth()+1}/${date.getDate()}`;
+    return `<div class="chart-bar" style="height:${height}%;background:#10b981;" data-tooltip="${d.count} active users on ${label}"></div>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="chart-bar-container">${bars}</div>
+    <div style="display:flex;justify-content:space-between;padding:0 4px;">
+      <span class="chart-label">${formatDate(data[0].day)}</span>
+      <span class="chart-label">${formatDate(data[data.length-1].day)}</span>
     </div>
   `;
 }
@@ -1163,20 +1228,23 @@ function renderTopEpisodes() {
 function renderFeedPerformance() {
   if (!analyticsData) return;
   const container = document.getElementById('feedPerformance');
-  const stats = analyticsData.feedStats;
+  const stats = (analyticsData.feedStats || [])
+    .slice()
+    .sort((a, b) => (b.listenCount - a.listenCount) || (b.subscriberCount - a.subscriberCount));
 
   if (stats.length === 0) {
     container.innerHTML = '<p style="color:#64748b;text-align:center;padding:20px;">No feeds added yet.</p>';
     return;
   }
 
-  container.innerHTML = '<table class="feed-table"><thead><tr><th>Feed</th><th>Episodes</th><th>Listens</th><th>Subscribers</th></tr></thead><tbody>' +
-    stats.map(f => `
+  container.innerHTML = '<table class="feed-table"><thead><tr><th>#</th><th>Feed</th><th>Listens</th><th>Subscribers</th><th>Episodes</th></tr></thead><tbody>' +
+    stats.map((f, i) => `
       <tr>
+        <td style="color:#64748b;font-weight:600;">${i + 1}</td>
         <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(f.title)}">${esc(f.title)}</td>
-        <td>${f.episodeCount}</td>
-        <td>${f.listenCount}</td>
+        <td style="font-weight:600;color:#3b82f6;">${f.listenCount}</td>
         <td>${f.subscriberCount}</td>
+        <td style="color:#64748b;">${f.episodeCount}</td>
       </tr>
     `).join('') + '</tbody></table>';
 }
@@ -2101,6 +2169,7 @@ function switchTab(tab, btn) {
   if (_activeTab) { const prev = document.getElementById(_activeTab + 'Tab'); if (prev) prev.classList.add('hidden'); }
   const next = document.getElementById(tab + 'Tab'); if (next) next.classList.remove('hidden');
   _activeTab = tab;
+  if (tab === 'users') loadUsers();
   if (tab === 'speakers') loadSpeakers();
   if (tab === 'errors') { loadErrorHealth(); loadGroupedErrors(); loadErrorReports(); }
   if (tab === 'feedback') loadFeedback();
@@ -4460,6 +4529,61 @@ async function loadSourceBreakdown() {
   }
 }
 
+let userListPage = 0;
+const USER_PAGE_SIZE = 50;
+
+async function loadUsers() {
+  const search = document.getElementById('userSearchInput')?.value || '';
+  const sort = document.getElementById('userSortSelect')?.value || 'lastSeen';
+  const tbl = document.getElementById('usersTableArea');
+  if (!tbl) return;
+  tbl.innerHTML = '<p style="color:#64748b;text-align:center;padding:40px;">Loading users...</p>';
+  try {
+    const offset = userListPage * USER_PAGE_SIZE;
+    const data = await api(`/api/admin/users?search=${encodeURIComponent(search)}&sort=${encodeURIComponent(sort)}&limit=${USER_PAGE_SIZE}&offset=${offset}`);
+    const users = data.users || [];
+    const total = data.total || 0;
+    document.getElementById('usersCount').textContent = total.toLocaleString() + ' total';
+
+    if (users.length === 0) {
+      tbl.innerHTML = '<p style="color:#64748b;text-align:center;padding:40px;">No users found.</p>';
+    } else {
+      tbl.innerHTML = '<table class="feed-table"><thead><tr>' +
+        '<th>Device</th><th>Platform</th><th>Location</th><th>App</th>' +
+        '<th style="text-align:right;">Listens</th><th style="text-align:right;">Minutes</th>' +
+        '<th style="text-align:right;">Feeds</th><th>Last Seen</th><th>First Seen</th>' +
+        '</tr></thead><tbody>' +
+        users.map(function(u) {
+          const loc = [u.city, u.country].filter(Boolean).join(', ') || '—';
+          const dev = u.deviceModel || u.deviceId.substring(0, 12) + '…';
+          const plat = u.platform || '—';
+          const app = u.appVersion ? 'v' + u.appVersion : '—';
+          const last = u.lastSeenAt ? new Date(u.lastSeenAt).toLocaleDateString() : '—';
+          const first = u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—';
+          return '<tr style="cursor:pointer;" onclick="showDeviceProfile(\'' + escJs(u.deviceId) + '\')">' +
+            '<td style="font-weight:600;color:#e2e8f0;" title="' + esc(u.deviceId) + '">' + esc(dev) + '</td>' +
+            '<td>' + esc(plat) + '</td>' +
+            '<td>' + esc(loc) + '</td>' +
+            '<td style="color:#94a3b8;">' + esc(app) + '</td>' +
+            '<td style="text-align:right;font-weight:600;color:#3b82f6;">' + u.totalListens + '</td>' +
+            '<td style="text-align:right;color:#10b981;">' + u.totalMinutes + '</td>' +
+            '<td style="text-align:right;">' + u.subscribedFeeds + '</td>' +
+            '<td style="color:#94a3b8;font-size:12px;">' + esc(last) + '</td>' +
+            '<td style="color:#94a3b8;font-size:12px;">' + esc(first) + '</td>' +
+            '</tr>';
+        }).join('') + '</tbody></table>';
+    }
+
+    const start = users.length ? (userListPage * USER_PAGE_SIZE + 1) : 0;
+    const end = userListPage * USER_PAGE_SIZE + users.length;
+    document.getElementById('usersPageInfo').textContent = total ? `${start}-${end} of ${total.toLocaleString()}` : '';
+    document.getElementById('usersPrevBtn').disabled = userListPage === 0;
+    document.getElementById('usersNextBtn').disabled = end >= total;
+  } catch (e) {
+    tbl.innerHTML = '<p style="color:#ef4444;text-align:center;padding:40px;">Failed to load users: ' + esc(e.message) + '</p>';
+  }
+}
+
 async function loadDeviceAnalytics() {
   try {
     const data = await api('/api/admin/analytics/devices');
@@ -4493,7 +4617,7 @@ async function loadDeviceAnalytics() {
       renderBreakdown('App Versions', data.byAppVersion, 'appVersion') +
       '<div style="background:#0f172a;border-radius:10px;padding:14px;grid-column:1/-1;"><div style="font-size:14px;font-weight:600;color:#f8fafc;margin-bottom:10px;">Power Users (Top 20)</div>' +
       (data.powerUsers || []).map(function(u) {
-        return '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;"><span style="color:#94a3b8;">' + esc(u.model || u.deviceId.substring(0,12)) + '</span><span style="color:#e2e8f0;">' + u.totalMinutes + ' min · ' + u.listens + ' listens</span></div>';
+        return '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;cursor:pointer;" onclick="showDeviceProfile(\'' + escJs(u.deviceId) + '\')"><span style="color:#94a3b8;">' + esc(u.model || u.deviceId.substring(0,12)) + '</span><span style="color:#e2e8f0;">' + u.totalMinutes + ' min · ' + u.listens + ' listens</span></div>';
       }).join('') + '</div>';
   } catch(e) {
     console.error('Device analytics load failed:', e);
