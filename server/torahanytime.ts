@@ -114,14 +114,42 @@ export async function fetchSpeakerLectures(
   return { lectures, total: data.total };
 }
 
-export async function fetchAllSpeakerLectures(speakerId: number): Promise<TATLecture[]> {
+export interface TATIncrementalContext {
+  knownIds: Set<number>;
+  stopAfterConsecutive: number; // typical: 20
+}
+
+export async function fetchAllSpeakerLectures(
+  speakerId: number,
+  incremental?: TATIncrementalContext,
+): Promise<TATLecture[]> {
   const allLectures: TATLecture[] = [];
   const limit = 150;
   let offset = 0;
+  let consecutiveKnown = 0;
 
   while (true) {
     const { lectures } = await fetchSpeakerLectures(speakerId, limit, offset);
     allLectures.push(...lectures);
+
+    // Walk this page in order and check the known counter. We push first, then
+    // possibly truncate at the end — keeps it simple while still letting the
+    // outer caller upsert in bulk and let onConflictDoNothing handle dupes.
+    if (incremental) {
+      let stop = false;
+      for (const lec of lectures) {
+        if (incremental.knownIds.has(lec.id)) {
+          consecutiveKnown++;
+          if (consecutiveKnown >= incremental.stopAfterConsecutive) {
+            stop = true;
+            break;
+          }
+        } else {
+          consecutiveKnown = 0;
+        }
+      }
+      if (stop) break;
+    }
 
     if (lectures.length < limit) break;
     offset += limit;
@@ -279,10 +307,10 @@ export async function syncTATSpeakers(): Promise<{ created: number; linked: numb
 
 // --- Episode Refresh for TAT Feeds ---
 
-export async function refreshTATFeedEpisodes(feed: { id: string; title: string; tatSpeakerId: number }, feedRecord?: any): Promise<{ newEpisodes: number }> {
+export async function refreshTATFeedEpisodes(feed: { id: string; title: string; tatSpeakerId: number }, feedRecord?: any, opts?: { full?: boolean }): Promise<{ newEpisodes: number }> {
   // Quick check: fetch first page to see if newest lecture already exists
   const { lectures: firstPage } = await fetchSpeakerLectures(feed.tatSpeakerId, 5, 0);
-  if (firstPage.length > 0) {
+  if (!opts?.full && firstPage.length > 0) {
     const newest = firstPage[0];
     if (newest?.id) {
       const exists = await storage.episodeExistsByGuid(feed.id, `tat-${newest.id}`);
@@ -293,7 +321,12 @@ export async function refreshTATFeedEpisodes(feed: { id: string; title: string; 
     }
   }
 
-  const lectures = await fetchAllSpeakerLectures(feed.tatSpeakerId);
+  // Incremental: stop pagination once 20 consecutive lecture ids are already
+  // stored. Bypassed when opts.full is true (admin "Force Full Refresh").
+  const incremental = opts?.full
+    ? undefined
+    : { knownIds: await storage.getRecentTatLectureIds(feed.id, 50), stopAfterConsecutive: 20 };
+  const lectures = await fetchAllSpeakerLectures(feed.tatSpeakerId, incremental);
 
   // Filter out private, inactive, and lectures with no audio URL
   const validLectures = lectures.filter(l => !l.private && l.display_active && l.mp3_url);

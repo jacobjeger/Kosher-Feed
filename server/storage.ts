@@ -167,6 +167,48 @@ export async function getRecentEpisodeGuids(feedId: string, limit: number = 50):
   return new Set(rows.map(r => r.guid));
 }
 
+// Variant for TAT — pulls platform-specific lecture ids (numeric) so the TAT
+// pagination loop can use a numeric Set lookup.
+export async function getRecentTatLectureIds(feedId: string, limit: number = 50): Promise<Set<number>> {
+  const rows = await db
+    .select({ id: episodes.tatLectureId })
+    .from(episodes)
+    .where(and(eq(episodes.feedId, feedId), sql`${episodes.tatLectureId} IS NOT NULL`))
+    .orderBy(desc(episodes.publishedAt), desc(episodes.createdAt))
+    .limit(limit);
+  return new Set(rows.map(r => r.id).filter((x): x is number => x !== null));
+}
+
+// Variant for OU platforms — extracts the numeric post id from
+// `{prefix}{id}` guids (e.g. "alldaf-12345"). Each OU platform has its own
+// guid prefix so we filter by that to avoid mixing platforms on merged feeds.
+export async function getRecentOuPostIds(feedId: string, guidPrefix: string, limit: number = 50): Promise<Set<number>> {
+  const rows = await db
+    .select({ guid: episodes.guid })
+    .from(episodes)
+    .where(and(eq(episodes.feedId, feedId), sql`${episodes.guid} LIKE ${guidPrefix + "%"}`))
+    .orderBy(desc(episodes.publishedAt), desc(episodes.createdAt))
+    .limit(limit);
+  const ids = new Set<number>();
+  for (const r of rows) {
+    const tail = r.guid.slice(guidPrefix.length);
+    const n = Number(tail);
+    if (Number.isFinite(n)) ids.add(n);
+  }
+  return ids;
+}
+
+// Variant for KH — extracts the numeric file id from `kh-{id}` guids.
+export async function getRecentKhFileIds(feedId: string, limit: number = 50): Promise<Set<number>> {
+  const rows = await db
+    .select({ id: episodes.kolhalashonFileId })
+    .from(episodes)
+    .where(and(eq(episodes.feedId, feedId), sql`${episodes.kolhalashonFileId} IS NOT NULL`))
+    .orderBy(desc(episodes.publishedAt), desc(episodes.createdAt))
+    .limit(limit);
+  return new Set(rows.map(r => r.id).filter((x): x is number => x !== null));
+}
+
 export async function getEpisodesByFeed(feedId: string): Promise<Episode[]> {
   return db.select().from(episodes).where(eq(episodes.feedId, feedId)).orderBy(desc(episodes.publishedAt));
 }

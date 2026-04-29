@@ -112,19 +112,47 @@ export async function getShiurDetails(fileId: number): Promise<any> {
   return khGet(`/TblShiurimLists/WebSite_GetShiurDetails/${fileId}`);
 }
 
+export interface KHIncrementalContext {
+  knownFileIds: Set<number>;
+  stopAfterConsecutive: number; // typical: 20
+}
+
 // Cap per speaker. Some KH ravs have thousands of shiurim across decades —
 // capping low (was 150) meant most of their archive was invisible to users.
 // Refreshes early-exit when newest already exists (see refreshKHFeedEpisodes),
 // so a high cap mainly affects the initial backfill.
-export async function getAllSpeakerShiurim(ravId: number, maxShiurim: number = 5000): Promise<any[]> {
+export async function getAllSpeakerShiurim(
+  ravId: number,
+  maxShiurim: number = 5000,
+  incremental?: KHIncrementalContext,
+): Promise<any[]> {
   const allShiurim: any[] = [];
   const pageSize = 24;
   let fromRow = 0;
+  let consecutiveKnown = 0;
 
   while (fromRow < maxShiurim) {
     const batch = await getSpeakerShiurim(ravId, fromRow, pageSize);
     if (!Array.isArray(batch) || batch.length === 0) break;
     allShiurim.push(...batch);
+
+    if (incremental) {
+      let stop = false;
+      for (const shiur of batch) {
+        const fileId = shiur?.FileId ?? shiur?.FileID;
+        if (typeof fileId === "number" && incremental.knownFileIds.has(fileId)) {
+          consecutiveKnown++;
+          if (consecutiveKnown >= incremental.stopAfterConsecutive) {
+            stop = true;
+            break;
+          }
+        } else {
+          consecutiveKnown = 0;
+        }
+      }
+      if (stop) break;
+    }
+
     if (batch.length < pageSize) break;
     fromRow += pageSize;
     await new Promise(r => setTimeout(r, 50));
@@ -380,10 +408,12 @@ export async function refreshKHFeedEpisodes(
     }
   }
 
-  // New content detected — do full pagination
+  // New content detected — paginate, but stop early once we hit 20 known
+  // FileIds in a row to avoid re-walking the entire archive.
+  const incremental = { knownFileIds: await storage.getRecentKhFileIds(feed.id, 50), stopAfterConsecutive: 20 };
   let shiurim: any[];
   try {
-    shiurim = await getAllSpeakerShiurim(feed.kolhalashonRavId);
+    shiurim = await getAllSpeakerShiurim(feed.kolhalashonRavId, 5000, incremental);
   } catch (e: any) {
     console.error(`KH refresh: ${feed.title} — full fetch failed: ${e.message}`);
     await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });

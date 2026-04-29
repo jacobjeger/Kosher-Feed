@@ -543,24 +543,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const feed = allFeeds.find(f => f.id === req.params.id);
       if (!feed) return res.status(404).json({ error: "Feed not found" });
 
+      const fullRefresh = req.query.full === "true";
       let totalNew = 0;
 
       // TAT refresh
       const isTatFeedUrl = feed.rssUrl.startsWith("tat://");
       const effectiveSpeakerId = extractTatSpeakerId(feed);
       if (effectiveSpeakerId) {
-        const tatResult = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveSpeakerId });
+        const tatResult = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveSpeakerId }, feed, { full: fullRefresh });
         totalNew += tatResult.newEpisodes;
       }
 
       // OU Torah platform refresh (AllDaf, AllMishnah, AllParsha, AllHalacha)
       const ouDetected = detectOUPlatform(feed as any);
       if (ouDetected) {
-        const ouResult = await refreshOUFeedEpisodes(ouDetected.platform, { id: feed.id, title: feed.title, authorId: ouDetected.authorId });
+        const ouResult = await refreshOUFeedEpisodes(ouDetected.platform, { id: feed.id, title: feed.title, authorId: ouDetected.authorId }, feed, { full: fullRefresh });
         totalNew += ouResult.newEpisodes;
       }
 
-      // KH refresh
+      // KH refresh (KH already does its own incremental check; ?full=true is currently informational)
       const isKhFeedUrl = feed.rssUrl.startsWith("kh://");
       const effectiveKhId = extractKhRavId(feed as any);
       if (effectiveKhId) {
@@ -571,7 +572,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // RSS refresh (skip for TAT-only, OU-only, and KH-only feeds)
       const isOUFeedUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
       if (!isTatFeedUrl && !isOUFeedUrl && !isKhFeedUrl) {
-        const fullRefresh = req.query.full === "true";
         const incremental = fullRefresh
           ? undefined
           : { knownGuids: await storage.getRecentEpisodeGuids(feed.id, 50), stopAfterConsecutive: 20 };
@@ -614,13 +614,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const isTatUrl = feed.rssUrl.startsWith("tat://");
           const effectiveTatId = extractTatSpeakerId(feed);
           if (effectiveTatId) {
-            const tatResult = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveTatId });
+            const tatResult = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveTatId }, feed, { full: fullBulk });
             totalNew += tatResult.newEpisodes;
           }
           // OU Torah platform refresh (AllDaf, AllMishnah, AllParsha, AllHalacha)
           const ouRefresh = detectOUPlatform(feed as any);
           if (ouRefresh) {
-            const ouResult = await refreshOUFeedEpisodes(ouRefresh.platform, { id: feed.id, title: feed.title, authorId: ouRefresh.authorId });
+            const ouResult = await refreshOUFeedEpisodes(ouRefresh.platform, { id: feed.id, title: feed.title, authorId: ouRefresh.authorId }, feed, { full: fullBulk });
             totalNew += ouResult.newEpisodes;
           }
           // KH feed refresh

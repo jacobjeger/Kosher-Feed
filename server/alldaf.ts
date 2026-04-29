@@ -195,14 +195,40 @@ export async function fetchAuthorPosts(platform: OUPlatformKey, authorId: number
   return { records: result.records || [], total: result.total };
 }
 
-export async function fetchAllAuthorPosts(platform: OUPlatformKey, authorId: number): Promise<OUPost[]> {
+export interface OUIncrementalContext {
+  knownIds: Set<number>;
+  stopAfterConsecutive: number; // typical: 20
+}
+
+export async function fetchAllAuthorPosts(
+  platform: OUPlatformKey,
+  authorId: number,
+  incremental?: OUIncrementalContext,
+): Promise<OUPost[]> {
   const allPosts: OUPost[] = [];
   const limit = 50;
   let skip = 0;
+  let consecutiveKnown = 0;
 
   while (true) {
     const { records } = await fetchAuthorPosts(platform, authorId, limit, skip);
     allPosts.push(...records);
+
+    if (incremental) {
+      let stop = false;
+      for (const post of records) {
+        if (typeof post.id === "number" && incremental.knownIds.has(post.id)) {
+          consecutiveKnown++;
+          if (consecutiveKnown >= incremental.stopAfterConsecutive) {
+            stop = true;
+            break;
+          }
+        } else {
+          consecutiveKnown = 0;
+        }
+      }
+      if (stop) break;
+    }
 
     if (records.length < limit) break;
     skip += limit;
@@ -408,12 +434,13 @@ export async function refreshOUFeedEpisodes(
   platform: OUPlatformKey,
   feed: { id: string; title: string; authorId: number },
   feedRecord?: any,
+  opts?: { full?: boolean },
 ): Promise<{ newEpisodes: number }> {
   const cfg = OU_PLATFORMS[platform];
 
   // Quick check: fetch first page to see if newest post already exists
   const { records: firstPage } = await fetchAuthorPosts(platform, feed.authorId, 5, 0);
-  if (firstPage.length > 0) {
+  if (!opts?.full && firstPage.length > 0) {
     const newest = firstPage[0];
     if (newest?.id) {
       const exists = await storage.episodeExistsByGuid(feed.id, `${cfg.guidPrefix}${newest.id}`);
@@ -424,7 +451,12 @@ export async function refreshOUFeedEpisodes(
     }
   }
 
-  const posts = await fetchAllAuthorPosts(platform, feed.authorId);
+  // Incremental: stop pagination once 20 consecutive post ids are already
+  // stored. Bypassed when opts.full is true.
+  const incremental = opts?.full
+    ? undefined
+    : { knownIds: await storage.getRecentOuPostIds(feed.id, cfg.guidPrefix, 50), stopAfterConsecutive: 20 };
+  const posts = await fetchAllAuthorPosts(platform, feed.authorId, incremental);
 
   let episodeData = posts
     .map(p => mapOUPostToEpisodeData(p, feed.id, cfg.guidPrefix))
