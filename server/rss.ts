@@ -15,7 +15,10 @@ try {
 const parser = new Parser();
 
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
-const MAX_EPISODES = 50;
+// Per-fetch cap. Many shows publish full archives (1000+ items) in a single
+// RSS response; capping low means we never see older episodes. Episodes use
+// onConflictDoNothing on guid, so re-ingesting the same items is cheap.
+const MAX_EPISODES = 1000;
 
 const proxyClient = axios.create({
   timeout: 30000,
