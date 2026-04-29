@@ -572,28 +572,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // RSS refresh (skip for TAT-only, OU-only, and KH-only feeds)
       const isOUFeedUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
       if (!isTatFeedUrl && !isOUFeedUrl && !isKhFeedUrl) {
+        // For ?full=true: bypass both etag and incremental — pull the entire
+        // archive. Otherwise pass etag/lastModified so unchanged feeds short-
+        // circuit at HTTP 304 without parsing, and pass the incremental
+        // context so partial-change feeds early-exit during SAX walk.
+        const conditionalHeaders = fullRefresh
+          ? undefined
+          : { etag: feed.etag, lastModified: feed.lastModifiedHeader };
         const incremental = fullRefresh
           ? undefined
           : { knownGuids: await storage.getRecentEpisodeGuids(feed.id, 50), stopAfterConsecutive: 20 };
-        const parsed = await parseFeed(feed.id, feed.rssUrl, undefined, incremental);
+        const parsed = await parseFeed(feed.id, feed.rssUrl, conditionalHeaders, incremental);
         if (parsed) {
           const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
           const inserted = await storage.upsertEpisodes(feed.id, episodeData);
           totalNew += inserted.length;
 
-          await storage.updateFeed(feed.id, {
+          const updateData: any = {
             lastFetchedAt: new Date(),
             title: parsed.title,
             imageUrl: parsed.imageUrl || feed.imageUrl,
             description: parsed.description || feed.description,
             author: parsed.author || feed.author,
-          });
+          };
+          if (parsed.responseHeaders?.etag) updateData.etag = parsed.responseHeaders.etag;
+          if (parsed.responseHeaders?.lastModified) updateData.lastModifiedHeader = parsed.responseHeaders.lastModified;
+          await storage.updateFeed(feed.id, updateData);
 
           if (inserted.length > 0) {
             for (const ep of inserted.slice(0, 3)) {
               sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
             }
           }
+        } else {
+          // parseFeed returned null = 304 Not Modified. Just update lastFetchedAt.
+          await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
         }
       }
 
@@ -633,15 +646,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // RSS refresh (skip for TAT-only, OU-only, and KH-only feeds)
           const isOURssUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
           if (!feed.rssUrl.startsWith("tat://") && !isOURssUrl && !isKhRssUrl) {
+            const conditionalHeadersBulk = fullBulk
+              ? undefined
+              : { etag: feed.etag, lastModified: feed.lastModifiedHeader };
             const incrementalBulk = fullBulk
               ? undefined
               : { knownGuids: await storage.getRecentEpisodeGuids(feed.id, 50), stopAfterConsecutive: 20 };
-            const parsed = await parseFeed(feed.id, feed.rssUrl, undefined, incrementalBulk);
+            const parsed = await parseFeed(feed.id, feed.rssUrl, conditionalHeadersBulk, incrementalBulk);
             if (!parsed) { await storage.updateFeed(feed.id, { lastFetchedAt: new Date() }); continue; }
             const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
             const inserted = await storage.upsertEpisodes(feed.id, episodeData);
             totalNew += inserted.length;
-            await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
+            const updateDataBulk: any = { lastFetchedAt: new Date() };
+            if (parsed.responseHeaders?.etag) updateDataBulk.etag = parsed.responseHeaders.etag;
+            if (parsed.responseHeaders?.lastModified) updateDataBulk.lastModifiedHeader = parsed.responseHeaders.lastModified;
+            await storage.updateFeed(feed.id, updateDataBulk);
             if (inserted.length > 0) {
               for (const ep of inserted.slice(0, 3)) {
                 sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
