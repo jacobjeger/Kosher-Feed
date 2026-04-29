@@ -29,7 +29,9 @@ export const OU_PLATFORMS: Record<OUPlatformKey, OUPlatformConfig> = {
     key: "alldaf",
     label: "AllDaf",
     platformParam: "AllDaf",
-    baseUrl: "https://beta.alldaf.org/api/trpc",
+    // beta.alldaf.org has been permanently moved to alldaf.org. The 301
+    // redirect strips the query string so following it hits a 400.
+    baseUrl: "https://alldaf.org/api/trpc",
     urlScheme: "alldaf://author/",
     guidPrefix: "alldaf-",
     feedIdField: "alldafAuthorId",
