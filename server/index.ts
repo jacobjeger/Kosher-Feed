@@ -10,7 +10,7 @@ import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { parseFeed, preResolveHostnames } from "./rss";
 import * as storage from "./storage";
-import { sendNewEpisodePushes } from "./push";
+import { sendNewEpisodePushes, PUSH_BACKFILL_THRESHOLD } from "./push";
 import { startRefreshCycle, recordFeedResult, endRefreshCycle } from "./feed-vitals";
 import { refreshTATFeedEpisodes, syncTATSpeakers, fetchAllSpeakers } from "./torahanytime";
 import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, fetchAuthorById, OU_PLATFORMS, isApiOnlyUrl, type OUPlatformKey } from "./alldaf";
@@ -754,7 +754,7 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
   }
   await storage.updateFeed(feed.id, updateData);
 
-  if (inserted.length > 0) {
+  if (inserted.length > 0 && inserted.length <= PUSH_BACKFILL_THRESHOLD) {
     for (const ep of inserted.slice(0, 3)) {
       sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
     }

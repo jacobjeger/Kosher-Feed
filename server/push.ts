@@ -164,6 +164,12 @@ export async function sendCustomPush(
   return { sent, failed, details };
 }
 
+// When more than this many episodes are inserted in a single refresh, treat
+// it as a backfill / catch-up and DO NOT fan out push notifications. This
+// prevents an admin force-full or first-time-ingest from spamming subscribers
+// with 100s of "new episode" pushes.
+export const PUSH_BACKFILL_THRESHOLD = 5;
+
 export async function sendNewEpisodePushes(
   feedId: string,
   episode: { title: string; id: string },

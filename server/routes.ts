@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
 import * as storage from "./storage";
 import { parseFeed } from "./rss";
-import { sendNewEpisodePushes, sendCustomPush, checkPushReceipts } from "./push";
+import { sendNewEpisodePushes, sendCustomPush, checkPushReceipts, PUSH_BACKFILL_THRESHOLD } from "./push";
 import { getVitals, recordFeedResult } from "./feed-vitals";
 import { insertFeedSchema, insertCategorySchema, feedMergeHistory } from "@shared/schema";
 import type { Feed } from "@shared/schema";
@@ -141,8 +141,10 @@ async function onDemandRefreshFeed(feedId: string): Promise<void> {
 
     if (inserted.length > 0) {
       console.log(`On-demand refresh: ${feed.title} found ${inserted.length} new episode(s)`);
-      for (const ep of inserted.slice(0, 3)) {
-        sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
+      if (inserted.length <= PUSH_BACKFILL_THRESHOLD) {
+        for (const ep of inserted.slice(0, 3)) {
+          sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
+        }
       }
     }
   } catch (e: any) {
@@ -539,8 +541,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/admin/feeds/:id/refresh", adminAuth as any, async (req: Request, res: Response) => {
     try {
-      const allFeeds = await storage.getAllFeeds();
-      const feed = allFeeds.find(f => f.id === req.params.id);
+      const feed = await storage.getFeedById(req.params.id);
       if (!feed) return res.status(404).json({ error: "Feed not found" });
 
       const fullRefresh = req.query.full === "true";
@@ -599,7 +600,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (parsed.responseHeaders?.lastModified) updateData.lastModifiedHeader = parsed.responseHeaders.lastModified;
           await storage.updateFeed(feed.id, updateData);
 
-          if (inserted.length > 0) {
+          if (inserted.length > 0 && inserted.length <= PUSH_BACKFILL_THRESHOLD) {
             for (const ep of inserted.slice(0, 3)) {
               sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
             }
@@ -661,7 +662,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             if (parsed.responseHeaders?.etag) updateDataBulk.etag = parsed.responseHeaders.etag;
             if (parsed.responseHeaders?.lastModified) updateDataBulk.lastModifiedHeader = parsed.responseHeaders.lastModified;
             await storage.updateFeed(feed.id, updateDataBulk);
-            if (inserted.length > 0) {
+            if (inserted.length > 0 && inserted.length <= PUSH_BACKFILL_THRESHOLD) {
               for (const ep of inserted.slice(0, 3)) {
                 sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
               }

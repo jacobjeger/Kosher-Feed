@@ -1,6 +1,6 @@
 import axios from "axios";
 import * as storage from "./storage";
-import { sendNewEpisodePushes } from "./push";
+import { sendNewEpisodePushes, PUSH_BACKFILL_THRESHOLD } from "./push";
 import { normalizeName } from "./name-utils";
 import { filterCrossSourceDuplicates, isMergedFeed } from "./episode-dedup";
 
@@ -476,8 +476,10 @@ export async function refreshOUFeedEpisodes(
 
   if (inserted.length > 0) {
     console.log(`${cfg.label} refresh: ${feed.title} — ${inserted.length} new episode(s)`);
-    for (const ep of inserted.slice(0, 3)) {
-      sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
+    if (inserted.length <= PUSH_BACKFILL_THRESHOLD) {
+      for (const ep of inserted.slice(0, 3)) {
+        sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
+      }
     }
   }
 
