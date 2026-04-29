@@ -186,6 +186,61 @@ export async function fetchAuthorById(platform: OUPlatformKey, authorId: number)
   }
 }
 
+// Batch-fetch full post details for a list of OU post IDs. The list endpoint
+// (posts.fetchList) strips date fields, so to get publishDate we have to call
+// posts.fetchById. tRPC's batch protocol lets us request many posts in a
+// single HTTP round-trip — saves ~100x calls vs serial.
+export async function fetchPostDetailsBatch(
+  platform: OUPlatformKey,
+  ids: number[],
+): Promise<Map<number, { publishDate: string | null; createdAt: string | null }>> {
+  const out = new Map<number, { publishDate: string | null; createdAt: string | null }>();
+  if (ids.length === 0) return out;
+
+  const cfg = OU_PLATFORMS[platform];
+  const procedure = cfg.procedures?.authorsFetchById ? "authorRouter.fetchById" : "posts.fetchById";
+  // ^ allhalacha uses different routers — but it does have postRouter.fetchById; we keep consistent by just using posts.fetchById for non-allhalacha and skip allhalacha here (it's tiny).
+  const procName = cfg.procedures ? "postRouter.fetchById" : "posts.fetchById";
+
+  const BATCH = 50; // ~50 posts per HTTP call to stay under URL length limits
+  for (let i = 0; i < ids.length; i += BATCH) {
+    const slice = ids.slice(i, i + BATCH);
+    const path = slice.map(() => procName).join(",");
+    const inputObj: Record<string, { id: number }> = {};
+    slice.forEach((id, idx) => { inputObj[idx] = { id }; });
+
+    try {
+      const res = await axios.get(`${cfg.baseUrl}/${path}`, {
+        params: { batch: 1, input: JSON.stringify(inputObj) },
+        timeout: 30000,
+        headers: { "User-Agent": "ShiurPod/1.0" },
+      });
+      const data = res.data as any[];
+      if (Array.isArray(data)) {
+        for (let j = 0; j < data.length; j++) {
+          const post = data[j]?.result?.data;
+          const id = slice[j];
+          if (post && typeof post.id === "number") {
+            out.set(post.id, {
+              publishDate: post.publishDate || null,
+              createdAt: post.createdAt || null,
+            });
+          } else if (id) {
+            // record absence so caller knows we tried
+            out.set(id, { publishDate: null, createdAt: null });
+          }
+        }
+      }
+    } catch (e: any) {
+      // soft-fail; caller can retry
+      console.warn(`${cfg.label} fetchPostDetailsBatch error: ${e.message?.slice(0, 100)}`);
+    }
+    // small pause to be polite
+    if (i + BATCH < ids.length) await new Promise(r => setTimeout(r, 150));
+  }
+  return out;
+}
+
 export async function fetchAuthorPosts(platform: OUPlatformKey, authorId: number, limit: number = 50, skip: number = 0): Promise<{ records: OUPost[]; total?: number }> {
   const cfg = OU_PLATFORMS[platform];
   const procedure = cfg.procedures?.postsFetchList || "posts.fetchList";
@@ -295,7 +350,12 @@ function getAudioUrl(post: OUPost): string | null {
   return null;
 }
 
-export function mapOUPostToEpisodeData(post: OUPost, feedId: string, guidPrefix: string) {
+export function mapOUPostToEpisodeData(
+  post: OUPost,
+  feedId: string,
+  guidPrefix: string,
+  dateOverride?: { publishDate: string | null; createdAt: string | null },
+) {
   const audioUrl = getAudioUrl(post);
   if (!audioUrl) return null;
 
@@ -303,13 +363,17 @@ export function mapOUPostToEpisodeData(post: OUPost, feedId: string, guidPrefix:
   const seriesStr = post.series?.name || null;
   const descParts = [seriesStr, topicStr].filter(Boolean);
 
+  // The list endpoint strips date fields; dateOverride comes from a separate
+  // fetchById call. Fall back to whatever publishDate is on the post object
+  // (if a future API change adds it) and finally to null.
+  const dateRaw = dateOverride?.publishDate || dateOverride?.createdAt || (post as any).publishDate || null;
   return {
     feedId,
     title: post.title,
     description: descParts.join(" · ") || null,
     audioUrl,
     duration: post.duration ? formatDuration(post.duration) : null,
-    publishedAt: post.publishDate ? new Date(post.publishDate) : null,
+    publishedAt: dateRaw ? new Date(dateRaw) : null,
     guid: `${guidPrefix}${post.id}`,
     imageUrl: post.series?.image ? buildAuthorImageUrl(post.series.image) : null,
     noDownload: post.hideVideoDownload || false,
@@ -460,8 +524,15 @@ export async function refreshOUFeedEpisodes(
     : { knownIds: await storage.getRecentOuPostIds(feed.id, cfg.guidPrefix, 50), stopAfterConsecutive: 20 };
   const posts = await fetchAllAuthorPosts(platform, feed.authorId, incremental);
 
+  // The list API doesn't include publishDate. Batch-fetch dates via fetchById
+  // so newly-ingested episodes get a real timestamp instead of null. Skipped
+  // when there are no posts to refresh.
+  const dateMap = posts.length > 0
+    ? await fetchPostDetailsBatch(platform, posts.map(p => p.id))
+    : new Map<number, { publishDate: string | null; createdAt: string | null }>();
+
   let episodeData = posts
-    .map(p => mapOUPostToEpisodeData(p, feed.id, cfg.guidPrefix))
+    .map(p => mapOUPostToEpisodeData(p, feed.id, cfg.guidPrefix, dateMap.get(p.id)))
     .filter((ep): ep is NonNullable<typeof ep> => ep !== null);
 
   // Cross-source dedup for merged feeds

@@ -167,6 +167,42 @@ export async function getRecentEpisodeGuids(feedId: string, limit: number = 50):
   return new Set(rows.map(r => r.guid));
 }
 
+// Returns OU episodes with null publishedAt for a given platform prefix
+// (e.g. "alldaf-"). Each row gives us the post id (extracted from guid) so
+// the caller can batch-fetch dates via the OU API and update them.
+export async function getNullPubdateOuEpisodeIds(guidPrefix: string, limit: number = 1000): Promise<{ episodeId: string; postId: number }[]> {
+  const rows = await db
+    .select({ id: episodes.id, guid: episodes.guid })
+    .from(episodes)
+    .where(and(
+      sql`${episodes.publishedAt} IS NULL`,
+      sql`${episodes.guid} LIKE ${guidPrefix + "%"}`,
+    ))
+    .limit(limit);
+  const out: { episodeId: string; postId: number }[] = [];
+  for (const r of rows) {
+    const tail = r.guid.slice(guidPrefix.length);
+    const n = Number(tail);
+    if (Number.isFinite(n)) out.push({ episodeId: r.id, postId: n });
+  }
+  return out;
+}
+
+// Bulk-update publishedAt by episode id (used by the OU backfill — the caller
+// already resolved postId → date via the API).
+export async function setPublishedAtByEpisodeIds(updates: { episodeId: string; publishedAt: Date }[]): Promise<number> {
+  if (updates.length === 0) return 0;
+  let count = 0;
+  for (const u of updates) {
+    const r = await db.update(episodes)
+      .set({ publishedAt: u.publishedAt })
+      .where(and(eq(episodes.id, u.episodeId), sql`${episodes.publishedAt} IS NULL`))
+      .returning({ id: episodes.id });
+    count += r.length;
+  }
+  return count;
+}
+
 // Returns RSS-source feeds that have at least one episode with null publishedAt.
 // We only sweep RSS feeds because non-RSS sources (TAT/OU/KH) don't expose
 // publish dates the same way — OU specifically has no date field at all.

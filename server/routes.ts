@@ -9,7 +9,7 @@ import type { Feed } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc } from "drizzle-orm";
 import { syncTATSpeakers, refreshTATFeedEpisodes, fetchAllSpeakers } from "./torahanytime";
-import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, OU_PLATFORMS, type OUPlatformKey } from "./alldaf";
+import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, OU_PLATFORMS, fetchPostDetailsBatch, type OUPlatformKey } from "./alldaf";
 import { syncKHSpeakers, refreshKHFeedEpisodes, reloadKHClient, getHeaders as getKHHeaders } from "./kolhalashon";
 import { extractKhRavId, extractTatSpeakerId } from "./feed-utils";
 import { trackErrorForAlert, sendFeedbackNotification } from "./error-alerts";
@@ -2029,6 +2029,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (e: any) {
       publicError(res, e);
     }
+  });
+
+  // TEMP one-off backfill: fill publishedAt for OU-source episodes with null
+  // published_at by batch-fetching post details from the OU API. Processes one
+  // platform (alldaf/allmishnah/allparsha/allhalacha) per call. ?batch=N caps
+  // how many episodes to process this call (default 500).
+  app.post("/api/admin/diagnostics/backfill-ou-pubdate/:platform", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const platform = req.params.platform as keyof typeof OU_PLATFORMS;
+      const cfg = OU_PLATFORMS[platform];
+      if (!cfg) return res.status(400).json({ error: "Unknown platform" });
+      const batchSize = Math.min(parseInt((req.query.batch as string) || "500", 10), 2000);
+
+      const candidates = await storage.getNullPubdateOuEpisodeIds(cfg.guidPrefix, batchSize);
+      if (candidates.length === 0) return res.json({ processed: 0, updated: 0, remaining: 0 });
+
+      const dateMap = await fetchPostDetailsBatch(platform, candidates.map(c => c.postId));
+      const updates: { episodeId: string; publishedAt: Date }[] = [];
+      for (const c of candidates) {
+        const d = dateMap.get(c.postId);
+        const dateStr = d?.publishDate || d?.createdAt;
+        if (dateStr) updates.push({ episodeId: c.episodeId, publishedAt: new Date(dateStr) });
+      }
+      const updated = await storage.setPublishedAtByEpisodeIds(updates);
+
+      // Remaining null count for this platform (cheap query)
+      const remainingRows = await storage.getNullPubdateOuEpisodeIds(cfg.guidPrefix, 1);
+      res.json({
+        processed: candidates.length,
+        withDates: updates.length,
+        updated,
+        moreRemaining: remainingRows.length > 0,
+      });
+    } catch (e: any) { publicError(res, e); }
   });
 
   // TEMP one-off sweep: find RSS feeds with null published_at episodes.
