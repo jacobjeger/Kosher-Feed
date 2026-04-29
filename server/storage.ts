@@ -167,6 +167,56 @@ export async function getRecentEpisodeGuids(feedId: string, limit: number = 50):
   return new Set(rows.map(r => r.guid));
 }
 
+// Returns RSS-source feeds that have at least one episode with null publishedAt.
+// We only sweep RSS feeds because non-RSS sources (TAT/OU/KH) don't expose
+// publish dates the same way — OU specifically has no date field at all.
+export async function getRssFeedsWithNullPublishedAt(): Promise<{ id: string; title: string; rssUrl: string; nullCount: number }[]> {
+  const rows = await db.execute(sql`
+    SELECT f.id, f.title, f.rss_url AS "rssUrl", COUNT(e.id) AS "nullCount"
+    FROM feeds f
+    JOIN episodes e ON e.feed_id = f.id
+    WHERE f.is_active = true
+      AND e.published_at IS NULL
+      AND f.rss_url NOT LIKE 'tat://%'
+      AND f.rss_url NOT LIKE 'kh://%'
+      AND f.rss_url NOT LIKE 'alldaf://%'
+      AND f.rss_url NOT LIKE 'allmishnah://%'
+      AND f.rss_url NOT LIKE 'allparsha://%'
+      AND f.rss_url NOT LIKE 'allhalacha://%'
+    GROUP BY f.id, f.title, f.rss_url
+    ORDER BY COUNT(e.id) DESC
+  `);
+  return (rows.rows as any[]).map(r => ({
+    id: r.id,
+    title: r.title,
+    rssUrl: r.rssUrl,
+    nullCount: Number(r.nullCount),
+  }));
+}
+
+// Bulk-update publishedAt where currently null, given a list of (guid, publishedAt)
+// pairs from a freshly-parsed source. Returns count of rows updated.
+export async function backfillPublishedAtFromGuids(feedId: string, items: { guid: string; publishedAt: Date }[]): Promise<number> {
+  if (items.length === 0) return 0;
+  let updated = 0;
+  // Process in chunks of 200 to keep individual queries small
+  for (let i = 0; i < items.length; i += 200) {
+    const chunk = items.slice(i, i + 200);
+    for (const it of chunk) {
+      const result = await db.update(episodes)
+        .set({ publishedAt: it.publishedAt })
+        .where(and(
+          eq(episodes.feedId, feedId),
+          eq(episodes.guid, it.guid),
+          sql`${episodes.publishedAt} IS NULL`,
+        ))
+        .returning({ id: episodes.id });
+      updated += result.length;
+    }
+  }
+  return updated;
+}
+
 // True when at least one pure tat:// feed is active. Mirrors the convention
 // in the cron speaker-sync ("admin has disabled TAT" = all TAT feeds inactive).
 // Cached for 60s to avoid hitting this on every per-feed refresh in a bulk loop.
@@ -231,8 +281,14 @@ export async function getEpisodesByFeed(feedId: string): Promise<Episode[]> {
 
 export async function getEpisodesByFeedPaginated(feedId: string, page: number = 1, pageLimit: number = 50, sort: string = 'newest'): Promise<Episode[]> {
   const offset = (page - 1) * pageLimit;
-  const orderFn = sort === 'oldest' ? asc(episodes.publishedAt) : desc(episodes.publishedAt);
-  return db.select().from(episodes).where(eq(episodes.feedId, feedId)).orderBy(orderFn).limit(pageLimit).offset(offset);
+  // Deterministic order: real publish date first; fall back to ingestion time
+  // and finally a stable id tiebreaker so Postgres can't reshuffle ties between
+  // queries. NULLS LAST keeps episodes with unknown dates below dated ones.
+  const ascSort = sort === 'oldest';
+  const orderClauses = ascSort
+    ? [sql`${episodes.publishedAt} ASC NULLS LAST`, asc(episodes.createdAt), asc(episodes.id)]
+    : [sql`${episodes.publishedAt} DESC NULLS LAST`, desc(episodes.createdAt), desc(episodes.id)];
+  return db.select().from(episodes).where(eq(episodes.feedId, feedId)).orderBy(...orderClauses).limit(pageLimit).offset(offset);
 }
 
 export async function getEpisodeCountByFeed(feedId: string): Promise<number> {

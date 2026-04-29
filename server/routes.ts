@@ -2031,6 +2031,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // TEMP one-off sweep: find RSS feeds with null published_at episodes.
+  app.get("/api/admin/diagnostics/null-pubdate-feeds", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const feeds = await storage.getRssFeedsWithNullPublishedAt();
+      res.json({ count: feeds.length, feeds });
+    } catch (e: any) { publicError(res, e); }
+  });
+
+  // TEMP one-off backfill: re-fetch one feed's RSS source and UPDATE
+  // published_at on rows where it's currently null.
+  app.post("/api/admin/diagnostics/backfill-pubdate/:id", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const feed = await storage.getFeedById(req.params.id);
+      if (!feed) return res.status(404).json({ error: "Feed not found" });
+      // Skip non-RSS sources where we have no useful publish date.
+      const isRss = !feed.rssUrl.startsWith("tat://") && !feed.rssUrl.startsWith("kh://")
+        && !Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
+      if (!isRss) return res.json({ updated: 0, reason: "non-RSS source" });
+
+      // Force a fresh parse — no etag, no incremental, full archive.
+      const parsed = await parseFeed(feed.id, feed.rssUrl, undefined, undefined);
+      if (!parsed) return res.json({ updated: 0, reason: "parse failed" });
+
+      const items = parsed.episodes
+        .filter(e => e.publishedAt && e.guid)
+        .map(e => ({ guid: e.guid as string, publishedAt: e.publishedAt as Date }));
+      const updated = await storage.backfillPublishedAtFromGuids(feed.id, items);
+      res.json({ updated, scanned: parsed.episodes.length, withDates: items.length });
+    } catch (e: any) { publicError(res, e); }
+  });
+
   // Admin: Paginated, searchable user list
   app.get("/api/admin/users", adminAuth as any, async (req: Request, res: Response) => {
     try {
