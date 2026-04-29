@@ -167,6 +167,22 @@ export async function getRecentEpisodeGuids(feedId: string, limit: number = 50):
   return new Set(rows.map(r => r.guid));
 }
 
+// True when at least one pure tat:// feed is active. Mirrors the convention
+// in the cron speaker-sync ("admin has disabled TAT" = all TAT feeds inactive).
+// Cached for 60s to avoid hitting this on every per-feed refresh in a bulk loop.
+let _tatEnabledCache: { value: boolean; at: number } | null = null;
+export async function isTatGloballyEnabled(): Promise<boolean> {
+  if (_tatEnabledCache && Date.now() - _tatEnabledCache.at < 60_000) return _tatEnabledCache.value;
+  const [{ count: c }] = await db.select({ count: count() }).from(feeds)
+    .where(and(
+      eq(feeds.isActive, true),
+      sql`${feeds.rssUrl} LIKE 'tat://%'`,
+    ));
+  const value = Number(c) > 0;
+  _tatEnabledCache = { value, at: Date.now() };
+  return value;
+}
+
 // Variant for TAT — pulls platform-specific lecture ids (numeric) so the TAT
 // pagination loop can use a numeric Set lookup.
 export async function getRecentTatLectureIds(feedId: string, limit: number = 50): Promise<Set<number>> {

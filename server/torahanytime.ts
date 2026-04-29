@@ -307,7 +307,17 @@ export async function syncTATSpeakers(): Promise<{ created: number; linked: numb
 
 // --- Episode Refresh for TAT Feeds ---
 
-export async function refreshTATFeedEpisodes(feed: { id: string; title: string; tatSpeakerId: number }, feedRecord?: any, opts?: { full?: boolean }): Promise<{ newEpisodes: number }> {
+export async function refreshTATFeedEpisodes(feed: { id: string; title: string; tatSpeakerId: number }, feedRecord?: any, opts?: { full?: boolean; force?: boolean }): Promise<{ newEpisodes: number }> {
+  // Honor admin's "TAT disabled" state — defined as no active tat:// feed.
+  // The admin per-feed refresh button can pass force:true to override (e.g.
+  // refreshing a single merged feed's TAT side on demand).
+  if (!opts?.force) {
+    const enabled = await storage.isTatGloballyEnabled();
+    if (!enabled) {
+      return { newEpisodes: 0 };
+    }
+  }
+
   // Quick check: fetch first page to see if newest lecture already exists
   const { lectures: firstPage } = await fetchSpeakerLectures(feed.tatSpeakerId, 5, 0);
   if (!opts?.full && firstPage.length > 0) {
