@@ -724,11 +724,18 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
     return { newEpisodes: 0, method: 'stream', durationMs: Date.now() - start, episodesFound: 0 };
   }
 
-  // RSS refresh
-  const parsed = await parseFeed(feed.id, feed.rssUrl, {
-    etag: feed.etag,
-    lastModified: feed.lastModifiedHeader,
-  });
+  // RSS refresh — incremental: walk newest-first, stop after 20 consecutive
+  // already-known guids. Saves bandwidth + parse time on big archives.
+  const knownGuids = await storage.getRecentEpisodeGuids(feed.id, 50);
+  const parsed = await parseFeed(
+    feed.id,
+    feed.rssUrl,
+    {
+      etag: feed.etag,
+      lastModified: feed.lastModifiedHeader,
+    },
+    { knownGuids, stopAfterConsecutive: 20 },
+  );
 
   if (parsed === null) {
     await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });

@@ -121,10 +121,18 @@ interface StreamParsedResult {
   responseHeaders?: { etag?: string; lastModified?: string };
 }
 
+// Walk items newest-first; stop once we've seen `stopAfterConsecutive` items
+// already in the local DB. `knownGuids` is a small set of recent guids per feed.
+export interface IncrementalContext {
+  knownGuids: Set<string>;
+  stopAfterConsecutive: number; // typical: 20
+}
+
 async function fetchViaStreaming(
   feedId: string,
   rssUrl: string,
-  conditionalHeaders?: { etag?: string | null; lastModified?: string | null }
+  conditionalHeaders?: { etag?: string | null; lastModified?: string | null },
+  incremental?: IncrementalContext,
 ): Promise<{ data: StreamParsedResult | null; notModified: boolean; result: FetchResult }> {
   const start = Date.now();
   const controller = new AbortController();
@@ -190,6 +198,7 @@ async function fetchViaStreaming(
       const episodes: Omit<Episode, "id" | "createdAt">[] = [];
       let episodeCount = 0;
       let finished = false;
+      let consecutiveKnown = 0;
       // Separate timeout for XML parsing (in case stream hangs during parse)
       const parseTimeout = setTimeout(() => {
         if (!finished) {
@@ -303,6 +312,7 @@ async function fetchViaStreaming(
                 : `${m}:${String(s).padStart(2, '0')}`;
             }
 
+            const guid = currentItem['guid'] || currentItem['link'] || audioUrl;
             episodes.push({
               feedId,
               title: currentItem['title'] || 'Untitled Episode',
@@ -310,12 +320,28 @@ async function fetchViaStreaming(
               audioUrl,
               duration,
               publishedAt: currentItem['pubdate'] ? new Date(currentItem['pubdate']) : null,
-              guid: currentItem['guid'] || currentItem['link'] || audioUrl,
+              guid,
               imageUrl: currentItem['itunes_image'] || null,
               adminNotes: null,
               sourceSheetUrl: null,
             });
             episodeCount++;
+
+            // Incremental early-exit: if we've seen N items in a row that we
+            // already have in the DB, the rest of the archive is presumably
+            // also present. A few unknowns scattered among knowns reset the
+            // counter so we don't stop on a single republished outlier.
+            if (incremental) {
+              if (incremental.knownGuids.has(guid)) {
+                consecutiveKnown++;
+                if (consecutiveKnown >= incremental.stopAfterConsecutive) {
+                  finishStream();
+                  return;
+                }
+              } else {
+                consecutiveKnown = 0;
+              }
+            }
 
             if (episodeCount >= MAX_EPISODES) {
               finishStream();
@@ -405,7 +431,8 @@ function logHop(feedTitle: string, result: FetchResult) {
 export async function parseFeed(
   feedId: string,
   rssUrl: string,
-  conditionalHeaders?: { etag?: string | null; lastModified?: string | null }
+  conditionalHeaders?: { etag?: string | null; lastModified?: string | null },
+  incremental?: IncrementalContext,
 ): Promise<ParsedFeedData | null> {
   let hostname: string;
   try {
@@ -414,7 +441,7 @@ export async function parseFeed(
     throw new Error(`Invalid RSS URL: ${rssUrl}`);
   }
 
-  const streamResult = await fetchViaStreaming(feedId, rssUrl, conditionalHeaders);
+  const streamResult = await fetchViaStreaming(feedId, rssUrl, conditionalHeaders, incremental);
   logHop(hostname, streamResult.result);
 
   if (streamResult.result.success && streamResult.notModified) {

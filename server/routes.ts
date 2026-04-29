@@ -571,7 +571,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // RSS refresh (skip for TAT-only, OU-only, and KH-only feeds)
       const isOUFeedUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
       if (!isTatFeedUrl && !isOUFeedUrl && !isKhFeedUrl) {
-        const parsed = await parseFeed(feed.id, feed.rssUrl);
+        const fullRefresh = req.query.full === "true";
+        const incremental = fullRefresh
+          ? undefined
+          : { knownGuids: await storage.getRecentEpisodeGuids(feed.id, 50), stopAfterConsecutive: 20 };
+        const parsed = await parseFeed(feed.id, feed.rssUrl, undefined, incremental);
         if (parsed) {
           const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
           const inserted = await storage.upsertEpisodes(feed.id, episodeData);
@@ -599,8 +603,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/admin/feeds/refresh-all", adminAuth as any, async (_req: Request, res: Response) => {
+  app.post("/api/admin/feeds/refresh-all", adminAuth as any, async (req: Request, res: Response) => {
     try {
+      const fullBulk = req.query.full === "true";
       const allFeeds = await storage.getActiveFeeds();
       let totalNew = 0;
       for (const feed of allFeeds) {
@@ -628,7 +633,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // RSS refresh (skip for TAT-only, OU-only, and KH-only feeds)
           const isOURssUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
           if (!feed.rssUrl.startsWith("tat://") && !isOURssUrl && !isKhRssUrl) {
-            const parsed = await parseFeed(feed.id, feed.rssUrl);
+            const incrementalBulk = fullBulk
+              ? undefined
+              : { knownGuids: await storage.getRecentEpisodeGuids(feed.id, 50), stopAfterConsecutive: 20 };
+            const parsed = await parseFeed(feed.id, feed.rssUrl, undefined, incrementalBulk);
             if (!parsed) { await storage.updateFeed(feed.id, { lastFetchedAt: new Date() }); continue; }
             const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
             const inserted = await storage.upsertEpisodes(feed.id, episodeData);

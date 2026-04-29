@@ -153,6 +153,20 @@ export async function getEpisodesByIds(episodeIds: string[]): Promise<Episode[]>
   return db.select().from(episodes).where(inArray(episodes.id, episodeIds));
 }
 
+// Used by the incremental-ingest path to early-exit RSS/TAT/OU/KH refreshes.
+// Returns the most-recent N guids stored for the feed, ordered newest-first.
+// 50 default is enough headroom that a few out-of-order republishes don't
+// trip the "20 consecutive known" stop signal.
+export async function getRecentEpisodeGuids(feedId: string, limit: number = 50): Promise<Set<string>> {
+  const rows = await db
+    .select({ guid: episodes.guid })
+    .from(episodes)
+    .where(eq(episodes.feedId, feedId))
+    .orderBy(desc(episodes.publishedAt), desc(episodes.createdAt))
+    .limit(limit);
+  return new Set(rows.map(r => r.guid));
+}
+
 export async function getEpisodesByFeed(feedId: string): Promise<Episode[]> {
   return db.select().from(episodes).where(eq(episodes.feedId, feedId)).orderBy(desc(episodes.publishedAt));
 }
