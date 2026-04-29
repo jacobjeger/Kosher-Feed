@@ -198,6 +198,7 @@
       <button class="tab active" onclick="switchTab('analytics', this)">Analytics</button>
       <button class="tab" onclick="switchTab('users', this)">Users</button>
       <button class="tab" onclick="switchTab('feeds', this)">Feeds</button>
+      <button class="tab" onclick="switchTab('duplicates', this)">Duplicates</button>
       <button class="tab" onclick="switchTab('categories', this)">Categories</button>
       <button class="tab" onclick="switchTab('speakers', this)">Speakers</button>
       <button class="tab" onclick="switchTab('errors', this)">Error Reports</button>
@@ -364,6 +365,21 @@
         </div>
         <div id="feedList"></div>
         <div id="feedPagination" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 0;"></div>
+      </div>
+    </div>
+
+    <div id="duplicatesTab" class="hidden">
+      <div class="card">
+        <div class="card-header">
+          <h2>Duplicate-Title Feeds</h2>
+          <div id="duplicatesCount" style="color:#64748b;font-size:13px;"></div>
+        </div>
+        <p style="color:#94a3b8;font-size:13px;margin-bottom:14px;">
+          Active feeds sharing the same title. Some are real duplicates (the same speaker indexed under multiple platform IDs); some are legitimately different rabbis with the same name. Use <strong>Merge</strong> to move subscribers and delete the redundant feed, or <strong>Skip</strong> to leave both alone.
+        </p>
+        <div id="duplicatesArea">
+          <p style="color:#64748b;text-align:center;padding:40px;">Loading...</p>
+        </div>
       </div>
     </div>
 
@@ -2204,6 +2220,7 @@ function switchTab(tab, btn) {
   const next = document.getElementById(tab + 'Tab'); if (next) next.classList.remove('hidden');
   _activeTab = tab;
   if (tab === 'users') loadUsers();
+  if (tab === 'duplicates') loadDuplicates();
   if (tab === 'speakers') loadSpeakers();
   if (tab === 'errors') { loadErrorHealth(); loadGroupedErrors(); loadErrorReports(); }
   if (tab === 'feedback') loadFeedback();
@@ -4615,6 +4632,77 @@ async function loadUsers() {
     document.getElementById('usersNextBtn').disabled = end >= total;
   } catch (e) {
     tbl.innerHTML = '<p style="color:#ef4444;text-align:center;padding:40px;">Failed to load users: ' + esc(e.message) + '</p>';
+  }
+}
+
+async function loadDuplicates() {
+  const area = document.getElementById('duplicatesArea');
+  const countEl = document.getElementById('duplicatesCount');
+  if (!area) return;
+  area.innerHTML = '<p style="color:#64748b;text-align:center;padding:40px;">Loading...</p>';
+  try {
+    const data = await api('/api/admin/duplicates');
+    const groups = data.groups || [];
+    countEl.textContent = groups.length + ' groups · ' + groups.reduce((s,g) => s + g.feeds.length, 0) + ' feeds';
+    if (groups.length === 0) {
+      area.innerHTML = '<p style="color:#64748b;text-align:center;padding:40px;">No duplicate-title groups. ✅</p>';
+      return;
+    }
+    const sourceColor = (rss) => {
+      if ((rss||'').startsWith('kh://')) return '#a855f7';
+      if ((rss||'').startsWith('tat://')) return '#f59e0b';
+      if (/^(alldaf|allmishnah|allparsha|allhalacha):\/\//.test(rss||'')) return '#3b82f6';
+      return '#10b981';
+    };
+    const sourceLabel = (rss) => {
+      if ((rss||'').startsWith('kh://')) return 'KH';
+      if ((rss||'').startsWith('tat://')) return 'TAT';
+      if ((rss||'').startsWith('alldaf://')) return 'AllDaf';
+      if ((rss||'').startsWith('allmishnah://')) return 'AllMishnah';
+      if ((rss||'').startsWith('allparsha://')) return 'AllParsha';
+      if ((rss||'').startsWith('allhalacha://')) return 'AllHalacha';
+      return 'RSS';
+    };
+    area.innerHTML = groups.map((g, gi) => {
+      return '<div style="background:#0f172a;border-radius:10px;padding:16px;margin-bottom:14px;">'
+        + '<div style="font-size:15px;font-weight:600;color:#f8fafc;margin-bottom:12px;">' + esc(g.feeds[0].title) + ' &middot; <span style="color:#94a3b8;font-weight:400;">' + g.feeds.length + ' feeds</span></div>'
+        + '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:12px;">'
+        + g.feeds.map(f => {
+          const platformBadge = '<span style="background:' + sourceColor(f.rssUrl) + ';color:white;font-size:10px;padding:2px 8px;border-radius:4px;font-weight:600;">' + sourceLabel(f.rssUrl) + '</span>';
+          const lastFetched = f.lastFetchedAt ? new Date(f.lastFetchedAt).toLocaleDateString() : 'never';
+          // Build merge buttons against all OTHER feeds in this group
+          const mergeBtns = g.feeds.filter(o => o.id !== f.id).map(o => {
+            return '<button class="btn btn-secondary btn-sm" onclick="mergeFeeds(\'' + escJs(f.id) + '\', \'' + escJs(o.id) + '\', \'' + escJs(o.title) + '\')" style="font-size:11px;">Keep this · Delete other</button>';
+          }).join(' ');
+          return '<div style="background:#1e293b;border-radius:8px;padding:12px;border:1px solid #334155;">'
+            + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px;">'
+            +   platformBadge
+            +   '<span style="color:#64748b;font-size:11px;font-family:monospace;">' + f.id.slice(0,8) + '…</span>'
+            + '</div>'
+            + '<div style="font-size:12px;color:#94a3b8;margin-bottom:8px;word-break:break-all;">' + esc(f.rssUrl) + '</div>'
+            + '<div style="display:flex;gap:14px;font-size:12px;color:#cbd5e1;margin-bottom:10px;">'
+            +   '<span><strong style="color:#f8fafc;">' + (f.episodeCount || 0).toLocaleString() + '</strong> episodes</span>'
+            +   '<span><strong style="color:#3b82f6;">' + (f.subscriberCount || 0) + '</strong> subs</span>'
+            +   '<span style="color:#64748b;">last: ' + lastFetched + '</span>'
+            + '</div>'
+            + '<div style="display:flex;flex-wrap:wrap;gap:6px;">' + mergeBtns + '</div>'
+          + '</div>';
+        }).join('')
+        + '</div></div>';
+    }).join('');
+  } catch (e) {
+    area.innerHTML = '<p style="color:#ef4444;text-align:center;padding:40px;">Failed to load: ' + esc(e.message) + '</p>';
+  }
+}
+
+async function mergeFeeds(keepId, removeId, removeTitle) {
+  if (!confirm('Move all subscribers from "' + removeTitle + '" into the kept feed and delete it?\n\nThis cannot be undone — episodes for the deleted feed will be removed (recoverable on next refresh of the kept feed).')) return;
+  try {
+    const r = await api('/api/admin/duplicates/merge', { method: 'POST', body: JSON.stringify({ keepId, removeId }) });
+    showAlert('Merged: ' + r.subsMoved + ' subs moved, ' + r.episodesDropped + ' episodes dropped', 'success');
+    loadDuplicates();
+  } catch (e) {
+    showAlert('Merge failed: ' + e.message, 'error');
   }
 }
 

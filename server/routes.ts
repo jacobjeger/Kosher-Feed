@@ -2031,6 +2031,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin: list duplicate-title feed groups for the Duplicates review page.
+  app.get("/api/admin/duplicates", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const groups = await storage.getDuplicateTitleFeedGroups();
+      res.json({ count: groups.length, groups });
+    } catch (e: any) { publicError(res, e); }
+  });
+
+  // Admin: merge two feeds — move subs from `removeId` to `keepId`, then
+  // delete `removeId`.
+  app.post("/api/admin/duplicates/merge", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { keepId, removeId } = req.body || {};
+      if (!keepId || !removeId) return res.status(400).json({ error: "keepId and removeId required" });
+      const result = await storage.mergeFeedsKeepFirst(keepId, removeId);
+      res.json(result);
+    } catch (e: any) { publicError(res, e); }
+  });
+
   // TEMP one-off backfill: fill publishedAt for OU-source episodes with null
   // published_at by batch-fetching post details from the OU API. Processes one
   // platform (alldaf/allmishnah/allparsha/allhalacha) per call. ?batch=N caps

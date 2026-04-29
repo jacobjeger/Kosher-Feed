@@ -40,7 +40,11 @@ export async function getActiveFeedCount(): Promise<number> {
 }
 
 export async function getTotalEpisodeCount(): Promise<number> {
-  const [result] = await db.select({ count: count() }).from(episodes);
+  // Match admin analytics: exclude episodes belonging to admin-disabled TAT
+  // feeds (soft-deleted = is_active=false on a tat:// row). Otherwise the
+  // public landing page reports inflated numbers including 100k+ orphan rows.
+  const [result] = await db.select({ count: count() }).from(episodes)
+    .where(sql`${episodes.feedId} IN (SELECT id FROM ${feeds} WHERE NOT (${feeds.rssUrl} LIKE 'tat://%' AND ${feeds.isActive} = false))`);
   return Number(result.count);
 }
 
@@ -201,6 +205,77 @@ export async function setPublishedAtByEpisodeIds(updates: { episodeId: string; p
     count += r.length;
   }
   return count;
+}
+
+// Returns groups of feeds that share the same normalized title. Used by the
+// admin "Duplicates" page to surface candidates for merging or marking as
+// distinct. Only includes active feeds.
+export async function getDuplicateTitleFeedGroups(): Promise<{ key: string; feeds: any[] }[]> {
+  const rows = await db.execute(sql`
+    SELECT f.id, f.title, f.rss_url AS "rssUrl", f.image_url AS "imageUrl",
+           f.author, f.is_active AS "isActive", f.last_fetched_at AS "lastFetchedAt",
+           f.created_at AS "createdAt", f.source_network AS "sourceNetwork",
+           f.tat_speaker_id AS "tatSpeakerId", f.kolhalashon_rav_id AS "kolhalashonRavId",
+           f.alldaf_author_id AS "alldafAuthorId", f.allmishnah_author_id AS "allmishnahAuthorId",
+           f.allparsha_author_id AS "allparshaAuthorId", f.allhalacha_author_id AS "allhalachaAuthorId",
+           (SELECT COUNT(*) FROM episodes e WHERE e.feed_id = f.id) AS "episodeCount",
+           (SELECT COUNT(*) FROM subscriptions s WHERE s.feed_id = f.id) AS "subscriberCount",
+           lower(trim(f.title)) AS "key"
+    FROM feeds f
+    WHERE f.is_active = true
+      AND lower(trim(f.title)) IN (
+        SELECT lower(trim(title))
+        FROM feeds
+        WHERE is_active = true
+        GROUP BY lower(trim(title))
+        HAVING COUNT(*) > 1
+      )
+    ORDER BY lower(trim(f.title)), (SELECT COUNT(*) FROM episodes e WHERE e.feed_id = f.id) DESC
+  `);
+  const groups = new Map<string, any[]>();
+  for (const r of rows.rows as any[]) {
+    const k = r.key;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k)!.push({
+      id: r.id, title: r.title, rssUrl: r.rssUrl, imageUrl: r.imageUrl,
+      author: r.author, isActive: r.isActive, lastFetchedAt: r.lastFetchedAt,
+      createdAt: r.createdAt, sourceNetwork: r.sourceNetwork,
+      tatSpeakerId: r.tatSpeakerId, kolhalashonRavId: r.kolhalashonRavId,
+      alldafAuthorId: r.alldafAuthorId, allmishnahAuthorId: r.allmishnahAuthorId,
+      allparshaAuthorId: r.allparshaAuthorId, allhalachaAuthorId: r.allhalachaAuthorId,
+      episodeCount: Number(r.episodeCount),
+      subscriberCount: Number(r.subscriberCount),
+    });
+  }
+  return [...groups.entries()].map(([key, feeds]) => ({ key, feeds }));
+}
+
+// Move subscriptions from one feed to another, then delete the source feed.
+// onConflictDoNothing handles the case where a device is already subscribed
+// to both. Episode rows are dropped via cascade — those are recoverable on
+// the next refresh of the kept feed.
+export async function mergeFeedsKeepFirst(keepFeedId: string, removeFeedId: string): Promise<{ subsMoved: number; episodesDropped: number; ok: boolean }> {
+  if (keepFeedId === removeFeedId) return { subsMoved: 0, episodesDropped: 0, ok: false };
+  const keepFeed = await getFeedById(keepFeedId);
+  const removeFeed = await getFeedById(removeFeedId);
+  if (!keepFeed || !removeFeed) return { subsMoved: 0, episodesDropped: 0, ok: false };
+
+  // Move subscriptions
+  const movedSubs = await db.execute(sql`
+    INSERT INTO subscriptions (device_id, feed_id, created_at)
+    SELECT device_id, ${keepFeedId}, created_at FROM subscriptions WHERE feed_id = ${removeFeedId}
+    ON CONFLICT DO NOTHING
+    RETURNING id
+  `);
+  const subsMoved = (movedSubs.rows || []).length;
+
+  // Count episodes about to be dropped (informational)
+  const [{ count: epCount }] = await db.select({ count: count() }).from(episodes).where(eq(episodes.feedId, removeFeedId));
+
+  // Delete the remove feed (cascades episodes, subscriptions, etc.)
+  await db.delete(feeds).where(eq(feeds.id, removeFeedId));
+
+  return { subsMoved, episodesDropped: Number(epCount), ok: true };
 }
 
 // Returns RSS-source feeds that have at least one episode with null publishedAt.
