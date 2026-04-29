@@ -112,7 +112,11 @@ export async function getShiurDetails(fileId: number): Promise<any> {
   return khGet(`/TblShiurimLists/WebSite_GetShiurDetails/${fileId}`);
 }
 
-export async function getAllSpeakerShiurim(ravId: number, maxShiurim: number = 150): Promise<any[]> {
+// Cap per speaker. Some KH ravs have thousands of shiurim across decades —
+// capping low (was 150) meant most of their archive was invisible to users.
+// Refreshes early-exit when newest already exists (see refreshKHFeedEpisodes),
+// so a high cap mainly affects the initial backfill.
+export async function getAllSpeakerShiurim(ravId: number, maxShiurim: number = 5000): Promise<any[]> {
   const allShiurim: any[] = [];
   const pageSize = 24;
   let fromRow = 0;
