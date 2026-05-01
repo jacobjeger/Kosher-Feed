@@ -651,7 +651,10 @@ function setupErrorHandler(app: express.Application) {
   });
 }
 
-const FEED_REFRESH_INTERVAL = 60 * 60 * 1000;
+// Cron tick frequency. Drives all auto-refresh checks. Per-source staleness
+// thresholds (STALE_INTERVALS below) decide which feeds actually re-fetch
+// each tick — KH/TAT/OU stay on their longer cadences regardless.
+const FEED_REFRESH_INTERVAL = 30 * 60 * 1000;
 const KEEP_ALIVE_INTERVAL = 4 * 60 * 1000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -778,9 +781,12 @@ function getFeedType(feed: { rssUrl: string }): 'rss' | 'tat' | 'ou' | 'kh' {
   return 'rss';
 }
 
-// Tiered stale intervals: RSS 1h, TAT/OU 2h, KH 4h
+// Tiered stale intervals: RSS 30m, TAT/OU 2h, KH 4h.
+// RSS is cheap (304-short-circuit when nothing changed) so we can poll
+// frequently for fresh user-visible content. The others have heavier per-
+// fetch cost (or stricter rate limits) so they stay at the longer cadence.
 const STALE_INTERVALS: Record<string, number> = {
-  rss: 60 * 60 * 1000,       // 1 hour
+  rss: 30 * 60 * 1000,       // 30 minutes
   tat: 2 * 60 * 60 * 1000,   // 2 hours
   ou:  2 * 60 * 60 * 1000,   // 2 hours
   kh:  4 * 60 * 60 * 1000,   // 4 hours
