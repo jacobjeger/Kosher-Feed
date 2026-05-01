@@ -2031,6 +2031,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // TEMP diagnostic: recent episode inserts. Useful for understanding catalog
+  // growth — distinguishes "new content" from cap-bump archive backfill.
+  app.get("/api/admin/diagnostics/recent-episodes", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const hours = Math.min(parseInt((req.query.hours as string) || "24", 10), 168);
+      const limit = Math.min(parseInt((req.query.limit as string) || "100", 10), 500);
+      const data = await storage.getRecentlyCreatedEpisodes(hours, limit);
+      res.json(data);
+    } catch (e: any) { publicError(res, e); }
+  });
+
   // Admin: list duplicate-title feed groups for the Duplicates review page.
   app.get("/api/admin/duplicates", adminAuth as any, async (_req: Request, res: Response) => {
     try {

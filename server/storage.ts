@@ -207,6 +207,60 @@ export async function setPublishedAtByEpisodeIds(updates: { episodeId: string; p
   return count;
 }
 
+// Diagnostic: recent episode inserts. Returns count + breakdowns + top
+// inserted-into feeds. Used to investigate catalog growth.
+export async function getRecentlyCreatedEpisodes(hours: number, limit: number): Promise<any> {
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
+  const [{ count: totalRecent }] = await db.select({ count: count() }).from(episodes).where(sql`${episodes.createdAt} > ${cutoff}`);
+
+  // Per-feed breakdown
+  const perFeed = await db.execute(sql`
+    SELECT f.id, f.title, f.rss_url AS "rssUrl", COUNT(e.id) AS "n",
+           MIN(e.published_at) AS "minPub", MAX(e.published_at) AS "maxPub"
+    FROM episodes e
+    JOIN feeds f ON e.feed_id = f.id
+    WHERE e.created_at > ${cutoff.toISOString()}
+    GROUP BY f.id, f.title, f.rss_url
+    ORDER BY COUNT(e.id) DESC
+    LIMIT 30
+  `);
+
+  // Newest individual inserts
+  const samples = await db.execute(sql`
+    SELECT e.id, e.title, e.guid, e.published_at AS "publishedAt", e.created_at AS "createdAt", f.title AS "feedTitle"
+    FROM episodes e
+    JOIN feeds f ON e.feed_id = f.id
+    WHERE e.created_at > ${cutoff.toISOString()}
+    ORDER BY e.created_at DESC
+    LIMIT ${limit}
+  `);
+
+  // Group by source type
+  const bySourceType = await db.execute(sql`
+    SELECT
+      CASE
+        WHEN f.rss_url LIKE 'kh://%' THEN 'kh'
+        WHEN f.rss_url LIKE 'tat://%' THEN 'tat'
+        WHEN f.rss_url LIKE 'alldaf://%' OR f.rss_url LIKE 'allmishnah://%' OR f.rss_url LIKE 'allparsha://%' OR f.rss_url LIKE 'allhalacha://%' THEN 'ou'
+        ELSE 'rss'
+      END AS "type",
+      COUNT(e.id) AS "n"
+    FROM episodes e
+    JOIN feeds f ON e.feed_id = f.id
+    WHERE e.created_at > ${cutoff.toISOString()}
+    GROUP BY 1
+  `);
+
+  return {
+    hoursWindow: hours,
+    cutoff: cutoff.toISOString(),
+    totalRecent: Number(totalRecent),
+    bySourceType: bySourceType.rows,
+    perFeed: perFeed.rows,
+    samples: samples.rows,
+  };
+}
+
 // Returns groups of feeds that share the same normalized title. Used by the
 // admin "Duplicates" page to surface candidates for merging or marking as
 // distinct. Only includes active feeds.
