@@ -2031,6 +2031,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin: expose runtime config so deploys can be verified at a glance.
+  app.get("/api/admin/diagnostics/config", adminAuth as any, async (_req: Request, res: Response) => {
+    res.json({
+      cronTickMin: 30,           // FEED_REFRESH_INTERVAL is 30 min as of d388733
+      staleIntervalsMin: { rss: 30, tat: 120, ou: 120, kh: 240 },
+      maxEpisodesPerFetch: 5000,
+      khMaxShiurim: 5000,
+      pushBackfillThreshold: 5,
+      tatEnabled: !!(await storage.isTatGloballyEnabled()),
+      buildSha: process.env.RAILWAY_GIT_COMMIT_SHA || null,
+      uptime: process.uptime(),
+    });
+  });
+
   // TEMP diagnostic: counts orphan rows across the catalog. Useful for
   // understanding cleanup needs (devices that uninstalled, mute prefs for
   // unsubscribed users, etc.). Most FKs cascade on feed delete, but
