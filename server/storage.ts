@@ -207,6 +207,88 @@ export async function setPublishedAtByEpisodeIds(updates: { episodeId: string; p
   return count;
 }
 
+// Diagnostic: counts orphan rows across the catalog.
+// Tables keyed by deviceId (text, no FK) can orphan when a device is
+// uninstalled / unregistered. Tables that cascade on feed/episode delete
+// shouldn't orphan from those sides, but we sanity-check.
+export async function countOrphanRows(): Promise<any> {
+  const out: any = {};
+
+  // 1. push_tokens with deviceId not in device_profiles (uninstalled devices)
+  const orphanPushTokens = await db.execute(sql`
+    SELECT COUNT(*) AS n FROM push_tokens pt
+    WHERE NOT EXISTS (SELECT 1 FROM device_profiles dp WHERE dp.device_id = pt.device_id)
+  `);
+  out.pushTokensWithNoDeviceProfile = Number((orphanPushTokens.rows[0] as any).n);
+
+  // 2. notification_preferences with deviceId not in device_profiles
+  const orphanPrefs = await db.execute(sql`
+    SELECT COUNT(*) AS n FROM notification_preferences np
+    WHERE NOT EXISTS (SELECT 1 FROM device_profiles dp WHERE dp.device_id = np.device_id)
+  `);
+  out.notificationPrefsWithNoDeviceProfile = Number((orphanPrefs.rows[0] as any).n);
+
+  // 3. subscriptions with deviceId not in device_profiles
+  const orphanSubs = await db.execute(sql`
+    SELECT COUNT(*) AS n FROM subscriptions s
+    WHERE NOT EXISTS (SELECT 1 FROM device_profiles dp WHERE dp.device_id = s.device_id)
+  `);
+  out.subscriptionsWithNoDeviceProfile = Number((orphanSubs.rows[0] as any).n);
+
+  // 4. episode_listens with deviceId not in device_profiles
+  const orphanListens = await db.execute(sql`
+    SELECT COUNT(*) AS n FROM episode_listens el
+    WHERE NOT EXISTS (SELECT 1 FROM device_profiles dp WHERE dp.device_id = el.device_id)
+  `);
+  out.episodeListensWithNoDeviceProfile = Number((orphanListens.rows[0] as any).n);
+
+  // 5. playback_positions with deviceId not in device_profiles
+  const orphanPositions = await db.execute(sql`
+    SELECT COUNT(*) AS n FROM playback_positions pp
+    WHERE NOT EXISTS (SELECT 1 FROM device_profiles dp WHERE dp.device_id = pp.device_id)
+  `);
+  out.playbackPositionsWithNoDeviceProfile = Number((orphanPositions.rows[0] as any).n);
+
+  // 6. categories with no active feeds (orphan categories cluttering UI)
+  const orphanCats = await db.execute(sql`
+    SELECT c.id, c.name FROM categories c
+    WHERE NOT EXISTS (
+      SELECT 1 FROM feeds f WHERE f.category_id = c.id AND f.is_active = true
+      UNION
+      SELECT 1 FROM feed_categories fc
+        JOIN feeds f ON f.id = fc.feed_id
+        WHERE fc.category_id = c.id AND f.is_active = true
+    )
+  `);
+  out.categoriesWithNoActiveFeeds = (orphanCats.rows as any[]).map(c => ({ id: c.id, name: c.name }));
+
+  // 7. push_tokens grouped by device — devices with multiple tokens (suspicious)
+  const dupTokens = await db.execute(sql`
+    SELECT device_id AS "deviceId", COUNT(*) AS n
+    FROM push_tokens
+    GROUP BY device_id
+    HAVING COUNT(*) > 3
+    ORDER BY COUNT(*) DESC
+    LIMIT 10
+  `);
+  out.devicesWithManyPushTokens = (dupTokens.rows as any[]).map(r => ({ deviceId: r.deviceId, count: Number(r.n) }));
+
+  // 8. Feed totals summary
+  const totals = await db.execute(sql`
+    SELECT
+      (SELECT COUNT(*) FROM device_profiles) AS "deviceProfiles",
+      (SELECT COUNT(*) FROM push_tokens) AS "pushTokens",
+      (SELECT COUNT(*) FROM subscriptions) AS "subscriptions",
+      (SELECT COUNT(*) FROM notification_preferences) AS "notificationPrefs",
+      (SELECT COUNT(*) FROM episode_listens) AS "episodeListens",
+      (SELECT COUNT(*) FROM playback_positions) AS "playbackPositions",
+      (SELECT COUNT(*) FROM categories) AS "categories"
+  `);
+  out.totals = totals.rows[0];
+
+  return out;
+}
+
 // Diagnostic: recent episode inserts. Returns count + breakdowns + top
 // inserted-into feeds. Used to investigate catalog growth.
 export async function getRecentlyCreatedEpisodes(hours: number, limit: number): Promise<any> {

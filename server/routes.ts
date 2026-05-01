@@ -2031,6 +2031,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // TEMP diagnostic: counts orphan rows across the catalog. Useful for
+  // understanding cleanup needs (devices that uninstalled, mute prefs for
+  // unsubscribed users, etc.). Most FKs cascade on feed delete, but
+  // device_id is just text — anything keyed by it can orphan.
+  app.get("/api/admin/diagnostics/orphans", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const data = await storage.countOrphanRows();
+      res.json(data);
+    } catch (e: any) { publicError(res, e); }
+  });
+
   // TEMP diagnostic: recent episode inserts. Useful for understanding catalog
   // growth — distinguishes "new content" from cap-bump archive backfill.
   app.get("/api/admin/diagnostics/recent-episodes", adminAuth as any, async (req: Request, res: Response) => {
