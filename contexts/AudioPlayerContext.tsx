@@ -118,6 +118,12 @@ interface AudioPlayerContextValue {
   // this from the error-state retry button surfaced when playback.playbackError
   // is set.
   retryPlayback: () => Promise<void>;
+  // Manually advance to the next chronological unplayed shiur in the same
+  // feed. Used by the "skip to next" button in MiniPlayer / full player.
+  skipToNextEpisode: () => Promise<void>;
+  // Step back to the next-older shiur in the same feed (does NOT skip
+  // already-played, since "previous" usually means the immediate prior one).
+  skipToPreviousEpisode: () => Promise<void>;
 }
 
 const AudioPlayerContext = createContext<AudioPlayerContextValue | null>(null);
@@ -285,6 +291,11 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   const positionListenersRef = useRef<Set<() => void>>(new Set());
   // Tracks whether resume() is called after a prior pause (vs. initial play) — used for smart rewind
   const wasPausedRef = useRef<boolean>(false);
+  // Timestamp of the last seek-while-playing. expo-audio briefly reports
+  // playing:false while it buffers the new position; we suppress that
+  // transient update to UI so the play button doesn't flicker to "paused"
+  // and back. Cleared once status.playing === true is seen post-seek.
+  const seekResumeUntilRef = useRef<number>(0);
 
   // Apply smart-rewind seek if enabled and in a paused→play transition.
   // Returns true if rewind was applied. Reads setting from AsyncStorage so
@@ -588,12 +599,24 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       playNextRef.current();
     } else {
       const finishedEpisodeId = episode.id;
-      AsyncStorage.getItem("@kosher_shiurim_settings").then(data => {
+      AsyncStorage.getItem("@kosher_shiurim_settings").then(async (data) => {
         try {
           const settings = data ? JSON.parse(data) : {};
           if (settings.continuousPlayback !== false) {
             const feedId = currentFeedRef.current?.id;
             if (feedId) {
+              // Load the set of episode IDs the user has already played, so
+              // we can skip them when picking the next one. Read fresh from
+              // AsyncStorage to avoid stale closure values.
+              let playedSet: Set<string> = new Set();
+              try {
+                const playedRaw = await AsyncStorage.getItem("@shiurpod_played_episodes");
+                if (playedRaw) {
+                  const arr = JSON.parse(playedRaw);
+                  if (Array.isArray(arr)) playedSet = new Set(arr);
+                }
+              } catch {}
+
               const baseUrl = getApiUrl();
               fetch(new URL(`/api/feeds/${feedId}/episodes?sort=newest&limit=50`, baseUrl).toString())
                 .then(r => r.json())
@@ -601,7 +624,20 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
                   // Guard: if user switched to a different episode during fetch, bail out
                   if (currentEpisodeRef.current?.id !== finishedEpisodeId && currentEpisodeRef.current !== null) return;
                   const currentIdx = eps.findIndex((e: any) => e.id === finishedEpisodeId);
-                  const nextEp = currentIdx >= 0 && currentIdx < eps.length - 1 ? eps[currentIdx + 1] : null;
+                  // Move FORWARD in time (oldest → newest). The list is sorted
+                  // newest-first, so newer episodes have a smaller index than
+                  // the current one. Walk from currentIdx-1 toward 0, picking
+                  // the first one the user hasn't already played.
+                  let nextEp: any = null;
+                  if (currentIdx > 0) {
+                    for (let i = currentIdx - 1; i >= 0; i--) {
+                      const candidate = eps[i];
+                      if (candidate && !playedSet.has(candidate.id)) {
+                        nextEp = candidate;
+                        break;
+                      }
+                    }
+                  }
                   if (nextEp && currentFeedRef.current) {
                     playEpisodeInternalRef.current(nextEp, currentFeedRef.current, false);
                   } else {
@@ -815,9 +851,17 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
                   if (ep && fd) {
                     handleEpisodeEndRef.current(ep, fd);
                   }
+                } else if (Date.now() < seekResumeUntilRef.current) {
+                  // Recent seek — expo-audio is buffering the new position
+                  // and will resume on its own. Don't flip UI to paused.
                 } else {
                   setPlayback(prev => prev.isPlaying ? ({ ...prev, isPlaying: false }) : prev);
                 }
+              }
+              // When the player resumes after a seek, clear the suppression
+              // window so the next genuine pause is reflected normally.
+              if (status.playing === true && seekResumeUntilRef.current > 0) {
+                seekResumeUntilRef.current = 0;
               }
             });
 
@@ -918,6 +962,74 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     await playEpisodeInternal(ep, fd, true);
   }, [playEpisodeInternal]);
 
+  // Shared helper for skip-prev/skip-next. Walks the feed's newest-50 list
+  // in the requested direction (newer or older) and plays the next match.
+  // For "next" (newer) we honor the played-set so we skip episodes the user
+  // has already heard. For "previous" (older) we don't filter — going back
+  // usually means the user wants the immediate prior shiur, played or not.
+  const skipToAdjacentEpisode = useCallback(async (direction: "newer" | "older") => {
+    const ep = currentEpisodeRef.current;
+    const fd = currentFeedRef.current;
+    if (!ep || !fd) return;
+
+    // Persist current position so the skipped episode is resumable later.
+    const pos = positionRef.current;
+    if (pos.positionMs > 0) {
+      savePosition(ep.id, fd.id, pos.positionMs, pos.durationMs);
+    }
+    flushListenDuration();
+
+    setPlayback(prev => ({ ...prev, isLoading: true }));
+
+    let playedSet: Set<string> = new Set();
+    if (direction === "newer") {
+      try {
+        const playedRaw = await AsyncStorage.getItem("@shiurpod_played_episodes");
+        if (playedRaw) {
+          const arr = JSON.parse(playedRaw);
+          if (Array.isArray(arr)) playedSet = new Set(arr);
+        }
+      } catch {}
+    }
+
+    try {
+      const baseUrl = getApiUrl();
+      const eps: any[] = await fetch(new URL(`/api/feeds/${fd.id}/episodes?sort=newest&limit=50`, baseUrl).toString()).then(r => r.json());
+      const currentIdx = eps.findIndex((e: any) => e.id === ep.id);
+      let nextEp: any = null;
+      if (currentIdx >= 0) {
+        if (direction === "newer") {
+          // Newer = smaller index in newest-first list. Walk toward 0.
+          for (let i = currentIdx - 1; i >= 0; i--) {
+            const candidate = eps[i];
+            if (candidate && !playedSet.has(candidate.id) && candidate.id !== ep.id) {
+              nextEp = candidate;
+              break;
+            }
+          }
+        } else {
+          // Older = larger index. Take the immediate next-older entry.
+          if (currentIdx < eps.length - 1) {
+            nextEp = eps[currentIdx + 1];
+          }
+        }
+      }
+      if (nextEp) {
+        await playEpisodeInternalRef.current(nextEp, fd, false);
+      } else {
+        addLog("info", `skipTo${direction === "newer" ? "Next" : "Previous"}Episode: no ${direction} episode found in feed`, undefined, "audio");
+        setPlayback(prev => ({ ...prev, isLoading: false }));
+      }
+    } catch (e: any) {
+      addLog("warn", `skipTo${direction === "newer" ? "Next" : "Previous"}Episode failed: ${e?.message || e}`, undefined, "audio");
+      setPlayback(prev => ({ ...prev, isLoading: false }));
+    }
+  }, [flushListenDuration]);
+
+  const skipToNextEpisode = useCallback(async () => skipToAdjacentEpisode("newer"), [skipToAdjacentEpisode]);
+  const skipToPreviousEpisode = useCallback(async () => skipToAdjacentEpisode("older"), [skipToAdjacentEpisode]);
+
+
   const playNext = useCallback(async () => {
     const currentQueue = queueRef.current;
     if (currentQueue.length === 0) return;
@@ -990,12 +1102,19 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
   const seekTo = useCallback(async (positionMs: number) => {
     try {
+      // If we're playing, mark a 3s window during which transient
+      // "playing: false" status updates from the player are ignored. Without
+      // this, skipping forward/back briefly flickers the play button to
+      // "paused" while expo-audio buffers the new position.
+      setPlayback(prev => {
+        if (prev.isPlaying) seekResumeUntilRef.current = Date.now() + 3000;
+        return { ...prev, positionMs };
+      });
       if (Platform.OS === "web" && audioRef.current) {
         audioRef.current.currentTime = positionMs / 1000;
       } else if (nativePlayerRef.current) {
         nativePlayerRef.current.seekTo(positionMs / 1000);
       }
-      setPlayback(prev => ({ ...prev, positionMs }));
     } catch (e) {
       addLog("warn", `Seek failed: ${(e as any)?.message || e}`, undefined, "audio");
     }
@@ -1211,7 +1330,9 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     clearEpisodeCompleted,
     setAudioBoost,
     retryPlayback,
-  }), [currentEpisode, currentFeed, playback, playEpisode, pause, resume, seekTo, skip, setRate, stop, getSavedPosition, removeSavedPosition, recentlyPlayed, getFeedSpeed, sleepTimer, setSleepTimerFn, cancelSleepTimer, getInProgressEpisodes, queue, handleAddToQueue, handleRemoveFromQueue, handleClearQueue, refreshQueue, playNext, subscribePosition, getPositionSnapshot, episodeCompleted, clearEpisodeCompleted, setAudioBoost, retryPlayback]);
+    skipToNextEpisode,
+    skipToPreviousEpisode,
+  }), [currentEpisode, currentFeed, playback, playEpisode, pause, resume, seekTo, skip, setRate, stop, getSavedPosition, removeSavedPosition, recentlyPlayed, getFeedSpeed, sleepTimer, setSleepTimerFn, cancelSleepTimer, getInProgressEpisodes, queue, handleAddToQueue, handleRemoveFromQueue, handleClearQueue, refreshQueue, playNext, subscribePosition, getPositionSnapshot, episodeCompleted, clearEpisodeCompleted, setAudioBoost, retryPlayback, skipToNextEpisode, skipToPreviousEpisode]);
 
   return (
     <AudioPlayerContext.Provider value={value}>

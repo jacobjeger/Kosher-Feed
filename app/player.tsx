@@ -52,6 +52,7 @@ export default function PlayerScreen() {
     sleepTimer, setSleepTimer, cancelSleepTimer,
     episodeCompleted, clearEpisodeCompleted,
     retryPlayback,
+    skipToNextEpisode, skipToPreviousEpisode,
   } = useAudioPlayer();
   const position = usePlaybackPosition();
   const { settings } = useSettings();
@@ -411,6 +412,15 @@ export default function PlayerScreen() {
 
         <FocusableView
           focusRadius={20}
+          onPress={() => { lightHaptic(); skipToPreviousEpisode(); }}
+          hitSlop={8}
+          style={styles.skipBtn}
+        >
+          <Ionicons name="play-skip-back" size={isSmallScreen ? 24 : 28} color={colors.text} />
+        </FocusableView>
+
+        <FocusableView
+          focusRadius={20}
           onPress={() => { lightHaptic(); skip(-settings.skipBackwardSeconds); }}
           hitSlop={8}
           style={styles.skipBtn}
@@ -455,6 +465,15 @@ export default function PlayerScreen() {
           style={styles.skipBtn}
         >
           <MaterialIcons name={getSkipForwardIcon()} size={isSmallScreen ? 28 : 32} color={colors.text} />
+        </FocusableView>
+
+        <FocusableView
+          focusRadius={20}
+          onPress={() => { lightHaptic(); skipToNextEpisode(); }}
+          hitSlop={8}
+          style={styles.skipBtn}
+        >
+          <Ionicons name="play-skip-forward" size={isSmallScreen ? 24 : 28} color={colors.text} />
         </FocusableView>
 
         <FocusableView
