@@ -204,9 +204,11 @@ const styles = StyleSheet.create({
   slider: { width: "100%" as any, height: 32 },
   timeRow: { flexDirection: "row", justifyContent: "space-between" },
   timeText: { fontSize: 12, fontWeight: "500" },
-  controls: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 16, paddingHorizontal: 16, paddingVertical: 4 },
-  smallBtn: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
-  skipBtn: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  // Tightened to fit 7 controls (rate, skip-prev, back-15, play, fwd-15, skip-next, stop)
+  // on a 480px-wide tiny-screen layout without clipping the edge buttons.
+  controls: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 4, paddingVertical: 4 },
+  smallBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  skipBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
   playBtn: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center" },
   secondary: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 14, paddingVertical: 4, paddingBottom: 8 },
   secBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
