@@ -283,6 +283,34 @@ function SettingsScreenInner() {
   };
 
   const [pushTestStatus, setPushTestStatus] = useState<"idle" | "testing">("idle");
+  const [updateCheckStatus, setUpdateCheckStatus] = useState<string | undefined>(undefined);
+
+  const handleCheckForUpdate = async () => {
+    lightHaptic();
+    setUpdateCheckStatus("Checking...");
+    try {
+      const Updates = await import("expo-updates");
+      const check = await Updates.checkForUpdateAsync();
+      if (!check.isAvailable) {
+        setUpdateCheckStatus("Up to date");
+        Alert.alert("Up to date", `You're on the latest bundle.\n\nChannel: ${(Updates as any).channel || "unknown"}\nUpdate ID: ${(Updates as any).updateId || "(none)"}`);
+        return;
+      }
+      setUpdateCheckStatus("Downloading...");
+      const fetched = await Updates.fetchUpdateAsync();
+      if (!fetched.isNew) {
+        setUpdateCheckStatus("Up to date");
+        Alert.alert("No new bundle", "Update server returned the same bundle you already have.");
+        return;
+      }
+      setUpdateCheckStatus("Restarting...");
+      // Apply immediately by reloading the JS bundle
+      await Updates.reloadAsync();
+    } catch (e: any) {
+      setUpdateCheckStatus("Error");
+      Alert.alert("Update check failed", e?.message || String(e));
+    }
+  };
 
   const handleTestPushRegistration = async () => {
     lightHaptic();
@@ -607,6 +635,13 @@ function SettingsScreenInner() {
                 icon={<Ionicons name="bug" size={20} color="#ef4444" />}
                 label="Debug Logs"
                 onPress={() => router.push("/debug-logs")}
+              />
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
+              <SettingRow
+                icon={<Ionicons name="cloud-download-outline" size={20} color={colors.text} />}
+                label="Check for Updates"
+                value={updateCheckStatus}
+                onPress={updateCheckStatus === "Checking..." ? undefined : handleCheckForUpdate}
               />
             </View>
           </View>

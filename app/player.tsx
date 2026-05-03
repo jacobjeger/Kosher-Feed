@@ -707,12 +707,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 20,
-    paddingHorizontal: 24,
+    // Tightened from gap:20 / pad:24 so all 7 controls (rate, skip-prev,
+    // back-15, play, fwd-15, skip-next, stop) fit on a single row across
+    // typical phone widths.
+    gap: 12,
+    paddingHorizontal: 8,
     paddingBottom: 10,
+    flexWrap: "wrap",
   },
   controlsSmall: {
-    gap: 12,
+    gap: 8,
+    paddingHorizontal: 4,
     paddingBottom: 6,
   },
   rateBtn: {
