@@ -795,9 +795,21 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
                 }
               }
 
-              if (status.playing === false && status.currentTime > 0 && status.duration > 0) {
+              // didJustFinish is expo-audio's direct end-of-track signal — fires
+              // reliably even when the phone is locked / app backgrounded. Use
+              // this as the primary trigger; fall back to the position-ratio
+              // heuristic only if the runtime version doesn't expose it.
+              if (status.didJustFinish === true) {
+                const ep = currentEpisodeRef.current;
+                const fd = currentFeedRef.current;
+                if (ep && fd) {
+                  handleEpisodeEndRef.current(ep, fd);
+                }
+              } else if (status.playing === false && status.currentTime > 0 && status.duration > 0) {
                 const ratio = status.currentTime / status.duration;
-                if (ratio > 0.97) {
+                // 0.95 (down from 0.97) gives more tolerance for short shiurim
+                // and buffer cutoff a couple of seconds before exact end.
+                if (ratio > 0.95) {
                   const ep = currentEpisodeRef.current;
                   const fd = currentFeedRef.current;
                   if (ep && fd) {
