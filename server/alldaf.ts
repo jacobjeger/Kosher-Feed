@@ -21,6 +21,7 @@ interface OUPlatformConfig {
     authorsFetchList: string;
     authorsFetchById: string;
     postsFetchList: string;
+    postsFetchById: string;
   };
 }
 
@@ -65,7 +66,10 @@ export const OU_PLATFORMS: Record<OUPlatformKey, OUPlatformConfig> = {
     procedures: {
       authorsFetchList: "authorRouter.fetchList",
       authorsFetchById: "authorRouter.fetchById",
-      postsFetchList: "postRouter.fetchList",
+      // AllHalacha's tRPC schema differs from alldaf/allmishnah/allparsha:
+      // list = postRouter.getPosts, detail = postRouter.getPost.
+      postsFetchList: "postRouter.getPosts",
+      postsFetchById: "postRouter.getPost",
     },
   },
 };
@@ -186,21 +190,36 @@ export async function fetchAuthorById(platform: OUPlatformKey, authorId: number)
   }
 }
 
+export interface PostDetailFields {
+  publishDate: string | null;
+  createdAt: string | null;
+  // Audio-related fields. AllHalacha's list endpoint strips these, so we have
+  // to merge them in from the per-post detail call. The other OU platforms
+  // already include them on the list records — these stay undefined and the
+  // mapper falls through to the list values.
+  s3Url?: string | null;
+  hls_url?: string | null;
+  mediaId?: string | null;
+  videoType?: string | null;
+  series?: { id: number; name: string; image: string | null } | null;
+  hideVideoDownload?: boolean;
+  episodeNumber?: number | null;
+  topics?: string[];
+}
+
 // Batch-fetch full post details for a list of OU post IDs. The list endpoint
-// (posts.fetchList) strips date fields, so to get publishDate we have to call
-// posts.fetchById. tRPC's batch protocol lets us request many posts in a
-// single HTTP round-trip — saves ~100x calls vs serial.
+// strips date fields (and on AllHalacha, audio fields too), so we call the
+// per-post detail endpoint. tRPC's batch protocol lets us request many posts
+// in a single HTTP round-trip — saves ~100x calls vs serial.
 export async function fetchPostDetailsBatch(
   platform: OUPlatformKey,
   ids: number[],
-): Promise<Map<number, { publishDate: string | null; createdAt: string | null }>> {
-  const out = new Map<number, { publishDate: string | null; createdAt: string | null }>();
+): Promise<Map<number, PostDetailFields>> {
+  const out = new Map<number, PostDetailFields>();
   if (ids.length === 0) return out;
 
   const cfg = OU_PLATFORMS[platform];
-  const procedure = cfg.procedures?.authorsFetchById ? "authorRouter.fetchById" : "posts.fetchById";
-  // ^ allhalacha uses different routers — but it does have postRouter.fetchById; we keep consistent by just using posts.fetchById for non-allhalacha and skip allhalacha here (it's tiny).
-  const procName = cfg.procedures ? "postRouter.fetchById" : "posts.fetchById";
+  const procName = cfg.procedures?.postsFetchById || "posts.fetchById";
 
   const BATCH = 50; // ~50 posts per HTTP call to stay under URL length limits
   for (let i = 0; i < ids.length; i += BATCH) {
@@ -224,6 +243,14 @@ export async function fetchPostDetailsBatch(
             out.set(post.id, {
               publishDate: post.publishDate || null,
               createdAt: post.createdAt || null,
+              s3Url: post.s3Url ?? null,
+              hls_url: post.hls_url ?? null,
+              mediaId: post.mediaId ?? null,
+              videoType: post.videoType ?? null,
+              series: post.series ?? null,
+              hideVideoDownload: post.hideVideoDownload,
+              episodeNumber: post.episodeNumber ?? null,
+              topics: Array.isArray(post.topics) ? post.topics : undefined,
             });
           } else if (id) {
             // record absence so caller knows we tried
@@ -354,7 +381,7 @@ export function mapOUPostToEpisodeData(
   post: OUPost,
   feedId: string,
   guidPrefix: string,
-  dateOverride?: { publishDate: string | null; createdAt: string | null },
+  dateOverride?: { publishDate: string | null; createdAt: string | null } | null,
 ) {
   const audioUrl = getAudioUrl(post);
   if (!audioUrl) return null;
@@ -537,15 +564,35 @@ export async function refreshOUFeedEpisodes(
     : { knownIds: await storage.getRecentOuPostIds(feed.id, cfg.guidPrefix, 50), stopAfterConsecutive: 20 };
   const posts = await fetchAllAuthorPosts(platform, feed.authorId, incremental);
 
-  // The list API doesn't include publishDate. Batch-fetch dates via fetchById
-  // so newly-ingested episodes get a real timestamp instead of null. Skipped
-  // when there are no posts to refresh.
-  const dateMap = posts.length > 0
+  // The list API doesn't include publishDate (and on AllHalacha, also strips
+  // audio URLs and series.id). Batch-fetch full details via the per-post
+  // endpoint so newly-ingested episodes get a real timestamp AND a playable
+  // audio URL. Skipped when there are no posts to refresh.
+  const detailMap = posts.length > 0
     ? await fetchPostDetailsBatch(platform, posts.map(p => p.id))
-    : new Map<number, { publishDate: string | null; createdAt: string | null }>();
+    : new Map<number, PostDetailFields>();
+
+  // For AllHalacha specifically, list records lack s3Url/hls_url/mediaId/
+  // videoType/series — without merging detail fields back in, mapOUPost...
+  // returns null for every post and we ingest 0 episodes. Other OU platforms
+  // already have these on the list records; this is a no-op for them.
+  if (platform === "allhalacha") {
+    for (const p of posts) {
+      const d = detailMap.get(p.id);
+      if (!d) continue;
+      if (d.s3Url) (p as any).s3Url = d.s3Url;
+      if (d.hls_url) (p as any).hls_url = d.hls_url;
+      if (d.mediaId) (p as any).mediaId = d.mediaId;
+      if (d.videoType) (p as any).videoType = d.videoType;
+      if (d.series) (p as any).series = d.series;
+      if (d.episodeNumber != null) (p as any).episodeNumber = d.episodeNumber;
+      if (d.topics) (p as any).topics = d.topics;
+      if (d.hideVideoDownload != null) (p as any).hideVideoDownload = d.hideVideoDownload;
+    }
+  }
 
   let episodeData = posts
-    .map(p => mapOUPostToEpisodeData(p, feed.id, cfg.guidPrefix, dateMap.get(p.id)))
+    .map(p => mapOUPostToEpisodeData(p, feed.id, cfg.guidPrefix, detailMap.get(p.id) || null))
     .filter((ep): ep is NonNullable<typeof ep> => ep !== null);
 
   // Cross-source dedup for merged feeds
