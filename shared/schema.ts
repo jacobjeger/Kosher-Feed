@@ -32,6 +32,7 @@ export const feeds = pgTable("feeds", {
   allparshaAuthorId: integer("allparsha_author_id"),
   allhalachaAuthorId: integer("allhalacha_author_id"),
   kolhalashonRavId: integer("kolhalashon_rav_id"),
+  torahdownloadsSpeakerId: integer("torahdownloads_speaker_id"),
   showInBrowse: boolean("show_in_browse").default(true).notNull(),
 }, (table) => [
   index("feeds_active_browse_idx").on(table.isActive, table.showInBrowse),
@@ -52,6 +53,7 @@ export const episodes = pgTable("episodes", {
   sourceSheetUrl: text("source_sheet_url"),
   tatLectureId: integer("tat_lecture_id"),
   kolhalashonFileId: integer("kolhalashon_file_id"),
+  torahdownloadsShiurId: integer("torahdownloads_shiur_id"),
   noDownload: boolean("no_download").default(false),
 }, (table) => [
   uniqueIndex("episodes_guid_feed_idx").on(table.guid, table.feedId),
@@ -221,6 +223,7 @@ export const insertFeedSchema = createInsertSchema(feeds).pick({
   sourceNetwork: true,
   tatSpeakerId: true,
   kolhalashonRavId: true,
+  torahdownloadsSpeakerId: true,
   showInBrowse: true,
 });
 

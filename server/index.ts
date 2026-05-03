@@ -15,8 +15,9 @@ import { startRefreshCycle, recordFeedResult, endRefreshCycle } from "./feed-vit
 import { refreshTATFeedEpisodes, syncTATSpeakers, fetchAllSpeakers } from "./torahanytime";
 import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, fetchAuthorById, OU_PLATFORMS, isApiOnlyUrl, type OUPlatformKey } from "./alldaf";
 import { refreshKHFeedEpisodes, syncKHSpeakers } from "./kolhalashon";
+import { refreshTorahDownloadsFeedEpisodes, syncTorahDownloadsSpeakers } from "./torahdownloads";
 import { autoCategorizeFeeds } from "./auto-categorize";
-import { extractKhRavId, extractTatSpeakerId } from "./feed-utils";
+import { extractKhRavId, extractTatSpeakerId, extractTorahDownloadsSpeakerId } from "./feed-utils";
 import rateLimit from "express-rate-limit";
 import { sendDailyErrorDigest } from "./error-alerts";
 import * as fs from "fs";
@@ -113,6 +114,8 @@ async function ensureColumns() {
     { column: "allhalacha_author_id", type: "INTEGER" },
     { column: "kolhalashon_rav_id", type: "INTEGER" },
     { column: "kolhalashon_file_id", type: "INTEGER", table: "episodes" },
+    { column: "torahdownloads_speaker_id", type: "INTEGER" },
+    { column: "torahdownloads_shiur_id", type: "INTEGER", table: "episodes" },
     { column: "show_in_browse", type: "BOOLEAN DEFAULT true NOT NULL" },
     { column: "auto_assigned", type: "BOOLEAN DEFAULT false NOT NULL", table: "feed_categories" },
   ];
@@ -671,7 +674,7 @@ export interface RefreshResult {
   episodesFound: number;
 }
 
-export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string; etag?: string | null; lastModifiedHeader?: string | null; tatSpeakerId?: number | null; alldafAuthorId?: number | null; allmishnahAuthorId?: number | null; allparshaAuthorId?: number | null; allhalachaAuthorId?: number | null; kolhalashonRavId?: number | null }): Promise<RefreshResult> {
+export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string; etag?: string | null; lastModifiedHeader?: string | null; tatSpeakerId?: number | null; alldafAuthorId?: number | null; allmishnahAuthorId?: number | null; allparshaAuthorId?: number | null; allhalachaAuthorId?: number | null; kolhalashonRavId?: number | null; torahdownloadsSpeakerId?: number | null }): Promise<RefreshResult> {
   const start = Date.now();
 
   // TAT feed: refresh from TorahAnytime API
@@ -701,6 +704,15 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
     return { newEpisodes: result.newEpisodes, method: 'stream', durationMs: Date.now() - start, episodesFound: result.newEpisodes };
   }
 
+  // TorahDownloads feed: HTML scrape
+  const isTdUrl = feed.rssUrl.startsWith("td://");
+  const effectiveTdSpeakerId = extractTorahDownloadsSpeakerId(feed);
+
+  if (effectiveTdSpeakerId && isTdUrl) {
+    const result = await refreshTorahDownloadsFeedEpisodes({ id: feed.id, title: feed.title, torahdownloadsSpeakerId: effectiveTdSpeakerId }, feed);
+    return { newEpisodes: result.newEpisodes, method: 'stream', durationMs: Date.now() - start, episodesFound: result.newEpisodes };
+  }
+
   // Merged feed (has both RSS + TAT): refresh both
   if (effectiveTatSpeakerId) {
     await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveTatSpeakerId }, feed).catch(e => {
@@ -722,8 +734,15 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
     });
   }
 
-  // Skip RSS parsing for TAT-only, OU-only, or KH-only URLs
-  if (isTatUrl || isOUUrl || isKhUrl) {
+  // Merged feed (has both RSS + TorahDownloads): refresh both
+  if (effectiveTdSpeakerId && !isTdUrl) {
+    await refreshTorahDownloadsFeedEpisodes({ id: feed.id, title: feed.title, torahdownloadsSpeakerId: effectiveTdSpeakerId }, feed).catch(e => {
+      console.log(`TorahDownloads refresh failed for merged feed ${feed.title}: ${(e as Error).message?.slice(0, 100)}`);
+    });
+  }
+
+  // Skip RSS parsing for API-only URLs (TAT/OU/KH/TorahDownloads)
+  if (isTatUrl || isOUUrl || isKhUrl || isTdUrl) {
     return { newEpisodes: 0, method: 'stream', durationMs: Date.now() - start, episodesFound: 0 };
   }
 
@@ -774,30 +793,37 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
 let isAutoRefreshing = false;
 
 // Feed type classification for concurrency and stale intervals
-function getFeedType(feed: { rssUrl: string }): 'rss' | 'tat' | 'ou' | 'kh' {
+function getFeedType(feed: { rssUrl: string }): 'rss' | 'tat' | 'ou' | 'kh' | 'td' {
   if (feed.rssUrl.startsWith("kh://")) return 'kh';
   if (feed.rssUrl.startsWith("tat://")) return 'tat';
+  if (feed.rssUrl.startsWith("td://")) return 'td';
   if (Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme))) return 'ou';
   return 'rss';
 }
 
-// Tiered stale intervals: RSS 30m, TAT/OU 2h, KH 4h.
+// Tiered stale intervals: RSS 30m, TAT/OU 2h, KH/TD 4h.
 // RSS is cheap (304-short-circuit when nothing changed) so we can poll
 // frequently for fresh user-visible content. The others have heavier per-
 // fetch cost (or stricter rate limits) so they stay at the longer cadence.
+// TD is HTML-scraped at 2 RPS, so 4h matches its cost profile.
 const STALE_INTERVALS: Record<string, number> = {
   rss: 30 * 60 * 1000,       // 30 minutes
   tat: 2 * 60 * 60 * 1000,   // 2 hours
   ou:  2 * 60 * 60 * 1000,   // 2 hours
   kh:  4 * 60 * 60 * 1000,   // 4 hours
+  td:  4 * 60 * 60 * 1000,   // 4 hours
 };
 
-// Concurrency per feed type (keep total across all types ≤ pool max to avoid DB exhaustion)
+// Concurrency per feed type (keep total across all types ≤ pool max to avoid DB exhaustion).
+// TD is held to 1 because the adapter enforces a process-global 2 RPS throttle
+// to torahdownloads.com — running multiple TD refreshes in parallel just
+// serializes them on the throttle anyway, and we'd rather hold the DB slot.
 const CONCURRENCY: Record<string, number> = {
   rss: 3,
   tat: 4,
   ou:  3,
   kh:  5,
+  td:  1,
 };
 
 async function autoRefreshFeeds() {
@@ -831,7 +857,7 @@ async function autoRefreshFeeds() {
     }
 
     // Group feeds by type for different concurrency levels
-    const feedsByType: Record<string, typeof staleFeeds> = { rss: [], tat: [], ou: [], kh: [] };
+    const feedsByType: Record<string, typeof staleFeeds> = { rss: [], tat: [], ou: [], kh: [], td: [] };
     for (const f of staleFeeds) {
       feedsByType[getFeedType(f)].push(f);
     }
@@ -905,6 +931,7 @@ async function autoRefreshFeeds() {
       ...processPool(feedsByType.tat, CONCURRENCY.tat),
       ...processPool(feedsByType.ou, CONCURRENCY.ou),
       ...processPool(feedsByType.kh, CONCURRENCY.kh),
+      ...processPool(feedsByType.td, CONCURRENCY.td),
     ];
 
     await Promise.all(allTasks);
@@ -1045,6 +1072,14 @@ async function syncAllPlatformSpeakers(): Promise<void> {
     } catch (e: any) {
       log(`${cfg.label} speaker sync error: ${e.message}`);
     }
+  }
+
+  // TorahDownloads
+  try {
+    const tdResult = await syncTorahDownloadsSpeakers();
+    log(`TorahDownloads speaker sync: ${tdResult.created} created, ${tdResult.linked} linked`);
+  } catch (e: any) {
+    log(`TorahDownloads speaker sync error: ${e.message}`);
   }
 
   // Update bios from TAT for any feeds missing descriptions
