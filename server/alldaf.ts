@@ -364,9 +364,22 @@ export function mapOUPostToEpisodeData(
   const descParts = [seriesStr, topicStr].filter(Boolean);
 
   // The list endpoint strips date fields; dateOverride comes from a separate
-  // fetchById call. Fall back to whatever publishDate is on the post object
-  // (if a future API change adds it) and finally to null.
-  const dateRaw = dateOverride?.publishDate || dateOverride?.createdAt || (post as any).publishDate || null;
+  // fetchById call. The OU API's publishDate is occasionally wildly wrong
+  // (off by years into the future — e.g. a 2019 shiur with publishDate=2027).
+  // When publishDate is more than 24h in the future, fall back to createdAt
+  // which is consistently the real upload date.
+  const futureCutoff = Date.now() + 24 * 60 * 60 * 1000;
+  const isFuture = (s?: string | null) => !!s && new Date(s).getTime() > futureCutoff;
+  let dateRaw: string | null;
+  if (dateOverride?.publishDate && !isFuture(dateOverride.publishDate)) {
+    dateRaw = dateOverride.publishDate;
+  } else if (dateOverride?.createdAt) {
+    dateRaw = dateOverride.createdAt;
+  } else if ((post as any).publishDate && !isFuture((post as any).publishDate)) {
+    dateRaw = (post as any).publishDate;
+  } else {
+    dateRaw = null;
+  }
   return {
     feedId,
     title: post.title,

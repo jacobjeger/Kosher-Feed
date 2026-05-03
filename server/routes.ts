@@ -2031,6 +2031,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // TEMP diagnostic / fix: re-derive publishedAt for OU episodes whose
+  // publishDate is more than 24h in the future. OU's API occasionally
+  // returns wildly wrong dates; createdAt is reliable.
+  app.post("/api/admin/diagnostics/fix-future-pubdate", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const batchSize = Math.min(parseInt((req.query.batch as string) || "500", 10), 1000);
+      const candidates = await storage.getFutureDatedOuEpisodes(batchSize);
+      if (candidates.length === 0) {
+        const counts = await storage.countFutureDatedOuEpisodes();
+        return res.json({ processed: 0, updated: 0, moreRemaining: false, counts });
+      }
+
+      // Group by guidPrefix → call appropriate platform's fetchById
+      const byPlatform: Record<string, typeof candidates> = {};
+      for (const c of candidates) {
+        const platform = c.guidPrefix.replace(/-$/, "");
+        (byPlatform[platform] ||= []).push(c);
+      }
+
+      const updates: { episodeId: string; publishedAt: Date }[] = [];
+      for (const [platform, group] of Object.entries(byPlatform)) {
+        const dateMap = await fetchPostDetailsBatch(platform as any, group.map(g => g.postId));
+        for (const c of group) {
+          const d = dateMap.get(c.postId);
+          // Use createdAt (reliable) instead of publishDate (broken).
+          const dateStr = d?.createdAt;
+          if (dateStr) updates.push({ episodeId: c.episodeId, publishedAt: new Date(dateStr) });
+        }
+      }
+      // Force-update — existing publishedAt is wrong, must overwrite.
+      const updated = await storage.forceSetPublishedAtByEpisodeIds(updates);
+      const remaining = await storage.getFutureDatedOuEpisodes(1);
+      res.json({ processed: candidates.length, updated, moreRemaining: remaining.length > 0 });
+    } catch (e: any) { publicError(res, e); }
+  });
+
   // Admin: expose runtime config so deploys can be verified at a glance.
   app.get("/api/admin/diagnostics/config", adminAuth as any, async (_req: Request, res: Response) => {
     res.json({

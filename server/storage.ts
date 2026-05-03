@@ -207,6 +207,65 @@ export async function setPublishedAtByEpisodeIds(updates: { episodeId: string; p
   return count;
 }
 
+// Variant that updates regardless of current publishedAt — used by the
+// future-date fix where existing values are wrong and need overwrite.
+export async function forceSetPublishedAtByEpisodeIds(updates: { episodeId: string; publishedAt: Date }[]): Promise<number> {
+  if (updates.length === 0) return 0;
+  let count = 0;
+  for (const u of updates) {
+    const r = await db.update(episodes)
+      .set({ publishedAt: u.publishedAt })
+      .where(eq(episodes.id, u.episodeId))
+      .returning({ id: episodes.id });
+    count += r.length;
+  }
+  return count;
+}
+
+// Find OU episodes whose publishedAt is more than 24h in the future.
+// OU's API occasionally returns wildly wrong publishDate values (e.g. a
+// 2019 shiur reported with publishDate=2027). Their createdAt is reliable.
+// Returns post IDs so the caller can re-fetch via posts.fetchById and use
+// createdAt instead.
+export async function getFutureDatedOuEpisodes(limit: number = 500): Promise<{ episodeId: string; postId: number; guidPrefix: string }[]> {
+  const cutoff = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const rows = await db.execute(sql`
+    SELECT id, guid FROM episodes
+    WHERE published_at > ${cutoff.toISOString()}
+      AND (guid LIKE 'alldaf-%' OR guid LIKE 'allmishnah-%' OR guid LIKE 'allparsha-%' OR guid LIKE 'allhalacha-%')
+    ORDER BY published_at DESC
+    LIMIT ${limit}
+  `);
+  const out: { episodeId: string; postId: number; guidPrefix: string }[] = [];
+  for (const r of (rows.rows as any[])) {
+    const m = (r.guid as string).match(/^(alldaf|allmishnah|allparsha|allhalacha)-(\d+)$/);
+    if (!m) continue;
+    const id = Number(m[2]);
+    if (Number.isFinite(id)) out.push({ episodeId: r.id, postId: id, guidPrefix: m[1] + "-" });
+  }
+  return out;
+}
+
+// Count of future-dated episodes, by source-platform prefix.
+export async function countFutureDatedOuEpisodes(): Promise<any> {
+  const cutoff = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const rows = await db.execute(sql`
+    SELECT
+      CASE
+        WHEN guid LIKE 'alldaf-%' THEN 'alldaf'
+        WHEN guid LIKE 'allmishnah-%' THEN 'allmishnah'
+        WHEN guid LIKE 'allparsha-%' THEN 'allparsha'
+        WHEN guid LIKE 'allhalacha-%' THEN 'allhalacha'
+        ELSE 'other'
+      END AS prefix,
+      COUNT(*) AS n
+    FROM episodes
+    WHERE published_at > ${cutoff.toISOString()}
+    GROUP BY 1
+  `);
+  return rows.rows;
+}
+
 // Diagnostic: counts orphan rows across the catalog.
 // Tables keyed by deviceId (text, no FK) can orphan when a device is
 // uninstalled / unregistered. Tables that cascade on feed/episode delete
