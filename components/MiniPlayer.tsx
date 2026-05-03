@@ -19,7 +19,7 @@ function formatTime(ms: number): string {
 }
 
 export default function MiniPlayer() {
-  const { currentEpisode, currentFeed, playback, pause, resume, seekTo, retryPlayback, skipToNextEpisode, skipToPreviousEpisode } = useAudioPlayer();
+  const { currentEpisode, currentFeed, playback, pause, resume, seekTo, retryPlayback } = useAudioPlayer();
   const position = usePlaybackPosition();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
@@ -101,15 +101,6 @@ export default function MiniPlayer() {
 
           <FocusableView
             focusRadius={14}
-            onPress={(e) => { e.stopPropagation(); skipToPreviousEpisode(); }}
-            hitSlop={8}
-            style={styles.skipBtn}
-          >
-            <Ionicons name="play-skip-back" size={18} color="rgba(255,255,255,0.7)" />
-          </FocusableView>
-
-          <FocusableView
-            focusRadius={14}
             onPress={(e) => { e.stopPropagation(); seekTo(Math.max(0, position.positionMs - 15000)); }}
             hitSlop={8}
             style={styles.skipBtn}
@@ -151,15 +142,6 @@ export default function MiniPlayer() {
             style={styles.skipBtn}
           >
             <Ionicons name="play-forward" size={18} color="rgba(255,255,255,0.7)" />
-          </FocusableView>
-
-          <FocusableView
-            focusRadius={14}
-            onPress={(e) => { e.stopPropagation(); skipToNextEpisode(); }}
-            hitSlop={8}
-            style={styles.skipBtn}
-          >
-            <Ionicons name="play-skip-forward" size={18} color="rgba(255,255,255,0.7)" />
           </FocusableView>
         </View>
       </FocusableView>
