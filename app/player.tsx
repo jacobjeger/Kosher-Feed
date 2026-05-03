@@ -272,6 +272,8 @@ export default function PlayerScreen() {
           bookmarkSaved={bookmarkSaved}
           isFavorited={isFavorite(currentEpisode.id)}
           onOpenPodcast={() => { router.back(); router.push(`/podcast/${currentFeed.id}`); }}
+          onSkipPrevEpisode={() => { lightHaptic(); skipToPreviousEpisode(); }}
+          onSkipNextEpisode={() => { lightHaptic(); skipToNextEpisode(); }}
         />
         <OptionPickerModal visible={sleepModalVisible} title="Sleep Timer" subtitle={sleepTimer.active ? `Timer active: ${sleepTimer.mode === "endOfEpisode" ? "End of Episode" : formatTimerRemaining(sleepTimer.remainingMs)}` : "Stop playback after:"} options={sleepModalOptions} onClose={() => setSleepModalVisible(false)} />
       </View>

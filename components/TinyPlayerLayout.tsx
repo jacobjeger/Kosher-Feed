@@ -46,6 +46,8 @@ interface Props {
   bookmarkSaved: boolean;
   isFavorited: boolean;
   onOpenPodcast: () => void;
+  onSkipPrevEpisode?: () => void;
+  onSkipNextEpisode?: () => void;
 }
 
 export default function TinyPlayerLayout(props: Props) {
@@ -55,6 +57,7 @@ export default function TinyPlayerLayout(props: Props) {
     skipForwardSeconds, skipBackwardSeconds, skipBackwardIcon, skipForwardIcon,
     onSleepPress, onBookmarkPress, onFavoritePress, onQueuePress,
     sleepLabel, sleepActive, bookmarkSaved, isFavorited, onOpenPodcast,
+    onSkipPrevEpisode, onSkipNextEpisode,
   } = props;
 
   const [isSeeking, setIsSeeking] = useState(false);
@@ -136,6 +139,11 @@ export default function TinyPlayerLayout(props: Props) {
         <FocusableView focusRadius={12} onPress={cycleRate} style={[styles.smallBtn, { backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)" }]}>
           <Text style={{ fontSize: 12, fontWeight: "700", color: colors.text }}>{playback.playbackRate}x</Text>
         </FocusableView>
+        {onSkipPrevEpisode ? (
+          <FocusableView focusRadius={20} onPress={onSkipPrevEpisode} hitSlop={8} style={styles.skipBtn}>
+            <Ionicons name="play-skip-back" size={22} color={colors.text} />
+          </FocusableView>
+        ) : null}
         <FocusableView focusRadius={20} onPress={() => onSkip(-skipBackwardSeconds)} hitSlop={8} style={styles.skipBtn}>
           <MaterialIcons name={skipBackwardIcon as any} size={28} color={colors.text} />
         </FocusableView>
@@ -145,6 +153,11 @@ export default function TinyPlayerLayout(props: Props) {
         <FocusableView focusRadius={20} onPress={() => onSkip(skipForwardSeconds)} hitSlop={8} style={styles.skipBtn}>
           <MaterialIcons name={skipForwardIcon as any} size={28} color={colors.text} />
         </FocusableView>
+        {onSkipNextEpisode ? (
+          <FocusableView focusRadius={20} onPress={onSkipNextEpisode} hitSlop={8} style={styles.skipBtn}>
+            <Ionicons name="play-skip-forward" size={22} color={colors.text} />
+          </FocusableView>
+        ) : null}
         <FocusableView focusRadius={12} onPress={onStop} hitSlop={8} style={[styles.smallBtn, { backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)" }]}>
           <Ionicons name="stop" size={16} color={colors.danger} />
         </FocusableView>
