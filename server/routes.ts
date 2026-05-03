@@ -11,7 +11,8 @@ import { eq, desc } from "drizzle-orm";
 import { syncTATSpeakers, refreshTATFeedEpisodes, fetchAllSpeakers } from "./torahanytime";
 import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, OU_PLATFORMS, fetchPostDetailsBatch, type OUPlatformKey } from "./alldaf";
 import { syncKHSpeakers, refreshKHFeedEpisodes, reloadKHClient, getHeaders as getKHHeaders } from "./kolhalashon";
-import { extractKhRavId, extractTatSpeakerId } from "./feed-utils";
+import { syncTorahDownloadsSpeakers, refreshTorahDownloadsFeedEpisodes } from "./torahdownloads";
+import { extractKhRavId, extractTatSpeakerId, extractTorahDownloadsSpeakerId } from "./feed-utils";
 import { trackErrorForAlert, sendFeedbackNotification } from "./error-alerts";
 import multer from "multer";
 import path from "node:path";
@@ -127,9 +128,24 @@ async function onDemandRefreshFeed(feedId: string): Promise<void> {
       return;
     }
 
-    // Regular RSS feed (skip TAT/OU/KH-only URLs)
+    // TorahDownloads feed
+    const isTdUrl = feed.rssUrl.startsWith("td://");
+    const onDemandTdId = extractTorahDownloadsSpeakerId(feed as any);
+    if (onDemandTdId) {
+      await refreshTorahDownloadsFeedEpisodes({ id: feed.id, title: feed.title, torahdownloadsSpeakerId: onDemandTdId }, feed);
+      if (!isTdUrl) {
+        const parsed = await parseFeed(feed.id, feed.rssUrl);
+        if (parsed) {
+          const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
+          await storage.upsertEpisodes(feed.id, episodeData);
+        }
+      }
+      return;
+    }
+
+    // Regular RSS feed (skip TAT/OU/KH/TD-only URLs)
     const isOUUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
-    if (!feed.rssUrl || isOnDemandTatUrl || isOUUrl || isKhUrl) return;
+    if (!feed.rssUrl || isOnDemandTatUrl || isOUUrl || isKhUrl || isTdUrl) return;
     const parsed = await parseFeed(feed.id, feed.rssUrl);
     if (!parsed) {
       await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
@@ -570,9 +586,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalNew += khResult.newEpisodes;
       }
 
-      // RSS refresh (skip for TAT-only, OU-only, and KH-only feeds)
+      // TorahDownloads refresh
+      const isTdFeedUrl = feed.rssUrl.startsWith("td://");
+      const effectiveTdId = extractTorahDownloadsSpeakerId(feed as any);
+      if (effectiveTdId) {
+        const tdResult = await refreshTorahDownloadsFeedEpisodes({ id: feed.id, title: feed.title, torahdownloadsSpeakerId: effectiveTdId }, feed, { full: fullRefresh });
+        totalNew += tdResult.newEpisodes;
+      }
+
+      // RSS refresh (skip for TAT-only, OU-only, KH-only, and TD-only feeds)
       const isOUFeedUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
-      if (!isTatFeedUrl && !isOUFeedUrl && !isKhFeedUrl) {
+      if (!isTatFeedUrl && !isOUFeedUrl && !isKhFeedUrl && !isTdFeedUrl) {
         // For ?full=true: bypass both etag and incremental — pull the entire
         // archive. Otherwise pass etag/lastModified so unchanged feeds short-
         // circuit at HTTP 304 without parsing, and pass the incremental
@@ -644,9 +668,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const khResult = await refreshKHFeedEpisodes({ id: feed.id, title: feed.title, kolhalashonRavId: bulkKhId }, feed);
             totalNew += khResult.newEpisodes;
           }
-          // RSS refresh (skip for TAT-only, OU-only, and KH-only feeds)
+          // TorahDownloads feed refresh
+          const isTdRssUrl = feed.rssUrl.startsWith("td://");
+          const bulkTdId = extractTorahDownloadsSpeakerId(feed as any);
+          if (bulkTdId) {
+            const tdResult = await refreshTorahDownloadsFeedEpisodes({ id: feed.id, title: feed.title, torahdownloadsSpeakerId: bulkTdId }, feed, { full: fullBulk });
+            totalNew += tdResult.newEpisodes;
+          }
+          // RSS refresh (skip for TAT-only, OU-only, KH-only, and TD-only feeds)
           const isOURssUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
-          if (!feed.rssUrl.startsWith("tat://") && !isOURssUrl && !isKhRssUrl) {
+          if (!feed.rssUrl.startsWith("tat://") && !isOURssUrl && !isKhRssUrl && !isTdRssUrl) {
             const conditionalHeadersBulk = fullBulk
               ? undefined
               : { etag: feed.etag, lastModified: feed.lastModifiedHeader };
@@ -1561,6 +1592,83 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // --- TorahDownloads Integration ---
+
+  // Admin: Sync TorahDownloads speakers
+  app.post("/api/admin/td/sync-speakers", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const result = await syncTorahDownloadsSpeakers();
+      res.json(result);
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
+  // Admin: Toggle all TorahDownloads-only feeds active/inactive
+  app.post("/api/admin/td/toggle", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { enabled } = req.body;
+      if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) required" });
+      const allFeeds = await storage.getAllFeeds();
+      const tdOnlyFeeds = allFeeds.filter(f => (f as any).torahdownloadsSpeakerId != null && f.rssUrl.startsWith("td://"));
+      console.log(`TD toggle: enabled=${enabled}, found ${tdOnlyFeeds.length} TD-only feeds`);
+      let updated = 0;
+      for (const feed of tdOnlyFeeds) {
+        if (feed.isActive !== enabled) {
+          await storage.updateFeed(feed.id, { isActive: enabled });
+          updated++;
+        }
+      }
+      console.log(`TD toggle: updated ${updated} feeds`);
+      res.json({ updated, enabled, totalFound: tdOnlyFeeds.length });
+    } catch (e: any) {
+      console.error("TD toggle error:", e);
+      publicError(res, e);
+    }
+  });
+
+  // Admin: Get TorahDownloads status
+  app.get("/api/admin/td/status", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const allFeeds = await storage.getAllFeeds();
+      const tdFeeds = allFeeds.filter(f => (f as any).torahdownloadsSpeakerId != null);
+      const tdOnlyFeeds = tdFeeds.filter(f => f.rssUrl.startsWith("td://"));
+      const activeCount = tdOnlyFeeds.filter(f => f.isActive).length;
+      const enabled = activeCount > 0;
+      res.json({
+        enabled,
+        totalTDFeeds: tdOnlyFeeds.length,
+        activeTDFeeds: activeCount,
+        mergedFeeds: tdFeeds.length - tdOnlyFeeds.length,
+      });
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
+  // Admin: Link/unlink feed to TorahDownloads speaker
+  app.put("/api/admin/feeds/:id/td-link", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { torahdownloadsSpeakerId } = req.body;
+      if (!torahdownloadsSpeakerId) return res.status(400).json({ error: "torahdownloadsSpeakerId required" });
+      await storage.setTorahDownloadsSpeakerId(req.params.id, torahdownloadsSpeakerId);
+      const feed = await storage.getFeedById(req.params.id);
+      res.json(feed);
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
+  app.delete("/api/admin/feeds/:id/td-link", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      await storage.setTorahDownloadsSpeakerId(req.params.id, null);
+      const feed = await storage.getFeedById(req.params.id);
+      res.json(feed);
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
   // Admin: Merge two feeds (move episodes + subscribers from source into target, delete source)
   app.post("/api/admin/feeds/merge", adminAuth as any, async (req: Request, res: Response) => {
     try {
@@ -1584,6 +1692,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       if ((source as any).kolhalashonRavId && !(target as any).kolhalashonRavId) {
         await storage.setKHRavId(targetId, (source as any).kolhalashonRavId);
+      }
+      if ((source as any).torahdownloadsSpeakerId && !(target as any).torahdownloadsSpeakerId) {
+        await storage.setTorahDownloadsSpeakerId(targetId, (source as any).torahdownloadsSpeakerId);
       }
 
       const result = await storage.mergeFeeds(sourceId, targetId);
@@ -1617,7 +1728,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const merged = allFeeds
         .map(f => {
           const platforms: string[] = [];
-          if (f.rssUrl && !f.rssUrl.startsWith("tat://") && !f.rssUrl.startsWith("kh://") && !Object.values(OU_PLATFORMS).some(c => f.rssUrl.startsWith(c.urlScheme))) {
+          if (f.rssUrl && !f.rssUrl.startsWith("tat://") && !f.rssUrl.startsWith("kh://") && !f.rssUrl.startsWith("td://") && !Object.values(OU_PLATFORMS).some(c => f.rssUrl.startsWith(c.urlScheme))) {
             platforms.push("RSS");
           }
           if (f.tatSpeakerId) platforms.push("Torah Anytime");
@@ -1626,6 +1737,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (f.allparshaAuthorId) platforms.push("AllParsha");
           if (f.allhalachaAuthorId) platforms.push("AllHalacha");
           if ((f as any).kolhalashonRavId) platforms.push("Kol Halashon");
+          if ((f as any).torahdownloadsSpeakerId) platforms.push("TorahDownloads");
           if (platforms.length < 2) return null;
           return {
             id: f.id,
@@ -1640,6 +1752,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             allparshaAuthorId: f.allparshaAuthorId,
             allhalachaAuthorId: f.allhalachaAuthorId,
             kolhalashonRavId: (f as any).kolhalashonRavId,
+            torahdownloadsSpeakerId: (f as any).torahdownloadsSpeakerId,
           };
         })
         .filter(Boolean);
@@ -2937,6 +3050,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (forceKhId) {
           const khResult = await refreshKHFeedEpisodes({ id: feed.id, title: feed.title, kolhalashonRavId: forceKhId }, feed);
           res.json({ status: "ok", method: "kh", newEpisodes: khResult.newEpisodes, durationMs: Date.now() - start });
+          return;
+        }
+
+        // Handle TorahDownloads feeds
+        const forceTdId = extractTorahDownloadsSpeakerId(feed as any);
+        if (forceTdId) {
+          const tdResult = await refreshTorahDownloadsFeedEpisodes({ id: feed.id, title: feed.title, torahdownloadsSpeakerId: forceTdId }, feed);
+          res.json({ status: "ok", method: "td", newEpisodes: tdResult.newEpisodes, durationMs: Date.now() - start });
           return;
         }
 

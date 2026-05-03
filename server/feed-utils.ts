@@ -18,3 +18,11 @@ export function extractTatSpeakerId(feed: { tatSpeakerId?: number | null; rssUrl
   }
   return null;
 }
+
+export function extractTorahDownloadsSpeakerId(feed: { torahdownloadsSpeakerId?: number | null; rssUrl: string }): number | null {
+  if (feed.torahdownloadsSpeakerId) return feed.torahdownloadsSpeakerId;
+  if (feed.rssUrl.startsWith("td://speaker/")) {
+    return parseInt(feed.rssUrl.replace("td://speaker/", ""), 10) || null;
+  }
+  return null;
+}

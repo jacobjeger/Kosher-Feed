@@ -76,7 +76,7 @@ export const OU_PLATFORMS: Record<OUPlatformKey, OUPlatformConfig> = {
 
 /** Check if a URL is an API-only scheme (not a real RSS feed) */
 export function isApiOnlyUrl(url: string): boolean {
-  return url.startsWith("tat://") || url.startsWith("kh://") ||
+  return url.startsWith("tat://") || url.startsWith("kh://") || url.startsWith("td://") ||
     Object.values(OU_PLATFORMS).some(c => url.startsWith(c.urlScheme));
 }
 

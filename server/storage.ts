@@ -581,6 +581,17 @@ export async function getRecentKhFileIds(feedId: string, limit: number = 50): Pr
   return new Set(rows.map(r => r.id).filter((x): x is number => x !== null));
 }
 
+// Variant for TorahDownloads — pulls platform-specific shiur ids.
+export async function getRecentTorahDownloadsShiurIds(feedId: string, limit: number = 50): Promise<Set<number>> {
+  const rows = await db
+    .select({ id: episodes.torahdownloadsShiurId })
+    .from(episodes)
+    .where(and(eq(episodes.feedId, feedId), sql`${episodes.torahdownloadsShiurId} IS NOT NULL`))
+    .orderBy(desc(episodes.publishedAt), desc(episodes.createdAt))
+    .limit(limit);
+  return new Set(rows.map(r => r.id).filter((x): x is number => x !== null));
+}
+
 export async function getEpisodesByFeed(feedId: string): Promise<Episode[]> {
   return db.select().from(episodes).where(eq(episodes.feedId, feedId)).orderBy(desc(episodes.publishedAt));
 }
@@ -780,6 +791,44 @@ export async function upsertKHEpisodes(feedId: string, episodeData: any[]): Prom
 
 export async function setKHRavId(feedId: string, ravId: number | null): Promise<void> {
   await db.update(feeds).set({ kolhalashonRavId: ravId } as any).where(eq(feeds.id, feedId));
+}
+
+// TorahDownloads episode upsert
+export async function upsertTorahDownloadsEpisodes(feedId: string, episodeData: any[]): Promise<Episode[]> {
+  if (episodeData.length === 0) return [];
+  const inserted: Episode[] = [];
+  const CHUNK = 50;
+  for (let i = 0; i < episodeData.length; i += CHUNK) {
+    const chunk = episodeData.slice(i, i + CHUNK);
+    try {
+      const results = await db.insert(episodes).values(
+        chunk.map(ep => ({
+          feedId: ep.feedId, title: ep.title, description: ep.description,
+          audioUrl: ep.audioUrl, duration: ep.duration, publishedAt: ep.publishedAt,
+          guid: ep.guid, imageUrl: ep.imageUrl,
+          torahdownloadsShiurId: ep.torahdownloadsShiurId, noDownload: ep.noDownload || false,
+        }))
+      ).onConflictDoNothing().returning();
+      inserted.push(...results);
+    } catch (e) {
+      for (const ep of chunk) {
+        try {
+          const [result] = await db.insert(episodes).values({
+            feedId: ep.feedId, title: ep.title, description: ep.description,
+            audioUrl: ep.audioUrl, duration: ep.duration, publishedAt: ep.publishedAt,
+            guid: ep.guid, imageUrl: ep.imageUrl,
+            torahdownloadsShiurId: ep.torahdownloadsShiurId, noDownload: ep.noDownload || false,
+          }).onConflictDoNothing().returning();
+          if (result) inserted.push(result);
+        } catch (_) {}
+      }
+    }
+  }
+  return inserted;
+}
+
+export async function setTorahDownloadsSpeakerId(feedId: string, speakerId: number | null): Promise<void> {
+  await db.update(feeds).set({ torahdownloadsSpeakerId: speakerId } as any).where(eq(feeds.id, feedId));
 }
 
 export async function getTATFeeds(): Promise<Feed[]> {
@@ -2351,6 +2400,7 @@ export async function getSourceBreakdown() {
     "AllParsha": { feedCount: 0, episodeCount: 0 },
     "AllHalacha": { feedCount: 0, episodeCount: 0 },
     "Kol Halashon": { feedCount: 0, episodeCount: 0 },
+    "TorahDownloads": { feedCount: 0, episodeCount: 0 },
   };
 
   for (const f of allFeeds) {
@@ -2359,12 +2409,14 @@ export async function getSourceBreakdown() {
     let source = "RSS";
     if (f.kolhalashonRavId && f.rssUrl.startsWith("kh://")) source = "Kol Halashon";
     else if (f.tatSpeakerId && f.rssUrl.startsWith("tat://")) source = "Torah Anytime";
+    else if ((f as any).torahdownloadsSpeakerId && f.rssUrl.startsWith("td://")) source = "TorahDownloads";
     else if (f.alldafAuthorId) source = "AllDaf";
     else if (f.allmishnahAuthorId) source = "AllMishnah";
     else if (f.allparshaAuthorId) source = "AllParsha";
     else if (f.allhalachaAuthorId) source = "AllHalacha";
     else if (f.tatSpeakerId) source = "Torah Anytime";
     else if (f.kolhalashonRavId) source = "Kol Halashon";
+    else if ((f as any).torahdownloadsSpeakerId) source = "TorahDownloads";
 
     if (!sources[source]) sources[source] = { feedCount: 0, episodeCount: 0 };
     sources[source].feedCount++;

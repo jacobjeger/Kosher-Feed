@@ -789,6 +789,21 @@
           <span id="allparshaSyncStatus" style="font-size:12px;color:#64748b;margin-left:8px;"></span>
         </div>
       </div>
+      <div class="card" style="max-width:500px;margin-bottom:20px;">
+        <div class="card-header">
+          <h2>TorahDownloads Integration</h2>
+        </div>
+        <div id="tdStatusArea" style="padding:4px 0 12px;color:#94a3b8;font-size:13px;">Loading...</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+          <span style="font-size:14px;color:#e2e8f0;">Show TorahDownloads content</span>
+          <button id="tdToggleBtn" class="toggle-btn off" onclick="toggleTD()" title="Toggle TorahDownloads"></button>
+        </div>
+        <p style="font-size:12px;color:#64748b;margin:0;">When off, all TorahDownloads-only feeds are hidden. Merged feeds are not affected.</p>
+        <div style="margin-top:12px;">
+          <button class="btn btn-secondary btn-sm" onclick="syncTDSpeakers()" id="tdSyncBtn">Sync Speakers Now</button>
+          <span id="tdSyncStatus" style="font-size:12px;color:#64748b;margin-left:8px;"></span>
+        </div>
+      </div>
       <div class="card" style="max-width:900px;margin-bottom:20px;">
         <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
           <h2>Merge History</h2>
@@ -2231,7 +2246,7 @@ function switchTab(tab, btn) {
   if (tab === 'vitals') loadVitals();
   if (tab === 'announcements') loadAnnouncements();
   if (tab === 'kolhalashon') { loadKHStatus(); loadKHSpeakers(); setTimeout(loadKHVitals, 300); }
-  if (tab === 'settings') { loadTATStatus(); setTimeout(() => { loadAllOUStatuses(); loadMergers(); loadGlobalMergeHistory(); }, 300); }
+  if (tab === 'settings') { loadTATStatus(); setTimeout(() => { loadAllOUStatuses(); loadTDStatus(); loadMergers(); loadGlobalMergeHistory(); }, 300); }
 }
 
 function formatDate(dateStr) {
@@ -3336,6 +3351,70 @@ async function syncKHSpeakers() {
     const result = await api('/api/admin/kh/sync-speakers', { method: 'POST' });
     status.innerHTML = '<span style="color:#22c55e;">Done — ' + result.created + ' created, ' + result.linked + ' linked, ' + result.total + ' total' + (result.errors > 0 ? ', ' + result.errors + ' errors' : '') + '</span>';
     loadKHStatus();
+    loadFeeds();
+    loadAnalytics();
+  } catch(e) {
+    status.innerHTML = '<span style="color:#ef4444;">Error: ' + e.message + '</span>';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// --- TorahDownloads Functions ---
+async function loadTDStatus() {
+  try {
+    const data = await api('/api/admin/td/status');
+    const btn = document.getElementById('tdToggleBtn');
+    btn.className = 'toggle-btn ' + (data.enabled ? 'on' : 'off');
+    document.getElementById('tdStatusArea').innerHTML =
+      '<strong style="color:#e2e8f0;">' + data.totalTDFeeds + '</strong> TorahDownloads-only feeds (' + data.activeTDFeeds + ' active)' +
+      (data.mergedFeeds > 0 ? ' · <strong style="color:#e2e8f0;">' + data.mergedFeeds + '</strong> merged with other feeds' : '');
+  } catch(e) {
+    document.getElementById('tdStatusArea').textContent = 'Could not load status';
+  }
+}
+
+async function toggleTD() {
+  const btn = document.getElementById('tdToggleBtn');
+  const currentlyOn = btn.classList.contains('on');
+  const newState = !currentlyOn;
+  const action = newState ? 'enable' : 'disable';
+  if (!confirm('Are you sure you want to ' + action + ' all TorahDownloads feeds?')) return;
+  const statusArea = document.getElementById('tdStatusArea');
+  const prevStatus = statusArea.innerHTML;
+  statusArea.innerHTML = '<span style="color:#f59e0b;">Updating feeds...</span>';
+  try {
+    btn.disabled = true;
+    const result = await api('/api/admin/td/toggle', { method: 'POST', body: JSON.stringify({ enabled: newState }) });
+    btn.className = 'toggle-btn ' + (newState ? 'on' : 'off');
+    if (result.updated === 0) {
+      showAlert('No TorahDownloads-only feeds found to toggle. Merged feeds are not affected.', 'error');
+    } else {
+      showAlert((newState ? 'Enabled' : 'Disabled') + ' TorahDownloads — ' + result.updated + ' feeds updated');
+    }
+    await loadTDStatus();
+    await loadFeeds();
+    loadAnalytics();
+  } catch(e) {
+    console.error('TD toggle error:', e);
+    statusArea.innerHTML = prevStatus;
+    showAlert('Failed to toggle TorahDownloads: ' + (e.message || 'Unknown error'), 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function syncTDSpeakers() {
+  const btn = document.getElementById('tdSyncBtn');
+  const status = document.getElementById('tdSyncStatus');
+  btn.disabled = true;
+  // The TD sync hits ~400 speaker pages over a 2 RPS throttle, so it can
+  // take a couple of minutes. Surface that so admins don't think it hung.
+  status.textContent = 'Syncing speakers (this can take a few minutes)...';
+  try {
+    const result = await api('/api/admin/td/sync-speakers', { method: 'POST' });
+    status.innerHTML = '<span style="color:#22c55e;">Done — ' + result.created + ' created, ' + result.linked + ' linked, ' + result.total + ' total' + (result.errors > 0 ? ', ' + result.errors + ' errors' : '') + '</span>';
+    loadTDStatus();
     loadFeeds();
     loadAnalytics();
   } catch(e) {
