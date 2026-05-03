@@ -2400,6 +2400,7 @@ export async function getSourceBreakdown() {
     "AllParsha": { feedCount: 0, episodeCount: 0 },
     "AllHalacha": { feedCount: 0, episodeCount: 0 },
     "Kol Halashon": { feedCount: 0, episodeCount: 0 },
+    "TorahDownloads": { feedCount: 0, episodeCount: 0 },
   };
 
   for (const f of allFeeds) {
@@ -2408,12 +2409,14 @@ export async function getSourceBreakdown() {
     let source = "RSS";
     if (f.kolhalashonRavId && f.rssUrl.startsWith("kh://")) source = "Kol Halashon";
     else if (f.tatSpeakerId && f.rssUrl.startsWith("tat://")) source = "Torah Anytime";
+    else if ((f as any).torahdownloadsSpeakerId && f.rssUrl.startsWith("td://")) source = "TorahDownloads";
     else if (f.alldafAuthorId) source = "AllDaf";
     else if (f.allmishnahAuthorId) source = "AllMishnah";
     else if (f.allparshaAuthorId) source = "AllParsha";
     else if (f.allhalachaAuthorId) source = "AllHalacha";
     else if (f.tatSpeakerId) source = "Torah Anytime";
     else if (f.kolhalashonRavId) source = "Kol Halashon";
+    else if ((f as any).torahdownloadsSpeakerId) source = "TorahDownloads";
 
     if (!sources[source]) sources[source] = { feedCount: 0, episodeCount: 0 };
     sources[source].feedCount++;
