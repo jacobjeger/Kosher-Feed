@@ -11,7 +11,7 @@ import { eq, desc } from "drizzle-orm";
 import { syncTATSpeakers, refreshTATFeedEpisodes, fetchAllSpeakers } from "./torahanytime";
 import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, OU_PLATFORMS, fetchPostDetailsBatch, type OUPlatformKey } from "./alldaf";
 import { syncKHSpeakers, refreshKHFeedEpisodes, reloadKHClient, getHeaders as getKHHeaders } from "./kolhalashon";
-import { syncTorahDownloadsSpeakers, refreshTorahDownloadsFeedEpisodes } from "./torahdownloads";
+import { syncTorahDownloadsSpeakers, refreshTorahDownloadsFeedEpisodes, fetchShiurUploadDate } from "./torahdownloads";
 import { extractKhRavId, extractTatSpeakerId, extractTorahDownloadsSpeakerId } from "./feed-utils";
 import { trackErrorForAlert, sendFeedbackNotification } from "./error-alerts";
 import multer from "multer";
@@ -2265,6 +2265,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
         withDates: updates.length,
         updated,
         moreRemaining: remainingRows.length > 0,
+      });
+    } catch (e: any) { publicError(res, e); }
+  });
+
+  // TorahDownloads pubdate backfill. The original parser scraped the navbar
+  // date (today) on every shiur, so the existing td-* episodes all share
+  // whatever day they were ingested at 12:00 UTC. Pull the real date from
+  // the CDN's Last-Modified header (HEAD per shiur — torahcdn.net is
+  // separate from torahdownloads.com so it's not subject to the 2 RPS site
+  // throttle, but we still pace the calls to be polite). Force-overwrites
+  // the bogus today timestamp.
+  app.post("/api/admin/diagnostics/backfill-td-pubdate", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const batchSize = Math.min(parseInt((req.query.batch as string) || "200", 10), 1000);
+      const candidates = await storage.getStaleTdEpisodeIds(batchSize);
+      if (candidates.length === 0) return res.json({ processed: 0, updated: 0, moreRemaining: false });
+
+      const updates: { episodeId: string; publishedAt: Date }[] = [];
+      let cdnHits = 0, cdnMisses = 0;
+      for (const c of candidates) {
+        const d = await fetchShiurUploadDate(c.shiurId);
+        if (d) { updates.push({ episodeId: c.episodeId, publishedAt: d }); cdnHits++; }
+        else cdnMisses++;
+        // tiny pace; CDN tolerates this fine but we don't want to hammer
+        await new Promise(r => setTimeout(r, 50));
+      }
+      const updated = await storage.forceSetPublishedAtByEpisodeIds(updates);
+
+      const remaining = await storage.getStaleTdEpisodeIds(1);
+      res.json({
+        processed: candidates.length,
+        cdnHits,
+        cdnMisses,
+        updated,
+        moreRemaining: remaining.length > 0,
       });
     } catch (e: any) { publicError(res, e); }
   });

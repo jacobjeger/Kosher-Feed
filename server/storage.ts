@@ -581,6 +581,32 @@ export async function getRecentKhFileIds(feedId: string, limit: number = 50): Pr
   return new Set(rows.map(r => r.id).filter((x): x is number => x !== null));
 }
 
+// TorahDownloads pubdate backfill: find td-* episodes whose publishedAt is
+// either null OR set to a "today" placeholder (the early version of the
+// scraper picked up the navbar's current-day date for every shiur, so a
+// large bucket of episodes share whatever day they were ingested). Detect
+// that bucket by the time-of-day stamp the parser used (12:00:00 UTC) so
+// we don't disturb episodes that legitimately happen to have today's date.
+// Caller resolves shiur_id → real upload date via CDN HEAD.
+export async function getStaleTdEpisodeIds(limit: number = 1000): Promise<{ episodeId: string; shiurId: number }[]> {
+  const rows = await db.execute(sql`
+    SELECT id, torahdownloads_shiur_id AS "shiurId"
+    FROM episodes
+    WHERE guid LIKE 'td-%'
+      AND torahdownloads_shiur_id IS NOT NULL
+      AND (
+        published_at IS NULL
+        OR EXTRACT(HOUR FROM published_at AT TIME ZONE 'UTC') = 12
+        AND EXTRACT(MINUTE FROM published_at) = 0
+        AND EXTRACT(SECOND FROM published_at) = 0
+      )
+    LIMIT ${limit}
+  `);
+  return (rows.rows as any[])
+    .filter(r => r.shiurId != null)
+    .map(r => ({ episodeId: r.id as string, shiurId: Number(r.shiurId) }));
+}
+
 // Variant for TorahDownloads — pulls platform-specific shiur ids.
 export async function getRecentTorahDownloadsShiurIds(feedId: string, limit: number = 50): Promise<Set<number>> {
   const rows = await db

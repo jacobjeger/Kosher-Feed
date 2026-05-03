@@ -185,14 +185,14 @@ export function parseShiurPage(html: string, shiurId: number): TDShiurDetail | n
   });
   if (!audioUrl) audioUrl = `${TD_CDN_BASE}${shiurId}.mp3`;
 
-  // Date: the page renders both Hebrew and Gregorian in the header — grab
-  // the first Gregorian date string anywhere in the body.
-  const bodyText = $("body").text().replace(/\s+/g, " ").trim();
-  let publishedAt: Date | null = null;
-  // Note: TorahDownloads renders the year-prefix apostrophe as a typographic
-  // quote (‘ U+2018 or ’ U+2019), e.g. "May 3, ‘26". Accept all three.
-  const dateMatch = bodyText.match(/[A-Z][a-z]+\s+\d{1,2},\s*['‘’]?\d{2,4}/);
-  if (dateMatch) publishedAt = parseGregorianDate(dateMatch[0].replace(/[‘’]/g, "'"));
+  // Date: the shiur detail page does NOT render a per-shiur upload date
+  // anywhere — the only Gregorian date in the body is the "today" indicator
+  // in the navbar (e.g. "May 3, '26" next to the parsha dropdown). Earlier
+  // versions of this parser scraped that and ended up dating every episode
+  // to the day it was scraped. Real upload dates come from a separate HEAD
+  // request to the CDN (see fetchShiurUploadDate); leave null here so the
+  // wrong date never propagates.
+  const publishedAt: Date | null = null;
 
   return {
     shiurId,
@@ -207,6 +207,31 @@ export function parseShiurPage(html: string, shiurId: number): TDShiurDetail | n
     audioUrl,
     publishedAt,
   };
+}
+
+// torahcdn.net (Cloudflare-fronted S3) returns the actual file's Last-Modified
+// header, and on older shiurim also exposes x-amz-meta-cb-modifiedtime — the
+// original upload date from a prior storage system (more accurate than the S3
+// migration timestamp). This is the only reliable source of per-shiur dates;
+// the website's HTML doesn't render one. Bypass tdGet's site throttle since
+// torahcdn.net is a different (CDN-fronted) host with no rate limit issues.
+export async function fetchShiurUploadDate(shiurId: number): Promise<Date | null> {
+  try {
+    const res = await axios.head(`${TD_CDN_BASE}${shiurId}.mp3`, {
+      timeout: 10000,
+      headers: { "User-Agent": TD_USER_AGENT },
+      validateStatus: s => s >= 200 && s < 400,
+    });
+    const headers = res.headers || {};
+    const cb = headers["x-amz-meta-cb-modifiedtime"];
+    const lm = headers["last-modified"];
+    const raw = (typeof cb === "string" && cb) || (typeof lm === "string" && lm) || null;
+    if (!raw) return null;
+    const d = new Date(raw);
+    return isNaN(d.getTime()) ? null : d;
+  } catch {
+    return null;
+  }
 }
 
 export function mapTDShiurToEpisodeData(detail: TDShiurDetail, feedId: string) {
@@ -330,7 +355,13 @@ export async function fetchShiurDetail(shiurId: number): Promise<TDShiurDetail |
     if (e?.response?.status === 404) return null;
     throw e;
   }
-  return parseShiurPage(html, shiurId);
+  const parsed = parseShiurPage(html, shiurId);
+  if (!parsed) return null;
+  // Page parser leaves publishedAt null intentionally (see comment in
+  // parseShiurPage). Backfill from the CDN file's Last-Modified — fast HEAD,
+  // off the site's throttle since the CDN is a separate host.
+  parsed.publishedAt = await fetchShiurUploadDate(shiurId);
+  return parsed;
 }
 
 // --- Sync logic ---
