@@ -67,6 +67,10 @@ interface PlaybackState {
   positionMs: number;
   durationMs: number;
   playbackRate: number;
+  // Set when playback fails to start after retries (e.g. broken audio HAL).
+  // UI uses this to show a real error + retry button instead of a fake
+  // "playing" state. Cleared on the next successful play() attempt.
+  playbackError?: string | null;
 }
 
 interface SleepTimerState {
@@ -698,18 +702,32 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         };
       } else if (createAudioPlayerFn && nativePlayerReady) {
 
-        try {
+        const [savedPos, feedSpeed, boostEnabledNative] = await Promise.all([
+          getSavedPosition(episode.id),
+          getFeedSpeed(feed.id),
+          getAudioBoostEnabled(),
+        ]);
+        setPlayback(prev => ({ ...prev, positionMs: savedPos, playbackRate: feedSpeed, playbackError: null }));
+
+        // Tear down any existing player before starting a new attempt.
+        const teardown = () => {
           if (nativePlayerRef.current) {
             const oldPlayer = nativePlayerRef.current;
             nativePlayerRef.current = null;
             nativePlayerInstance = null;
             try { oldPlayer.pause(); } catch {}
             try { oldPlayer.clearLockScreenControls(); } catch {}
-            // Remove listener subscription before destroying player
             if (statusSubRef.current) { try { statusSubRef.current.remove(); } catch {} statusSubRef.current = null; }
             try { oldPlayer.remove(); } catch {}
           }
+        };
 
+        // One attempt at native playback. Returns true if status.playing === true
+        // was observed within `confirmTimeoutMs`, false otherwise. On timeout the
+        // player is torn down so the next attempt starts with a fresh audio
+        // session — important on devices where the audio HAL is unstable.
+        const tryAttempt = async (attempt: number, maxAttempts: number, confirmTimeoutMs: number): Promise<boolean> => {
+          teardown();
           const player = createAudioPlayerFn(resolveAudioUrl(episode.audioUrl), {
             updateInterval: 500,
           });
@@ -718,14 +736,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
           let hasConfirmedPlaying = false;
           let lockScreenDone = false;
-          const playStartTime = Date.now();
+          let resolved = false;
 
-          const [savedPos, feedSpeed, boostEnabledNative] = await Promise.all([
-            getSavedPosition(episode.id),
-            getFeedSpeed(feed.id),
-            getAudioBoostEnabled(),
-          ]);
-          setPlayback(prev => ({ ...prev, positionMs: savedPos, playbackRate: feedSpeed }));
           try { player.volume = boostEnabledNative ? BOOST_VOLUME : NORMAL_VOLUME; } catch {}
           try { player.setPlaybackRate(feedSpeed); } catch {}
 
@@ -759,68 +771,88 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
             }, 500);
           };
 
-          statusSubRef.current = player.addListener("playbackStatusUpdate", (status: any) => {
-            if (nativePlayerRef.current !== player) return;
+          return new Promise<boolean>((resolve) => {
+            statusSubRef.current = player.addListener("playbackStatusUpdate", (status: any) => {
+              if (nativePlayerRef.current !== player) return;
 
-            if (status.playing === true) {
-              if (!hasConfirmedPlaying) {
-                hasConfirmedPlaying = true;
-                try { player.setPlaybackRate(feedSpeed); } catch {}
-                setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true }));
-                addLog("info", `Playing confirmed (expo-audio): ${episode.title} at ${feedSpeed}x`, undefined, "audio");
-                setTimeout(setupLockScreen, 1500);
-              } else {
-                // Resume from pause (either JS or external via lock-screen/bluetooth/hardware).
-                // JS resume() clears wasPausedRef before calling play(), so if it's still set
-                // here, the play was triggered externally — apply smart rewind.
-                if (wasPausedRef.current) {
-                  applySmartRewind().catch(() => {});
+              if (status.playing === true) {
+                if (!hasConfirmedPlaying) {
+                  hasConfirmedPlaying = true;
+                  try { player.setPlaybackRate(feedSpeed); } catch {}
+                  setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true, playbackError: null }));
+                  addLog("info", `Playing confirmed (expo-audio): ${episode.title} at ${feedSpeed}x (attempt ${attempt})`, undefined, "audio");
+                  setTimeout(setupLockScreen, 1500);
+                  if (!resolved) { resolved = true; resolve(true); }
+                } else {
+                  if (wasPausedRef.current) {
+                    applySmartRewind().catch(() => {});
+                  }
+                  setPlayback(prev => prev.isPlaying ? prev : ({ ...prev, isPlaying: true }));
                 }
-                setPlayback(prev => prev.isPlaying ? prev : ({ ...prev, isPlaying: true }));
               }
-            }
 
-            if (status.playing === false && status.currentTime > 0 && status.duration > 0) {
-              const ratio = status.currentTime / status.duration;
-              if (ratio > 0.97) {
-                const ep = currentEpisodeRef.current;
-                const fd = currentFeedRef.current;
-                if (ep && fd) {
-                  handleEpisodeEndRef.current(ep, fd);
+              if (status.playing === false && status.currentTime > 0 && status.duration > 0) {
+                const ratio = status.currentTime / status.duration;
+                if (ratio > 0.97) {
+                  const ep = currentEpisodeRef.current;
+                  const fd = currentFeedRef.current;
+                  if (ep && fd) {
+                    handleEpisodeEndRef.current(ep, fd);
+                  }
+                } else {
+                  setPlayback(prev => prev.isPlaying ? ({ ...prev, isPlaying: false }) : prev);
                 }
-              } else {
-                setPlayback(prev => prev.isPlaying ? ({ ...prev, isPlaying: false }) : prev);
               }
+            });
+
+            try { player.setPlaybackRate(feedSpeed); } catch {}
+            if (savedPos > 0) {
+              try { player.seekTo(savedPos / 1000); } catch {}
             }
+            try { player.play(); } catch (e: any) {
+              addLog("warn", `player.play() threw on attempt ${attempt}: ${e?.message}`, undefined, "audio");
+            }
+            startPositionTracking();
+
+            setTimeout(() => {
+              if (!resolved && !hasConfirmedPlaying) {
+                resolved = true;
+                addLog("warn", `Playback not confirmed after ${confirmTimeoutMs}ms (attempt ${attempt}/${maxAttempts})`, undefined, "audio");
+                resolve(false);
+              }
+            }, confirmTimeoutMs);
           });
+        };
 
-          player.setPlaybackRate(feedSpeed);
-
-          if (savedPos > 0) {
-            player.seekTo(savedPos / 1000);
-          }
-
-          player.play();
-          startPositionTracking();
-
-          setTimeout(() => {
-            if (!hasConfirmedPlaying && nativePlayerRef.current === player) {
-              addLog("info", "Playback not confirmed after 15s, forcing state", undefined, "audio");
-              hasConfirmedPlaying = true;
-              setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true }));
-              try { player.play(); } catch {}
-              setTimeout(setupLockScreen, 1000);
+        // Up to 3 attempts. If all fail, surface a real error to the UI
+        // instead of pretending the audio is playing.
+        const MAX_ATTEMPTS = 3;
+        const TIMEOUT_MS = 15000;
+        let succeeded = false;
+        try {
+          for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            const ok = await tryAttempt(attempt, MAX_ATTEMPTS, TIMEOUT_MS);
+            if (ok) { succeeded = true; break; }
+            if (attempt < MAX_ATTEMPTS) {
+              addLog("info", `Retrying playback (attempt ${attempt + 1}/${MAX_ATTEMPTS}) with fresh player...`, undefined, "audio");
+              await new Promise(r => setTimeout(r, 500));
             }
-          }, 15000);
-
+          }
         } catch (audioErr: any) {
           const msg = audioErr?.message || String(audioErr);
-          const isNetwork = /resolve host|no address|connection abort|network/i.test(msg);
           addLog("error", `expo-audio play failed: ${msg}`, audioErr?.stack, "audio");
-          setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: false }));
-          if (isNetwork) {
-            addLog("warn", "Network unavailable — check your internet connection", undefined, "audio");
-          }
+          setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: false, playbackError: msg }));
+        }
+
+        if (!succeeded) {
+          teardown();
+          addLog("error", `Playback failed after ${MAX_ATTEMPTS} attempts. Likely a device audio issue — try restarting the app or phone.`, undefined, "audio");
+          setPlayback(prev => ({
+            ...prev,
+            isLoading: false,
+            isPlaying: false,
+            playbackError: "Playback failed. Try restarting the app or device.",
+          }));
         }
       } else {
         addLog("error", "No audio player available", undefined, "audio");

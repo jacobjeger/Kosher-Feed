@@ -317,6 +317,17 @@ export function initErrorLogger() {
     });
   }
 
+  // Hosts whose fetch errors are known to be noisy and not actionable on our
+  // side — push provider transient outages, FCM token retries, etc. We still
+  // throw the error normally; we just don't surface it as an error report.
+  const isNoisyFetchUrl = (url: string): boolean => {
+    return /(^https?:\/\/)?(exp\.host|expo\.dev|expo\.io|fcm\.googleapis\.com|push\.expo\.dev|api\.pushy\.me)\b/.test(url);
+  };
+  const isNoisyError = (msg: string): boolean => {
+    if (!msg) return false;
+    return /^Aborted$|AbortError|aborted by the user|signal is aborted|Request aborted|Network request was aborted/i.test(msg);
+  };
+
   const origFetch = globalThis.fetch;
   (globalThis as any).__origFetch = origFetch;
   if (origFetch) {
@@ -330,7 +341,7 @@ export function initErrorLogger() {
               : args[0] instanceof Request
                 ? args[0].url
                 : String(args[0]);
-          if (!url.includes("/api/error-reports")) {
+          if (!url.includes("/api/error-reports") && !isNoisyFetchUrl(url)) {
             const shortUrl = url.length > 120 ? url.substring(0, 120) + "..." : url;
             addLog(
               res.status >= 500 ? "error" : "warn",
@@ -348,9 +359,13 @@ export function initErrorLogger() {
             : args[0] instanceof Request
               ? args[0].url
               : String(args[0]);
-        if (!url.includes("/api/error-reports")) {
+        const errMsg = err?.message || "Unknown";
+        const shouldSkip = url.includes("/api/error-reports")
+          || isNoisyFetchUrl(url)
+          || isNoisyError(errMsg);
+        if (!shouldSkip) {
           const shortUrl = url.length > 120 ? url.substring(0, 120) + "..." : url;
-          addLog("error", `Network error: ${err?.message || "Unknown"} — ${shortUrl}`, err?.stack, "fetch");
+          addLog("error", `Network error: ${errMsg} — ${shortUrl}`, err?.stack, "fetch");
         }
         throw err;
       }

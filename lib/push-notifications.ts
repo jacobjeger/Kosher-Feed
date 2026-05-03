@@ -223,6 +223,7 @@ export async function registerPushToken(verbose = false): Promise<{ token: strin
     let provider: string = "expo";
 
     log("info", "Permission granted, trying FCM (Expo push token) first...");
+    let lastFcmError: { msg: string; stack?: string } | null = null;
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         log("info", `FCM token fetch attempt ${attempt}/2 (projectId: ${projectId || "none"})...`);
@@ -234,11 +235,16 @@ export async function registerPushToken(verbose = false): Promise<{ token: strin
         token = tokenData.data;
         provider = "expo";
         log("info", `Got FCM/Expo push token: ${token}`);
+        lastFcmError = null;
         break;
       } catch (e) {
         const msg = (e as any)?.message || String(e);
         const stack = (e as any)?.stack;
-        log("error", `FCM token attempt ${attempt}/2 failed: ${msg}`, stack);
+        // Routine retry failures are warnings, not errors. Only escalate if
+        // the final attempt also fails AND Pushy fallback also fails (handled
+        // below as "Both FCM and Pushy failed").
+        log("warn", `FCM token attempt ${attempt}/2 failed: ${msg}`);
+        lastFcmError = { msg, stack };
         if (attempt < 2) {
           log("info", "Waiting 3 seconds before retry...");
           await new Promise(r => setTimeout(r, 3000));
