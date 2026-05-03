@@ -51,6 +51,7 @@ export default function PlayerScreen() {
     pause, resume, seekTo, skip, setRate, stop,
     sleepTimer, setSleepTimer, cancelSleepTimer,
     episodeCompleted, clearEpisodeCompleted,
+    retryPlayback,
   } = useAudioPlayer();
   const position = usePlaybackPosition();
   const { settings } = useSettings();
@@ -390,6 +391,13 @@ export default function PlayerScreen() {
         </View>
       </View>
 
+      {playback.playbackError ? (
+        <View style={{ paddingHorizontal: 24, paddingBottom: 8, alignItems: "center" }}>
+          <Text style={{ color: "#ef4444", fontSize: 13, textAlign: "center" }}>
+            {playback.playbackError} Tap the red button to retry.
+          </Text>
+        </View>
+      ) : null}
       <View style={[styles.controls, isSmallScreen && styles.controlsSmall]}>
         <FocusableView
           focusRadius={12}
@@ -416,13 +424,20 @@ export default function PlayerScreen() {
           onPress={() => {
             if (playback.isLoading) return;
             mediumHaptic();
+            if (playback.playbackError) { retryPlayback(); return; }
             playback.isPlaying ? pause() : resume();
           }}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          style={[styles.playBtn, isSmallScreen && styles.playBtnSmall, { backgroundColor: colors.accent }]}
+          style={[
+            styles.playBtn,
+            isSmallScreen && styles.playBtnSmall,
+            { backgroundColor: playback.playbackError ? "#ef4444" : colors.accent },
+          ]}
         >
           {playback.isLoading ? (
             <ActivityIndicator size={isSmallScreen ? 28 : 32} color="#fff" />
+          ) : playback.playbackError ? (
+            <Ionicons name="refresh" size={isSmallScreen ? 32 : 36} color="#fff" />
           ) : (
             <Ionicons
               name={playback.isPlaying ? "pause" : "play"}

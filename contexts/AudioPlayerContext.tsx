@@ -114,6 +114,10 @@ interface AudioPlayerContextValue {
   episodeCompleted: string | null;
   clearEpisodeCompleted: () => void;
   setAudioBoost: (enabled: boolean) => void;
+  // Retries the most recent playEpisode after a failed playback. UI calls
+  // this from the error-state retry button surfaced when playback.playbackError
+  // is set.
+  retryPlayback: () => Promise<void>;
 }
 
 const AudioPlayerContext = createContext<AudioPlayerContextValue | null>(null);
@@ -894,6 +898,14 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     await playEpisodeInternal(episode, feed, false);
   }, [playEpisodeInternal]);
 
+  const retryPlayback = useCallback(async () => {
+    const ep = currentEpisodeRef.current;
+    const fd = currentFeedRef.current;
+    if (!ep || !fd) return;
+    setPlayback(prev => ({ ...prev, playbackError: null, isLoading: true }));
+    await playEpisodeInternal(ep, fd, true);
+  }, [playEpisodeInternal]);
+
   const playNext = useCallback(async () => {
     const currentQueue = queueRef.current;
     if (currentQueue.length === 0) return;
@@ -1186,7 +1198,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     episodeCompleted,
     clearEpisodeCompleted,
     setAudioBoost,
-  }), [currentEpisode, currentFeed, playback, playEpisode, pause, resume, seekTo, skip, setRate, stop, getSavedPosition, removeSavedPosition, recentlyPlayed, getFeedSpeed, sleepTimer, setSleepTimerFn, cancelSleepTimer, getInProgressEpisodes, queue, handleAddToQueue, handleRemoveFromQueue, handleClearQueue, refreshQueue, playNext, subscribePosition, getPositionSnapshot, episodeCompleted, clearEpisodeCompleted, setAudioBoost]);
+    retryPlayback,
+  }), [currentEpisode, currentFeed, playback, playEpisode, pause, resume, seekTo, skip, setRate, stop, getSavedPosition, removeSavedPosition, recentlyPlayed, getFeedSpeed, sleepTimer, setSleepTimerFn, cancelSleepTimer, getInProgressEpisodes, queue, handleAddToQueue, handleRemoveFromQueue, handleClearQueue, refreshQueue, playNext, subscribePosition, getPositionSnapshot, episodeCompleted, clearEpisodeCompleted, setAudioBoost, retryPlayback]);
 
   return (
     <AudioPlayerContext.Provider value={value}>

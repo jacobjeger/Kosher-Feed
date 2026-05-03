@@ -19,7 +19,7 @@ function formatTime(ms: number): string {
 }
 
 export default function MiniPlayer() {
-  const { currentEpisode, currentFeed, playback, pause, resume, seekTo } = useAudioPlayer();
+  const { currentEpisode, currentFeed, playback, pause, resume, seekTo, retryPlayback } = useAudioPlayer();
   const position = usePlaybackPosition();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
@@ -80,11 +80,17 @@ export default function MiniPlayer() {
               {currentEpisode.title}
             </Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Pressable onPress={(e) => { e.stopPropagation(); if (currentFeed) router.push(`/podcast/${currentFeed.id}`); }} hitSlop={4}>
-                <Text style={[styles.subtitle, { color: "rgba(255,255,255,0.55)" }]} numberOfLines={1}>
-                  {currentFeed?.title}
+              {playback.playbackError ? (
+                <Text style={[styles.subtitle, { color: "#ef4444" }]} numberOfLines={1}>
+                  {playback.playbackError} Tap to retry.
                 </Text>
-              </Pressable>
+              ) : (
+                <Pressable onPress={(e) => { e.stopPropagation(); if (currentFeed) router.push(`/podcast/${currentFeed.id}`); }} hitSlop={4}>
+                  <Text style={[styles.subtitle, { color: "rgba(255,255,255,0.55)" }]} numberOfLines={1}>
+                    {currentFeed?.title}
+                  </Text>
+                </Pressable>
+              )}
               {isWeb && position.durationMs > 0 && (
                 <Text style={{ color: "rgba(255,255,255,0.35)", fontSize: 11 }}>
                   {formatTime(position.positionMs)} / {formatTime(position.durationMs)}
@@ -106,13 +112,20 @@ export default function MiniPlayer() {
             focusRadius={20}
             onPress={(e) => {
               e.stopPropagation();
+              if (playback.playbackError) { retryPlayback(); return; }
               playback.isPlaying ? pause() : resume();
             }}
             hitSlop={12}
-            style={[styles.playBtn, isWeb && styles.playBtnWeb]}
+            style={[
+              styles.playBtn,
+              isWeb && styles.playBtnWeb,
+              playback.playbackError ? { backgroundColor: "rgba(239, 68, 68, 0.18)" } : null,
+            ]}
           >
             {playback.isLoading ? (
               <ActivityIndicator size={18} color={colors.playerText} />
+            ) : playback.playbackError ? (
+              <Ionicons name="refresh" size={22} color="#ef4444" />
             ) : (
               <Ionicons
                 name={playback.isPlaying ? "pause" : "play"}
