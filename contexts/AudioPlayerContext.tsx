@@ -811,18 +811,30 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
             }, 500);
           };
 
+          // Track last position so we can detect "audio is actually progressing"
+          // even if the listener never sets status.playing = true (some devices
+          // are slow to flip that flag).
+          let lastSeenPosition = 0;
+          let positionSeenAt = Date.now();
+
           return new Promise<boolean>((resolve) => {
+            const confirmPlaying = (reason: string) => {
+              if (hasConfirmedPlaying) return;
+              hasConfirmedPlaying = true;
+              try { player.setPlaybackRate(feedSpeed); } catch {}
+              setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true, playbackError: null }));
+              addLog("info", `Playing confirmed (${reason}): ${episode.title} at ${feedSpeed}x (attempt ${attempt})`, undefined, "audio");
+              setTimeout(setupLockScreen, 1500);
+              if (!resolved) { resolved = true; resolve(true); }
+            };
+
             statusSubRef.current = player.addListener("playbackStatusUpdate", (status: any) => {
               if (nativePlayerRef.current !== player) return;
 
+              // Confirmation path 1: native listener says playing=true.
               if (status.playing === true) {
                 if (!hasConfirmedPlaying) {
-                  hasConfirmedPlaying = true;
-                  try { player.setPlaybackRate(feedSpeed); } catch {}
-                  setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true, playbackError: null }));
-                  addLog("info", `Playing confirmed (expo-audio): ${episode.title} at ${feedSpeed}x (attempt ${attempt})`, undefined, "audio");
-                  setTimeout(setupLockScreen, 1500);
-                  if (!resolved) { resolved = true; resolve(true); }
+                  confirmPlaying("status.playing=true");
                 } else {
                   if (wasPausedRef.current) {
                     applySmartRewind().catch(() => {});
@@ -831,10 +843,20 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
                 }
               }
 
+              // Confirmation path 2: position is advancing. Some devices
+              // (notably restricted Android builds) are slow to flip
+              // status.playing to true. If currentTime is moving forward,
+              // audio is genuinely playing.
+              if (typeof status.currentTime === "number" && status.currentTime > lastSeenPosition + 0.4) {
+                if (!hasConfirmedPlaying) {
+                  confirmPlaying("currentTime advancing");
+                }
+                lastSeenPosition = status.currentTime;
+                positionSeenAt = Date.now();
+              }
+
               // didJustFinish is expo-audio's direct end-of-track signal — fires
-              // reliably even when the phone is locked / app backgrounded. Use
-              // this as the primary trigger; fall back to the position-ratio
-              // heuristic only if the runtime version doesn't expose it.
+              // reliably even when the phone is locked / app backgrounded.
               if (status.didJustFinish === true) {
                 const ep = currentEpisodeRef.current;
                 const fd = currentFeedRef.current;
@@ -843,8 +865,6 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
                 }
               } else if (status.playing === false && status.currentTime > 0 && status.duration > 0) {
                 const ratio = status.currentTime / status.duration;
-                // 0.95 (down from 0.97) gives more tolerance for short shiurim
-                // and buffer cutoff a couple of seconds before exact end.
                 if (ratio > 0.95) {
                   const ep = currentEpisodeRef.current;
                   const fd = currentFeedRef.current;
@@ -852,8 +872,16 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
                     handleEpisodeEndRef.current(ep, fd);
                   }
                 } else if (Date.now() < seekResumeUntilRef.current) {
-                  // Recent seek — expo-audio is buffering the new position
-                  // and will resume on its own. Don't flip UI to paused.
+                  // Recent seek — expo-audio is buffering the new position.
+                } else if (status.isBuffering === true) {
+                  // Buffering, not paused. Don't flip UI to paused.
+                } else if (!hasConfirmedPlaying) {
+                  // Initial start phase — listener can briefly report
+                  // playing:false while ExoPlayer warms up. Ignore until
+                  // we've confirmed playing once.
+                } else if (Date.now() - positionSeenAt < 2500) {
+                  // Position advanced within the last 2.5s — audio is most
+                  // likely still playing and the listener is just lagging.
                 } else {
                   setPlayback(prev => prev.isPlaying ? ({ ...prev, isPlaying: false }) : prev);
                 }
