@@ -680,13 +680,13 @@ export async function getStaleTdEpisodeIds(limit: number = 1000): Promise<{ epis
 // link) may still be useful.
 export async function nullPublishedAtForShiurIds(shiurIds: number[]): Promise<number> {
   if (shiurIds.length === 0) return 0;
-  const r = await db.execute(sql`
-    UPDATE episodes
-    SET published_at = NULL
-    WHERE torahdownloads_shiur_id = ANY(${shiurIds})
-    RETURNING id
-  `);
-  return (r.rows || []).length;
+  // Use drizzle's typed update + inArray. The previous raw `ANY(${shiurIds})`
+  // didn't bind the JS array as a Postgres array — server returned a 500.
+  const r = await db.update(episodes)
+    .set({ publishedAt: null })
+    .where(inArray(episodes.torahdownloadsShiurId, shiurIds))
+    .returning({ id: episodes.id });
+  return r.length;
 }
 
 // Count-only variant for the diagnostic UI.
