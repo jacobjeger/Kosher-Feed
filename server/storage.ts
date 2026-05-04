@@ -869,6 +869,11 @@ export async function bulkDedupIntraFeedEpisodes(feedId?: string): Promise<{ del
   // — it gets treated as literal "b" silently), so we require at least one
   // separator char before the keyword instead. Mirrors normalizeTitle in
   // server/episode-dedup.ts as closely as the SQL flavor allows.
+  //
+  // Duplicate definition: same feed + same normalized title + same publish
+  // day + duration within tolerance (30 seconds OR 5% of the longer
+  // duration, whichever is greater). The duration check prevents collapsing
+  // a 5-min teaser against a 60-min full shiur that happen to share a title.
   const result = await db.execute(sql`
     WITH norm AS (
       SELECT
@@ -878,6 +883,17 @@ export async function bulkDedupIntraFeedEpisodes(feedId?: string): Promise<{ del
         e.title,
         e.created_at,
         DATE(e.published_at AT TIME ZONE 'UTC') AS pub_day,
+        -- duration parsed to seconds (NULL if unparseable)
+        CASE
+          WHEN e.duration ~ '^[0-9]+:[0-9]+:[0-9]+$' THEN
+            split_part(e.duration, ':', 1)::int * 3600
+            + split_part(e.duration, ':', 2)::int * 60
+            + split_part(e.duration, ':', 3)::int
+          WHEN e.duration ~ '^[0-9]+:[0-9]+$' THEN
+            split_part(e.duration, ':', 1)::int * 60
+            + split_part(e.duration, ':', 2)::int
+          ELSE NULL
+        END AS dur_secs,
         regexp_replace(
           regexp_replace(
             lower(coalesce(e.title, '')),
@@ -892,38 +908,29 @@ export async function bulkDedupIntraFeedEpisodes(feedId?: string): Promise<{ del
         AND coalesce(e.title, '') <> ''
         ${feedFilter}
     ),
-    -- For each (feed_id, normalized title, pub day) pick a canonical row:
-    -- longest duration first, then longest title, then earliest created_at.
-    ranked AS (
+    canonical AS (
+      -- For each (feed, title, day) group, the canonical row is the longest
+      -- duration. Other rows in the group are duplicates only if their
+      -- duration is within tolerance of the canonical.
       SELECT
-        id, feed_id, pub_day, norm_title,
+        id, feed_id, pub_day, norm_title, dur_secs,
+        FIRST_VALUE(dur_secs) OVER (
+          PARTITION BY feed_id, regexp_replace(trim(norm_title), '\\s+', ' ', 'g'), pub_day
+          ORDER BY dur_secs DESC NULLS LAST, length(coalesce(title, '')) DESC, created_at ASC, id ASC
+        ) AS canon_dur,
         ROW_NUMBER() OVER (
           PARTITION BY feed_id, regexp_replace(trim(norm_title), '\\s+', ' ', 'g'), pub_day
-          ORDER BY
-            -- prefer rows with parseable durations sorted desc by total seconds
-            CASE
-              WHEN duration ~ '^\\d+:\\d+:\\d+$' THEN
-                split_part(duration, ':', 1)::int * 3600
-                + split_part(duration, ':', 2)::int * 60
-                + split_part(duration, ':', 3)::int
-              WHEN duration ~ '^\\d+:\\d+$' THEN
-                split_part(duration, ':', 1)::int * 60
-                + split_part(duration, ':', 2)::int
-              ELSE 0
-            END DESC,
-            length(coalesce(title, '')) DESC,
-            created_at ASC,
-            id ASC
-        ) AS rn,
-        COUNT(*) OVER (
-          PARTITION BY feed_id, regexp_replace(trim(norm_title), '\\s+', ' ', 'g'), pub_day
-        ) AS grp_size
+          ORDER BY dur_secs DESC NULLS LAST, length(coalesce(title, '')) DESC, created_at ASC, id ASC
+        ) AS rn
       FROM norm
       WHERE trim(norm_title) <> ''
     ),
-    -- Only consider groups that actually have duplicates.
     to_delete AS (
-      SELECT id FROM ranked WHERE rn > 1 AND grp_size > 1
+      SELECT id FROM canonical
+      WHERE rn > 1
+        AND canon_dur IS NOT NULL
+        AND dur_secs IS NOT NULL
+        AND abs(dur_secs - canon_dur) <= GREATEST(30, canon_dur / 20)
     )
     DELETE FROM episodes WHERE id IN (SELECT id FROM to_delete)
     RETURNING id

@@ -216,12 +216,45 @@ export function parseShiurPage(html: string, shiurId: number): TDShiurDetail | n
 // the website's HTML doesn't render one. Bypass tdGet's site throttle since
 // torahcdn.net is a different (CDN-fronted) host with no rate limit issues.
 export async function fetchShiurUploadDate(shiurId: number): Promise<Date | null> {
+  // torahcdn.net's Cloudflare front silently drops requests from Railway IPs
+  // (100% miss rate from prod vs 100% hit rate from a residential IP). Route
+  // through the same KH-proxy CF Worker we use for Kol Halashon — it has a
+  // /td/* passthrough that re-issues the request from inside Cloudflare's
+  // network with browser-like headers. Falls back to direct CDN access when
+  // KH_PROXY_URL isn't configured (local dev).
+  const proxyBase = process.env.KH_PROXY_URL;
+  const proxyKey = process.env.KH_PROXY_KEY;
+  let url: string;
+  let extraHeaders: Record<string, string> = {};
+  if (proxyBase) {
+    url = `${proxyBase.replace(/\/$/, "")}/td/tdn/${shiurId}.mp3`;
+    if (proxyKey) extraHeaders["x-proxy-key"] = proxyKey;
+  } else {
+    url = `${TD_CDN_BASE}${shiurId}.mp3`;
+    extraHeaders = {
+      "Accept": "*/*",
+      "Accept-Language": "en-US,en;q=0.9",
+      "Origin": "https://torahdownloads.com",
+      "Referer": "https://torahdownloads.com/",
+    };
+  }
+
   try {
-    const res = await axios.head(`${TD_CDN_BASE}${shiurId}.mp3`, {
+    const res = await axios.head(url, {
       timeout: 10000,
-      headers: { "User-Agent": TD_USER_AGENT },
-      validateStatus: s => s >= 200 && s < 400,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        ...extraHeaders,
+      },
+      validateStatus: s => s >= 200 && s < 500, // accept 4xx so we can log the status
     });
+    if (res.status >= 400) {
+      if ((globalThis as any).__td_cdn_4xx_logged !== true) {
+        console.warn(`fetchShiurUploadDate: ${res.status} for shiur ${shiurId} via ${proxyBase ? "proxy" : "direct"} (logging once)`);
+        (globalThis as any).__td_cdn_4xx_logged = true;
+      }
+      return null;
+    }
     const headers = res.headers || {};
     const cb = headers["x-amz-meta-cb-modifiedtime"];
     const lm = headers["last-modified"];
@@ -229,7 +262,11 @@ export async function fetchShiurUploadDate(shiurId: number): Promise<Date | null
     if (!raw) return null;
     const d = new Date(raw);
     return isNaN(d.getTime()) ? null : d;
-  } catch {
+  } catch (e: any) {
+    if ((globalThis as any).__td_cdn_err_logged !== true) {
+      console.warn(`fetchShiurUploadDate: HEAD threw for shiur ${shiurId} via ${proxyBase ? "proxy" : "direct"}: ${e?.code || e?.message?.slice(0, 100)} (logging once)`);
+      (globalThis as any).__td_cdn_err_logged = true;
+    }
     return null;
   }
 }

@@ -35,14 +35,22 @@ export function normalizeTitle(s: string | null | undefined): string {
 }
 
 // Within-batch dedup: collapse new episodes that share the same normalized
-// title AND the same publish-day. Picks one canonical entry per group —
-// preferring the one with longer duration (more likely the actual shiur,
-// not a teaser clip), then falling back to the longest title (more
-// descriptive). When two RSS items represent the audio + video of the same
-// shiur, this keeps one before they ever reach upsertEpisodes.
+// title AND the same publish-day AND have basically the same duration.
+// Picks one canonical entry per group — prefers longest duration, then
+// longest title. When two RSS items represent the audio + video of the
+// same shiur, durations agree to within seconds (same source transcoded
+// twice), so they collapse here. Two genuinely different shiurim that
+// happen to share a title on the same day (e.g. a daily series with a
+// generic name) but have very different durations stay as separate rows.
+//
+// "Basically same duration" tolerance: 30 seconds OR 5% of the longer
+// duration, whichever is larger. Picks up the cheeseburger case (2-second
+// drift between audio and video transcodes) without collapsing a 5-min
+// teaser against a 60-min full shiur.
 export function dedupWithinBatch<T extends { title?: string | null; publishedAt?: Date | string | null; duration?: string | null }>(
   newEpisodes: T[],
 ): T[] {
+  // First pass: group by (title, day). These are CANDIDATES for collapse.
   const groups = new Map<string, T[]>();
   const order: string[] = [];
   for (const ep of newEpisodes) {
@@ -51,7 +59,6 @@ export function dedupWithinBatch<T extends { title?: string | null; publishedAt?
       ? new Date(typeof ep.publishedAt === "string" ? ep.publishedAt : ep.publishedAt.toISOString()).toISOString().slice(0, 10)
       : "";
     if (!title || !day) {
-      // No usable fingerprint — keep verbatim.
       order.push(`__pass_${order.length}`);
       groups.set(`__pass_${order.length - 1}`, [ep]);
       continue;
@@ -64,6 +71,9 @@ export function dedupWithinBatch<T extends { title?: string | null; publishedAt?
       groups.get(key)!.push(ep);
     }
   }
+
+  // Second pass: within each (title, day) group, sub-cluster by duration
+  // proximity. Only collapse rows whose durations are within tolerance.
   const out: T[] = [];
   for (const key of order) {
     const grp = groups.get(key)!;
@@ -71,14 +81,40 @@ export function dedupWithinBatch<T extends { title?: string | null; publishedAt?
       out.push(grp[0]);
       continue;
     }
-    // Pick canonical: longest duration first; tie-break by longest title.
+    // Sort longest-duration first so canonical is at index 0 in each cluster.
     grp.sort((a, b) => {
       const da = parseDurationToSeconds(a.duration ?? null) ?? 0;
       const db = parseDurationToSeconds(b.duration ?? null) ?? 0;
       if (da !== db) return db - da;
       return (b.title || "").length - (a.title || "").length;
     });
-    out.push(grp[0]);
+    // Greedy clustering: walk in order, attach each item to the first cluster
+    // whose canonical duration is within tolerance. Otherwise start a new
+    // cluster. This way "5min teaser" doesn't get absorbed into a "60min full
+    // version" cluster — they stay as two episodes.
+    const clusters: T[][] = [];
+    for (const ep of grp) {
+      const epDur = parseDurationToSeconds(ep.duration ?? null);
+      let attached = false;
+      for (const cluster of clusters) {
+        const canonDur = parseDurationToSeconds(cluster[0].duration ?? null);
+        if (epDur === null || canonDur === null) {
+          // No duration on either side — fall back to title-only collapse.
+          cluster.push(ep);
+          attached = true;
+          break;
+        }
+        const tolerance = Math.max(30, canonDur * 0.05);
+        if (Math.abs(epDur - canonDur) <= tolerance) {
+          cluster.push(ep);
+          attached = true;
+          break;
+        }
+      }
+      if (!attached) clusters.push([ep]);
+    }
+    // Each cluster collapses to its canonical (index 0).
+    for (const cluster of clusters) out.push(cluster[0]);
   }
   return out;
 }
