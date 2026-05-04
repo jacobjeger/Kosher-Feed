@@ -862,9 +862,12 @@ export async function clearSourceNetworkIfMultiSource(feedId: string): Promise<b
 // the whole catalog.
 export async function bulkDedupIntraFeedEpisodes(feedId?: string): Promise<{ deleted: number; groupsCollapsed: number }> {
   const feedFilter = feedId ? sql`AND e.feed_id = ${feedId}` : sql``;
-  // Postgres regex: lowercase title, strip leading/trailing whitespace, strip
-  // a trailing audio/video/mp3/mp4/m4a marker (with various separators), then
-  // collapse remaining punctuation/whitespace. Mirrors normalizeTitle in
+  // Postgres regex: lowercase title, strip a trailing audio/video/mp3/mp4
+  // marker (with various separators required as a prefix so we don't eat
+  // mid-word matches like "studio"), then collapse remaining punctuation/
+  // whitespace. PostgreSQL's POSIX regex doesn't support \b (word boundary
+  // — it gets treated as literal "b" silently), so we require at least one
+  // separator char before the keyword instead. Mirrors normalizeTitle in
   // server/episode-dedup.ts as closely as the SQL flavor allows.
   const result = await db.execute(sql`
     WITH norm AS (
@@ -878,11 +881,11 @@ export async function bulkDedupIntraFeedEpisodes(feedId?: string): Promise<{ del
         regexp_replace(
           regexp_replace(
             lower(coalesce(e.title, '')),
-            '[\\s\\.\\-_()\\[\\]]*\\b(audio|video|mp3|mp4|m4a|wav|hd|sd)( version)?[\\s\\.\\-_()\\[\\]]*$',
+            '[[:space:].\\-_()\\[\\]]+(audio|video|mp3|mp4|m4a|wav|hd|sd)( version)?[[:space:].\\-_()\\[\\]]*$',
             '',
             'g'
           ),
-          '[^\\w\\s]+', ' ', 'g'
+          '[^[:alnum:][:space:]]+', ' ', 'g'
         ) AS norm_title
       FROM episodes e
       WHERE e.published_at IS NOT NULL
