@@ -2,7 +2,7 @@ import axios from "axios";
 import * as storage from "./storage";
 import { sendNewEpisodePushes, PUSH_BACKFILL_THRESHOLD } from "./push";
 import { normalizeName } from "./name-utils";
-import { filterCrossSourceDuplicates, isMergedFeed } from "./episode-dedup";
+import { filterCrossSourceDuplicates, isMergedFeed, dedupWithinBatch } from "./episode-dedup";
 import { extractKhRavId } from "./feed-utils";
 
 // KH API base URL
@@ -433,14 +433,15 @@ export async function refreshKHFeedEpisodes(
     return true;
   });
 
-  const episodeData = validShiurim
+  const rawEpisodeData = validShiurim
     .filter(s => s.FileId || s.FileID)
     .map(s => mapKHShiurToEpisodeData(s, feed.id));
 
-  let finalEpisodeData = episodeData;
+  // Within-batch dedup: collapse same-title+same-day variants in this fetch.
+  let finalEpisodeData = dedupWithinBatch(rawEpisodeData);
   if (feedRecord && isMergedFeed(feedRecord)) {
     const existingEpisodes = await storage.getEpisodesByFeed(feed.id);
-    finalEpisodeData = filterCrossSourceDuplicates(episodeData, existingEpisodes, "kh-");
+    finalEpisodeData = filterCrossSourceDuplicates(finalEpisodeData, existingEpisodes, "kh-");
   }
 
   const inserted = await storage.upsertKHEpisodes(feed.id, finalEpisodeData);

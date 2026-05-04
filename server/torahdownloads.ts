@@ -3,7 +3,7 @@ import * as cheerio from "cheerio";
 import * as storage from "./storage";
 import { sendNewEpisodePushes, PUSH_BACKFILL_THRESHOLD } from "./push";
 import { normalizeName } from "./name-utils";
-import { filterCrossSourceDuplicates, isMergedFeed } from "./episode-dedup";
+import { filterCrossSourceDuplicates, isMergedFeed, dedupWithinBatch } from "./episode-dedup";
 
 // TorahDownloads adapter.
 //
@@ -527,6 +527,9 @@ export async function refreshTorahDownloadsFeedEpisodes(
   }
 
   let episodeData = detailsList.map(d => mapTDShiurToEpisodeData(d, feed.id));
+
+  // Within-batch dedup: collapse same-title+same-day variants in this fetch.
+  episodeData = dedupWithinBatch(episodeData);
 
   if (feedRecord && isMergedFeed(feedRecord)) {
     const existingEpisodes = await storage.getEpisodesByFeed(feed.id);

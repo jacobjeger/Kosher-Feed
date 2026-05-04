@@ -2,7 +2,7 @@ import axios from "axios";
 import * as storage from "./storage";
 import { sendNewEpisodePushes, PUSH_BACKFILL_THRESHOLD } from "./push";
 import { normalizeName } from "./name-utils";
-import { filterCrossSourceDuplicates, isMergedFeed } from "./episode-dedup";
+import { filterCrossSourceDuplicates, isMergedFeed, dedupWithinBatch } from "./episode-dedup";
 
 const TAT_BASE_URL = "https://api.torahanytime.com";
 const TAT_PROJECT_ID = 1;
@@ -343,6 +343,9 @@ export async function refreshTATFeedEpisodes(feed: { id: string; title: string; 
   const validLectures = lectures.filter(l => !l.private && l.display_active && l.mp3_url);
 
   let episodeData = validLectures.map(l => mapTATLectureToEpisodeData(l, feed.id));
+
+  // Within-batch dedup: collapse same-title+same-day variants in this fetch.
+  episodeData = dedupWithinBatch(episodeData);
 
   // Cross-source dedup for merged feeds
   if (feedRecord && isMergedFeed(feedRecord)) {

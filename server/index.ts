@@ -15,7 +15,7 @@ import { startRefreshCycle, recordFeedResult, endRefreshCycle } from "./feed-vit
 import { refreshTATFeedEpisodes, syncTATSpeakers, fetchAllSpeakers } from "./torahanytime";
 import { refreshOUFeedEpisodes, syncOUPlatformAuthors, fetchAuthorById, OU_PLATFORMS, isApiOnlyUrl, type OUPlatformKey } from "./alldaf";
 import { refreshKHFeedEpisodes, syncKHSpeakers } from "./kolhalashon";
-import { isMergedFeed, filterCrossSourceDuplicates } from "./episode-dedup";
+import { isMergedFeed, filterCrossSourceDuplicates, dedupWithinBatch } from "./episode-dedup";
 import { refreshTorahDownloadsFeedEpisodes, syncTorahDownloadsSpeakers } from "./torahdownloads";
 import { autoCategorizeFeeds } from "./auto-categorize";
 import { extractKhRavId, extractTatSpeakerId, extractTorahDownloadsSpeakerId } from "./feed-utils";
@@ -775,6 +775,14 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
   }
 
   let episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
+
+  // Within-batch dedup. Some RSS feeds (e.g. Libsyn-hosted podcasts) emit
+  // two <item>s per shiur — one for audio and one for video — with titles
+  // differing only by an ".audio" suffix and identical publishedAt. Both
+  // would land in episodeData side-by-side, so the cross-source dedup
+  // below (which compares NEW vs EXISTING) wouldn't catch them. Collapse
+  // them here BEFORE the cross-source pass.
+  episodeData = dedupWithinBatch(episodeData);
 
   // Cross-source dedup for merged RSS feeds. RSS runs LAST in the fan-out
   // above, so by now the DB has any TAT / OU / KH / TD episodes already

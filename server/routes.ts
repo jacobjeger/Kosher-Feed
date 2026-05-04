@@ -2279,6 +2279,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (e: any) { publicError(res, e); }
   });
 
+  // Cleanup: collapse intra-feed duplicate episodes. Two rows are duplicates
+  // when they share the same normalized title (with audio/video markers
+  // stripped) AND the same publish-day. Keeps the longest-duration / longest-
+  // title row, deletes the rest. Optional ?feedId=... scopes to one feed
+  // for safe trial runs; without it, sweeps the whole catalog.
+  app.post("/api/admin/diagnostics/dedup-episodes", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const feedId = typeof req.query.feedId === "string" ? req.query.feedId : undefined;
+      const result = await storage.bulkDedupIntraFeedEpisodes(feedId);
+      res.json(result);
+    } catch (e: any) { publicError(res, e); }
+  });
+
   // TorahDownloads pubdate backfill. The original parser scraped the navbar
   // date (today) on every shiur, so the existing td-* episodes all share
   // whatever day they were ingested at 12:00 UTC. Pull the real date from

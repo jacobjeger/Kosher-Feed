@@ -849,6 +849,86 @@ export async function clearSourceNetworkIfMultiSource(feedId: string): Promise<b
   return true;
 }
 
+// Cleanup endpoint helper: collapse duplicate episodes within a single feed
+// where two rows share the same normalized title (with audio/video suffix
+// stripped) AND the same publish-day. Picks one canonical row to keep —
+// preferring the longest duration, then the longest title — and deletes
+// the rest. Returns the per-feed delete count.
+//
+// Used to clean up rows that landed before within-batch dedup shipped, e.g.
+// Libsyn-hosted RSS feeds that emit two <item>s per shiur (audio + video).
+//
+// Implemented in one CTE so we don't ship 5,500 round-trips when sweeping
+// the whole catalog.
+export async function bulkDedupIntraFeedEpisodes(feedId?: string): Promise<{ deleted: number; groupsCollapsed: number }> {
+  const feedFilter = feedId ? sql`AND e.feed_id = ${feedId}` : sql``;
+  // Postgres regex: lowercase title, strip leading/trailing whitespace, strip
+  // a trailing audio/video/mp3/mp4/m4a marker (with various separators), then
+  // collapse remaining punctuation/whitespace. Mirrors normalizeTitle in
+  // server/episode-dedup.ts as closely as the SQL flavor allows.
+  const result = await db.execute(sql`
+    WITH norm AS (
+      SELECT
+        e.id,
+        e.feed_id,
+        e.duration,
+        e.title,
+        e.created_at,
+        DATE(e.published_at AT TIME ZONE 'UTC') AS pub_day,
+        regexp_replace(
+          regexp_replace(
+            lower(coalesce(e.title, '')),
+            '[\\s\\.\\-_()\\[\\]]*\\b(audio|video|mp3|mp4|m4a|wav|hd|sd)( version)?[\\s\\.\\-_()\\[\\]]*$',
+            '',
+            'g'
+          ),
+          '[^\\w\\s]+', ' ', 'g'
+        ) AS norm_title
+      FROM episodes e
+      WHERE e.published_at IS NOT NULL
+        AND coalesce(e.title, '') <> ''
+        ${feedFilter}
+    ),
+    -- For each (feed_id, normalized title, pub day) pick a canonical row:
+    -- longest duration first, then longest title, then earliest created_at.
+    ranked AS (
+      SELECT
+        id, feed_id, pub_day, norm_title,
+        ROW_NUMBER() OVER (
+          PARTITION BY feed_id, regexp_replace(trim(norm_title), '\\s+', ' ', 'g'), pub_day
+          ORDER BY
+            -- prefer rows with parseable durations sorted desc by total seconds
+            CASE
+              WHEN duration ~ '^\\d+:\\d+:\\d+$' THEN
+                split_part(duration, ':', 1)::int * 3600
+                + split_part(duration, ':', 2)::int * 60
+                + split_part(duration, ':', 3)::int
+              WHEN duration ~ '^\\d+:\\d+$' THEN
+                split_part(duration, ':', 1)::int * 60
+                + split_part(duration, ':', 2)::int
+              ELSE 0
+            END DESC,
+            length(coalesce(title, '')) DESC,
+            created_at ASC,
+            id ASC
+        ) AS rn,
+        COUNT(*) OVER (
+          PARTITION BY feed_id, regexp_replace(trim(norm_title), '\\s+', ' ', 'g'), pub_day
+        ) AS grp_size
+      FROM norm
+      WHERE trim(norm_title) <> ''
+    ),
+    -- Only consider groups that actually have duplicates.
+    to_delete AS (
+      SELECT id FROM ranked WHERE rn > 1 AND grp_size > 1
+    )
+    DELETE FROM episodes WHERE id IN (SELECT id FROM to_delete)
+    RETURNING id
+  `);
+  const deleted = (result.rows || []).length;
+  return { deleted, groupsCollapsed: deleted };
+}
+
 // Bulk version for admin sweeps. Encodes the same multi-source rule as
 // isFeedMultiSource() but as one SQL UPDATE over the whole table — the
 // per-feed loop variant times out at the CDN edge for tables of any size.

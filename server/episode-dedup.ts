@@ -16,16 +16,71 @@ export function parseDurationToSeconds(dur: string | null | undefined): number |
 }
 
 // Normalize a title for comparison: lowercase, trim, collapse whitespace,
-// strip punctuation. So "Parashat Chukat - The Mystery of the Missing Yud"
-// matches "Parashat Chukat: The Mystery of the Missing Yud" matches
-// "  parashat chukat the mystery of the missing yud  ".
-function normalizeTitle(s: string | null | undefined): string {
+// strip punctuation, and strip common audio/video format suffixes that
+// some publishers append for differentiating the same shiur's media
+// variants. So all of these match each other:
+//   "Parashat Chukat - The Mystery of the Missing Yud"
+//   "Parashat Chukat: The Mystery of the Missing Yud"
+//   "Parashat Chukat - The Mystery of the Missing Yud. audio"
+//   "Parashat Chukat - The Mystery of the Missing Yud (video)"
+export function normalizeTitle(s: string | null | undefined): string {
   if (!s) return "";
-  return s
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  let out = s.toLowerCase();
+  // Trim trailing audio/video/mp3/mp4 markers BEFORE stripping punctuation,
+  // since they often appear as ". audio", " - video", "(audio version)" etc.
+  out = out.replace(/[\s.\-_()\[\]]*\b(audio|video|mp3|mp4|m4a|wav|hd|sd)(\s+version)?[\s.\-_()\[\]]*$/i, "");
+  out = out.replace(/[^\p{L}\p{N}\s]/gu, " ");
+  out = out.replace(/\s+/g, " ").trim();
+  return out;
+}
+
+// Within-batch dedup: collapse new episodes that share the same normalized
+// title AND the same publish-day. Picks one canonical entry per group —
+// preferring the one with longer duration (more likely the actual shiur,
+// not a teaser clip), then falling back to the longest title (more
+// descriptive). When two RSS items represent the audio + video of the same
+// shiur, this keeps one before they ever reach upsertEpisodes.
+export function dedupWithinBatch<T extends { title?: string | null; publishedAt?: Date | string | null; duration?: string | null }>(
+  newEpisodes: T[],
+): T[] {
+  const groups = new Map<string, T[]>();
+  const order: string[] = [];
+  for (const ep of newEpisodes) {
+    const title = normalizeTitle(ep.title);
+    const day = ep.publishedAt
+      ? new Date(typeof ep.publishedAt === "string" ? ep.publishedAt : ep.publishedAt.toISOString()).toISOString().slice(0, 10)
+      : "";
+    if (!title || !day) {
+      // No usable fingerprint — keep verbatim.
+      order.push(`__pass_${order.length}`);
+      groups.set(`__pass_${order.length - 1}`, [ep]);
+      continue;
+    }
+    const key = `${title}|${day}`;
+    if (!groups.has(key)) {
+      groups.set(key, [ep]);
+      order.push(key);
+    } else {
+      groups.get(key)!.push(ep);
+    }
+  }
+  const out: T[] = [];
+  for (const key of order) {
+    const grp = groups.get(key)!;
+    if (grp.length === 1) {
+      out.push(grp[0]);
+      continue;
+    }
+    // Pick canonical: longest duration first; tie-break by longest title.
+    grp.sort((a, b) => {
+      const da = parseDurationToSeconds(a.duration ?? null) ?? 0;
+      const db = parseDurationToSeconds(b.duration ?? null) ?? 0;
+      if (da !== db) return db - da;
+      return (b.title || "").length - (a.title || "").length;
+    });
+    out.push(grp[0]);
+  }
+  return out;
 }
 
 /**

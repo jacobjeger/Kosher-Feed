@@ -2,7 +2,7 @@ import axios from "axios";
 import * as storage from "./storage";
 import { sendNewEpisodePushes, PUSH_BACKFILL_THRESHOLD } from "./push";
 import { normalizeName } from "./name-utils";
-import { filterCrossSourceDuplicates, isMergedFeed } from "./episode-dedup";
+import { filterCrossSourceDuplicates, isMergedFeed, dedupWithinBatch } from "./episode-dedup";
 
 // --- Platform Configuration ---
 
@@ -597,6 +597,9 @@ export async function refreshOUFeedEpisodes(
   let episodeData = posts
     .map(p => mapOUPostToEpisodeData(p, feed.id, cfg.guidPrefix, detailMap.get(p.id) || null))
     .filter((ep): ep is NonNullable<typeof ep> => ep !== null);
+
+  // Within-batch dedup: collapse same-title+same-day variants in this fetch.
+  episodeData = dedupWithinBatch(episodeData);
 
   // Cross-source dedup for merged feeds
   if (feedRecord && isMergedFeed(feedRecord)) {
