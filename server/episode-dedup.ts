@@ -15,9 +15,29 @@ export function parseDurationToSeconds(dur: string | null | undefined): number |
   return null;
 }
 
+// Normalize a title for comparison: lowercase, trim, collapse whitespace,
+// strip punctuation. So "Parashat Chukat - The Mystery of the Missing Yud"
+// matches "Parashat Chukat: The Mystery of the Missing Yud" matches
+// "  parashat chukat the mystery of the missing yud  ".
+function normalizeTitle(s: string | null | undefined): string {
+  if (!s) return "";
+  return s
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /**
  * Filter out episodes that are likely duplicates of existing episodes
- * from other sources. Matches on date (within 24h) AND duration (within 2min).
+ * from other sources. Two episodes count as duplicates if EITHER:
+ *   - they share the same normalized title AND fall within 24h of each other, OR
+ *   - they fall within 24h AND their durations are within 2 min.
+ *
+ * The title rule catches the common "same shiur uploaded to RSS and TAT
+ * the same day" case the user flagged. The duration fallback catches
+ * re-uploads where titles have been renamed (different platform's house
+ * style) but the audio file is the same length.
  *
  * Only call this on merged feeds (feeds with multiple source IDs or RSS + platform).
  */
@@ -40,20 +60,26 @@ export function filterCrossSourceDuplicates(
   return newEpisodes.filter(ep => {
     const epDate = ep.publishedAt ? new Date(ep.publishedAt).getTime() : null;
     const epDur = parseDurationToSeconds(ep.duration);
+    const epTitle = normalizeTitle(ep.title);
 
-    // Can't dedup without both date and duration
-    if (epDate === null || epDur === null) return true;
+    // Without a date we can't check the 24h window; let it through.
+    if (epDate === null) return true;
 
     const isDuplicate = otherSourceEps.some(existing => {
       const existingDate = existing.publishedAt ? new Date(existing.publishedAt).getTime() : null;
-      const existingDur = parseDurationToSeconds(existing.duration);
-
-      if (existingDate === null || existingDur === null) return false;
-
+      if (existingDate === null) return false;
       const dateDiff = Math.abs(epDate - existingDate);
-      const durDiff = Math.abs(epDur - existingDur);
+      if (dateDiff >= 86400000) return false; // outside 24h: definitely not a duplicate
 
-      return dateDiff < 86400000 && durDiff < 120; // within 24hrs and 2min
+      // Same date + same title → duplicate (user's stated rule).
+      const existingTitle = normalizeTitle(existing.title);
+      if (epTitle && existingTitle && epTitle === existingTitle) return true;
+
+      // Fallback: same date + duration within 2 minutes.
+      const existingDur = parseDurationToSeconds(existing.duration);
+      if (epDur !== null && existingDur !== null && Math.abs(epDur - existingDur) < 120) return true;
+
+      return false;
     });
 
     return !isDuplicate;
@@ -69,8 +95,9 @@ export function isMergedFeed(feed: {
   allparshaAuthorId?: number | null;
   allhalachaAuthorId?: number | null;
   kolhalashonRavId?: number | null;
+  torahdownloadsSpeakerId?: number | null;
 }): boolean {
-  const apiSchemes = ["tat://", "kh://", "alldaf://", "allmishnah://", "allparsha://", "allhalacha://"];
+  const apiSchemes = ["tat://", "kh://", "td://", "alldaf://", "allmishnah://", "allparsha://", "allhalacha://"];
   const hasRealRss = feed.rssUrl && !apiSchemes.some(s => feed.rssUrl.startsWith(s));
 
   const platformCount = [
@@ -80,6 +107,7 @@ export function isMergedFeed(feed: {
     feed.allparshaAuthorId,
     feed.allhalachaAuthorId,
     feed.kolhalashonRavId,
+    feed.torahdownloadsSpeakerId,
   ].filter(id => id != null).length;
 
   // Merged if has real RSS + any platform, or multiple platforms

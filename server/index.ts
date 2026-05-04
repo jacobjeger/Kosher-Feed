@@ -13,8 +13,9 @@ import * as storage from "./storage";
 import { sendNewEpisodePushes, PUSH_BACKFILL_THRESHOLD } from "./push";
 import { startRefreshCycle, recordFeedResult, endRefreshCycle } from "./feed-vitals";
 import { refreshTATFeedEpisodes, syncTATSpeakers, fetchAllSpeakers } from "./torahanytime";
-import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, fetchAuthorById, OU_PLATFORMS, isApiOnlyUrl, type OUPlatformKey } from "./alldaf";
+import { refreshOUFeedEpisodes, syncOUPlatformAuthors, fetchAuthorById, OU_PLATFORMS, isApiOnlyUrl, type OUPlatformKey } from "./alldaf";
 import { refreshKHFeedEpisodes, syncKHSpeakers } from "./kolhalashon";
+import { isMergedFeed, filterCrossSourceDuplicates } from "./episode-dedup";
 import { refreshTorahDownloadsFeedEpisodes, syncTorahDownloadsSpeakers } from "./torahdownloads";
 import { autoCategorizeFeeds } from "./auto-categorize";
 import { extractKhRavId, extractTatSpeakerId, extractTorahDownloadsSpeakerId } from "./feed-utils";
@@ -677,73 +678,82 @@ export interface RefreshResult {
 export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string; etag?: string | null; lastModifiedHeader?: string | null; tatSpeakerId?: number | null; alldafAuthorId?: number | null; allmishnahAuthorId?: number | null; allparshaAuthorId?: number | null; allhalachaAuthorId?: number | null; kolhalashonRavId?: number | null; torahdownloadsSpeakerId?: number | null }): Promise<RefreshResult> {
   const start = Date.now();
 
-  // TAT feed: refresh from TorahAnytime API
+  // Detect every source this feed pulls from. A feed can have multiple
+  // simultaneously (e.g. an RSS podcast that's also linked to a TAT speaker
+  // and an AllHalacha author). The previous logic returned early at the
+  // first URL-scheme match, which silently dropped sources for any feed
+  // whose base URL was non-RSS — e.g. a feed with rssUrl=allhalacha://...
+  // also linked to a TAT speakerId would only pull AllHalacha and never
+  // touch TAT. Now: always check every source independently and refresh
+  // each one that has a non-null id, regardless of URL scheme.
   const isTatUrl = feed.rssUrl.startsWith("tat://");
-  const effectiveTatSpeakerId = extractTatSpeakerId(feed);
-
-  if (effectiveTatSpeakerId && isTatUrl) {
-    const result = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveTatSpeakerId });
-    return { newEpisodes: result.newEpisodes, method: 'stream', durationMs: Date.now() - start, episodesFound: result.newEpisodes };
-  }
-
-  // OU Torah platform feed (AllDaf, AllMishnah, AllParsha, AllHalacha): API-only URL
-  const ouPlatform = detectOUPlatform(feed as any);
-  const isOUUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
-
-  if (ouPlatform && isOUUrl) {
-    const result = await refreshOUFeedEpisodes(ouPlatform.platform, { id: feed.id, title: feed.title, authorId: ouPlatform.authorId }, feed);
-    return { newEpisodes: result.newEpisodes, method: 'stream', durationMs: Date.now() - start, episodesFound: result.newEpisodes };
-  }
-
-  // KH feed: refresh from Kol Halashon API
   const isKhUrl = feed.rssUrl.startsWith("kh://");
-  const effectiveKhRavId = extractKhRavId(feed);
-
-  if (effectiveKhRavId && isKhUrl) {
-    const result = await refreshKHFeedEpisodes({ id: feed.id, title: feed.title, kolhalashonRavId: effectiveKhRavId }, feed);
-    return { newEpisodes: result.newEpisodes, method: 'stream', durationMs: Date.now() - start, episodesFound: result.newEpisodes };
-  }
-
-  // TorahDownloads feed: HTML scrape
   const isTdUrl = feed.rssUrl.startsWith("td://");
+  const isOUUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
+  const effectiveTatSpeakerId = extractTatSpeakerId(feed);
+  const effectiveKhRavId = extractKhRavId(feed);
   const effectiveTdSpeakerId = extractTorahDownloadsSpeakerId(feed);
 
-  if (effectiveTdSpeakerId && isTdUrl) {
-    const result = await refreshTorahDownloadsFeedEpisodes({ id: feed.id, title: feed.title, torahdownloadsSpeakerId: effectiveTdSpeakerId }, feed);
-    return { newEpisodes: result.newEpisodes, method: 'stream', durationMs: Date.now() - start, episodesFound: result.newEpisodes };
-  }
+  let totalNew = 0;
 
-  // Merged feed (has both RSS + TAT): refresh both
   if (effectiveTatSpeakerId) {
-    await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveTatSpeakerId }, feed).catch(e => {
-      console.log(`TAT refresh failed for merged feed ${feed.title}: ${(e as Error).message?.slice(0, 100)}`);
-    });
+    try {
+      const r = await refreshTATFeedEpisodes({ id: feed.id, title: feed.title, tatSpeakerId: effectiveTatSpeakerId }, feed);
+      totalNew += r.newEpisodes;
+    } catch (e: any) {
+      console.log(`TAT refresh failed for ${feed.title}: ${(e as Error).message?.slice(0, 100)}`);
+    }
   }
 
-  // Merged feed (has both RSS + OU platform): refresh both
-  if (ouPlatform && !isOUUrl) {
-    await refreshOUFeedEpisodes(ouPlatform.platform, { id: feed.id, title: feed.title, authorId: ouPlatform.authorId }, feed).catch(e => {
-      console.log(`${OU_PLATFORMS[ouPlatform.platform].label} refresh failed for merged feed ${feed.title}: ${(e as Error).message?.slice(0, 100)}`);
-    });
+  // OU platforms: a feed may carry multiple OU platform IDs (e.g. AllDaf +
+  // AllParsha both linked to the same speaker). Iterate every one that's
+  // non-null instead of relying on detectOUPlatform's first-match return —
+  // otherwise extra platforms are silently dropped on every cron tick.
+  for (const cfg of Object.values(OU_PLATFORMS)) {
+    const authorId = (feed as any)[cfg.feedIdField];
+    // Fallback for feeds whose URL is the API scheme but the column wasn't
+    // populated (legacy data path) — match the URL exactly once.
+    const urlAuthorId = (!authorId && feed.rssUrl.startsWith(cfg.urlScheme))
+      ? parseInt(feed.rssUrl.replace(cfg.urlScheme, ""), 10) || null
+      : null;
+    const effectiveAuthorId = authorId || urlAuthorId;
+    if (!effectiveAuthorId) continue;
+    try {
+      const r = await refreshOUFeedEpisodes(cfg.key, { id: feed.id, title: feed.title, authorId: effectiveAuthorId }, feed);
+      totalNew += r.newEpisodes;
+    } catch (e: any) {
+      console.log(`${cfg.label} refresh failed for ${feed.title}: ${(e as Error).message?.slice(0, 100)}`);
+    }
   }
 
-  // Merged feed (has both RSS + KH): refresh both
-  if (effectiveKhRavId && !isKhUrl) {
-    await refreshKHFeedEpisodes({ id: feed.id, title: feed.title, kolhalashonRavId: effectiveKhRavId }, feed).catch(e => {
-      console.log(`KH refresh failed for merged feed ${feed.title}: ${(e as Error).message?.slice(0, 100)}`);
-    });
+  if (effectiveKhRavId) {
+    try {
+      const r = await refreshKHFeedEpisodes({ id: feed.id, title: feed.title, kolhalashonRavId: effectiveKhRavId }, feed);
+      totalNew += r.newEpisodes;
+    } catch (e: any) {
+      console.log(`KH refresh failed for ${feed.title}: ${(e as Error).message?.slice(0, 100)}`);
+    }
   }
 
-  // Merged feed (has both RSS + TorahDownloads): refresh both
-  if (effectiveTdSpeakerId && !isTdUrl) {
-    await refreshTorahDownloadsFeedEpisodes({ id: feed.id, title: feed.title, torahdownloadsSpeakerId: effectiveTdSpeakerId }, feed).catch(e => {
-      console.log(`TorahDownloads refresh failed for merged feed ${feed.title}: ${(e as Error).message?.slice(0, 100)}`);
-    });
+  if (effectiveTdSpeakerId) {
+    try {
+      const r = await refreshTorahDownloadsFeedEpisodes({ id: feed.id, title: feed.title, torahdownloadsSpeakerId: effectiveTdSpeakerId }, feed);
+      totalNew += r.newEpisodes;
+    } catch (e: any) {
+      console.log(`TorahDownloads refresh failed for ${feed.title}: ${(e as Error).message?.slice(0, 100)}`);
+    }
   }
 
-  // Skip RSS parsing for API-only URLs (TAT/OU/KH/TorahDownloads)
+  // Skip RSS parsing when the URL is an API-only scheme — it'd just 404 or
+  // worse, drop into axios with a non-HTTP URL and throw. RSS-base feeds
+  // still parse their RSS even if a non-RSS source already ran above.
   if (isTatUrl || isOUUrl || isKhUrl || isTdUrl) {
-    return { newEpisodes: 0, method: 'stream', durationMs: Date.now() - start, episodesFound: 0 };
+    return {
+      newEpisodes: totalNew,
+      method: 'stream',
+      durationMs: Date.now() - start,
+      episodesFound: totalNew,
+    };
   }
 
   // RSS refresh — incremental: walk newest-first, stop after 20 consecutive
@@ -761,10 +771,23 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
 
   if (parsed === null) {
     await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
-    return { newEpisodes: 0, method: 'cached', durationMs: Date.now() - start, episodesFound: 0 };
+    return { newEpisodes: totalNew, method: 'cached', durationMs: Date.now() - start, episodesFound: totalNew };
   }
 
-  const episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
+  let episodeData = parsed.episodes.map(ep => ({ ...ep, feedId: feed.id }));
+
+  // Cross-source dedup for merged RSS feeds. RSS runs LAST in the fan-out
+  // above, so by now the DB has any TAT / OU / KH / TD episodes already
+  // ingested this cycle (or in prior cycles). Filter the RSS batch against
+  // those so the same shiur doesn't appear twice when an RSS podcast also
+  // happens to be on TAT — match on date (within 24h) AND title (case-
+  // insensitive equality after trim) so a "same name and same date" rule
+  // applies, plus duration as a fallback when titles are slightly mangled.
+  if (isMergedFeed(feed as any)) {
+    const existingEpisodes = await storage.getEpisodesByFeed(feed.id);
+    episodeData = filterCrossSourceDuplicates(episodeData, existingEpisodes, "");
+  }
+
   const inserted = await storage.upsertEpisodes(feed.id, episodeData);
 
   const updateData: any = { lastFetchedAt: new Date() };
@@ -778,15 +801,15 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
 
   if (inserted.length > 0 && inserted.length <= PUSH_BACKFILL_THRESHOLD) {
     for (const ep of inserted.slice(0, 3)) {
-      sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
+      sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id, publishedAt: (ep as any).publishedAt }, feed.title).catch(() => {});
     }
   }
 
   return {
-    newEpisodes: inserted.length,
+    newEpisodes: inserted.length + totalNew,
     method: parsed.fetchMethod || 'stream',
     durationMs: parsed.fetchDurationMs || (Date.now() - start),
-    episodesFound: parsed.episodes.length,
+    episodesFound: parsed.episodes.length + totalNew,
   };
 }
 

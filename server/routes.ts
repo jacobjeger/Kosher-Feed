@@ -159,7 +159,7 @@ async function onDemandRefreshFeed(feedId: string): Promise<void> {
       console.log(`On-demand refresh: ${feed.title} found ${inserted.length} new episode(s)`);
       if (inserted.length <= PUSH_BACKFILL_THRESHOLD) {
         for (const ep of inserted.slice(0, 3)) {
-          sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
+          sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id, publishedAt: (ep as any).publishedAt }, feed.title).catch(() => {});
         }
       }
     }
@@ -626,7 +626,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           if (inserted.length > 0 && inserted.length <= PUSH_BACKFILL_THRESHOLD) {
             for (const ep of inserted.slice(0, 3)) {
-              sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
+              sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id, publishedAt: (ep as any).publishedAt }, feed.title).catch(() => {});
             }
           }
         } else {
@@ -695,7 +695,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             await storage.updateFeed(feed.id, updateDataBulk);
             if (inserted.length > 0 && inserted.length <= PUSH_BACKFILL_THRESHOLD) {
               for (const ep of inserted.slice(0, 3)) {
-                sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
+                sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id, publishedAt: (ep as any).publishedAt }, feed.title).catch(() => {});
               }
             }
           }
@@ -2266,6 +2266,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updated,
         moreRemaining: remainingRows.length > 0,
       });
+    } catch (e: any) { publicError(res, e); }
+  });
+
+  // Backfill: clear sourceNetwork on existing merged feeds. The original sync
+  // linkers preserved a single-source label even after linking made the feed
+  // multi-source, so the UI badge ended up wrong on ~116 feeds. This sweeps
+  // every feed and clears the field where the feed has multiple sources.
+  app.post("/api/admin/diagnostics/clear-merged-source-tags", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const allFeeds = await storage.getAllFeeds();
+      let cleared = 0;
+      for (const f of allFeeds) {
+        if (!f.sourceNetwork) continue;
+        const changed = await storage.clearSourceNetworkIfMultiSource(f.id);
+        if (changed) cleared++;
+      }
+      res.json({ scanned: allFeeds.length, cleared });
     } catch (e: any) { publicError(res, e); }
   });
 

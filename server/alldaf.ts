@@ -488,9 +488,10 @@ export async function syncOUPlatformAuthors(platform: OUPlatformKey): Promise<{ 
     }
 
     if (matchedFeed) {
-      const updates: Record<string, any> = {
-        sourceNetwork: matchedFeed.sourceNetwork || cfg.label,
-      };
+      // Don't preserve a single-source label after linking — adding this
+      // platform makes the feed multi-source. setOUAuthorId() clears the
+      // sourceNetwork field when appropriate.
+      const updates: Record<string, any> = {};
       // Update image if feed doesn't have one and we have an author photo
       if (!matchedFeed.imageUrl && photoUrl) {
         updates.imageUrl = photoUrl;
@@ -502,7 +503,9 @@ export async function syncOUPlatformAuthors(platform: OUPlatformKey): Promise<{ 
           updates.description = bio;
         }
       }
-      await storage.updateFeed(matchedFeed.id, updates as any);
+      if (Object.keys(updates).length > 0) {
+        await storage.updateFeed(matchedFeed.id, updates as any);
+      }
       await storage.setOUAuthorId(matchedFeed.id, cfg.feedIdField, author.id);
       linked++;
       console.log(`${cfg.label} Sync: linked "${author.name}" to existing feed "${matchedFeed.title}"`);
@@ -609,7 +612,7 @@ export async function refreshOUFeedEpisodes(
     console.log(`${cfg.label} refresh: ${feed.title} — ${inserted.length} new episode(s)`);
     if (inserted.length <= PUSH_BACKFILL_THRESHOLD) {
       for (const ep of inserted.slice(0, 3)) {
-        sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
+        sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id, publishedAt: (ep as any).publishedAt }, feed.title).catch(() => {});
       }
     }
   }

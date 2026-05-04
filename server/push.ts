@@ -170,11 +170,26 @@ export async function sendCustomPush(
 // with 100s of "new episode" pushes.
 export const PUSH_BACKFILL_THRESHOLD = 5;
 
+// Independent of count, never push for episodes with a publishedAt older
+// than this. Catches the case where a freshly-fanned-out source on a merged
+// feed ingests a small batch of OLD archive episodes — the count guard
+// above wouldn't trip (≤ 5) but they're definitely not "new" content the
+// user wants pinged about.
+const PUSH_MAX_EPISODE_AGE_MS = 48 * 60 * 60 * 1000;
+
 export async function sendNewEpisodePushes(
   feedId: string,
-  episode: { title: string; id: string },
+  episode: { title: string; id: string; publishedAt?: Date | string | null },
   feedTitle?: string
 ) {
+  // Skip pushes for old archive episodes regardless of count.
+  if (episode.publishedAt) {
+    const pubMs = typeof episode.publishedAt === "string"
+      ? new Date(episode.publishedAt).getTime()
+      : episode.publishedAt.getTime();
+    if (!isNaN(pubMs) && Date.now() - pubMs > PUSH_MAX_EPISODE_AGE_MS) return;
+  }
+
   const dedupKey = `${feedId}:${episode.id}`;
   if (recentPushes.has(dedupKey) && Date.now() - recentPushes.get(dedupKey)! < PUSH_DEDUP_MS) return;
   recentPushes.set(dedupKey, Date.now());

@@ -340,10 +340,12 @@ export async function syncKHSpeakers(): Promise<{ created: number; linked: numbe
     }
 
     if (matchedFeed) {
+      // Link adds KH as a source — feed becomes multi-source. Don't preserve
+      // a misleading single-source label; clear it after the link.
       await storage.updateFeed(matchedFeed.id, {
         kolhalashonRavId: ravId,
-        sourceNetwork: matchedFeed.sourceNetwork || "Kol Halashon",
       } as any);
+      await storage.clearSourceNetworkIfMultiSource(matchedFeed.id);
       linked++;
       console.log(`KH Sync: linked "${displayName}" to existing feed "${matchedFeed.title}"`);
     } else {
@@ -449,7 +451,7 @@ export async function refreshKHFeedEpisodes(
     console.log(`KH refresh: ${feed.title} — ${inserted.length} new episode(s)`);
     if (inserted.length <= PUSH_BACKFILL_THRESHOLD) {
       for (const ep of inserted.slice(0, 3)) {
-        sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
+        sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id, publishedAt: (ep as any).publishedAt }, feed.title).catch(() => {});
       }
     }
   }

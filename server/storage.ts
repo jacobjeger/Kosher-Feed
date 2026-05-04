@@ -449,11 +449,49 @@ export async function getDuplicateTitleFeedGroups(): Promise<{ key: string; feed
 // onConflictDoNothing handles the case where a device is already subscribed
 // to both. Episode rows are dropped via cascade — those are recoverable on
 // the next refresh of the kept feed.
-export async function mergeFeedsKeepFirst(keepFeedId: string, removeFeedId: string): Promise<{ subsMoved: number; episodesDropped: number; ok: boolean }> {
-  if (keepFeedId === removeFeedId) return { subsMoved: 0, episodesDropped: 0, ok: false };
+export async function mergeFeedsKeepFirst(keepFeedId: string, removeFeedId: string): Promise<{ subsMoved: number; episodesDropped: number; sourcesAbsorbed: string[]; ok: boolean }> {
+  if (keepFeedId === removeFeedId) return { subsMoved: 0, episodesDropped: 0, sourcesAbsorbed: [], ok: false };
   const keepFeed = await getFeedById(keepFeedId);
   const removeFeed = await getFeedById(removeFeedId);
-  if (!keepFeed || !removeFeed) return { subsMoved: 0, episodesDropped: 0, ok: false };
+  if (!keepFeed || !removeFeed) return { subsMoved: 0, episodesDropped: 0, sourcesAbsorbed: [], ok: false };
+
+  // Absorb source IDs from removeFeed onto keepFeed. The removed feed is
+  // about to be deleted (cascade), so any platform IDs it carried would
+  // otherwise be lost — and the kept feed would silently stop pulling from
+  // those sources. Only fill empty slots; don't overwrite existing IDs on
+  // keepFeed (the merge UI surface chooses which feed is canonical, so its
+  // existing source IDs should win).
+  const sourceUpdates: Record<string, number | null> = {};
+  const sourcesAbsorbed: string[] = [];
+  const sourceFields: { col: keyof typeof feeds.$inferSelect; label: string }[] = [
+    { col: "tatSpeakerId", label: "TAT" },
+    { col: "kolhalashonRavId", label: "KH" },
+    { col: "alldafAuthorId", label: "AllDaf" },
+    { col: "allmishnahAuthorId", label: "AllMishnah" },
+    { col: "allparshaAuthorId", label: "AllParsha" },
+    { col: "allhalachaAuthorId", label: "AllHalacha" },
+    { col: "torahdownloadsSpeakerId", label: "TorahDownloads" },
+  ];
+  for (const { col, label } of sourceFields) {
+    const removeId = (removeFeed as any)[col];
+    const keepId = (keepFeed as any)[col];
+    if (removeId != null && keepId == null) {
+      sourceUpdates[col as string] = removeId;
+      sourcesAbsorbed.push(label);
+    }
+  }
+
+  if (Object.keys(sourceUpdates).length > 0) {
+    await db.update(feeds).set(sourceUpdates as any).where(eq(feeds.id, keepFeedId));
+  }
+
+  // After absorbing, recompute the merged-feed flag and clear sourceNetwork
+  // if it now has multiple sources — a feed pulling from RSS + TD + TAT
+  // shouldn't be tagged with any single source's name.
+  const updatedKeep = await getFeedById(keepFeedId);
+  if (updatedKeep && isFeedMultiSource(updatedKeep) && updatedKeep.sourceNetwork) {
+    await db.update(feeds).set({ sourceNetwork: null } as any).where(eq(feeds.id, keepFeedId));
+  }
 
   // Move subscriptions
   const movedSubs = await db.execute(sql`
@@ -470,7 +508,26 @@ export async function mergeFeedsKeepFirst(keepFeedId: string, removeFeedId: stri
   // Delete the remove feed (cascades episodes, subscriptions, etc.)
   await db.delete(feeds).where(eq(feeds.id, removeFeedId));
 
-  return { subsMoved, episodesDropped: Number(epCount), ok: true };
+  return { subsMoved, episodesDropped: Number(epCount), sourcesAbsorbed, ok: true };
+}
+
+// Mirror of episode-dedup.isMergedFeed but local to storage to avoid an
+// import cycle. A feed is "multi-source" if it has either real-RSS plus a
+// platform id, or two or more platform ids.
+function isFeedMultiSource(feed: any): boolean {
+  const apiSchemes = ["tat://", "kh://", "td://", "alldaf://", "allmishnah://", "allparsha://", "allhalacha://"];
+  const url = feed.rssUrl || "";
+  const hasRealRss = !!url && !apiSchemes.some(s => url.startsWith(s));
+  const platformIds = [
+    feed.tatSpeakerId,
+    feed.alldafAuthorId,
+    feed.allmishnahAuthorId,
+    feed.allparshaAuthorId,
+    feed.allhalachaAuthorId,
+    feed.kolhalashonRavId,
+    feed.torahdownloadsSpeakerId,
+  ].filter(id => id != null).length;
+  return (hasRealRss && platformIds > 0) || platformIds > 1;
 }
 
 // Returns RSS-source feeds that have at least one episode with null publishedAt.
@@ -774,6 +831,22 @@ export const upsertAllDafEpisodes = upsertOUEpisodes;
 
 export async function setOUAuthorId(feedId: string, field: string, authorId: number | null): Promise<void> {
   await db.update(feeds).set({ [field]: authorId } as any).where(eq(feeds.id, feedId));
+  await clearSourceNetworkIfMultiSource(feedId);
+}
+
+// Linking a new platform id can turn a single-source feed into a multi-source
+// merged feed. The legacy sourceNetwork tag (one of "Torah Anytime",
+// "AllHalacha", "TorahDownloads", etc) becomes misleading at that point —
+// the feed pulls episodes from multiple sources, so labeling it with one
+// of them would imply the others don't exist. Null it out and let the UI
+// display per-episode source tags (derived from guid prefix) instead.
+export async function clearSourceNetworkIfMultiSource(feedId: string): Promise<boolean> {
+  const f = await getFeedById(feedId);
+  if (!f) return false;
+  if (!isFeedMultiSource(f)) return false;
+  if (!f.sourceNetwork) return false;
+  await db.update(feeds).set({ sourceNetwork: null } as any).where(eq(feeds.id, feedId));
+  return true;
 }
 
 // Backward-compatible alias
@@ -817,6 +890,7 @@ export async function upsertKHEpisodes(feedId: string, episodeData: any[]): Prom
 
 export async function setKHRavId(feedId: string, ravId: number | null): Promise<void> {
   await db.update(feeds).set({ kolhalashonRavId: ravId } as any).where(eq(feeds.id, feedId));
+  await clearSourceNetworkIfMultiSource(feedId);
 }
 
 // TorahDownloads episode upsert
@@ -855,6 +929,7 @@ export async function upsertTorahDownloadsEpisodes(feedId: string, episodeData: 
 
 export async function setTorahDownloadsSpeakerId(feedId: string, speakerId: number | null): Promise<void> {
   await db.update(feeds).set({ torahdownloadsSpeakerId: speakerId } as any).where(eq(feeds.id, feedId));
+  await clearSourceNetworkIfMultiSource(feedId);
 }
 
 export async function getTATFeeds(): Promise<Feed[]> {

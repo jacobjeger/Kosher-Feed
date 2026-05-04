@@ -422,9 +422,10 @@ export async function syncTorahDownloadsSpeakers(): Promise<{ created: number; l
 
     if (matched) {
       try {
-        await storage.updateFeed(matched.id, {
-          sourceNetwork: matched.sourceNetwork || "TorahDownloads",
-        } as any);
+        // setTorahDownloadsSpeakerId clears sourceNetwork automatically when
+        // the link makes the feed multi-source. No legacy sourceNetwork
+        // override — adding TD as a second source on an RSS-or-platform
+        // feed shouldn't tag the whole thing "TorahDownloads".
         await storage.setTorahDownloadsSpeakerId(matched.id, sp.id);
         linked++;
         console.log(`TorahDownloads Sync: linked "${sp.name}" to existing feed "${matched.title}"`);
@@ -539,7 +540,7 @@ export async function refreshTorahDownloadsFeedEpisodes(
     console.log(`TorahDownloads refresh: ${feed.title} — ${inserted.length} new episode(s)`);
     if (inserted.length <= PUSH_BACKFILL_THRESHOLD) {
       for (const ep of inserted.slice(0, 3)) {
-        sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
+        sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id, publishedAt: (ep as any).publishedAt }, feed.title).catch(() => {});
       }
     }
   }

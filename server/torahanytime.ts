@@ -269,13 +269,14 @@ export async function syncTATSpeakers(): Promise<{ created: number; linked: numb
     }
 
     if (matchedFeed) {
-      // Link existing feed to this TAT speaker. Do NOT touch sourceNetwork
-      // — merged feeds should keep their primary network (usually the RSS
-      // origin), otherwise the UI shows a misleading 'Torah Anytime' badge
-      // on podcasts whose main source is actually RSS.
+      // Link existing feed to this TAT speaker. Linking adds a new source,
+      // making the feed multi-source — clear sourceNetwork so the UI doesn't
+      // imply the feed is a single-platform feed. Per-episode tags (derived
+      // from guid prefix) remain accurate.
       await storage.updateFeed(matchedFeed.id, {
         tatSpeakerId: speaker.id,
       } as any);
+      await storage.clearSourceNetworkIfMultiSource(matchedFeed.id);
       linked++;
       console.log(`TAT Sync: linked "${speakerName}" to existing feed "${matchedFeed.title}"`);
     } else {
@@ -363,7 +364,7 @@ export async function refreshTATFeedEpisodes(feed: { id: string; title: string; 
     console.log(`TAT refresh: ${feed.title} — ${inserted.length} new episode(s)`);
     if (inserted.length <= PUSH_BACKFILL_THRESHOLD) {
       for (const ep of inserted.slice(0, 3)) {
-        sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id }, feed.title).catch(() => {});
+        sendNewEpisodePushes(feed.id, { title: ep.title, id: ep.id, publishedAt: (ep as any).publishedAt }, feed.title).catch(() => {});
       }
     }
   }
