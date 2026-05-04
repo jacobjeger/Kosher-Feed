@@ -2743,38 +2743,53 @@ export async function searchFeeds(query: string, limit: number = 50): Promise<Fe
 }
 
 export async function recomputeKHBrowseVisibility(): Promise<number> {
-  // Get all KH-only feeds
-  const khFeeds = await db.select({ id: feeds.id }).from(feeds).where(sql`${feeds.rssUrl} LIKE 'kh://rav/%'`);
-  if (khFeeds.length === 0) return 0;
+  // Get all KH-only feeds with their episode counts. Empty feeds (0
+  // episodes) are excluded from promotion candidates — even if some
+  // user subscribed before the feed was empty, surfacing a feed with
+  // no listenable shiurim is bad UX. They stay hidden until upstream
+  // KH provides shiurim, at which point the next recompute lifts them
+  // back into rotation if they earn the spot.
+  const khFeedRows = await db.execute(sql`
+    SELECT f.id, COUNT(e.id) AS episode_count
+    FROM feeds f
+    LEFT JOIN episodes e ON e.feed_id = f.id
+    WHERE f.rss_url LIKE 'kh://rav/%'
+    GROUP BY f.id
+  `);
+  const allKhIds = (khFeedRows.rows as any[]).map(r => r.id as string);
+  const populatedKhIds = (khFeedRows.rows as any[])
+    .filter(r => Number(r.episode_count) > 0)
+    .map(r => r.id as string);
+  if (allKhIds.length === 0) return 0;
 
-  const khIds = khFeeds.map(f => f.id);
-
-  // Get subscriber counts for KH feeds
-  const subCounts = await db
+  // Get subscriber counts (populated KH feeds only)
+  const subCounts = populatedKhIds.length > 0 ? await db
     .select({ feedId: subscriptions.feedId, cnt: count(subscriptions.id) })
     .from(subscriptions)
-    .where(inArray(subscriptions.feedId, khIds))
-    .groupBy(subscriptions.feedId);
+    .where(inArray(subscriptions.feedId, populatedKhIds))
+    .groupBy(subscriptions.feedId) : [];
   const subMap = new Map(subCounts.map(s => [s.feedId, Number(s.cnt)]));
 
-  // Get listen counts for KH feeds
-  const listenCounts = await db
+  // Get listen counts (populated KH feeds only)
+  const listenCounts = populatedKhIds.length > 0 ? await db
     .select({ feedId: episodes.feedId, cnt: count(episodeListens.id) })
     .from(episodeListens)
     .innerJoin(episodes, eq(episodeListens.episodeId, episodes.id))
-    .where(inArray(episodes.feedId, khIds))
-    .groupBy(episodes.feedId);
+    .where(inArray(episodes.feedId, populatedKhIds))
+    .groupBy(episodes.feedId) : [];
   const listenMap = new Map(listenCounts.map(s => [s.feedId, Number(s.cnt)]));
 
   // Rank by popularity: subscribers * 10 + listens
-  const ranked = khIds.map(id => ({
+  const ranked = populatedKhIds.map(id => ({
     id,
     score: (subMap.get(id) || 0) * 10 + (listenMap.get(id) || 0),
   })).sort((a, b) => b.score - a.score);
 
   const top100Ids = new Set(ranked.slice(0, 100).map(r => r.id));
   const showIds = ranked.filter(r => top100Ids.has(r.id)).map(r => r.id);
-  const hideIds = ranked.filter(r => !top100Ids.has(r.id)).map(r => r.id);
+  // Hide everything else among ALL KH feeds (including empty ones, so
+  // newly-emptied feeds get demoted on the next recompute).
+  const hideIds = allKhIds.filter(id => !top100Ids.has(id));
 
   let updated = 0;
   if (showIds.length > 0) {
@@ -2786,7 +2801,7 @@ export async function recomputeKHBrowseVisibility(): Promise<number> {
     updated += (result as any).rowCount || 0;
   }
 
-  console.log(`KH browse visibility recomputed: ${showIds.length} shown, ${hideIds.length} hidden, ${updated} changed`);
+  console.log(`KH browse visibility recomputed: ${showIds.length} shown (from ${populatedKhIds.length} populated, ${allKhIds.length} total), ${hideIds.length} hidden, ${updated} changed`);
   return updated;
 }
 
