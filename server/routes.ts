@@ -2269,20 +2269,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (e: any) { publicError(res, e); }
   });
 
-  // Backfill: clear sourceNetwork on existing merged feeds. The original sync
-  // linkers preserved a single-source label even after linking made the feed
-  // multi-source, so the UI badge ended up wrong on ~116 feeds. This sweeps
-  // every feed and clears the field where the feed has multiple sources.
+  // Backfill: clear sourceNetwork on existing merged feeds. Single SQL UPDATE.
+  // The earlier per-feed-loop version hit Cloudflare 524s on a 5,500-feed
+  // sweep — too many round-trips. This runs as one statement.
   app.post("/api/admin/diagnostics/clear-merged-source-tags", adminAuth as any, async (_req: Request, res: Response) => {
     try {
-      const allFeeds = await storage.getAllFeeds();
-      let cleared = 0;
-      for (const f of allFeeds) {
-        if (!f.sourceNetwork) continue;
-        const changed = await storage.clearSourceNetworkIfMultiSource(f.id);
-        if (changed) cleared++;
-      }
-      res.json({ scanned: allFeeds.length, cleared });
+      const cleared = await storage.bulkClearMergedSourceNetwork();
+      res.json({ cleared });
     } catch (e: any) { publicError(res, e); }
   });
 

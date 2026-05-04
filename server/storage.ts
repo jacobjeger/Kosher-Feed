@@ -849,6 +849,51 @@ export async function clearSourceNetworkIfMultiSource(feedId: string): Promise<b
   return true;
 }
 
+// Bulk version for admin sweeps. Encodes the same multi-source rule as
+// isFeedMultiSource() but as one SQL UPDATE over the whole table — the
+// per-feed loop variant times out at the CDN edge for tables of any size.
+export async function bulkClearMergedSourceNetwork(): Promise<number> {
+  const result = await db.execute(sql`
+    UPDATE feeds
+    SET source_network = NULL
+    WHERE source_network IS NOT NULL
+      AND (
+        -- Real-RSS feed plus at least one platform id (= multi-source)
+        (
+          rss_url IS NOT NULL
+          AND rss_url NOT LIKE 'tat://%'
+          AND rss_url NOT LIKE 'kh://%'
+          AND rss_url NOT LIKE 'td://%'
+          AND rss_url NOT LIKE 'alldaf://%'
+          AND rss_url NOT LIKE 'allmishnah://%'
+          AND rss_url NOT LIKE 'allparsha://%'
+          AND rss_url NOT LIKE 'allhalacha://%'
+          AND (
+            tat_speaker_id IS NOT NULL
+            OR alldaf_author_id IS NOT NULL
+            OR allmishnah_author_id IS NOT NULL
+            OR allparsha_author_id IS NOT NULL
+            OR allhalacha_author_id IS NOT NULL
+            OR kolhalashon_rav_id IS NOT NULL
+            OR torahdownloads_speaker_id IS NOT NULL
+          )
+        )
+        -- OR two-or-more platform ids
+        OR (
+          (CASE WHEN tat_speaker_id IS NOT NULL THEN 1 ELSE 0 END)
+          + (CASE WHEN alldaf_author_id IS NOT NULL THEN 1 ELSE 0 END)
+          + (CASE WHEN allmishnah_author_id IS NOT NULL THEN 1 ELSE 0 END)
+          + (CASE WHEN allparsha_author_id IS NOT NULL THEN 1 ELSE 0 END)
+          + (CASE WHEN allhalacha_author_id IS NOT NULL THEN 1 ELSE 0 END)
+          + (CASE WHEN kolhalashon_rav_id IS NOT NULL THEN 1 ELSE 0 END)
+          + (CASE WHEN torahdownloads_speaker_id IS NOT NULL THEN 1 ELSE 0 END)
+          >= 2
+        )
+      )
+  `);
+  return Number((result as any).rowCount || 0);
+}
+
 // Backward-compatible alias
 export async function setAlldafAuthorId(feedId: string, authorId: number): Promise<void> {
   return setOUAuthorId(feedId, "alldafAuthorId", authorId);
