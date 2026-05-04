@@ -270,6 +270,29 @@ export async function countFutureDatedOuEpisodes(): Promise<any> {
 // Tables keyed by deviceId (text, no FK) can orphan when a device is
 // uninstalled / unregistered. Tables that cascade on feed/episode delete
 // shouldn't orphan from those sides, but we sanity-check.
+// Delete all orphan rows (subscriptions, listens, playback positions, push
+// tokens, notification prefs) where device_id has no matching device_profile.
+// Returns the per-table delete counts. Categories aren't auto-deleted because
+// their UI metadata may be useful even when empty — caller deletes them
+// individually.
+export async function cleanupOrphanRows(): Promise<{
+  pushTokens: number; notificationPrefs: number; subscriptions: number;
+  episodeListens: number; playbackPositions: number;
+}> {
+  const r1 = await db.execute(sql`DELETE FROM push_tokens WHERE NOT EXISTS (SELECT 1 FROM device_profiles dp WHERE dp.device_id = push_tokens.device_id) RETURNING id`);
+  const r2 = await db.execute(sql`DELETE FROM notification_preferences WHERE NOT EXISTS (SELECT 1 FROM device_profiles dp WHERE dp.device_id = notification_preferences.device_id) RETURNING id`);
+  const r3 = await db.execute(sql`DELETE FROM subscriptions WHERE NOT EXISTS (SELECT 1 FROM device_profiles dp WHERE dp.device_id = subscriptions.device_id) RETURNING id`);
+  const r4 = await db.execute(sql`DELETE FROM episode_listens WHERE NOT EXISTS (SELECT 1 FROM device_profiles dp WHERE dp.device_id = episode_listens.device_id) RETURNING id`);
+  const r5 = await db.execute(sql`DELETE FROM playback_positions WHERE NOT EXISTS (SELECT 1 FROM device_profiles dp WHERE dp.device_id = playback_positions.device_id) RETURNING id`);
+  return {
+    pushTokens: (r1.rows || []).length,
+    notificationPrefs: (r2.rows || []).length,
+    subscriptions: (r3.rows || []).length,
+    episodeListens: (r4.rows || []).length,
+    playbackPositions: (r5.rows || []).length,
+  };
+}
+
 export async function countOrphanRows(): Promise<any> {
   const out: any = {};
 

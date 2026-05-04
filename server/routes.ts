@@ -2205,6 +2205,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (e: any) { publicError(res, e); }
   });
 
+  // Delete all orphaned rows (subs/listens/positions/push tokens/notif prefs
+  // where device_id is no longer in device_profiles). Idempotent — safe to
+  // re-run, will just return zeros once there's nothing to clean.
+  app.post("/api/admin/diagnostics/orphans/cleanup", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const data = await storage.cleanupOrphanRows();
+      res.json(data);
+    } catch (e: any) { publicError(res, e); }
+  });
+
   // TEMP diagnostic: recent episode inserts. Useful for understanding catalog
   // growth — distinguishes "new content" from cap-bump archive backfill.
   app.get("/api/admin/diagnostics/recent-episodes", adminAuth as any, async (req: Request, res: Response) => {
