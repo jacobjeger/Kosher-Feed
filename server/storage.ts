@@ -672,6 +672,23 @@ export async function getStaleTdEpisodeIds(limit: number = 1000): Promise<{ epis
     .map(r => ({ episodeId: r.id as string, shiurId: Number(r.shiurId) }));
 }
 
+// Mark stuck stale rows as "no date" so they stop appearing in the candidate
+// query. Used after the backfill confirms the CDN can't resolve their dates
+// (404/403/400 — audio file deleted or restricted upstream). Setting
+// published_at to NULL is preferable to deleting the episode rows because
+// the rest of the metadata (title, audio URL the page parser found, speaker
+// link) may still be useful.
+export async function nullPublishedAtForShiurIds(shiurIds: number[]): Promise<number> {
+  if (shiurIds.length === 0) return 0;
+  const r = await db.execute(sql`
+    UPDATE episodes
+    SET published_at = NULL
+    WHERE torahdownloads_shiur_id = ANY(${shiurIds})
+    RETURNING id
+  `);
+  return (r.rows || []).length;
+}
+
 // Count-only variant for the diagnostic UI.
 export async function countStaleTdEpisodes(): Promise<number> {
   const rows = await db.execute(sql`

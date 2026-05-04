@@ -2326,28 +2326,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (candidates.length === 0) return res.json({ processed: 0, updated: 0, moreRemaining: false });
 
       const updates: { episodeId: string; publishedAt: Date }[] = [];
+      // shiurIds whose CDN file is gone (4xx). We null out their publishedAt
+      // so they stop matching the 12:00:00 stale fingerprint on the next
+      // pass — otherwise the backfill loops forever on the same broken IDs.
+      const stuckShiurIds: number[] = [];
       let cdnHits = 0, cdnMisses = 0;
       const missDetails: { shiurId: number; status: number | null; error: string | null }[] = [];
       const verbose = req.query.verbose === "true";
       for (const c of candidates) {
-        if (verbose) {
-          const dbg = await fetchShiurUploadDateDebug(c.shiurId);
-          if (dbg.resolvedDate) {
-            updates.push({ episodeId: c.episodeId, publishedAt: new Date(dbg.resolvedDate) });
-            cdnHits++;
-          } else {
-            cdnMisses++;
-            if (missDetails.length < 10) missDetails.push({ shiurId: c.shiurId, status: dbg.status, error: dbg.error });
-          }
+        const dbg = await fetchShiurUploadDateDebug(c.shiurId);
+        if (dbg.resolvedDate) {
+          updates.push({ episodeId: c.episodeId, publishedAt: new Date(dbg.resolvedDate) });
+          cdnHits++;
         } else {
-          const d = await fetchShiurUploadDate(c.shiurId);
-          if (d) { updates.push({ episodeId: c.episodeId, publishedAt: d }); cdnHits++; }
-          else cdnMisses++;
+          cdnMisses++;
+          // 4xx from CDN = upstream gone forever; promote to null so this row
+          // stops cycling. 5xx / network errors stay as candidates for retry.
+          if (dbg.status && dbg.status >= 400 && dbg.status < 500) {
+            stuckShiurIds.push(c.shiurId);
+          }
+          if (verbose && missDetails.length < 10) {
+            missDetails.push({ shiurId: c.shiurId, status: dbg.status, error: dbg.error });
+          }
         }
         // tiny pace; CDN tolerates this fine but we don't want to hammer
         await new Promise(r => setTimeout(r, 50));
       }
       const updated = await storage.forceSetPublishedAtByEpisodeIds(updates);
+      const nulled = await storage.nullPublishedAtForShiurIds(stuckShiurIds);
 
       const remaining = await storage.getStaleTdEpisodeIds(1);
       res.json({
@@ -2355,6 +2361,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         cdnHits,
         cdnMisses,
         updated,
+        nulledStuck: nulled,
         moreRemaining: remaining.length > 0,
         ...(verbose ? { missDetails, sampleCandidates: candidates.slice(0, 5).map(c => c.shiurId) } : {}),
       });
