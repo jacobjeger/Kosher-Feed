@@ -2325,10 +2325,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const updates: { episodeId: string; publishedAt: Date }[] = [];
       let cdnHits = 0, cdnMisses = 0;
+      const missDetails: { shiurId: number; status: number | null; error: string | null }[] = [];
+      const verbose = req.query.verbose === "true";
       for (const c of candidates) {
-        const d = await fetchShiurUploadDate(c.shiurId);
-        if (d) { updates.push({ episodeId: c.episodeId, publishedAt: d }); cdnHits++; }
-        else cdnMisses++;
+        if (verbose) {
+          const dbg = await fetchShiurUploadDateDebug(c.shiurId);
+          if (dbg.resolvedDate) {
+            updates.push({ episodeId: c.episodeId, publishedAt: new Date(dbg.resolvedDate) });
+            cdnHits++;
+          } else {
+            cdnMisses++;
+            if (missDetails.length < 10) missDetails.push({ shiurId: c.shiurId, status: dbg.status, error: dbg.error });
+          }
+        } else {
+          const d = await fetchShiurUploadDate(c.shiurId);
+          if (d) { updates.push({ episodeId: c.episodeId, publishedAt: d }); cdnHits++; }
+          else cdnMisses++;
+        }
         // tiny pace; CDN tolerates this fine but we don't want to hammer
         await new Promise(r => setTimeout(r, 50));
       }
@@ -2341,6 +2354,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         cdnMisses,
         updated,
         moreRemaining: remaining.length > 0,
+        ...(verbose ? { missDetails, sampleCandidates: candidates.slice(0, 5).map(c => c.shiurId) } : {}),
       });
     } catch (e: any) { publicError(res, e); }
   });
