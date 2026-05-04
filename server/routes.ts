@@ -2299,8 +2299,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const shiurId = parseInt((req.query.shiurId as string) || "1030997", 10);
       const result = await fetchShiurUploadDateDebug(shiurId);
+      const staleCount = await storage.countStaleTdEpisodes();
       res.json({
         ...result,
+        staleTdEpisodeCount: staleCount,
         env: {
           KH_PROXY_URL_set: !!process.env.KH_PROXY_URL,
           KH_PROXY_URL_value: process.env.KH_PROXY_URL || null,

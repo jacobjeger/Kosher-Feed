@@ -638,13 +638,19 @@ export async function getRecentKhFileIds(feedId: string, limit: number = 50): Pr
   return new Set(rows.map(r => r.id).filter((x): x is number => x !== null));
 }
 
-// TorahDownloads pubdate backfill: find td-* episodes whose publishedAt is
-// either null OR set to a "today" placeholder (the early version of the
-// scraper picked up the navbar's current-day date for every shiur, so a
-// large bucket of episodes share whatever day they were ingested). Detect
-// that bucket by the time-of-day stamp the parser used (12:00:00 UTC) so
-// we don't disturb episodes that legitimately happen to have today's date.
-// Caller resolves shiur_id → real upload date via CDN HEAD.
+// TorahDownloads pubdate backfill: find td-* episodes whose publishedAt
+// matches the bogus "today @ 12:00:00 UTC" placeholder the early scraper
+// stamped on every shiur (it grabbed the navbar's current-day date instead
+// of a real per-shiur date). Detect that bucket by the time-of-day finger
+// print so we don't disturb episodes that legitimately happen to have
+// today's date. Caller resolves shiur_id → real upload date via CDN HEAD.
+//
+// Parens added around the OR'd predicate — without them, AND binds
+// tighter than OR and the WHERE clause becomes
+//   torahdownloads_shiur_id IS NOT NULL AND (published_at IS NULL OR HOUR=12) AND MINUTE=0 AND SECOND=0
+// which discards the IS NULL leg's intent and only matches rows whose
+// minute+second happen to be exactly 0 — silently filtering the candidate
+// set down to ~7 rows out of thousands of stale episodes.
 export async function getStaleTdEpisodeIds(limit: number = 1000): Promise<{ episodeId: string; shiurId: number }[]> {
   const rows = await db.execute(sql`
     SELECT id, torahdownloads_shiur_id AS "shiurId"
@@ -653,15 +659,36 @@ export async function getStaleTdEpisodeIds(limit: number = 1000): Promise<{ epis
       AND torahdownloads_shiur_id IS NOT NULL
       AND (
         published_at IS NULL
-        OR EXTRACT(HOUR FROM published_at AT TIME ZONE 'UTC') = 12
-        AND EXTRACT(MINUTE FROM published_at) = 0
-        AND EXTRACT(SECOND FROM published_at) = 0
+        OR (
+          EXTRACT(HOUR FROM published_at AT TIME ZONE 'UTC') = 12
+          AND EXTRACT(MINUTE FROM published_at) = 0
+          AND EXTRACT(SECOND FROM published_at) = 0
+        )
       )
     LIMIT ${limit}
   `);
   return (rows.rows as any[])
     .filter(r => r.shiurId != null)
     .map(r => ({ episodeId: r.id as string, shiurId: Number(r.shiurId) }));
+}
+
+// Count-only variant for the diagnostic UI.
+export async function countStaleTdEpisodes(): Promise<number> {
+  const rows = await db.execute(sql`
+    SELECT COUNT(*) AS n
+    FROM episodes
+    WHERE guid LIKE 'td-%'
+      AND torahdownloads_shiur_id IS NOT NULL
+      AND (
+        published_at IS NULL
+        OR (
+          EXTRACT(HOUR FROM published_at AT TIME ZONE 'UTC') = 12
+          AND EXTRACT(MINUTE FROM published_at) = 0
+          AND EXTRACT(SECOND FROM published_at) = 0
+        )
+      )
+  `);
+  return Number((rows.rows as any[])[0]?.n || 0);
 }
 
 // Variant for TorahDownloads — pulls platform-specific shiur ids.
