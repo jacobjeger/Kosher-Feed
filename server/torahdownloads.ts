@@ -215,6 +215,52 @@ export function parseShiurPage(html: string, shiurId: number): TDShiurDetail | n
 // migration timestamp). This is the only reliable source of per-shiur dates;
 // the website's HTML doesn't render one. Bypass tdGet's site throttle since
 // torahcdn.net is a different (CDN-fronted) host with no rate limit issues.
+// Diagnostic flavor: returns full debug info instead of just Date|null. Used
+// by the admin /api/admin/diagnostics/td-cdn-probe endpoint to figure out
+// why production is missing CDN hits when curl probes succeed.
+export async function fetchShiurUploadDateDebug(shiurId: number): Promise<{
+  url: string; usedProxy: boolean; status: number | null; error: string | null;
+  lastModified: string | null; cbModifiedTime: string | null; resolvedDate: string | null;
+}> {
+  const proxyBase = process.env.KH_PROXY_URL;
+  const proxyKey = process.env.KH_PROXY_KEY;
+  let url: string;
+  const headers: Record<string, string> = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  };
+  if (proxyBase) {
+    url = `${proxyBase.replace(/\/$/, "")}/td/tdn/${shiurId}.mp3`;
+    if (proxyKey) headers["x-proxy-key"] = proxyKey;
+  } else {
+    url = `${TD_CDN_BASE}${shiurId}.mp3`;
+    headers["Accept"] = "*/*";
+    headers["Origin"] = "https://torahdownloads.com";
+    headers["Referer"] = "https://torahdownloads.com/";
+  }
+  try {
+    const res = await axios.head(url, {
+      timeout: 10000, headers,
+      validateStatus: s => s >= 200 && s < 600,
+    });
+    const h = res.headers || {};
+    const cb = typeof h["x-amz-meta-cb-modifiedtime"] === "string" ? h["x-amz-meta-cb-modifiedtime"] : null;
+    const lm = typeof h["last-modified"] === "string" ? h["last-modified"] : null;
+    const raw = cb || lm;
+    const d = raw ? new Date(raw) : null;
+    return {
+      url, usedProxy: !!proxyBase, status: res.status, error: null,
+      lastModified: lm, cbModifiedTime: cb,
+      resolvedDate: d && !isNaN(d.getTime()) ? d.toISOString() : null,
+    };
+  } catch (e: any) {
+    return {
+      url, usedProxy: !!proxyBase, status: e?.response?.status ?? null,
+      error: `${e?.code || ""}: ${e?.message?.slice(0, 200) || String(e).slice(0, 200)}`,
+      lastModified: null, cbModifiedTime: null, resolvedDate: null,
+    };
+  }
+}
+
 export async function fetchShiurUploadDate(shiurId: number): Promise<Date | null> {
   // torahcdn.net's Cloudflare front silently drops requests from Railway IPs
   // (100% miss rate from prod vs 100% hit rate from a residential IP). Route

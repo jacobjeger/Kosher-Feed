@@ -11,7 +11,7 @@ import { eq, desc } from "drizzle-orm";
 import { syncTATSpeakers, refreshTATFeedEpisodes, fetchAllSpeakers } from "./torahanytime";
 import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, OU_PLATFORMS, fetchPostDetailsBatch, type OUPlatformKey } from "./alldaf";
 import { syncKHSpeakers, refreshKHFeedEpisodes, reloadKHClient, getHeaders as getKHHeaders } from "./kolhalashon";
-import { syncTorahDownloadsSpeakers, refreshTorahDownloadsFeedEpisodes, fetchShiurUploadDate } from "./torahdownloads";
+import { syncTorahDownloadsSpeakers, refreshTorahDownloadsFeedEpisodes, fetchShiurUploadDate, fetchShiurUploadDateDebug } from "./torahdownloads";
 import { extractKhRavId, extractTatSpeakerId, extractTorahDownloadsSpeakerId } from "./feed-utils";
 import { trackErrorForAlert, sendFeedbackNotification } from "./error-alerts";
 import multer from "multer";
@@ -2289,6 +2289,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const feedId = typeof req.query.feedId === "string" ? req.query.feedId : undefined;
       const result = await storage.bulkDedupIntraFeedEpisodes(feedId);
       res.json(result);
+    } catch (e: any) { publicError(res, e); }
+  });
+
+  // Diagnostic: probe a single TD shiur's CDN HEAD and return the full
+  // request/response details (URL constructed, status, headers parsed).
+  // Used to debug "0% hit rate from production while curl-probes return 200".
+  app.get("/api/admin/diagnostics/td-cdn-probe", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const shiurId = parseInt((req.query.shiurId as string) || "1030997", 10);
+      const result = await fetchShiurUploadDateDebug(shiurId);
+      res.json({
+        ...result,
+        env: {
+          KH_PROXY_URL_set: !!process.env.KH_PROXY_URL,
+          KH_PROXY_URL_value: process.env.KH_PROXY_URL || null,
+          KH_PROXY_KEY_set: !!process.env.KH_PROXY_KEY,
+        },
+      });
     } catch (e: any) { publicError(res, e); }
   });
 
