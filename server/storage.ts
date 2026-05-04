@@ -657,14 +657,10 @@ export async function getStaleTdEpisodeIds(limit: number = 1000): Promise<{ epis
     FROM episodes
     WHERE guid LIKE 'td-%'
       AND torahdownloads_shiur_id IS NOT NULL
-      AND (
-        published_at IS NULL
-        OR (
-          EXTRACT(HOUR FROM published_at AT TIME ZONE 'UTC') = 12
-          AND EXTRACT(MINUTE FROM published_at) = 0
-          AND EXTRACT(SECOND FROM published_at) = 0
-        )
-      )
+      AND published_at IS NOT NULL
+      AND EXTRACT(HOUR FROM published_at AT TIME ZONE 'UTC') = 12
+      AND EXTRACT(MINUTE FROM published_at) = 0
+      AND EXTRACT(SECOND FROM published_at) = 0
     LIMIT ${limit}
   `);
   return (rows.rows as any[])
@@ -689,21 +685,17 @@ export async function nullPublishedAtForShiurIds(shiurIds: number[]): Promise<nu
   return r.length;
 }
 
-// Count-only variant for the diagnostic UI.
+// Count-only variant for the diagnostic UI. Mirrors getStaleTdEpisodeIds.
 export async function countStaleTdEpisodes(): Promise<number> {
   const rows = await db.execute(sql`
     SELECT COUNT(*) AS n
     FROM episodes
     WHERE guid LIKE 'td-%'
       AND torahdownloads_shiur_id IS NOT NULL
-      AND (
-        published_at IS NULL
-        OR (
-          EXTRACT(HOUR FROM published_at AT TIME ZONE 'UTC') = 12
-          AND EXTRACT(MINUTE FROM published_at) = 0
-          AND EXTRACT(SECOND FROM published_at) = 0
-        )
-      )
+      AND published_at IS NOT NULL
+      AND EXTRACT(HOUR FROM published_at AT TIME ZONE 'UTC') = 12
+      AND EXTRACT(MINUTE FROM published_at) = 0
+      AND EXTRACT(SECOND FROM published_at) = 0
   `);
   return Number((rows.rows as any[])[0]?.n || 0);
 }
