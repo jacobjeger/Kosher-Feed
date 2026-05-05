@@ -34,8 +34,12 @@
   .header h1 { font-size: 20px; color: #f8fafc; }
   .main { padding: 24px; max-width: 1400px; margin: 0 auto; }
 
-  .tabs { display: flex; gap: 4px; margin-bottom: 24px; background: #151c2c; border-radius: 10px; padding: 4px; }
-  .tab { flex: 1; padding: 10px 16px; border: none; background: none; color: #94a3b8; font-size: 14px; font-weight: 500; cursor: pointer; border-radius: 8px; transition: background-color 0.15s, color 0.15s; }
+  /* Tab bar: 16 tabs wouldn't fit in one row even at 1400px while staying
+     readable. Let them size to content and wrap to a second row instead of
+     forcing equal flex:1 widths (which truncated "Settings" and wrapped
+     "Kol Halashon" to two lines on a single row). */
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 24px; background: #151c2c; border-radius: 10px; padding: 4px; }
+  .tab { padding: 10px 14px; border: none; background: none; color: #94a3b8; font-size: 14px; font-weight: 500; cursor: pointer; border-radius: 8px; transition: background-color 0.15s, color 0.15s; white-space: nowrap; }
   .tab.active { background: #3b82f6; color: #fff; }
   .tab:hover:not(.active) { background: #1e293b; }
 
