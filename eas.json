@@ -8,21 +8,21 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://kosher-feed-production.up.railway.app"
+        "EXPO_PUBLIC_API_URL": "https://shiurpod.com"
       }
     },
     "preview": {
       "distribution": "internal",
       "channel": "preview",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://kosher-feed-production.up.railway.app"
+        "EXPO_PUBLIC_API_URL": "https://shiurpod.com"
       }
     },
     "production": {
       "autoIncrement": true,
       "channel": "production",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://kosher-feed-production.up.railway.app"
+        "EXPO_PUBLIC_API_URL": "https://shiurpod.com"
       }
     }
   },
