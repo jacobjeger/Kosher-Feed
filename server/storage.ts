@@ -2022,6 +2022,24 @@ export async function deleteResolvedErrorReports(): Promise<number> {
   return result.length;
 }
 
+// One-shot cleanup: drop push-registration breadcrumbs from the error feed.
+// The app stopped forwarding these in commit a5dba8d's follow-up (no more
+// console.warn for push, push source filtered for non-error levels at addLog),
+// but ~tens of thousands of historical entries from before still clutter
+// the admin UI. Real push *errors* (level === 'error') stay.
+export async function deletePushNoiseFromErrorReports(): Promise<number> {
+  const result = await db.delete(errorReports).where(
+    and(
+      inArray(errorReports.source, ["push", "notifications", "console.warn"]),
+      sql`${errorReports.level} <> 'error'`,
+      // The console.warn filter alone is too broad — match only entries
+      // whose message is push-flavored so unrelated console.warns survive.
+      sql`(${errorReports.source} <> 'console.warn' OR ${errorReports.message} ~* '\\[push\\]|\\[fcm\\]|expo push token|fcm token|notification permissions|push token')`,
+    ),
+  ).returning();
+  return result.length;
+}
+
 /**
  * Delete error reports older than N days. Runs daily to keep the table from
  * growing without bound — older reports aren't useful for ongoing triage.

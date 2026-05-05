@@ -2607,6 +2607,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bulk-delete push-related noise from the error feed. The app no longer
+  // forwards push info breadcrumbs (registration steps, FCM token logs)
+  // going forward, but the ~tens of thousands of historical entries clutter
+  // the admin UI. This endpoint deletes all rows where source is "push" or
+  // "notifications" and level is not "error" (real push errors stay).
+  app.delete("/api/admin/error-reports/push-noise", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const count = await storage.deletePushNoiseFromErrorReports();
+      res.json({ ok: true, deleted: count });
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
   // Resolve an entire error group (all errors matching the same messageHash).
   // Use after shipping a fix — new occurrences (still unresolved) will surface
   // immediately if the fix didn't actually work.

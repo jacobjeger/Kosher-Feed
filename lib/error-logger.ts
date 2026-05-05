@@ -109,8 +109,16 @@ export function addLog(
   notifyListeners();
   persistLogs();
 
-  // Report errors/warns to server (skip 4xx fetch noise, but include 5xx and network failures)
-  if (REPORT_LEVELS.has(level) && !(source === "fetch" && level === "warn")) {
+  // Report errors/warns to server (skip 4xx fetch noise, but include 5xx and network failures).
+  // Push registration breadcrumbs (info-level entries with source "push" or
+  // "notifications") never go to the server — they're informational and were
+  // dominating the admin error feed (~85% of reports). Real push errors
+  // (level === "error") still go through.
+  if (
+    REPORT_LEVELS.has(level)
+    && !(source === "fetch" && level === "warn")
+    && !((source === "push" || source === "notifications") && level !== "error")
+  ) {
     queueForServerReport(entry);
   }
 }
@@ -118,6 +126,15 @@ export function addLog(
 export function logEvent(event: string, details?: Record<string, any>) {
   const detailStr = details ? " " + JSON.stringify(details) : "";
   addLog("info", `[EVENT] ${event}${detailStr}`, undefined, "app-event");
+}
+
+// Push-registration breadcrumbs (token fetch, permission state, project id,
+// FCM/Expo handshake steps) flow through console.warn for logcat visibility
+// and dominated the admin error-reports feed. Drop them at capture time so
+// the admin sees only real errors. Push errors that need surfacing call
+// addLog("error", ..., source: "push") directly and bypass this filter.
+function isPushNoise(msg: string): boolean {
+  return /\[push\]|\[fcm\]|\[expo-push\]|expo push token|fcm token|push token|notification permissions/i.test(msg);
 }
 
 function queueForServerReport(entry: LogEntry) {
@@ -267,7 +284,8 @@ export function initErrorLogger() {
       msg.includes("useNativeDriver") ||
       msg.includes("shadow*") ||
       msg.includes("pointerEvents is deprecated") ||
-      msg.includes("expo-notifications")
+      msg.includes("expo-notifications") ||
+      isPushNoise(msg)
     ) {
       return;
     }
@@ -285,7 +303,8 @@ export function initErrorLogger() {
       msg.includes("shadow*") ||
       msg.includes("pointerEvents is deprecated") ||
       msg.includes("expo-notifications") ||
-      msg.includes("should be updated for best compatibility")
+      msg.includes("should be updated for best compatibility") ||
+      isPushNoise(msg)
     ) {
       return;
     }

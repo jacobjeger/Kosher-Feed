@@ -175,10 +175,17 @@ export async function registerPushToken(verbose = false): Promise<{ token: strin
     const steps: string[] = [];
     const log = (level: "info" | "warn" | "error", msg: string, stack?: string) => {
       steps.push(`[${level.toUpperCase()}] ${msg}`);
-      // Mirror to console so we can see in logcat during debugging.
+      // Mirror to console so we can see in logcat during debugging. Use
+      // console.log (not warn) so the error-logger's console.warn shim
+      // doesn't capture every info-level breadcrumb as a "warning report".
+      // The push registration flow walks ~10 steps per call and this was
+      // dominating the admin error-reports list (~85% of recent entries).
       // eslint-disable-next-line no-console
-      console.warn(`[push] ${msg}`);
-      addLog(level, msg, stack, "push");
+      console.log(`[push] ${msg}`);
+      // Only forward genuine errors to the central log. info/warn breadcrumbs
+      // stay in `steps` (returned to caller) and console output for debugging
+      // but don't pollute the admin error feed.
+      if (level === "error") addLog("error", msg, stack, "push");
     };
 
     if (Platform.OS === "web") {
