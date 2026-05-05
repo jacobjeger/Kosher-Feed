@@ -7,7 +7,14 @@ const apiFetch: typeof globalThis.fetch =
     ? globalThis.fetch.bind(globalThis)
     : require("expo/fetch").fetch;
 
-const PRODUCTION_API_URL = process.env.EXPO_PUBLIC_API_URL || "https://kosher-feed-production.up.railway.app";
+// Use the brand domain (shiurpod.com) instead of the *.railway.app subdomain
+// for kosher-phone compatibility. Many kosher Android filters allowlist
+// known brand domains but treat unknown *.railway.app subdomains as
+// untrusted, causing TypeError: Network request failed and
+// UnknownHostException on every API call. shiurpod.com points to the same
+// Railway origin, just behind Cloudflare. Override via EXPO_PUBLIC_API_URL
+// for staging or local-tunnel testing.
+const PRODUCTION_API_URL = process.env.EXPO_PUBLIC_API_URL || "https://shiurpod.com";
 const REQUEST_TIMEOUT_MS = 20000;
 const CACHE_PREFIX = "shiurpod_cache_";
 

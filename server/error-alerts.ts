@@ -54,7 +54,7 @@ async function sendErrorAlert(errorCount: number, latestError: { message: string
           Version: ${escHtml(latestError.appVersion || "unknown")}
         </p>
       </div>
-      <a href="https://kosher-feed-production.up.railway.app/admin"
+      <a href="https://shiurpod.com/admin"
          style="display:inline-block;background:#3b82f6;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600;">
         View Error Reports →
       </a>
@@ -137,7 +137,7 @@ export async function sendFeedbackNotification(feedback: {
         </table>
         ${logsHtml}
         <div style="margin-top:20px;">
-          <a href="https://kosher-feed-production.up.railway.app/admin"
+          <a href="https://shiurpod.com/admin"
              style="display:inline-block;background:#3b82f6;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600;">
             View in Admin →
           </a>
@@ -230,7 +230,7 @@ export async function sendDailyErrorDigest(stats: {
           </div>
         </div>
 
-        <a href="https://kosher-feed-production.up.railway.app/admin"
+        <a href="https://shiurpod.com/admin"
            style="display:inline-block;background:#3b82f6;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600;">
           View Full Dashboard →
         </a>
