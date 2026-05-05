@@ -11,10 +11,49 @@ index 5b4fc52..86d96d1 100644
  
    def androidxMedia3Version = "1.8.0"
 diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioModule.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioModule.kt
-index 49a53af..24e0dc1 100644
+index 49a53af..30b991e 100644
 --- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioModule.kt
 +++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioModule.kt
-@@ -63,6 +63,11 @@ class AudioModule : Module() {
+@@ -28,6 +28,8 @@ import androidx.media3.exoplayer.hls.HlsMediaSource
+ import androidx.media3.exoplayer.smoothstreaming.SsMediaSource
+ import androidx.media3.exoplayer.source.MediaSource
+ import androidx.media3.exoplayer.source.ProgressiveMediaSource
++import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
++import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
+ import expo.modules.audio.service.AudioControlsService
+ import expo.modules.interfaces.permissions.Permissions
+ import expo.modules.kotlin.Promise
+@@ -40,6 +42,7 @@ import kotlinx.coroutines.runBlocking
+ import okhttp3.OkHttpClient
+ import java.io.File
+ import java.util.concurrent.ConcurrentHashMap
++import java.util.concurrent.TimeUnit
+ import kotlin.math.min
+ 
+ @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+@@ -47,7 +50,20 @@ class AudioModule : Module() {
+   private lateinit var audioManager: AudioManager
+   private val context: Context
+     get() = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+-  private val httpClient = OkHttpClient()
++  // ShiurPod patch: tune OkHttpClient for flaky-network resilience.
++  //   - 30s connect / 60s read timeouts (default 10s each was too short for
++  //     CDN handshakes on weak signal — Schok F1 phones in particular)
++  //   - retryOnConnectionFailure(true) auto-recovers from transient TCP
++  //     drops (e.g. Wi-Fi → cellular handoff mid-stream)
++  // Combined with the LoadErrorHandlingPolicy retry config below, this
++  // turns play/stop/play/stop cycles on flaky networks into seamless
++  // resumption from the buffered position.
++  private val httpClient = OkHttpClient.Builder()
++    .connectTimeout(30, TimeUnit.SECONDS)
++    .readTimeout(60, TimeUnit.SECONDS)
++    .writeTimeout(30, TimeUnit.SECONDS)
++    .retryOnConnectionFailure(true)
++    .build()
+ 
+   private val players = ConcurrentHashMap<String, AudioPlayer>()
+   private val recorders = ConcurrentHashMap<String, AudioRecorder>()
+@@ -63,6 +79,11 @@ class AudioModule : Module() {
      appContext.mainQueue.launch {
        when (focusChange) {
          AudioManager.AUDIOFOCUS_LOSS -> {
@@ -26,7 +65,7 @@ index 49a53af..24e0dc1 100644
            focusAcquired = false
            players.values.forEach { player ->
              player.ref.pause()
-@@ -70,6 +75,8 @@ class AudioModule : Module() {
+@@ -70,6 +91,8 @@ class AudioModule : Module() {
          }
  
          AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
@@ -35,7 +74,7 @@ index 49a53af..24e0dc1 100644
            focusAcquired = false
            players.values.forEach { player ->
              if (player.ref.isPlaying) {
-@@ -116,6 +123,13 @@ class AudioModule : Module() {
+@@ -116,6 +139,13 @@ class AudioModule : Module() {
    }
  
    private fun requestAudioFocus() {
@@ -49,7 +88,7 @@ index 49a53af..24e0dc1 100644
      if (focusAcquired || !audioEnabled || interruptionMode == InterruptionMode.MIX_WITH_OTHERS) {
        return
      }
-@@ -123,11 +137,11 @@ class AudioModule : Module() {
+@@ -123,11 +153,11 @@ class AudioModule : Module() {
      val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
        val requestType = interruptionMode?.let {
          if (it == InterruptionMode.DO_NOT_MIX) {
@@ -63,7 +102,7 @@ index 49a53af..24e0dc1 100644
        audioFocusRequest = AudioFocusRequest.Builder(requestType).run {
          setAudioAttributes(
            AudioAttributes.Builder()
-@@ -144,7 +158,7 @@ class AudioModule : Module() {
+@@ -144,7 +174,7 @@ class AudioModule : Module() {
      } else {
        @Suppress("DEPRECATION")
        val requestType = if (interruptionMode == InterruptionMode.DO_NOT_MIX) {
@@ -72,6 +111,69 @@ index 49a53af..24e0dc1 100644
        } else {
          AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
        }
+@@ -610,16 +640,24 @@ class AudioModule : Module() {
+ 
+   private fun retrieveStreamType(uri: Uri): Int = Util.inferContentType(uri)
+ 
++  // ShiurPod patch: more aggressive retry on transient errors. The default
++  // (3 retries) gives up too easily on flaky cellular / kosher-phone
++  // networks where Wi-Fi handoffs and DNS resets are frequent. 6 retries
++  // with the policy's exponential backoff buys ~30 seconds of recovery
++  // window — long enough for a typical handoff to settle.
++  private val resilientLoadErrorPolicy: LoadErrorHandlingPolicy =
++    DefaultLoadErrorHandlingPolicy(/* minimumLoadableRetryCount = */ 6)
++
+   private fun buildMediaSourceFactory(
+     factory: DataSource.Factory,
+     mediaItem: MediaItem
+   ): MediaSource {
+     val uri = mediaItem.localConfiguration?.uri
+     return when (val type = uri?.let { retrieveStreamType(it) }) {
+-      CONTENT_TYPE_SS -> SsMediaSource.Factory(factory)
+-      CONTENT_TYPE_DASH -> DashMediaSource.Factory(factory)
+-      CONTENT_TYPE_HLS -> HlsMediaSource.Factory(factory)
+-      CONTENT_TYPE_OTHER -> ProgressiveMediaSource.Factory(factory)
++      CONTENT_TYPE_SS -> SsMediaSource.Factory(factory).setLoadErrorHandlingPolicy(resilientLoadErrorPolicy)
++      CONTENT_TYPE_DASH -> DashMediaSource.Factory(factory).setLoadErrorHandlingPolicy(resilientLoadErrorPolicy)
++      CONTENT_TYPE_HLS -> HlsMediaSource.Factory(factory).setLoadErrorHandlingPolicy(resilientLoadErrorPolicy)
++      CONTENT_TYPE_OTHER -> ProgressiveMediaSource.Factory(factory).setLoadErrorHandlingPolicy(resilientLoadErrorPolicy)
+       else -> throw IllegalStateException("Unsupported type: $type")
+     }.createMediaSource(mediaItem)
+   }
+diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioPlayer.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioPlayer.kt
+index 320062e..3e647c9 100644
+--- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioPlayer.kt
++++ b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/AudioPlayer.kt
+@@ -11,6 +11,7 @@ import androidx.media3.common.C
+ import androidx.media3.common.MediaItem
+ import androidx.media3.common.Player
+ import androidx.media3.common.util.UnstableApi
++import androidx.media3.exoplayer.DefaultLoadControl
+ import androidx.media3.exoplayer.ExoPlayer
+ import androidx.media3.exoplayer.source.MediaSource
+ import expo.modules.audio.service.AudioControlsService
+@@ -46,6 +47,21 @@ class AudioPlayer(
+     .setAudioAttributes(AudioAttributes.DEFAULT, false)
+     .setSeekForwardIncrementMs(SEEK_JUMP_INTERVAL_MS)
+     .setSeekBackIncrementMs(SEEK_JUMP_INTERVAL_MS)
++    // ShiurPod patch: deeper buffer so flaky networks don't cause the
++    // play/stop/play/stop loop. Defaults are min=50s max=50s start=2.5s
++    // rebuf=5s. We extend to min=60s max=120s rebuf=15s — buys ~2 minutes
++    // of buffered audio before underrun, and 15s grace before declaring a
++    // rebuffer (vs default 5s which trips on every network hiccup).
++    .setLoadControl(
++      DefaultLoadControl.Builder()
++        .setBufferDurationsMs(
++          /* minBufferMs = */ 60_000,
++          /* maxBufferMs = */ 120_000,
++          /* bufferForPlaybackMs = */ 2_500,
++          /* bufferForPlaybackAfterRebufferMs = */ 15_000
++        )
++        .build()
++    )
+     .build(),
+   appContext
+ ) {
 diff --git a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt b/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
 index 04486e2..b92cebe 100644
 --- a/node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt
