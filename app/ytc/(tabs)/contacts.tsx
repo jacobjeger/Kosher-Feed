@@ -259,7 +259,7 @@ const styles = StyleSheet.create({
   searchBox: { flexDirection: "row", alignItems: "center", backgroundColor: Colors.white, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: Colors.creamDark },
   searchInput: { flex: 1, fontSize: 15, color: Colors.navy },
   rebbeCard: { flexDirection: "row", backgroundColor: Colors.white, borderRadius: 14, padding: 16, marginBottom: 10, gap: 14, shadowColor: Colors.black, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
-  rebbePhoto: { width: 64, height: 64, borderRadius: 32 },
+  rebbePhoto: { width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.creamDark },
   rebbePhotoPlaceholder: { width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.navy, alignItems: "center", justifyContent: "center" },
   rebbeInitial: { color: Colors.gold, fontSize: 24, fontWeight: "bold" },
   rebbeInfo: { flex: 1 },

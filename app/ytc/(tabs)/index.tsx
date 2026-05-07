@@ -6,7 +6,7 @@
 //  - announcement mazel-tov detection uses the typed `type` field
 //    instead of ann.isMazelTov (the original screen referenced a
 //    property that the type def doesn't expose)
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, ScrollView, StyleSheet, FlatList, Dimensions,
   TouchableOpacity, ActivityIndicator, RefreshControl, Platform, Pressable, Modal,
@@ -128,14 +128,19 @@ export default function HomeScreen() {
     return () => clearInterval(timer);
   }, [carouselImages.length]);
 
-  const formatDate = (dateStr: string) => {
+  // useCallback: stabilize the reference so React.memo on
+  // ShiurHomeCard short-circuits on re-renders.
+  const formatDate = useCallback((dateStr: string) => {
     const d = new Date(dateStr + "T00:00:00");
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  };
+  }, []);
 
-  if (isLoading) {
-    return <View style={styles.loading}><ActivityIndicator size="large" color={Colors.navy} /></View>;
-  }
+  // Progressive render — instead of blocking the entire home screen
+  // behind a single isLoading guard, each section renders empty until
+  // its data resolves. Combined with pre-warm in YtcAuthProvider, the
+  // user sees the chrome instantly and content fills in within a frame
+  // on warm cache. Cold-cache: small spinner inside each section's
+  // empty state if needed (currently we just don't render the section).
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -356,7 +361,11 @@ interface ShiurHomeCardProps {
   formatDate: (dateStr: string) => string;
 }
 
-function ShiurHomeCard({ shiur, sectionTitle, isFeatured, getPosition, playShiur, formatDate }: ShiurHomeCardProps) {
+// React.memo — props are stable refs (formatDate/playShiur from
+// useCallback at parent, getPosition from PositionsContext, shiur is
+// stable per id), so this card avoids re-rendering when sibling state
+// changes (carousel index, refresh control toggle, etc).
+const ShiurHomeCard = React.memo(function ShiurHomeCardImpl({ shiur, sectionTitle, isFeatured, getPosition, playShiur, formatDate }: ShiurHomeCardProps) {
   const saved = getPosition(`${YTC_EPISODE_PREFIX}${shiur.id}`);
   const hasProgress = saved && saved.durationMs > 0 && saved.positionMs > 0;
   const pct = hasProgress ? Math.min(Math.round((saved!.positionMs / saved!.durationMs) * 100), 100) : 0;
@@ -396,7 +405,7 @@ function ShiurHomeCard({ shiur, sectionTitle, isFeatured, getPosition, playShiur
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.cream },
@@ -447,7 +456,10 @@ const styles = StyleSheet.create({
   menuItemTextDanger: { color: Colors.error },
   carouselContainer: { position: "relative" },
   carouselSlide: { width: SCREEN_WIDTH, height: 220 },
-  carouselImage: { width: "100%", height: "100%" },
+  // backgroundColor on the Image style is what expo-image paints before
+  // decode finishes — gives an instant cream placeholder instead of a
+  // black void, even on cold cache.
+  carouselImage: { width: "100%", height: "100%", backgroundColor: Colors.creamDark },
   captionOverlay: { position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "rgba(0,0,0,0.4)", padding: 10 },
   caption: { color: Colors.white, fontSize: 13, textAlign: "center" },
   dots: { flexDirection: "row", justifyContent: "center", paddingVertical: 8, gap: 6 },

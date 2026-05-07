@@ -13,7 +13,17 @@
 //    in the future)
 import React, { createContext, useContext, useEffect, useState } from "react";
 import type { User } from "firebase/auth";
-import { subscribeAuth, checkUserApproval, firebaseSignOutIfInitialized } from "@/lib/ytc/firebase";
+import {
+  subscribeAuth, checkUserApproval, firebaseSignOutIfInitialized,
+  // Pre-warm fetchers — kicked off the moment we know the user is
+  // approved. By the time the home screen mounts (1 stack push later),
+  // these promises are already resolved or in-flight, so the cache
+  // returns instantly. Cuts perceived YTC home load time noticeably
+  // because Firestore round-trips overlap with the navigation animation.
+  fetchCarouselImages, fetchAnnouncements, fetchUpcomingEvents,
+  fetchMostRecentShiur, fetchFeaturedShiur, fetchActiveCollections,
+  fetchAlumniPhotos, fetchRebbeim, fetchApprovedAlumni,
+} from "@/lib/ytc/firebase";
 
 interface AuthState {
   user: User | null;
@@ -51,6 +61,23 @@ export function YtcAuthProvider({ children }: { children: React.ReactNode }) {
     }
     const { approved, admin } = await checkUserApproval(user.email);
     setState({ user, isApproved: approved, isAdmin: admin, isLoading: false });
+    // Pre-warm: as soon as we know the user is approved, fan out all
+    // home + tab fetchers in parallel. Each goes through the cache
+    // layer so a duplicate call from the actual screen mount is free.
+    // Failures are swallowed — pre-warm is best-effort.
+    if (approved) {
+      Promise.all([
+        fetchCarouselImages(),
+        fetchAnnouncements(),
+        fetchUpcomingEvents(3),
+        fetchMostRecentShiur(),
+        fetchFeaturedShiur(),
+        fetchActiveCollections(),
+        fetchAlumniPhotos(),
+        fetchRebbeim(),
+        fetchApprovedAlumni(),
+      ]).catch(() => {});
+    }
   };
 
   useEffect(() => {
