@@ -140,7 +140,10 @@ function DownloadsScreenInner() {
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
-  const { downloads } = useDownloads();
+  const { downloads: allDownloads } = useDownloads();
+  // YTC downloads have their own UI inside /ytc/settings — keep them out
+  // of the main ShiurPod Downloads tab so the two surfaces don't bleed.
+  const downloads = allDownloads.filter((d) => !d.id.startsWith("ytc:"));
 
   return (
     <FlatList

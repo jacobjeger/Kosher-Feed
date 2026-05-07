@@ -43,7 +43,14 @@ export default function StorageScreen() {
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
   const insets = useSafeAreaInsets();
-  const { downloads, removeDownload } = useDownloads();
+  const { downloads: allDownloads, removeDownload } = useDownloads();
+  // YTC items are managed in /ytc/settings; exclude them from the main
+  // storage screen so the per-feed groups + clear-all stay scoped to
+  // ShiurPod's own feeds.
+  const downloads = useMemo(
+    () => allDownloads.filter((d) => !d.id.startsWith("ytc:")),
+    [allDownloads],
+  );
   const [deleting, setDeleting] = useState<string | null>(null);
   const [clearingFeed, setClearingFeed] = useState<string | null>(null);
 

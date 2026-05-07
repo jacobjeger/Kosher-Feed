@@ -80,7 +80,10 @@ function SettingsScreenInner() {
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
-  const { downloads } = useDownloads();
+  const { downloads: allDownloads } = useDownloads();
+  // YTC downloads are surfaced in /ytc/settings, not here. Filter them
+  // out of the count shown on the main Settings screen.
+  const downloads = allDownloads.filter((d) => !d.id.startsWith("ytc:"));
   const { settings, updateSettings } = useSettings();
   const { setAudioBoost } = useAudioPlayer();
   // YTC: feature gate. ytcUnlockCode being null/empty in remote config
