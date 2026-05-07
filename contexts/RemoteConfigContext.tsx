@@ -29,6 +29,11 @@ export interface RemoteConfig {
   autoDeleteDelayMs: number;
   // Pagination limits
   recommendationsLimit: number;
+  // YTC: admin-managed unlock code for the YTC Alumni section. null/empty
+  // = feature disabled (settings entry hidden, /ytc-unlock route refuses
+  // to unlock). Set from the admin dashboard YTC tab. There is NO
+  // fallback constant — feature requires an explicit server-side value.
+  ytcUnlockCode?: string | null;
   [key: string]: any;
 }
 

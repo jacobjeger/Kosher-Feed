@@ -3340,11 +3340,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/config", async (_req: Request, res: Response) => {
     try {
       const config = await storage.getAllConfig();
+      // YTC: surface the admin-managed unlock code as a typed key the app
+      // already merges into RemoteConfig. The underlying app_config row is
+      // keyed `ytc_unlock_code`. An empty/missing value means the feature
+      // is disabled (kill switch).
+      const ytcCode = typeof config.ytc_unlock_code === "string" ? config.ytc_unlock_code : null;
+      const exposed = { ...config, ytcUnlockCode: ytcCode || null };
+      delete (exposed as any).ytc_unlock_code;
       res.setHeader("Cache-Control", "public, max-age=300");
-      res.json(config);
+      res.json(exposed);
     } catch (e: any) {
       publicError(res, e);
     }
+  });
+
+  // YTC: admin-managed unlock code. The current value is masked in GET
+  // (only the last 4 chars are returned in a `mask` field) — full value
+  // is recoverable from the appConfig row directly if needed. PUT sets a
+  // new value; empty string or null disables the feature within ~5 min
+  // (the /api/config Cache-Control window).
+  app.get("/api/admin/config/ytc-unlock-code", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const value = await storage.getConfig("ytc_unlock_code");
+      const str = typeof value === "string" ? value : "";
+      const mask = str.length === 0
+        ? ""
+        : str.length <= 4 ? str : `${"•".repeat(Math.max(0, str.length - 4))}${str.slice(-4)}`;
+      res.json({ value: str, mask, set: str.length > 0 });
+    } catch (e: any) { publicError(res, e); }
+  });
+
+  app.put("/api/admin/config/ytc-unlock-code", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const raw = req.body?.value;
+      const value = typeof raw === "string" ? raw.trim() : "";
+      await storage.setConfig(
+        "ytc_unlock_code",
+        value,
+        "YTC Alumni access code (empty = feature disabled)",
+      );
+      res.json({ ok: true, set: value.length > 0 });
+    } catch (e: any) { publicError(res, e); }
   });
 
   const httpServer = createServer(app);

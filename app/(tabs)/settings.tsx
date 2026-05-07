@@ -13,6 +13,11 @@ import { requestNotificationPermissions, checkNotificationPermission, setupNotif
 import { registerPushToken } from "@/lib/push-notifications";
 import { lightHaptic, mediumHaptic, setHapticEnabled } from "@/lib/haptics";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
+// YTC: section is conditionally rendered based on the admin-managed
+// unlock code in remote config; hidden entirely if the admin hasn't
+// set one. Also conditionally on this device's unlock state.
+import { useRemoteConfig } from "@/contexts/RemoteConfigContext";
+import { useYtcUnlocked, lock as ytcLock } from "@/lib/ytc/unlock";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import OptionPickerModal from "@/components/OptionPickerModal";
 import FocusableView from "@/components/FocusableView";
@@ -78,6 +83,11 @@ function SettingsScreenInner() {
   const { downloads } = useDownloads();
   const { settings, updateSettings } = useSettings();
   const { setAudioBoost } = useAudioPlayer();
+  // YTC: feature gate. ytcUnlockCode being null/empty in remote config
+  // means the admin disabled the feature — hide the section entirely.
+  const { config } = useRemoteConfig();
+  const ytcEnabled = !!(config.ytcUnlockCode as string | null | undefined);
+  const ytcUnlockedHere = useYtcUnlocked();
   const [deviceId, setDeviceId] = useState("");
   const [connectionStatus, setConnectionStatus] = useState<"idle" | "testing" | "ok" | "error">("idle");
   const [connectionError, setConnectionError] = useState("");
@@ -553,6 +563,51 @@ function SettingsScreenInner() {
           />
         </View>
       </View>
+
+      {/* YTC: section only renders when the admin has set an unlock code
+           AND (this device hasn't unlocked yet → "Enter access code" row,
+           OR has unlocked → "YTC Alumni" entry + lock row). When the
+           admin clears the code, both cases evaluate false and the whole
+           section is gone. Removable by deleting this block. */}
+      {ytcEnabled && (
+        <View style={[styles.section, { borderColor: colors.cardBorder }]}>
+          <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>YTC ALUMNI</Text>
+          <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
+            {ytcUnlockedHere ? (
+              <>
+                <SettingRow
+                  icon={<Ionicons name="school" size={20} color={colors.accent} />}
+                  label="Open YTC Alumni"
+                  subtitle="Enabled on this device"
+                  onPress={() => { lightHaptic(); router.push("/ytc" as any); }}
+                />
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                <SettingRow
+                  icon={<Ionicons name="lock-closed" size={20} color={colors.accent} />}
+                  label="Disable YTC access"
+                  onPress={() => {
+                    Alert.alert(
+                      "Disable YTC",
+                      "This will hide the YTC section on this device. You can re-enter the access code at any time.",
+                      [
+                        { text: "Cancel", style: "cancel" },
+                        { text: "Disable", style: "destructive", onPress: async () => { await ytcLock(); } },
+                      ],
+                    );
+                  }}
+                />
+              </>
+            ) : (
+              <SettingRow
+                icon={<Ionicons name="key" size={20} color={colors.accent} />}
+                label="Enter access code"
+                subtitle="Unlocks the YTC Alumni section"
+                onPress={() => { lightHaptic(); router.push("/ytc-unlock" as any); }}
+              />
+            )}
+          </View>
+        </View>
+      )}
 
       <View style={[styles.section, { borderColor: colors.cardBorder }]}>
         <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>ABOUT</Text>

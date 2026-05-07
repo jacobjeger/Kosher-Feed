@@ -214,6 +214,7 @@
       <button class="tab" onclick="switchTab('vitals', this)">Feed Vitals</button>
       <button class="tab" onclick="switchTab('announcements', this)">Announcements</button>
       <button class="tab" onclick="switchTab('kolhalashon', this)">Kol Halashon</button>
+      <button class="tab" onclick="switchTab('ytc', this)">YTC Alumni</button>
       <button class="tab" onclick="switchTab('settings', this)">Settings</button>
     </div>
 
@@ -901,6 +902,39 @@
           </div>
         </div>
         <div id="khVitalsTable" style="color:#94a3b8;font-size:13px;">Loading...</div>
+      </div>
+    </div>
+
+    <!-- YTC: ytc-tab content. Manages the admin-set unlock code for the
+         YTC Alumni section in the app. Empty value = feature kill switch.
+         Ties to /api/admin/config/ytc-unlock-code (GET, PUT). -->
+    <div id="ytcTab" class="hidden">
+      <div class="card">
+        <div class="card-header">
+          <h2>YTC Alumni — Access Code</h2>
+          <span id="ytcStatusBadge" class="status-badge status-inactive">Disabled</span>
+        </div>
+        <div id="ytcSaveAlert"></div>
+        <p style="color:#94a3b8;font-size:13px;margin-bottom:16px;line-height:1.5;">
+          Users enter this code in ShiurPod's settings to unlock the YTC
+          Alumni section (Home / Shiurim / Events / Contacts). Empty value
+          disables the feature entirely (the unlock UI disappears from the
+          app). Changes propagate to clients within ~5 minutes (config
+          cache window). Currently-unlocked devices stay unlocked when you
+          rotate; rotation only blocks NEW unlock attempts using the old code.
+        </p>
+        <div style="margin-bottom:12px;">
+          <label style="display:block;color:#94a3b8;font-size:12px;margin-bottom:6px;">Current code</label>
+          <div id="ytcCurrentMask" style="font-family:'SF Mono',Menlo,monospace;font-size:14px;color:#e2e8f0;background:#0f172a;padding:10px 12px;border-radius:8px;border:1px solid #1e293b;">—</div>
+        </div>
+        <div style="margin-bottom:16px;">
+          <label for="ytcCodeInput" style="display:block;color:#94a3b8;font-size:12px;margin-bottom:6px;">New code</label>
+          <input id="ytcCodeInput" type="text" placeholder="e.g. alumni2026" autocomplete="off" autocapitalize="none" style="width:100%;padding:10px 12px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;color:#f8fafc;font-family:'SF Mono',Menlo,monospace;font-size:14px;">
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn" onclick="saveYtcCode()" style="background:#3b82f6;color:#fff;padding:10px 16px;border:none;border-radius:8px;font-weight:600;cursor:pointer;">Save</button>
+          <button class="btn" onclick="disableYtc()" style="background:#7f1d1d;color:#fca5a5;padding:10px 16px;border:1px solid #991b1b;border-radius:8px;font-weight:600;cursor:pointer;">Disable feature</button>
+        </div>
       </div>
     </div>
 
@@ -2250,7 +2284,69 @@ function switchTab(tab, btn) {
   if (tab === 'vitals') loadVitals();
   if (tab === 'announcements') loadAnnouncements();
   if (tab === 'kolhalashon') { loadKHStatus(); loadKHSpeakers(); setTimeout(loadKHVitals, 300); }
+  if (tab === 'ytc') loadYtcCode();
   if (tab === 'settings') { loadTATStatus(); setTimeout(() => { loadAllOUStatuses(); loadTDStatus(); loadMergers(); loadGlobalMergeHistory(); }, 300); }
+}
+
+// YTC: load + save handlers for the access code panel. Backed by
+// /api/admin/config/ytc-unlock-code (server/routes.ts).
+async function loadYtcCode() {
+  const maskEl = document.getElementById('ytcCurrentMask');
+  const badgeEl = document.getElementById('ytcStatusBadge');
+  if (!maskEl || !badgeEl) return;
+  try {
+    const r = await fetch('/api/admin/config/ytc-unlock-code', { headers: authHeaders() });
+    const d = await r.json();
+    if (d.set) {
+      maskEl.textContent = d.mask || '••••';
+      badgeEl.textContent = 'Enabled';
+      badgeEl.className = 'status-badge status-active';
+    } else {
+      maskEl.textContent = '— (feature disabled, no code set)';
+      badgeEl.textContent = 'Disabled';
+      badgeEl.className = 'status-badge status-inactive';
+    }
+  } catch (e) {
+    maskEl.textContent = 'Error loading: ' + (e.message || e);
+  }
+}
+
+async function saveYtcCode() {
+  const input = document.getElementById('ytcCodeInput');
+  const alertEl = document.getElementById('ytcSaveAlert');
+  if (!input || !alertEl) return;
+  const value = (input.value || '').trim();
+  if (!value) { alertEl.innerHTML = '<div class="alert alert-error">Enter a code, or use "Disable feature" to clear.</div>'; return; }
+  try {
+    const r = await fetch('/api/admin/config/ytc-unlock-code', {
+      method: 'PUT',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value }),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    input.value = '';
+    alertEl.innerHTML = '<div class="alert alert-success">Saved. App clients will pick up the new code within ~5 min (config cache window).</div>';
+    loadYtcCode();
+  } catch (e) {
+    alertEl.innerHTML = '<div class="alert alert-error">Save failed: ' + (e.message || e) + '</div>';
+  }
+}
+
+async function disableYtc() {
+  if (!confirm('Disable YTC access? The unlock code will be cleared. The settings entry to enter the code will disappear from the app within ~5 min. Currently-unlocked devices stay unlocked until they sign out.')) return;
+  const alertEl = document.getElementById('ytcSaveAlert');
+  try {
+    const r = await fetch('/api/admin/config/ytc-unlock-code', {
+      method: 'PUT',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: '' }),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    if (alertEl) alertEl.innerHTML = '<div class="alert alert-success">YTC feature disabled.</div>';
+    loadYtcCode();
+  } catch (e) {
+    if (alertEl) alertEl.innerHTML = '<div class="alert alert-error">Disable failed: ' + (e.message || e) + '</div>';
+  }
 }
 
 function formatDate(dateStr) {

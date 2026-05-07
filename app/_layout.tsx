@@ -70,6 +70,11 @@ function RootLayoutNav({ initialRoute }: { initialRoute: string }) {
       <Stack.Screen name="legal" options={{ headerShown: false }} />
       <Stack.Screen name="messages" options={{ headerShown: false }} />
       <Stack.Screen name="feedback" options={{ headerShown: false }} />
+      {/* YTC: ytc-unlock is the access-code modal; ytc is the auth-gated
+           subtree (created in Phase 4). Both lazy-load when navigated to —
+           expo-router does not import their components at app start. */}
+      <Stack.Screen name="ytc-unlock" options={{ headerShown: false, presentation: "modal", animation: "slide_from_bottom" }} />
+      <Stack.Screen name="ytc" options={{ headerShown: false }} />
       <Stack.Screen
         name="podcast/[id]"
         options={{
