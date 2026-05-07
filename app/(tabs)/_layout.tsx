@@ -9,6 +9,12 @@ import Colors from "@/constants/colors";
 import { router } from "expo-router";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { setErrorContext } from "@/lib/error-logger";
+// YTC: conditional 6th tab — only shown when the admin has set an
+// unlock code AND this device has unlocked it. Hidden by default so
+// the feature stays invisible to all other users (kill-switch + opt-in).
+import { useRemoteConfig } from "@/contexts/RemoteConfigContext";
+import { useYtcUnlocked } from "@/lib/ytc/unlock";
+import { ytcColors } from "@/constants/ytcColors";
 
 /** Tab bar button that navigates on D-pad focus (Android) */
 function DpadTabButton({ children, onPress, accessibilityState, ...rest }: any) {
@@ -165,6 +171,15 @@ export default function TabLayout() {
   const isIOS = Platform.OS === "ios";
   const safeAreaInsets = useSafeAreaInsets();
   const isDesktopWeb = useIsDesktopWeb();
+  // YTC: tab visibility gate.
+  //  - admin must have set an unlock code (kill switch)
+  //  - this device must have unlocked locally
+  // Both false → tab is hidden via href: null. Settings remains the
+  // unlock entry point; once unlocked, the tab appears.
+  const remoteConfig = useRemoteConfig();
+  const ytcEnabled = !!(remoteConfig.config.ytcUnlockCode as string | null | undefined);
+  const ytcUnlocked = useYtcUnlocked();
+  const showYtcTab = !isWeb && ytcEnabled && ytcUnlocked;
 
   useKeyboardShortcuts();
   const pathname = usePathname();
@@ -251,6 +266,37 @@ export default function TabLayout() {
             // expo-router throws on web if href and tabBarButton are both set —
             // only attach the D-pad button when the tab is actually rendered.
             ...(isDesktopWeb ? {} : { tabBarButton: (props: any) => <DpadTabButton {...props} /> }),
+          }}
+        />
+        {/* YTC: 6th tab. Always-rendered Tabs.Screen (otherwise the
+             route doesn't resolve at runtime), but href is null when
+             the feature is disabled or this device is locked → tab is
+             hidden from the bar. tabBarButton overrides the default
+             tab-switch behaviour: tapping pushes /ytc as a
+             fullScreenModal instead of swapping the tab content (the
+             actual screen file at app/(tabs)/ytc.tsx is a no-op
+             redirect). Gold tint marks it visually distinct from the
+             rest of the bar — this is a "guest" surface, not a peer. */}
+        <Tabs.Screen
+          name="ytc"
+          options={{
+            title: "YTC",
+            href: showYtcTab ? undefined : null,
+            tabBarIcon: ({ focused }) => (
+              <Ionicons
+                name={focused ? "school" : "school-outline"}
+                size={22}
+                color={ytcColors.gold}
+              />
+            ),
+            tabBarButton: showYtcTab
+              ? (props: any) => (
+                  <DpadTabButton
+                    {...props}
+                    onPress={() => router.push("/ytc" as any)}
+                  />
+                )
+              : undefined,
           }}
         />
         <Tabs.Screen

@@ -564,44 +564,39 @@ function SettingsScreenInner() {
         </View>
       </View>
 
-      {/* YTC: section only renders when the admin has set an unlock code
-           AND (this device hasn't unlocked yet → "Enter access code" row,
-           OR has unlocked → "YTC Alumni" entry + lock row). When the
-           admin clears the code, both cases evaluate false and the whole
-           section is gone. Removable by deleting this block. */}
+      {/* YTC: settings becomes the unlock/lock surface only. The tab in
+           the bottom bar (app/(tabs)/_layout.tsx) is the daily-use
+           entry once unlocked, so this section just exposes:
+            - "Enter access code" when locked (and feature is enabled)
+            - "Disable YTC access" when unlocked (lets the user re-hide
+              the tab without sending the access code through chat).
+           If the admin disabled the feature entirely, the whole section
+           is hidden — kill switch. */}
       {ytcEnabled && (
         <View style={[styles.section, { borderColor: colors.cardBorder }]}>
           <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>YTC ALUMNI</Text>
           <View style={[styles.sectionContent, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
             {ytcUnlockedHere ? (
-              <>
-                <SettingRow
-                  icon={<Ionicons name="school" size={20} color={colors.accent} />}
-                  label="Open YTC Alumni"
-                  subtitle="Enabled on this device"
-                  onPress={() => { lightHaptic(); router.push("/ytc" as any); }}
-                />
-                <View style={[styles.divider, { backgroundColor: colors.border }]} />
-                <SettingRow
-                  icon={<Ionicons name="lock-closed" size={20} color={colors.accent} />}
-                  label="Disable YTC access"
-                  onPress={() => {
-                    Alert.alert(
-                      "Disable YTC",
-                      "This will hide the YTC section on this device. You can re-enter the access code at any time.",
-                      [
-                        { text: "Cancel", style: "cancel" },
-                        { text: "Disable", style: "destructive", onPress: async () => { await ytcLock(); } },
-                      ],
-                    );
-                  }}
-                />
-              </>
+              <SettingRow
+                icon={<Ionicons name="lock-closed" size={20} color={colors.accent} />}
+                label="Disable YTC access"
+                subtitle="Hide the YTC tab on this device"
+                onPress={() => {
+                  Alert.alert(
+                    "Disable YTC",
+                    "This will hide the YTC tab on this device. You can re-enter the access code anytime to bring it back.",
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      { text: "Disable", style: "destructive", onPress: async () => { await ytcLock(); } },
+                    ],
+                  );
+                }}
+              />
             ) : (
               <SettingRow
                 icon={<Ionicons name="key" size={20} color={colors.accent} />}
                 label="Enter access code"
-                subtitle="Unlocks the YTC Alumni section"
+                subtitle="Unlock the YTC Alumni section"
                 onPress={() => { lightHaptic(); router.push("/ytc-unlock" as any); }}
               />
             )}

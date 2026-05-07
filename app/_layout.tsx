@@ -71,10 +71,14 @@ function RootLayoutNav({ initialRoute }: { initialRoute: string }) {
       <Stack.Screen name="messages" options={{ headerShown: false }} />
       <Stack.Screen name="feedback" options={{ headerShown: false }} />
       {/* YTC: ytc-unlock is the access-code modal; ytc is the auth-gated
-           subtree (created in Phase 4). Both lazy-load when navigated to —
-           expo-router does not import their components at app start. */}
+           subtree, presented as a fullScreenModal so it takes over the
+           whole screen with the YTC palette / nav while ShiurPod's tab
+           bar sits underneath. The X button in app/ytc/_layout.tsx calls
+           router.back() to dismiss. Both routes lazy-load when navigated
+           to — expo-router does not import their components at app
+           start, so non-YTC users pay zero runtime cost. */}
       <Stack.Screen name="ytc-unlock" options={{ headerShown: false, presentation: "modal", animation: "slide_from_bottom" }} />
-      <Stack.Screen name="ytc" options={{ headerShown: false }} />
+      <Stack.Screen name="ytc" options={{ headerShown: false, presentation: "fullScreenModal", animation: "slide_from_bottom" }} />
       <Stack.Screen
         name="podcast/[id]"
         options={{
