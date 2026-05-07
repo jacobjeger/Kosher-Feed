@@ -1,49 +1,43 @@
-// Android ABI filter — keep arm64-v8a + armeabi-v7a only.
+// Limit which CPU architectures the EAS Android build includes.
 //
-// Why: a default EAS Android build produces a "fat" APK with native
-// libs for FOUR architectures (arm64-v8a, armeabi-v7a, x86, x86_64).
-// x86 and x86_64 are emulator-only — no real Android phone uses them.
-// They roughly DOUBLE the APK size for no user benefit.
+// React Native's `com.facebook.react` gradle plugin reads
+// `reactNativeArchitectures` from gradle.properties to decide which
+// JNI libs to compile + ship. Default is all 4 (armeabi-v7a, arm64-v8a,
+// x86, x86_64). x86 and x86_64 are emulator-only — no real Android
+// phone uses them — and they roughly double the APK size.
 //
-// This plugin injects ndk.abiFilters into android/app/build.gradle's
-// defaultConfig at prebuild time so EAS builds the APK with only the
-// two ARM variants we care about.
+// We modify gradle.properties at prebuild time via @expo/config-plugins'
+// withGradleProperties helper. EAS regenerates android/ on every build,
+// so editing the local file would have no effect on EAS-produced APKs;
+// the plugin path is the only one that survives the regeneration.
 //
-// Cuts APK size by ~40 MB on a typical ShiurPod build.
+// Earlier version of this plugin tried to inject ndk.abiFilters into
+// app/build.gradle's defaultConfig — that's the wrong knob in modern
+// RN/Expo (RN 0.71+). The com.facebook.react plugin produces JNI libs
+// for every arch in reactNativeArchitectures regardless of abiFilters,
+// and the resulting APK still contained x86 + x86_64.
 
-const { withAppBuildGradle } = require("@expo/config-plugins");
+const { withGradleProperties } = require("@expo/config-plugins");
 
-const KEEP_ABIS = ["arm64-v8a", "armeabi-v7a"];
+const KEEP_ABIS = ["armeabi-v7a", "arm64-v8a"];
 
 module.exports = function withAndroidAbiFilter(config) {
-  return withAppBuildGradle(config, (config) => {
-    let src = config.modResults.contents;
+  return withGradleProperties(config, (config) => {
+    const value = KEEP_ABIS.join(",");
+    const items = config.modResults;
 
-    // Idempotent: skip if we've already injected.
-    if (src.includes("// SHIURPOD_ABI_FILTERS")) return config;
-
-    // Find the defaultConfig block and inject ndk { abiFilters ... }
-    // immediately inside it. We anchor on `defaultConfig {` and add
-    // our snippet on the next line.
-    const anchor = "defaultConfig {";
-    const idx = src.indexOf(anchor);
-    if (idx === -1) {
-      // build.gradle layout changed — fail loudly so we notice.
-      throw new Error(
-        "[withAndroidAbiFilter] couldn't find 'defaultConfig {' in app build.gradle",
-      );
+    // Replace the existing reactNativeArchitectures line if present,
+    // otherwise append. Idempotent: a second prebuild leaves the
+    // value unchanged.
+    const existing = items.find(
+      (item) =>
+        item.type === "property" && item.key === "reactNativeArchitectures",
+    );
+    if (existing) {
+      existing.value = value;
+    } else {
+      items.push({ type: "property", key: "reactNativeArchitectures", value });
     }
-
-    const insertAt = idx + anchor.length;
-    const filterArgs = KEEP_ABIS.map((a) => `"${a}"`).join(", ");
-    const snippet = `
-        // SHIURPOD_ABI_FILTERS — keep ARM only, drop x86/x86_64 (emulator-only)
-        ndk {
-            abiFilters ${filterArgs}
-        }`;
-
-    src = src.slice(0, insertAt) + snippet + src.slice(insertAt);
-    config.modResults.contents = src;
     return config;
   });
 };
