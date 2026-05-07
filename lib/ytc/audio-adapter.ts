@@ -12,10 +12,28 @@
 import type { Episode, Feed } from "@/lib/types";
 import type { Shiur } from "@/types/ytc";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
-import { incrementPlayCount } from "@/lib/ytc/firebase";
+import { trackShiurPlay } from "@/lib/ytc/analytics";
 
 export const YTC_FEED_PREFIX = "ytc:feed:";
 export const YTC_EPISODE_PREFIX = "ytc:";
+
+/** Convert a Google Drive share URL into a direct-download URL the
+ *  player can stream. iOS's AudioPlayerManager.processAudioUrl does
+ *  the same — patterns matched: /file/d/{id}/, ?id={id}, /open?id={id}.
+ *  Pass-through for anything that doesn't match (most YTC shiurim are
+ *  already direct CDN URLs). */
+export function processYtcAudioUrl(url: string): string {
+  if (!url || !/drive\.google\.com/i.test(url)) return url;
+  let id: string | null = null;
+  const m1 = url.match(/\/file\/d\/([^/]+)/);
+  if (m1) id = m1[1];
+  if (!id) {
+    const m2 = url.match(/[?&]id=([^&]+)/);
+    if (m2) id = m2[1];
+  }
+  if (!id) return url;
+  return `https://drive.google.com/uc?export=download&id=${id}`;
+}
 
 /** True when the id was synthesized by this adapter (guards in shared code). */
 export function isYtcEpisodeId(id: string): boolean {
@@ -49,7 +67,7 @@ export function ytcShiurToEpisode(shiur: Shiur, feed: Feed): Episode {
     feedId: feed.id,
     title: shiur.title,
     description: shiur.description ?? null,
-    audioUrl: shiur.audioUrl ?? "",
+    audioUrl: processYtcAudioUrl(shiur.audioUrl ?? ""),
     duration: null, // YTC Shiur has no duration field; player computes from media
     publishedAt: shiur.date || null,
     guid: `${YTC_EPISODE_PREFIX}${shiur.id}`,
@@ -82,7 +100,10 @@ export function useYtcPlay() {
     const feed = ytcRebbeToFeed(shiur.rebbe || "YTC");
     const episode = ytcShiurToEpisode(shiur, feed);
     await playEpisode(episode, feed);
-    incrementPlayCount(shiur.id).catch(() => {});
+    // /api/track/play increments playCount AND writes the shiurPlays
+    // analytics doc atomically. Supersedes the old direct-Firestore
+    // incrementPlayCount call.
+    trackShiurPlay(shiur.id).catch(() => {});
   };
 }
 
@@ -110,7 +131,10 @@ export function useYtcPlayer() {
       const feed = ytcRebbeToFeed(shiur.rebbe || "YTC");
       const episode = ytcShiurToEpisode(shiur, feed);
       await playEpisode(episode, feed);
-      incrementPlayCount(shiur.id).catch(() => {});
+      // /api/track/play increments playCount AND writes the shiurPlays
+    // analytics doc atomically. Supersedes the old direct-Firestore
+    // incrementPlayCount call.
+    trackShiurPlay(shiur.id).catch(() => {});
     },
     pauseResume: async () => {
       if (playback.isPlaying) await pause();

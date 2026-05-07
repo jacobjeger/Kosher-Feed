@@ -72,3 +72,25 @@ export interface UserProfile {
   isApproved: boolean;
   isAdmin: boolean;
 }
+
+/** Curated thematic grouping of shiurim. Doc shape mirrors the website's
+ *  shiurCollections collection — see reference_ytc_backend memory. */
+export interface ShiurCollection {
+  id: string;
+  name: string;
+  description: string;
+  shiurIds: string[];
+  isActive: boolean;
+  createdAt?: string;
+}
+
+/** Photo gallery entry rendered on the home screen's "Alumni Spotlight"
+ *  section. Matches the iOS app's AlumniPhoto model. */
+export interface AlumniPhoto {
+  id: string;
+  url: string;
+  caption?: string;
+  name?: string;
+  year?: string;
+  order: number;
+}

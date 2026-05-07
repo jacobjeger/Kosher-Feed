@@ -10,11 +10,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { ytcColors as Colors } from "@/constants/ytcColors";
 import { fetchRebbeim, fetchApprovedAlumni, invalidateYtcCache } from "@/lib/ytc/firebase";
+import { useYtcAuth } from "@/contexts/YtcAuthContext";
+import { SubmitAlumniContactModal } from "@/components/ytc/SubmitAlumniContactModal";
 import type { Rebbe, AlumniContact } from "@/types/ytc";
 
 type ContactTab = "rebbeim" | "alumni";
 
 export default function ContactsScreen() {
+  const { user } = useYtcAuth();
   const [rebbeim, setRebbeim] = useState<Rebbe[]>([]);
   const [alumni, setAlumni] = useState<AlumniContact[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -23,6 +26,7 @@ export default function ContactsScreen() {
   const [alumniSearch, setAlumniSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [alumniPage, setAlumniPage] = useState(1);
+  const [showSubmit, setShowSubmit] = useState(false);
   const ALUMNI_PAGE_SIZE = 50;
 
   const loadData = async () => {
@@ -91,6 +95,21 @@ export default function ContactsScreen() {
           </TouchableOpacity>
         ))}
       </View>
+
+      {activeTab === "alumni" && user?.email && (
+        <TouchableOpacity style={styles.editMyInfoBtn} onPress={() => setShowSubmit(true)}>
+          <Ionicons name="person-add-outline" size={16} color={Colors.cream} />
+          <Text style={styles.editMyInfoText}>Add / edit your info</Text>
+        </TouchableOpacity>
+      )}
+
+      <SubmitAlumniContactModal
+        visible={showSubmit}
+        onClose={() => setShowSubmit(false)}
+        onSubmitted={() => { invalidateYtcCache("approvedAlumni").then(() => loadData()); }}
+        submitterEmail={user?.email ?? ""}
+        submitterDisplayName={user?.displayName ?? null}
+      />
 
       {isLoading ? (
         <View style={styles.loader}><ActivityIndicator size="large" color={Colors.navy} /></View>
@@ -243,4 +262,10 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 15, color: Colors.navyOpacity50 },
   loadMoreFooter: { flexDirection: "row", alignItems: "center", justifyContent: "center", padding: 16, gap: 8 },
   loadMoreText: { fontSize: 13, color: Colors.navyOpacity70 },
+  editMyInfoBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    backgroundColor: Colors.navy, marginHorizontal: 12, marginBottom: 8,
+    paddingVertical: 10, borderRadius: 10,
+  },
+  editMyInfoText: { color: Colors.cream, fontSize: 13, fontWeight: "500" },
 });

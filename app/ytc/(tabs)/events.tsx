@@ -1,16 +1,21 @@
 // YTC: events list. Verbatim port from
 // /tmp/ytc-source/expo-app/app/(tabs)/events.tsx with imports remapped.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, Platform, RefreshControl } from "react-native";
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, Platform, RefreshControl, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 import { ytcColors as Colors } from "@/constants/ytcColors";
 import { fetchEvents, invalidateYtcCache } from "@/lib/ytc/firebase";
+import { useYtcAuth } from "@/contexts/YtcAuthContext";
+import { SubmitSimchaModal } from "@/components/ytc/SubmitSimchaModal";
 import type { YtcEvent } from "@/types/ytc";
 
 export default function EventsScreen() {
+  const { user } = useYtcAuth();
   const [events, setEvents] = useState<YtcEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showSubmit, setShowSubmit] = useState(false);
 
   const loadEvents = async () => {
     try {
@@ -70,6 +75,12 @@ export default function EventsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
+      <SubmitSimchaModal
+        visible={showSubmit}
+        onClose={() => setShowSubmit(false)}
+        onSubmitted={() => { invalidateYtcCache("events").then(() => loadEvents()); }}
+        submitterEmail={user?.email ?? ""}
+      />
       <FlatList
         data={[]}
         keyExtractor={() => ""}
@@ -77,7 +88,13 @@ export default function EventsScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.navy} />}
         ListHeaderComponent={
           <>
-            <View style={styles.header}><Text style={styles.headerTitle}>Yeshiva Simchos</Text></View>
+            <View style={styles.header}>
+              <View style={{ width: 30 }} />
+              <Text style={styles.headerTitle}>Yeshiva Simchos</Text>
+              <TouchableOpacity onPress={() => setShowSubmit(true)} hitSlop={8} style={styles.headerAction}>
+                <Ionicons name="add-circle-outline" size={22} color={Colors.gold} />
+              </TouchableOpacity>
+            </View>
             <View style={styles.body}>
               {upcoming.length > 0 ? (
                 <View style={styles.section}>
@@ -106,7 +123,11 @@ export default function EventsScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.cream },
-  header: { backgroundColor: Colors.navy, paddingTop: 8, paddingBottom: 10, alignItems: "center" },
+  header: {
+    backgroundColor: Colors.navy, paddingTop: 8, paddingBottom: 10, paddingHorizontal: 12,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+  },
+  headerAction: { width: 30, height: 30, alignItems: "center", justifyContent: "center" },
   headerTitle: { color: Colors.cream, fontSize: 18, fontWeight: "bold", fontFamily: Platform.OS === "ios" ? "Georgia" : "serif" },
   loader: { flex: 1, justifyContent: "center", alignItems: "center" },
   body: { padding: 16, gap: 24, paddingBottom: 120 },

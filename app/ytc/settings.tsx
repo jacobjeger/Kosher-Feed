@@ -26,6 +26,13 @@ import {
   type YtcAutoDownloadMode, type YtcDownloadSettings, type AutoDownloadResult,
 } from "@/lib/ytc/downloads";
 import { useDownloads } from "@/contexts/DownloadsContext";
+import {
+  getMasterPrefs, setMasterPref, getSubscribedRebbeim, isRebbeSubscribed,
+  subscribeToRebbe, unsubscribeFromRebbe, isYtcPushConfigured, rebbeTopic,
+  type DefaultTopic,
+} from "@/lib/ytc/push";
+import { fetchRebbeim } from "@/lib/ytc/firebase";
+import type { Rebbe } from "@/types/ytc";
 
 const MAX_ITEM_OPTIONS: { label: string; value: number }[] = [
   { label: "50",        value: 50 },
@@ -52,12 +59,22 @@ export default function YtcSettingsScreen() {
   const [running, setRunning] = useState(false);
   const [lastResult, setLastResult] = useState<AutoDownloadResult | null>(null);
 
+  // Push state
+  const [pushConfigured, setPushConfigured] = useState(false);
+  const [masterPrefs, setMasterPrefs] = useState<{ announcements: boolean; new_shiurim: boolean; simchas: boolean; events: boolean } | null>(null);
+  const [pushRebbeim, setPushRebbeim] = useState<Rebbe[]>([]);
+  const [subscribedRebbeTopics, setSubscribedRebbeTopics] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     getYtcDownloadSettings().then(setSettings);
     listAllRebbeim()
       .then(setRebbeim)
       .catch(() => setRebbeim([]))
       .finally(() => setRebbeimLoading(false));
+    isYtcPushConfigured().then(setPushConfigured);
+    getMasterPrefs().then(setMasterPrefs);
+    getSubscribedRebbeim().then((arr) => setSubscribedRebbeTopics(new Set(arr)));
+    fetchRebbeim().then((r) => setPushRebbeim(r as Rebbe[])).catch(() => {});
   }, []);
 
   const ytcDownloadCount = useMemo(
@@ -91,6 +108,35 @@ export default function YtcSettingsScreen() {
     const result = await runYtcAutoDownload(downloadsCtx);
     setLastResult(result);
     setRunning(false);
+  };
+
+  const togglePushMaster = async (topic: DefaultTopic, value: boolean) => {
+    if (!masterPrefs) return;
+    // Optimistic.
+    setMasterPrefs({ ...masterPrefs, [topic]: value });
+    try { await setMasterPref(topic, value); }
+    catch {
+      setMasterPrefs({ ...masterPrefs }); // rollback to previous state
+      Alert.alert("Couldn't update", "Please try again.");
+    }
+  };
+
+  const togglePushRebbe = async (name: string) => {
+    const t = rebbeTopic(name);
+    const wasSubscribed = subscribedRebbeTopics.has(t);
+    // Optimistic.
+    const next = new Set(subscribedRebbeTopics);
+    if (wasSubscribed) next.delete(t); else next.add(t);
+    setSubscribedRebbeTopics(next);
+    try {
+      if (wasSubscribed) await unsubscribeFromRebbe(name);
+      else await subscribeToRebbe(name);
+    } catch {
+      // Rollback.
+      const back = new Set(subscribedRebbeTopics);
+      setSubscribedRebbeTopics(back);
+      Alert.alert("Couldn't update", "Please try again.");
+    }
   };
 
   const deleteAll = async () => {
@@ -127,6 +173,64 @@ export default function YtcSettingsScreen() {
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 80 }}>
+
+        <Text style={styles.sectionTitle}>Notifications</Text>
+        {!pushConfigured && (
+          <View style={styles.warnCard}>
+            <Ionicons name="alert-circle-outline" size={20} color={Colors.error} />
+            <Text style={styles.warnText}>
+              Push notifications are pending Firebase setup. The toggles save your preference but won't deliver until the app is built with the YTC project's google-services.json.
+            </Text>
+          </View>
+        )}
+        {masterPrefs && (
+          <View style={styles.card}>
+            {([
+              ["announcements", "Announcements", "General announcements from the yeshiva"],
+              ["new_shiurim", "New Shiurim", "Get notified for every new shiur posted"],
+              ["simchas", "Simchas & Mazel Tovs", "When fellow alumni share simchas"],
+              ["events", "Events", "Yeshiva events"],
+            ] as Array<[DefaultTopic, string, string]>).map(([topic, label, sub]) => (
+              <View key={topic} style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowTitle}>{label}</Text>
+                  <Text style={styles.rowSubtitleInline}>{sub}</Text>
+                </View>
+                <Switch
+                  value={masterPrefs[topic]}
+                  onValueChange={(v) => togglePushMaster(topic, v)}
+                  trackColor={{ false: Colors.navyOpacity30, true: Colors.gold }}
+                  thumbColor={Platform.OS === "android" ? Colors.cream : undefined}
+                />
+              </View>
+            ))}
+          </View>
+        )}
+
+        {pushRebbeim.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>Per-rebbe notifications</Text>
+            <View style={styles.card}>
+              {pushRebbeim.map((r) => {
+                const subscribed = subscribedRebbeTopics.has(rebbeTopic(r.name));
+                return (
+                  <View key={r.id} style={styles.row}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.rowTitle} numberOfLines={1}>{r.name}</Text>
+                      {r.title ? <Text style={styles.rowSubtitleInline}>{r.title}</Text> : null}
+                    </View>
+                    <Switch
+                      value={subscribed}
+                      onValueChange={() => togglePushRebbe(r.name)}
+                      trackColor={{ false: Colors.navyOpacity30, true: Colors.gold }}
+                      thumbColor={Platform.OS === "android" ? Colors.cream : undefined}
+                    />
+                  </View>
+                );
+              })}
+            </View>
+          </>
+        )}
 
         <Text style={styles.sectionTitle}>Auto-download</Text>
         <View style={styles.card}>
@@ -305,6 +409,14 @@ const styles = StyleSheet.create({
   },
   rowTitle: { fontSize: 14, color: Colors.navy, fontWeight: "500" },
   rowSubtitle: { fontSize: 12, color: Colors.navyOpacity70, marginTop: 2, paddingHorizontal: 14, paddingBottom: 10 },
+  rowSubtitleInline: { fontSize: 12, color: Colors.navyOpacity70, marginTop: 2 },
+  warnCard: {
+    flexDirection: "row", gap: 8, alignItems: "flex-start",
+    marginHorizontal: 12, padding: 12, borderRadius: 10,
+    backgroundColor: "rgba(220, 38, 38, 0.08)",
+    borderWidth: 1, borderColor: "rgba(220, 38, 38, 0.2)",
+  },
+  warnText: { flex: 1, fontSize: 12, color: Colors.navy, lineHeight: 17 },
   rowValue: { fontSize: 14, color: Colors.navy, fontWeight: "600" },
   rowChips: { flexDirection: "row", gap: 8, padding: 12, flexWrap: "wrap" },
   chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: Colors.creamDark },

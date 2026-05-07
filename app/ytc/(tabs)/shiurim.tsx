@@ -14,6 +14,8 @@ import type { Shiur } from "@/types/ytc";
 import { useYtcPlayer, YTC_EPISODE_PREFIX, ytcShiurToEpisodeAndFeed } from "@/lib/ytc/audio-adapter";
 import { usePositions } from "@/contexts/PositionsContext";
 import { useDownloads } from "@/contexts/DownloadsContext";
+import { trackShiurDownload } from "@/lib/ytc/analytics";
+import { useSavedShiurim } from "@/lib/ytc/useSavedShiurim";
 
 type SortOrder = "dateDesc" | "dateAsc" | "titleAZ" | "rebbeAZ";
 
@@ -30,6 +32,7 @@ export default function ShiurimScreen() {
   const { currentShiurId, isPlaying, isLoading: audioLoading, play, pauseResume } = useYtcPlayer();
   const { getPosition } = usePositions();
   const { downloadEpisode, removeDownload, isDownloaded, isDownloading, downloadProgress } = useDownloads();
+  const { isSaved, toggleSaved } = useSavedShiurim();
 
   const [shiurim, setShiurim] = useState<Shiur[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -38,6 +41,9 @@ export default function ShiurimScreen() {
   const [sortOrder, setSortOrder] = useState<SortOrder>("dateDesc");
   const [selectedRebbeFilter, setSelectedRebbeFilter] = useState<string | null>(null);
   const [selectedTagFilter, setSelectedTagFilter] = useState<string | null>(null);
+  const [selectedSeriesFilter, setSelectedSeriesFilter] = useState<string | null>(null);
+  const [showSavedOnly, setShowSavedOnly] = useState(false);
+  const [showInProgressOnly, setShowInProgressOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -62,6 +68,10 @@ export default function ShiurimScreen() {
 
   const allRebbeim = useMemo(() => [...new Set(shiurim.map((s) => s.rebbe))].sort(), [shiurim]);
   const allTags = useMemo(() => [...new Set(shiurim.flatMap((s) => s.tags))].sort(), [shiurim]);
+  const allSeries = useMemo(
+    () => [...new Set(shiurim.map((s) => s.series).filter(Boolean) as string[])].sort(),
+    [shiurim],
+  );
 
   const filtered = useMemo(() => {
     let result = [...shiurim];
@@ -77,6 +87,16 @@ export default function ShiurimScreen() {
     }
     if (selectedRebbeFilter) result = result.filter((s) => s.rebbe === selectedRebbeFilter);
     if (selectedTagFilter) result = result.filter((s) => s.tags.includes(selectedTagFilter));
+    if (selectedSeriesFilter) result = result.filter((s) => s.series === selectedSeriesFilter);
+    if (showSavedOnly) result = result.filter((s) => isSaved(s.id));
+    if (showInProgressOnly) {
+      result = result.filter((s) => {
+        const pos = getPosition(`${YTC_EPISODE_PREFIX}${s.id}`);
+        if (!pos || pos.durationMs <= 0 || pos.positionMs <= 0) return false;
+        const pct = pos.positionMs / pos.durationMs;
+        return pct > 0 && pct < 0.95;
+      });
+    }
 
     switch (sortOrder) {
       case "dateAsc": result.sort((a, b) => a.date.localeCompare(b.date)); break;
@@ -85,9 +105,11 @@ export default function ShiurimScreen() {
       default: result.sort((a, b) => b.date.localeCompare(a.date));
     }
     return result;
-  }, [shiurim, search, selectedRebbeFilter, selectedTagFilter, sortOrder]);
+  }, [shiurim, search, selectedRebbeFilter, selectedTagFilter, selectedSeriesFilter, showSavedOnly, showInProgressOnly, isSaved, getPosition, sortOrder]);
 
-  const hasFilters = !!selectedRebbeFilter || !!selectedTagFilter;
+  const hasFilters =
+    !!selectedRebbeFilter || !!selectedTagFilter || !!selectedSeriesFilter ||
+    showSavedOnly || showInProgressOnly;
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr + "T00:00:00");
@@ -104,6 +126,7 @@ export default function ShiurimScreen() {
     const completed = hasProgress && pct >= 95;
     const downloaded = isDownloaded(epId);
     const downloading = isDownloading(epId);
+    const saved2 = isSaved(item.id);
     const dlPct = downloading ? (downloadProgress.get(epId) || 0) : 0;
     const onDownloadPress = () => {
       if (!item.audioUrl) return;
@@ -120,6 +143,9 @@ export default function ShiurimScreen() {
       }
       if (downloading) return;
       const { episode, feed } = ytcShiurToEpisodeAndFeed(item);
+      // Fire analytics + downloadCount increment via the YTC track endpoint
+      // BEFORE handing off to the downloader. Fire-and-forget; UI never waits.
+      trackShiurDownload(item.id).catch(() => {});
       downloadEpisode(episode, feed);
     };
     return (
@@ -149,6 +175,9 @@ export default function ShiurimScreen() {
               {!downloading && completed && <Text style={styles.completedText}>Completed</Text>}
             </View>
           </View>
+          <TouchableOpacity onPress={() => toggleSaved(item.id)} hitSlop={8} style={styles.downloadBtn}>
+            <Ionicons name={saved2 ? "heart" : "heart-outline"} size={20} color={saved2 ? Colors.gold : Colors.navyOpacity70} />
+          </TouchableOpacity>
           {item.audioUrl && (
             <TouchableOpacity onPress={onDownloadPress} hitSlop={8} style={styles.downloadBtn}>
               {downloading
@@ -204,10 +233,28 @@ export default function ShiurimScreen() {
         </TouchableOpacity>
       </View>
 
-      {hasFilters && (
+      <View style={styles.quickFilters}>
+        <TouchableOpacity
+          style={[styles.quickChip, showSavedOnly && styles.quickChipActive]}
+          onPress={() => setShowSavedOnly((v) => !v)}
+        >
+          <Ionicons name={showSavedOnly ? "heart" : "heart-outline"} size={14} color={showSavedOnly ? Colors.cream : Colors.navy} />
+          <Text style={[styles.quickChipText, showSavedOnly && styles.quickChipTextActive]}>Saved</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.quickChip, showInProgressOnly && styles.quickChipActive]}
+          onPress={() => setShowInProgressOnly((v) => !v)}
+        >
+          <Ionicons name={showInProgressOnly ? "play-circle" : "play-circle-outline"} size={14} color={showInProgressOnly ? Colors.cream : Colors.navy} />
+          <Text style={[styles.quickChipText, showInProgressOnly && styles.quickChipTextActive]}>In progress</Text>
+        </TouchableOpacity>
+      </View>
+
+      {(selectedRebbeFilter || selectedTagFilter || selectedSeriesFilter) && (
         <View style={styles.activeFilters}>
           {selectedRebbeFilter && <TouchableOpacity style={styles.filterChip} onPress={() => setSelectedRebbeFilter(null)}><Text style={styles.filterChipText}>{selectedRebbeFilter} ✕</Text></TouchableOpacity>}
           {selectedTagFilter && <TouchableOpacity style={styles.filterChip} onPress={() => setSelectedTagFilter(null)}><Text style={styles.filterChipText}>{selectedTagFilter} ✕</Text></TouchableOpacity>}
+          {selectedSeriesFilter && <TouchableOpacity style={styles.filterChip} onPress={() => setSelectedSeriesFilter(null)}><Text style={styles.filterChipText}>{selectedSeriesFilter} ✕</Text></TouchableOpacity>}
         </View>
       )}
 
@@ -263,9 +310,22 @@ export default function ShiurimScreen() {
                 ))}
               </View>
             </>}
+            {allSeries.length > 0 && <>
+              <Text style={styles.filterSectionTitle}>Filter by Series</Text>
+              <TouchableOpacity style={styles.filterOption} onPress={() => setSelectedSeriesFilter(null)}>
+                <Text style={styles.filterOptionText}>All Series</Text>
+                {!selectedSeriesFilter && <Ionicons name="checkmark" size={18} color={Colors.gold} />}
+              </TouchableOpacity>
+              {allSeries.map((s) => (
+                <TouchableOpacity key={s} style={styles.filterOption} onPress={() => setSelectedSeriesFilter(selectedSeriesFilter === s ? null : s)}>
+                  <Text style={styles.filterOptionText}>{s}</Text>
+                  {selectedSeriesFilter === s && <Ionicons name="checkmark" size={18} color={Colors.gold} />}
+                </TouchableOpacity>
+              ))}
+            </>}
           </ScrollView>
           <View style={styles.modalFooter}>
-            <TouchableOpacity style={styles.clearBtn} onPress={() => { setSelectedRebbeFilter(null); setSelectedTagFilter(null); setSortOrder("dateDesc"); }}>
+            <TouchableOpacity style={styles.clearBtn} onPress={() => { setSelectedRebbeFilter(null); setSelectedTagFilter(null); setSelectedSeriesFilter(null); setShowSavedOnly(false); setShowInProgressOnly(false); setSortOrder("dateDesc"); }}>
               <Text style={styles.clearBtnText}>Clear All</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.applyBtn} onPress={() => setShowFilters(false)}>
@@ -288,6 +348,15 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontSize: 15, color: Colors.navy },
   filterBtn: { width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.creamDark, alignItems: "center", justifyContent: "center" },
   filterBtnActive: { backgroundColor: Colors.navy },
+  quickFilters: { flexDirection: "row", paddingHorizontal: 12, paddingTop: 6, paddingBottom: 4, gap: 8, backgroundColor: Colors.white },
+  quickChip: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16,
+    backgroundColor: Colors.creamDark,
+  },
+  quickChipActive: { backgroundColor: Colors.navy },
+  quickChipText: { fontSize: 12, color: Colors.navy, fontWeight: "500" },
+  quickChipTextActive: { color: Colors.cream },
   activeFilters: { flexDirection: "row", flexWrap: "wrap", paddingHorizontal: 12, paddingVertical: 6, gap: 8, backgroundColor: Colors.white },
   filterChip: { backgroundColor: Colors.goldOpacity15, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4 },
   filterChipText: { fontSize: 12, color: Colors.navy, fontWeight: "500" },

@@ -19,6 +19,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { isOnWifi } from "@/lib/network";
 import { fetchShiurim } from "@/lib/ytc/firebase";
 import { ytcShiurToEpisodeAndFeed, isYtcEpisodeId } from "@/lib/ytc/audio-adapter";
+import { trackShiurDownload } from "@/lib/ytc/analytics";
 import type { Shiur } from "@/types/ytc";
 import type { Episode, Feed, DownloadedEpisode } from "@/lib/types";
 
@@ -236,6 +237,9 @@ export async function runYtcAutoDownload(ctx: DownloadsLike): Promise<AutoDownlo
     try {
       // DownloadsContext.downloadEpisode handles queueing + concurrency.
       // Don't await — we want to let the queue run in the background.
+      // Fire analytics for each queued item; the track endpoint handles
+      // downloadCount increment too.
+      trackShiurDownload(s.id).catch(() => {});
       ctx.downloadEpisode(episode, feed).catch(() => {});
       queued += 1;
     } catch {}

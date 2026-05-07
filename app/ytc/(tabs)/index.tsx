@@ -17,12 +17,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { ytcColors as Colors } from "@/constants/ytcColors";
 import { useYtcAuth } from "@/contexts/YtcAuthContext";
-import { fetchCarouselImages, fetchAnnouncements, fetchUpcomingEvents, fetchMostRecentShiur, invalidateYtcCache } from "@/lib/ytc/firebase";
-import type { CarouselImage, Announcement, YtcEvent, Shiur } from "@/types/ytc";
+import { fetchCarouselImages, fetchAnnouncements, fetchUpcomingEvents, fetchMostRecentShiur, fetchActiveCollections, fetchAlumniPhotos, invalidateYtcCache } from "@/lib/ytc/firebase";
+import type { CarouselImage, Announcement, YtcEvent, Shiur, ShiurCollection, AlumniPhoto } from "@/types/ytc";
 import { useYtcPlay, YTC_EPISODE_PREFIX } from "@/lib/ytc/audio-adapter";
 import { usePositions } from "@/contexts/PositionsContext";
 import { useDownloads } from "@/contexts/DownloadsContext";
 import { runYtcAutoDownload } from "@/lib/ytc/downloads";
+import { startYtcPositionSync, hydrateYtcPositions } from "@/lib/ytc/position-sync";
+import { bootstrapYtcPush, requestNotificationPermission } from "@/lib/ytc/push";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -40,12 +42,28 @@ export default function HomeScreen() {
     if (autoRanRef.current) return;
     autoRanRef.current = true;
     runYtcAutoDownload(downloadsCtx).catch(() => {});
+    // Multi-device position sync: pull remote saved positions into local
+    // AsyncStorage, then start a debounced upload loop on every position
+    // change. Both fire-and-forget; failures don't block anything.
+    hydrateYtcPositions().catch(() => {});
+    startYtcPositionSync();
+    // Push: ask for notification permission once, then subscribe to
+    // default topics (idempotent — gated by a one-shot AsyncStorage flag).
+    // Both no-op when @react-native-firebase/messaging isn't pointed at
+    // the YTC Firebase project; the warning banner in /ytc/settings
+    // tells the user.
+    (async () => {
+      try { await requestNotificationPermission(); } catch {}
+      try { await bootstrapYtcPush(); } catch {}
+    })();
   }, []);
 
   const [carouselImages, setCarouselImages] = useState<CarouselImage[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<YtcEvent[]>([]);
   const [recentShiur, setRecentShiur] = useState<Shiur | null>(null);
+  const [collections, setCollections] = useState<ShiurCollection[]>([]);
+  const [alumniPhotos, setAlumniPhotos] = useState<AlumniPhoto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [carouselIndex, setCarouselIndex] = useState(0);
@@ -53,16 +71,20 @@ export default function HomeScreen() {
 
   const loadData = async () => {
     try {
-      const [images, anns, events, shiur] = await Promise.all([
+      const [images, anns, events, shiur, cols, photos] = await Promise.all([
         fetchCarouselImages(),
         fetchAnnouncements(),
         fetchUpcomingEvents(3),
         fetchMostRecentShiur(),
+        fetchActiveCollections(),
+        fetchAlumniPhotos(),
       ]);
       setCarouselImages(images as CarouselImage[]);
       setAnnouncements(anns as Announcement[]);
       setUpcomingEvents(events as YtcEvent[]);
       setRecentShiur(shiur as Shiur | null);
+      setCollections(cols as ShiurCollection[]);
+      setAlumniPhotos(photos as AlumniPhoto[]);
     } catch (e) {
       console.error("YTC HomeScreen load error:", e);
     } finally {
@@ -80,6 +102,8 @@ export default function HomeScreen() {
       invalidateYtcCache("announcements"),
       invalidateYtcCache("upcomingEvents:3"),
       invalidateYtcCache("mostRecentShiur"),
+      invalidateYtcCache("shiurCollections:active"),
+      invalidateYtcCache("alumniPhotos"),
     ]);
     loadData();
   }, []);
@@ -222,6 +246,46 @@ export default function HomeScreen() {
               </View>
             );
           })()}
+
+          {collections.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Collections</Text>
+              {collections.map((c) => (
+                <TouchableOpacity
+                  key={c.id}
+                  style={styles.collectionCard}
+                  onPress={() => router.push(`/ytc/collections/${c.id}` as any)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.collectionName}>{c.name}</Text>
+                    {c.description ? <Text style={styles.collectionDesc} numberOfLines={2}>{c.description}</Text> : null}
+                    <Text style={styles.collectionCount}>{c.shiurIds.length} shiurim</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={Colors.navyOpacity50} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {alumniPhotos.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Alumni Spotlight</Text>
+              <FlatList
+                horizontal
+                data={alumniPhotos}
+                keyExtractor={(item) => item.id}
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 12, paddingRight: 16 }}
+                renderItem={({ item }) => (
+                  <View style={styles.spotlightCard}>
+                    <Image source={{ uri: item.url }} style={styles.spotlightImg} contentFit="cover" />
+                    {item.name ? <Text style={styles.spotlightName} numberOfLines={1}>{item.name}</Text> : null}
+                    {item.year ? <Text style={styles.spotlightYear}>{item.year}</Text> : null}
+                  </View>
+                )}
+              />
+            </View>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -291,6 +355,19 @@ const styles = StyleSheet.create({
   completedText: { fontSize: 12, color: Colors.navyOpacity50, marginTop: 4, fontWeight: "500" },
   progressTrack: { height: 3, backgroundColor: Colors.creamDark },
   progressFill: { height: 3, backgroundColor: Colors.gold },
+  collectionCard: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    backgroundColor: Colors.white, borderRadius: 12, padding: 14, marginBottom: 8,
+    shadowColor: Colors.black, shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+  },
+  collectionName: { fontSize: 14, fontWeight: "600", color: Colors.navy },
+  collectionDesc: { fontSize: 12, color: Colors.navyOpacity70, marginTop: 2 },
+  collectionCount: { fontSize: 11, color: Colors.gold, marginTop: 4, fontWeight: "500" },
+  spotlightCard: { width: 120, alignItems: "center" },
+  spotlightImg: { width: 120, height: 120, borderRadius: 12, backgroundColor: Colors.creamDark },
+  spotlightName: { fontSize: 12, fontWeight: "600", color: Colors.navy, marginTop: 6, textAlign: "center" },
+  spotlightYear: { fontSize: 11, color: Colors.navyOpacity50, marginTop: 1 },
   tags: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },
   tag: { backgroundColor: Colors.navyOpacity10, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20 },
   tagText: { fontSize: 11, color: Colors.navy },

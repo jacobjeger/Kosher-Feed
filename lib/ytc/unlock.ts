@@ -63,6 +63,13 @@ export async function lock(): Promise<void> {
     const { firebaseSignOutIfInitialized, invalidateYtcCache } = await import("@/lib/ytc/firebase");
     await firebaseSignOutIfInitialized();
     await invalidateYtcCache();
+    // Drop in-session analytics dedupe state so a future re-unlock starts fresh.
+    const { resetYtcAnalyticsSession } = await import("@/lib/ytc/analytics");
+    resetYtcAnalyticsSession();
+    // Tear down YTC topic subscriptions so a locked device stops
+    // receiving YTC pushes.
+    const { teardownYtcPush } = await import("@/lib/ytc/push");
+    await teardownYtcPush();
   } catch {}
   emit();
 }

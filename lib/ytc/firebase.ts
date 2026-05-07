@@ -123,6 +123,113 @@ export async function submitAccessRequest(email: string, name: string): Promise<
   });
 }
 
+/**
+ * Upload a simcha image to Firebase Storage and return its download URL.
+ * Path matches the website's user-facing flow: simcha-images/{ts}-{filename}.
+ * Pass either a local file URI (RN ImagePicker result) or a remote URL.
+ */
+export async function uploadSimchaImage(localUri: string, filename: string): Promise<string> {
+  const { app } = await getYtcFirebase();
+  const { getStorage, ref, uploadBytes, getDownloadURL } = await import("firebase/storage");
+  const storage = getStorage(app);
+  // RN's fetch() can resolve a local file: URI into a Blob the SDK uploads.
+  const res = await fetch(localUri);
+  const blob = await res.blob();
+  const safe = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = `simcha-images/${Date.now()}-${safe}`;
+  const r = ref(storage, path);
+  await uploadBytes(r, blob);
+  return getDownloadURL(r);
+}
+
+/**
+ * Submit a simcha for admin moderation. Writes to simchaSubmissions
+ * (NOT events) — admin approval creates the public events doc later.
+ * Mirrors the website's app/events/events-content.tsx flow.
+ */
+export async function submitSimcha(input: {
+  fullName: string;
+  simchaType: string;
+  date: string;
+  connection: string;
+  message: string;
+  imageUrl?: string | null;
+  submittedBy: string; // user email
+}): Promise<void> {
+  const { db } = await getYtcFirebase();
+  const { addDoc, collection, serverTimestamp } = await import("firebase/firestore");
+  await addDoc(collection(db, "simchaSubmissions"), {
+    fullName: input.fullName,
+    simchaType: input.simchaType,
+    date: input.date,
+    connection: input.connection,
+    message: input.message,
+    imageUrl: input.imageUrl ?? null,
+    submittedBy: input.submittedBy,
+    submittedAt: serverTimestamp(),
+    status: "new",
+  });
+}
+
+/**
+ * Submit (or update) the user's entry in the alumni contact directory.
+ * The website uses a setDoc-on-same-id pattern so a user can edit their
+ * own submission later. We follow the same pattern: doc id keyed by the
+ * submitter's email lowercased.
+ */
+export async function submitAlumniContact(input: {
+  name: string;
+  email: string | null;
+  phone: string | null;
+  location: string;
+  submittedBy: string; // user email
+}): Promise<void> {
+  const { db } = await getYtcFirebase();
+  const { doc, setDoc, getDoc, serverTimestamp } = await import("firebase/firestore");
+  const id = input.submittedBy.toLowerCase();
+  const ref = doc(db, "alumniContactSubmissions", id);
+  const existing = await getDoc(ref);
+  if (existing.exists()) {
+    // Edit: preserve original status + submittedAt, stamp updatedAt.
+    const old = existing.data();
+    await setDoc(ref, {
+      ...old,
+      name: input.name,
+      email: input.email,
+      phone: input.phone,
+      location: input.location,
+      updatedAt: serverTimestamp(),
+    });
+  } else {
+    await setDoc(ref, {
+      name: input.name,
+      email: input.email,
+      phone: input.phone,
+      location: input.location,
+      submittedBy: input.submittedBy,
+      submittedAt: serverTimestamp(),
+      status: "pending",
+    });
+  }
+}
+
+/** Fetch the current user's existing alumni-contact submission, if any. */
+export async function fetchMyAlumniContact(emailLower: string) {
+  const { db } = await getYtcFirebase();
+  const { doc, getDoc } = await import("firebase/firestore");
+  const snap = await getDoc(doc(db, "alumniContactSubmissions", emailLower));
+  if (!snap.exists()) return null;
+  const data = snap.data();
+  return {
+    id: snap.id,
+    name: (data.name ?? "") as string,
+    email: (data.email ?? null) as string | null,
+    phone: (data.phone ?? null) as string | null,
+    location: (data.location ?? "") as string,
+    status: (data.status ?? "pending") as "pending" | "approved" | "rejected",
+  };
+}
+
 // ─── Caching ────────────────────────────────────────────────────────────────
 //
 // Aggressive two-layer cache so every YTC screen loads instantly after
@@ -367,6 +474,72 @@ export async function fetchCarouselImages() {
       .map((d) => {
         const data = d.data();
         return { id: d.id, url: data.url ?? "", caption: data.caption as string | undefined, order: data.order ?? 0 };
+      })
+      .sort((a, b) => a.order - b.order);
+  });
+}
+
+// ─── Collections ────────────────────────────────────────────────────────────
+
+export async function fetchActiveCollections() {
+  return cached("shiurCollections:active", TTL_LIST, async () => {
+    const { db } = await getYtcFirebase();
+    const { collection, query, where, getDocs } = await import("firebase/firestore");
+    const snap = await getDocs(query(collection(db, "shiurCollections"), where("isActive", "==", true)));
+    return snap.docs
+      .map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          name: (data.name ?? "") as string,
+          description: (data.description ?? "") as string,
+          shiurIds: (data.shiurIds ?? []) as string[],
+          isActive: (data.isActive ?? false) as boolean,
+          createdAt: (data.createdAt ?? null) as string | null,
+        };
+      })
+      // Newest first; the iOS app sorts the same way.
+      .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+  });
+}
+
+export async function fetchCollectionById(id: string) {
+  // Cache per-id so a deep-link or repeated drill-in doesn't refetch.
+  return cached(`shiurCollection:${id}`, TTL_LIST, async () => {
+    const { db } = await getYtcFirebase();
+    const { doc, getDoc } = await import("firebase/firestore");
+    const snap = await getDoc(doc(db, "shiurCollections", id));
+    if (!snap.exists()) return null;
+    const data = snap.data();
+    return {
+      id: snap.id,
+      name: (data.name ?? "") as string,
+      description: (data.description ?? "") as string,
+      shiurIds: (data.shiurIds ?? []) as string[],
+      isActive: (data.isActive ?? false) as boolean,
+      createdAt: (data.createdAt ?? null) as string | null,
+    };
+  });
+}
+
+// ─── Alumni Spotlight ───────────────────────────────────────────────────────
+
+export async function fetchAlumniPhotos() {
+  return cached("alumniPhotos", TTL_LIST, async () => {
+    const { db } = await getYtcFirebase();
+    const { collection, getDocs } = await import("firebase/firestore");
+    const snap = await getDocs(collection(db, "alumniPhotos"));
+    return snap.docs
+      .map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          url: (data.url ?? "") as string,
+          caption: data.caption as string | undefined,
+          name: data.name as string | undefined,
+          year: data.year as string | undefined,
+          order: (data.order ?? 0) as number,
+        };
       })
       .sort((a, b) => a.order - b.order);
   });

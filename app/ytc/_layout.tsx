@@ -21,6 +21,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { YtcAuthProvider, useYtcAuth } from "@/contexts/YtcAuthContext";
 import { ytcColors } from "@/constants/ytcColors";
 import { lightHaptic } from "@/lib/haptics";
+import { YtcAnalyticsObserver } from "@/components/YtcAnalyticsObserver";
+import { YtcPushHost } from "@/components/ytc/YtcPushHost";
 
 function CloseButton() {
   const insets = useSafeAreaInsets();
@@ -74,8 +76,11 @@ function YtcGate() {
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="settings" />
+        <Stack.Screen name="collections/[id]" />
       </Stack>
       <CloseButton />
+      <YtcAnalyticsObserver />
+      <YtcPushHost />
     </View>
   );
 }
