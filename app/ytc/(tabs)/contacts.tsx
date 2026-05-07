@@ -29,6 +29,13 @@ export default function ContactsScreen() {
   const [showSubmit, setShowSubmit] = useState(false);
   const ALUMNI_PAGE_SIZE = 50;
 
+  // The signed-in user's own alumni entry — matches by lowercased email,
+  // since the website writes alumniContactSubmissions/{lowercaseEmail}.
+  // We highlight this row with a "You" badge + inline edit button so the
+  // user can find and update their own entry without scrolling the list.
+  const myAlumniId = (user?.email ?? "").toLowerCase();
+  const myAlumniEntry = alumni.find((a) => a.id === myAlumniId);
+
   const loadData = async () => {
     try {
       const [r, a] = await Promise.all([fetchRebbeim(), fetchApprovedAlumni()]);
@@ -96,10 +103,13 @@ export default function ContactsScreen() {
         ))}
       </View>
 
-      {activeTab === "alumni" && user?.email && (
+      {/* Top-of-list button only when the user does NOT yet have an
+           entry. After submitting, the user can edit inline from their
+           own card (look for the "You" badge). */}
+      {activeTab === "alumni" && user?.email && !myAlumniEntry && (
         <TouchableOpacity style={styles.editMyInfoBtn} onPress={() => setShowSubmit(true)}>
           <Ionicons name="person-add-outline" size={16} color={Colors.cream} />
-          <Text style={styles.editMyInfoText}>Add / edit your info</Text>
+          <Text style={styles.editMyInfoText}>Add yourself to the directory</Text>
         </TouchableOpacity>
       )}
 
@@ -167,12 +177,16 @@ export default function ContactsScreen() {
             )}
             renderItem={({ item: contact }) => {
               const isExpanded = expandedId === contact.id;
+              const isMine = contact.id === myAlumniId;
               return (
-                <TouchableOpacity style={styles.alumniCard} onPress={() => setExpandedId(isExpanded ? null : contact.id)}>
+                <TouchableOpacity style={[styles.alumniCard, isMine && styles.alumniCardMine]} onPress={() => setExpandedId(isExpanded ? null : contact.id)}>
                   <View style={styles.alumniRow}>
-                    <View style={styles.alumniAvatar}><Text style={styles.alumniAvatarText}>{contact.name[0]}</Text></View>
+                    <View style={[styles.alumniAvatar, isMine && styles.alumniAvatarMine]}><Text style={styles.alumniAvatarText}>{contact.name[0]}</Text></View>
                     <View style={styles.alumniInfo}>
-                      <Text style={styles.alumniName}>{contact.name}</Text>
+                      <View style={styles.alumniNameRow}>
+                        <Text style={styles.alumniName}>{contact.name}</Text>
+                        {isMine && <View style={styles.youBadge}><Text style={styles.youBadgeText}>You</Text></View>}
+                      </View>
                       {contact.location && <Text style={styles.alumniLocation}>📍 {contact.location}</Text>}
                     </View>
                     <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={16} color={Colors.navyOpacity50} />
@@ -193,6 +207,12 @@ export default function ContactsScreen() {
                           </TouchableOpacity>
                         )}
                       </View>
+                      {isMine && (
+                        <TouchableOpacity style={styles.editMyInline} onPress={() => setShowSubmit(true)}>
+                          <Ionicons name="create-outline" size={16} color={Colors.cream} />
+                          <Text style={styles.editMyInlineText}>Edit your info</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                   )}
                 </TouchableOpacity>
@@ -251,13 +271,24 @@ const styles = StyleSheet.create({
   sectionHeader: { backgroundColor: Colors.creamDark, paddingHorizontal: 16, paddingVertical: 6 },
   sectionHeaderText: { fontSize: 13, fontWeight: "700", color: Colors.navyOpacity50, letterSpacing: 0.5 },
   alumniCard: { backgroundColor: Colors.white, borderRadius: 12, marginBottom: 6, overflow: "hidden", shadowColor: Colors.black, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1 },
+  alumniCardMine: { borderWidth: 1, borderColor: Colors.gold },
   alumniRow: { flexDirection: "row", alignItems: "center", padding: 14, gap: 12 },
   alumniAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.navyOpacity10, alignItems: "center", justifyContent: "center" },
+  alumniAvatarMine: { backgroundColor: Colors.goldOpacity15 },
   alumniAvatarText: { fontSize: 16, fontWeight: "600", color: Colors.navy },
   alumniInfo: { flex: 1 },
+  alumniNameRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   alumniName: { fontSize: 15, fontWeight: "500", color: Colors.navy },
+  youBadge: { backgroundColor: Colors.gold, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10 },
+  youBadgeText: { fontSize: 10, color: Colors.navy, fontWeight: "700", letterSpacing: 0.4 },
   alumniLocation: { fontSize: 12, color: Colors.navyOpacity50, marginTop: 2 },
   alumniExpanded: { paddingHorizontal: 14, paddingBottom: 14 },
+  editMyInline: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    backgroundColor: Colors.navy, marginTop: 10,
+    paddingVertical: 10, borderRadius: 10,
+  },
+  editMyInlineText: { color: Colors.cream, fontSize: 13, fontWeight: "500" },
   empty: { alignItems: "center", padding: 40, gap: 12 },
   emptyText: { fontSize: 15, color: Colors.navyOpacity50 },
   loadMoreFooter: { flexDirection: "row", alignItems: "center", justifyContent: "center", padding: 16, gap: 8 },

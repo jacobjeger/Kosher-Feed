@@ -406,6 +406,21 @@ export async function fetchMostRecentShiur() {
   });
 }
 
+/** Admin-pinned "featured shiur". Returns null when disabled or unset.
+ *  Schema (matches iOS): settings/featuredShiur { enabled, shiurId }. */
+export async function fetchFeaturedShiur() {
+  return cached("featuredShiur", TTL_RECENT, async () => {
+    const { db } = await getYtcFirebase();
+    const { doc, getDoc } = await import("firebase/firestore");
+    const settingsSnap = await getDoc(doc(db, "settings", "featuredShiur"));
+    if (!settingsSnap.exists()) return null;
+    const data = settingsSnap.data() as { enabled?: boolean; shiurId?: string };
+    if (!data.enabled || !data.shiurId) return null;
+    const shiurSnap = await getDoc(doc(db, "shiurim", data.shiurId));
+    return docToShiur(shiurSnap);
+  });
+}
+
 export async function incrementPlayCount(shiurId: string) {
   // Not cached — fire-and-forget mutation. The home/list screens read
   // playCount from cached data, so the new count won't show until the

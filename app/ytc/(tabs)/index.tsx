@@ -9,7 +9,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View, Text, ScrollView, StyleSheet, FlatList, Dimensions,
-  TouchableOpacity, ActivityIndicator, RefreshControl, Platform,
+  TouchableOpacity, ActivityIndicator, RefreshControl, Platform, Pressable, Modal,
 } from "react-native";
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -17,7 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { ytcColors as Colors } from "@/constants/ytcColors";
 import { useYtcAuth } from "@/contexts/YtcAuthContext";
-import { fetchCarouselImages, fetchAnnouncements, fetchUpcomingEvents, fetchMostRecentShiur, fetchActiveCollections, fetchAlumniPhotos, invalidateYtcCache } from "@/lib/ytc/firebase";
+import { fetchCarouselImages, fetchAnnouncements, fetchUpcomingEvents, fetchMostRecentShiur, fetchFeaturedShiur, fetchActiveCollections, fetchAlumniPhotos, invalidateYtcCache } from "@/lib/ytc/firebase";
 import type { CarouselImage, Announcement, YtcEvent, Shiur, ShiurCollection, AlumniPhoto } from "@/types/ytc";
 import { useYtcPlay, YTC_EPISODE_PREFIX } from "@/lib/ytc/audio-adapter";
 import { usePositions } from "@/contexts/PositionsContext";
@@ -30,8 +30,11 @@ import { YtcFocusable } from "@/components/ytc/YtcFocusable";
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export default function HomeScreen() {
-  const { signOut } = useYtcAuth();
+  const { user, isAdmin, signOut } = useYtcAuth();
   const playShiur = useYtcPlay();
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+
+  const userInitial = (user?.displayName || user?.email || "?").trim().charAt(0).toUpperCase();
   const { getPosition } = usePositions();
   const downloadsCtx = useDownloads();
 
@@ -63,6 +66,7 @@ export default function HomeScreen() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<YtcEvent[]>([]);
   const [recentShiur, setRecentShiur] = useState<Shiur | null>(null);
+  const [featuredShiur, setFeaturedShiur] = useState<Shiur | null>(null);
   const [collections, setCollections] = useState<ShiurCollection[]>([]);
   const [alumniPhotos, setAlumniPhotos] = useState<AlumniPhoto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -72,11 +76,12 @@ export default function HomeScreen() {
 
   const loadData = async () => {
     try {
-      const [images, anns, events, shiur, cols, photos] = await Promise.all([
+      const [images, anns, events, shiur, featured, cols, photos] = await Promise.all([
         fetchCarouselImages(),
         fetchAnnouncements(),
         fetchUpcomingEvents(3),
         fetchMostRecentShiur(),
+        fetchFeaturedShiur(),
         fetchActiveCollections(),
         fetchAlumniPhotos(),
       ]);
@@ -84,6 +89,7 @@ export default function HomeScreen() {
       setAnnouncements(anns as Announcement[]);
       setUpcomingEvents(events as YtcEvent[]);
       setRecentShiur(shiur as Shiur | null);
+      setFeaturedShiur(featured as Shiur | null);
       setCollections(cols as ShiurCollection[]);
       setAlumniPhotos(photos as AlumniPhoto[]);
     } catch (e) {
@@ -103,6 +109,7 @@ export default function HomeScreen() {
       invalidateYtcCache("announcements"),
       invalidateYtcCache("upcomingEvents:3"),
       invalidateYtcCache("mostRecentShiur"),
+      invalidateYtcCache("featuredShiur"),
       invalidateYtcCache("shiurCollections:active"),
       invalidateYtcCache("alumniPhotos"),
     ]);
@@ -138,12 +145,12 @@ export default function HomeScreen() {
             <Text style={styles.headerTitle}>Yeshiva Toras Chaim</Text>
             <Text style={styles.headerSubtitle}>Alumni Portal</Text>
           </View>
-          <View style={styles.headerActions}>
-            <YtcFocusable onPress={() => router.push("/ytc/settings" as any)} hitSlop={8} style={styles.headerIconBtn} focusRadius={16}>
-              <Ionicons name="settings-outline" size={20} color={Colors.gold} />
-            </YtcFocusable>
-            <YtcFocusable onPress={signOut} style={styles.signOutBtn} focusRadius={6}><Text style={styles.signOutText}>Sign Out</Text></YtcFocusable>
-          </View>
+          {/* Profile circle that drops a menu — single nav surface for
+               settings / admin / sign-out, mirroring iOS HomeView profile
+               button. */}
+          <YtcFocusable onPress={() => setProfileMenuOpen(true)} hitSlop={8} style={styles.profileBtn} focusRadius={20}>
+            <Text style={styles.profileBtnInitial}>{userInitial}</Text>
+          </YtcFocusable>
         </View>
 
         {carouselImages.length > 0 && (
@@ -209,44 +216,32 @@ export default function HomeScreen() {
             </View>
           )}
 
-          {recentShiur && (() => {
-            const saved = getPosition(`${YTC_EPISODE_PREFIX}${recentShiur.id}`);
-            const hasProgress = saved && saved.durationMs > 0 && saved.positionMs > 0;
-            const pct = hasProgress ? Math.min(Math.round((saved!.positionMs / saved!.durationMs) * 100), 100) : 0;
-            const completed = hasProgress && pct >= 95;
-            return (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Latest Shiur</Text>
-                <View style={styles.shiurCardWrap}>
-                  <View style={styles.shiurCard}>
-                    <View style={styles.shiurInfo}>
-                      <Text style={styles.shiurTitle}>{recentShiur.title}</Text>
-                      <Text style={styles.shiurRebbeDate}>{recentShiur.rebbe} · {formatDate(recentShiur.date)}</Text>
-                      {hasProgress && !completed && (
-                        <Text style={styles.progressText}>{pct}% · {formatRemainingMin(saved!.positionMs, saved!.durationMs)}</Text>
-                      )}
-                      {completed && <Text style={styles.completedText}>Completed</Text>}
-                      {recentShiur.tags.length > 0 && (
-                        <View style={styles.tags}>
-                          {recentShiur.tags.slice(0, 3).map((tag) => <View key={tag} style={styles.tag}><Text style={styles.tagText}>{tag}</Text></View>)}
-                        </View>
-                      )}
-                    </View>
-                    {recentShiur.audioUrl && (
-                      <YtcFocusable style={styles.playBtn} onPress={() => playShiur(recentShiur)} focusRadius={24}>
-                        <Text style={styles.playIcon}>▶</Text>
-                      </YtcFocusable>
-                    )}
-                  </View>
-                  {hasProgress && !completed && (
-                    <View style={styles.progressTrack}>
-                      <View style={[styles.progressFill, { width: `${pct}%` }]} />
-                    </View>
-                  )}
-                </View>
-              </View>
-            );
-          })()}
+          {/* Featured shiur — admin-pinned via settings/featuredShiur.
+               Rendered with a gold-accented title to differentiate from
+               the most-recent slot below. */}
+          {featuredShiur && (
+            <ShiurHomeCard
+              shiur={featuredShiur}
+              sectionTitle="Featured Shiur"
+              isFeatured
+              getPosition={getPosition}
+              playShiur={playShiur}
+              formatDate={formatDate}
+            />
+          )}
+
+          {/* Most recent shiur — only shown when distinct from featured
+               (matches iOS behavior at HomeView.swift:71). */}
+          {recentShiur && recentShiur.id !== featuredShiur?.id && (
+            <ShiurHomeCard
+              shiur={recentShiur}
+              sectionTitle="Most Recent Shiur"
+              isFeatured={false}
+              getPosition={getPosition}
+              playShiur={playShiur}
+              formatDate={formatDate}
+            />
+          )}
 
           {collections.length > 0 && (
             <View style={styles.section}>
@@ -290,6 +285,47 @@ export default function HomeScreen() {
           )}
         </View>
       </ScrollView>
+
+      {/* Profile menu — anchored top-right, dismissable by backdrop tap.
+           Notification Settings entry is intentionally omitted while
+           YTC_PUSH_FEATURE_ENABLED is false (lib/ytc/push.ts). */}
+      <Modal
+        visible={profileMenuOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setProfileMenuOpen(false)}
+      >
+        <Pressable style={styles.menuBackdrop} onPress={() => setProfileMenuOpen(false)}>
+          <View style={styles.menuCard}>
+            <View style={styles.menuHeader}>
+              <View style={styles.menuAvatar}>
+                <Text style={styles.menuAvatarInitial}>{userInitial}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                {user?.displayName ? <Text style={styles.menuName} numberOfLines={1}>{user.displayName}</Text> : null}
+                {user?.email ? <Text style={styles.menuEmail} numberOfLines={1}>{user.email}</Text> : null}
+                {isAdmin ? <Text style={styles.menuAdminBadge}>Admin</Text> : null}
+              </View>
+            </View>
+            <YtcFocusable
+              style={styles.menuItem}
+              onPress={() => { setProfileMenuOpen(false); router.push("/ytc/settings" as any); }}
+              focusRadius={4}
+            >
+              <Ionicons name="settings-outline" size={18} color={Colors.navy} />
+              <Text style={styles.menuItemText}>Download Settings</Text>
+            </YtcFocusable>
+            <YtcFocusable
+              style={[styles.menuItem, styles.menuItemDanger]}
+              onPress={() => { setProfileMenuOpen(false); signOut(); }}
+              focusRadius={4}
+            >
+              <Ionicons name="log-out-outline" size={18} color={Colors.error} />
+              <Text style={[styles.menuItemText, styles.menuItemTextDanger]}>Sign Out</Text>
+            </YtcFocusable>
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -311,6 +347,57 @@ function formatRemainingMin(positionMs: number, durationMs: number): string {
   return `${m} min left`;
 }
 
+interface ShiurHomeCardProps {
+  shiur: Shiur;
+  sectionTitle: string;
+  isFeatured: boolean;
+  getPosition: (id: string) => { positionMs: number; durationMs: number } | null;
+  playShiur: (shiur: Shiur) => void;
+  formatDate: (dateStr: string) => string;
+}
+
+function ShiurHomeCard({ shiur, sectionTitle, isFeatured, getPosition, playShiur, formatDate }: ShiurHomeCardProps) {
+  const saved = getPosition(`${YTC_EPISODE_PREFIX}${shiur.id}`);
+  const hasProgress = saved && saved.durationMs > 0 && saved.positionMs > 0;
+  const pct = hasProgress ? Math.min(Math.round((saved!.positionMs / saved!.durationMs) * 100), 100) : 0;
+  const completed = hasProgress && pct >= 95;
+  return (
+    <View style={styles.section}>
+      <View style={styles.shiurSectionTitleRow}>
+        {isFeatured && <Ionicons name="star" size={14} color={Colors.gold} style={{ marginRight: 6 }} />}
+        <Text style={styles.sectionTitle}>{sectionTitle}</Text>
+      </View>
+      <View style={[styles.shiurCardWrap, isFeatured && styles.shiurCardWrapFeatured]}>
+        <View style={styles.shiurCard}>
+          <View style={styles.shiurInfo}>
+            <Text style={styles.shiurTitle}>{shiur.title}</Text>
+            <Text style={styles.shiurRebbeDate}>{shiur.rebbe} · {formatDate(shiur.date)}</Text>
+            {hasProgress && !completed && (
+              <Text style={styles.progressText}>{pct}% · {formatRemainingMin(saved!.positionMs, saved!.durationMs)}</Text>
+            )}
+            {completed && <Text style={styles.completedText}>Completed</Text>}
+            {shiur.tags.length > 0 && (
+              <View style={styles.tags}>
+                {shiur.tags.slice(0, 3).map((tag) => <View key={tag} style={styles.tag}><Text style={styles.tagText}>{tag}</Text></View>)}
+              </View>
+            )}
+          </View>
+          {shiur.audioUrl && (
+            <YtcFocusable style={styles.playBtn} onPress={() => playShiur(shiur)} focusRadius={24}>
+              <Text style={styles.playIcon}>▶</Text>
+            </YtcFocusable>
+          )}
+        </View>
+        {hasProgress && !completed && (
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${pct}%` }]} />
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.cream },
   loading: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: Colors.cream },
@@ -318,10 +405,46 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: Colors.navy, paddingHorizontal: 16, paddingVertical: 10 },
   headerTitle: { color: Colors.cream, fontSize: 16, fontWeight: "bold", fontFamily: Platform.OS === "ios" ? "Georgia" : "serif" },
   headerSubtitle: { color: Colors.creamOpacity70, fontSize: 11 },
-  headerActions: { flexDirection: "row", alignItems: "center", gap: 4 },
-  headerIconBtn: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
-  signOutBtn: { padding: 8 },
-  signOutText: { color: Colors.gold, fontSize: 13, fontWeight: "500" },
+  profileBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: Colors.gold,
+    alignItems: "center", justifyContent: "center",
+  },
+  profileBtnInitial: { color: Colors.navy, fontSize: 14, fontWeight: "700" },
+  menuBackdrop: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.4)",
+    paddingTop: 60, paddingHorizontal: 12, alignItems: "flex-end",
+  },
+  menuCard: {
+    backgroundColor: Colors.white, borderRadius: 12, minWidth: 240,
+    paddingVertical: 6, shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18,
+    shadowRadius: 12, elevation: 6,
+  },
+  menuHeader: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingHorizontal: 14, paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.creamDark,
+  },
+  menuAvatar: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: Colors.gold,
+    alignItems: "center", justifyContent: "center",
+  },
+  menuAvatarInitial: { color: Colors.navy, fontSize: 16, fontWeight: "700" },
+  menuName: { fontSize: 14, fontWeight: "600", color: Colors.navy },
+  menuEmail: { fontSize: 12, color: Colors.navyOpacity70, marginTop: 2 },
+  menuAdminBadge: {
+    fontSize: 10, color: Colors.gold, fontWeight: "700",
+    marginTop: 4, letterSpacing: 0.5,
+  },
+  menuItem: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingHorizontal: 14, paddingVertical: 12,
+  },
+  menuItemDanger: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.creamDark },
+  menuItemText: { fontSize: 14, color: Colors.navy, fontWeight: "500" },
+  menuItemTextDanger: { color: Colors.error },
   carouselContainer: { position: "relative" },
   carouselSlide: { width: SCREEN_WIDTH, height: 220 },
   carouselImage: { width: "100%", height: "100%" },
@@ -348,7 +471,9 @@ const styles = StyleSheet.create({
   eventFamily: { fontSize: 13, color: Colors.navyOpacity70, marginTop: 2 },
   eventLocation: { fontSize: 12, color: Colors.navyOpacity50, marginTop: 2 },
   eventTime: { fontSize: 12, color: Colors.gold, marginTop: 2, fontWeight: "500" },
+  shiurSectionTitleRow: { flexDirection: "row", alignItems: "center" },
   shiurCardWrap: { backgroundColor: Colors.white, borderRadius: 12, overflow: "hidden", shadowColor: Colors.black, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 2 },
+  shiurCardWrapFeatured: { borderWidth: 1, borderColor: Colors.gold },
   shiurCard: { flexDirection: "row", padding: 16, gap: 12, alignItems: "center" },
   shiurInfo: { flex: 1 },
   shiurTitle: { fontSize: 15, fontWeight: "600", color: Colors.navy, marginBottom: 4 },
