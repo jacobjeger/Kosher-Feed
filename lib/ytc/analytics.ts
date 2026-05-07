@@ -83,29 +83,48 @@ async function getCurrentUserFields(): Promise<{
 }
 
 async function postTrack(path: "play" | "download" | "pageview", body: Record<string, unknown>): Promise<TrackResult> {
+  const url = `${TRACK_BASE}/api/track/${path}`;
+  let auth: Record<string, string> = {};
+  let ids: { userId: string | null; userEmail: string | null; userName: string | null } = { userId: null, userEmail: null, userName: null };
   try {
-    const auth = await getAuthHeader();
-    const { userId, userEmail, userName } = await getCurrentUserFields();
-    const res = await fetch(`${TRACK_BASE}/api/track/${path}`, {
+    auth = await getAuthHeader();
+    ids = await getCurrentUserFields();
+    const fullBody = {
+      userId: ids.userId, userEmail: ids.userEmail, userName: ids.userName,
+      platform: PLATFORM,
+      userAgent: USER_AGENT,
+      ...body,
+    };
+    const res = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         ...auth,
       },
-      body: JSON.stringify({
-        userId, userEmail, userName,
-        platform: PLATFORM,
-        userAgent: USER_AGENT,
-        ...body,
-      }),
+      body: JSON.stringify(fullBody),
     });
     if (!res.ok) {
-      const err = `HTTP ${res.status}`;
-      addLog("warn", `YTC track ${path} failed: ${err}`, undefined, "ytc-analytics");
-      return { ok: false, error: err };
+      // Read the body so we know WHY it failed. console.error lands in
+      // logcat under the ReactNativeJS tag in release Hermes builds —
+      // diagnosis from `adb logcat | grep ReactNativeJS` works.
+      let respText = "";
+      try { respText = await res.text(); } catch {}
+      // eslint-disable-next-line no-console
+      console.error(
+        `[ytc-analytics] track ${path} FAILED status=${res.status} body=${respText.slice(0, 300)} ` +
+        `auth=${auth.Authorization ? "yes" : "no"} userId=${ids.userId ?? "null"}`,
+      );
+      addLog("warn", `YTC track ${path} HTTP ${res.status}: ${respText.slice(0, 200)}`, undefined, "ytc-analytics");
+      return { ok: false, error: `HTTP ${res.status}` };
     }
+    // Success — also log so we can confirm in logcat that calls are
+    // landing. Keep terse so it doesn't flood the buffer.
+    // eslint-disable-next-line no-console
+    console.log(`[ytc-analytics] track ${path} ok auth=${auth.Authorization ? "yes" : "no"} userId=${ids.userId ?? "anon"}`);
     return { ok: true };
   } catch (e: any) {
+    // eslint-disable-next-line no-console
+    console.error(`[ytc-analytics] track ${path} threw:`, e?.message || e, `url=${url}`);
     addLog("warn", `YTC track ${path} error: ${e?.message || e}`, undefined, "ytc-analytics");
     return { ok: false, error: e?.message || String(e) };
   }
@@ -158,4 +177,18 @@ export async function trackScreenView(path: string, referrer?: string | null): P
 export function resetYtcAnalyticsSession(): void {
   _playedThisSession.clear();
   _viewedAt.clear();
+}
+
+/** Diagnostic: forces a pageview write to /diagnostic-ping with a known
+ *  shape, returns the full result + status. Useful for ruling out
+ *  network/auth issues from the device — call it from a screen mount
+ *  or via DevTools and watch logcat. Doesn't dedupe. */
+export async function pingYtcAnalytics(): Promise<TrackResult & { url: string }> {
+  const url = `${TRACK_BASE}/api/track/pageview`;
+  // eslint-disable-next-line no-console
+  console.log(`[ytc-analytics] PING -> ${url}`);
+  const result = await postTrack("pageview", { path: "/diagnostic-ping", referrer: null });
+  // eslint-disable-next-line no-console
+  console.log(`[ytc-analytics] PING result:`, JSON.stringify(result));
+  return { ...result, url };
 }
