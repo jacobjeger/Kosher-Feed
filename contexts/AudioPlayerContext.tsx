@@ -593,13 +593,21 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     notifyEpisodePlayed(episode.id);
 
     try {
-      AsyncStorage.getItem("@kosher_shiurim_settings").then(data => {
-        const s = data ? JSON.parse(data) : {};
-        if (s.autoDeleteAfterListen === false) return;
+      // YTC owns its own auto-delete TTL (lib/ytc/downloads.ts) so always
+      // mark YTC completions regardless of ShiurPod's autoDeleteAfterListen
+      // toggle. Otherwise the YTC TTL silently no-ops when a user has
+      // turned ShiurPod's global auto-delete off.
+      if (episode.id.startsWith("ytc:")) {
         getAutoDelete().markDownloadCompleted(episode.id);
-      }).catch(err => {
-        addLog("warn", `Auto-delete check failed: ${(err as any)?.message || err}`, undefined, "audio");
-      });
+      } else {
+        AsyncStorage.getItem("@kosher_shiurim_settings").then(data => {
+          const s = data ? JSON.parse(data) : {};
+          if (s.autoDeleteAfterListen === false) return;
+          getAutoDelete().markDownloadCompleted(episode.id);
+        }).catch(err => {
+          addLog("warn", `Auto-delete check failed: ${(err as any)?.message || err}`, undefined, "audio");
+        });
+      }
     } catch {}
 
     if (sleepTimerRef.current.active && sleepTimerRef.current.mode === "endOfEpisode") {

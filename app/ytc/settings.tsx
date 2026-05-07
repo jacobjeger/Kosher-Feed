@@ -19,7 +19,6 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
 import { ytcColors as Colors } from "@/constants/ytcColors";
 import {
   getYtcDownloadSettings, setYtcDownloadSettings, listAllRebbeim,
@@ -27,7 +26,6 @@ import {
   type YtcAutoDownloadMode, type YtcDownloadSettings, type AutoDownloadResult,
 } from "@/lib/ytc/downloads";
 import { useDownloads } from "@/contexts/DownloadsContext";
-import { lightHaptic } from "@/lib/haptics";
 
 const MAX_ITEM_OPTIONS: { label: string; value: number }[] = [
   { label: "50",        value: 50 },
@@ -120,12 +118,12 @@ export default function YtcSettingsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
+      {/* Back navigation is handled by the floating X at top-left
+           (rendered by app/ytc/_layout.tsx). It calls router.back(),
+           which pops this stack frame back to /ytc/(tabs). Don't add
+           a second back affordance here — they overlap geometrically. */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => { lightHaptic(); router.back(); }} hitSlop={12} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={22} color={Colors.cream} />
-        </TouchableOpacity>
         <Text style={styles.headerTitle}>Download Settings</Text>
-        <View style={{ width: 22 }} />
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 80 }}>
@@ -287,10 +285,9 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.cream },
   loader: { flex: 1, alignItems: "center", justifyContent: "center" },
   header: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    backgroundColor: Colors.navy, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 10,
+    backgroundColor: Colors.navy, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10,
+    alignItems: "center",
   },
-  backBtn: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
   headerTitle: { color: Colors.cream, fontSize: 16, fontWeight: "600", fontFamily: Platform.OS === "ios" ? "Georgia" : "serif" },
   scroll: { flex: 1 },
   sectionTitle: {
