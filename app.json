@@ -78,7 +78,9 @@
       ],
       "expo-localization",
       "expo-secure-store",
-      "./plugins/withAndroidAuto.js"
+      "./plugins/withAndroidAuto.js",
+      "@react-native-firebase/app",
+      "@react-native-firebase/messaging"
     ],
     "updates": {
       "url": "https://u.expo.dev/3318cca6-05bb-4658-a9c5-6dccc573953c",
