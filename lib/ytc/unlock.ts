@@ -57,15 +57,11 @@ export async function tryUnlock(entered: string, expected: string | null | undef
 export async function lock(): Promise<void> {
   await AsyncStorage.removeItem(UNLOCK_KEY);
   try {
-    // Phase 3 will create lib/ytc/firebase.ts; the import is wrapped in
-    // try/catch so this also works during the scaffolding-only window.
-    // The string-variable form keeps TypeScript from resolving the path
-    // at type-check time (the file genuinely doesn't exist yet).
-    const path = "@/lib/ytc/firebase";
-    const mod = (await import(/* @ts-ignore Phase 3 module */ path).catch(() => null)) as null | {
-      firebaseSignOutIfInitialized?: () => Promise<void>;
-    };
-    if (mod?.firebaseSignOutIfInitialized) await mod.firebaseSignOutIfInitialized();
+    // Lazy import keeps lib/ytc/firebase.ts (and the entire Firebase JS
+    // SDK it transitively pulls in) out of the cold-start bundle. This
+    // module only loads when the user actually locks an existing session.
+    const { firebaseSignOutIfInitialized } = await import("@/lib/ytc/firebase");
+    await firebaseSignOutIfInitialized();
   } catch {}
   emit();
 }

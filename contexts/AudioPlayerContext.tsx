@@ -177,6 +177,11 @@ async function savePosition(episodeId: string, feedId: string, positionMs: numbe
 }
 
 async function syncPositionToServer(episodeId: string, feedId: string, positionMs: number, durationMs: number) {
+  // YTC: synthesized "ytc:..." ids reference no real episode/feed row in
+  // shiurpod's database. Letting them through pollutes playback_positions
+  // (orphan rows, stats inflation). AsyncStorage write still happens in
+  // the caller — in-app resume continues to work.
+  if (episodeId.startsWith("ytc:") || feedId.startsWith("ytc:")) return;
   try {
     const deviceId = await getDeviceId();
     await apiRequest("POST", "/api/playback-positions", {
