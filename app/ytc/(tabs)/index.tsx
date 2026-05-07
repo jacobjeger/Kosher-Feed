@@ -13,12 +13,16 @@ import {
 } from "react-native";
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { ytcColors as Colors } from "@/constants/ytcColors";
 import { useYtcAuth } from "@/contexts/YtcAuthContext";
 import { fetchCarouselImages, fetchAnnouncements, fetchUpcomingEvents, fetchMostRecentShiur, invalidateYtcCache } from "@/lib/ytc/firebase";
 import type { CarouselImage, Announcement, YtcEvent, Shiur } from "@/types/ytc";
 import { useYtcPlay, YTC_EPISODE_PREFIX } from "@/lib/ytc/audio-adapter";
 import { usePositions } from "@/contexts/PositionsContext";
+import { useDownloads } from "@/contexts/DownloadsContext";
+import { runYtcAutoDownload } from "@/lib/ytc/downloads";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -26,6 +30,17 @@ export default function HomeScreen() {
   const { signOut } = useYtcAuth();
   const playShiur = useYtcPlay();
   const { getPosition } = usePositions();
+  const downloadsCtx = useDownloads();
+
+  // One-shot auto-download per session: kicked off after the home data
+  // settles. Skips immediately when settings.mode === "off". Errors
+  // here should never surface — auto-download is a background nicety.
+  const autoRanRef = useRef(false);
+  useEffect(() => {
+    if (autoRanRef.current) return;
+    autoRanRef.current = true;
+    runYtcAutoDownload(downloadsCtx).catch(() => {});
+  }, []);
 
   const [carouselImages, setCarouselImages] = useState<CarouselImage[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -98,7 +113,12 @@ export default function HomeScreen() {
             <Text style={styles.headerTitle}>Yeshiva Toras Chaim</Text>
             <Text style={styles.headerSubtitle}>Alumni Portal</Text>
           </View>
-          <TouchableOpacity onPress={signOut} style={styles.signOutBtn}><Text style={styles.signOutText}>Sign Out</Text></TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity onPress={() => router.push("/ytc/settings" as any)} hitSlop={8} style={styles.headerIconBtn}>
+              <Ionicons name="settings-outline" size={20} color={Colors.gold} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={signOut} style={styles.signOutBtn}><Text style={styles.signOutText}>Sign Out</Text></TouchableOpacity>
+          </View>
         </View>
 
         {carouselImages.length > 0 && (
@@ -232,6 +252,8 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: Colors.navy, paddingHorizontal: 16, paddingVertical: 10 },
   headerTitle: { color: Colors.cream, fontSize: 16, fontWeight: "bold", fontFamily: Platform.OS === "ios" ? "Georgia" : "serif" },
   headerSubtitle: { color: Colors.creamOpacity70, fontSize: 11 },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 4 },
+  headerIconBtn: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
   signOutBtn: { padding: 8 },
   signOutText: { color: Colors.gold, fontSize: 13, fontWeight: "500" },
   carouselContainer: { position: "relative" },

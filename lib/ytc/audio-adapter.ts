@@ -57,8 +57,17 @@ export function ytcShiurToEpisode(shiur: Shiur, feed: Feed): Episode {
     adminNotes: null,
     sourceSheetUrl: shiur.pdfUrl ?? null,
     createdAt: shiur.date || new Date().toISOString(),
-    noDownload: true, // D14: downloads OOS for v1 — synthesized Feed has no real RSS to refetch from
+    noDownload: false, // Downloads ARE supported — see lib/ytc/downloads.ts
   } as Episode;
+}
+
+/** Build {episode, feed} from a Shiur. Used by lib/ytc/downloads.ts so the
+ *  download subsystem can hand DownloadsContext correctly-shaped objects
+ *  without going through the React hook tree. */
+export function ytcShiurToEpisodeAndFeed(shiur: Shiur): { episode: Episode; feed: Feed } {
+  const feed = ytcRebbeToFeed(shiur.rebbe || "YTC");
+  const episode = ytcShiurToEpisode(shiur, feed);
+  return { episode, feed };
 }
 
 /**

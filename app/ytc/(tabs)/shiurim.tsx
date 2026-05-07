@@ -11,8 +11,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { ytcColors as Colors } from "@/constants/ytcColors";
 import { fetchShiurim, invalidateYtcCache } from "@/lib/ytc/firebase";
 import type { Shiur } from "@/types/ytc";
-import { useYtcPlayer, YTC_EPISODE_PREFIX } from "@/lib/ytc/audio-adapter";
+import { useYtcPlayer, YTC_EPISODE_PREFIX, ytcShiurToEpisodeAndFeed } from "@/lib/ytc/audio-adapter";
 import { usePositions } from "@/contexts/PositionsContext";
+import { useDownloads } from "@/contexts/DownloadsContext";
 
 type SortOrder = "dateDesc" | "dateAsc" | "titleAZ" | "rebbeAZ";
 
@@ -28,6 +29,7 @@ function formatRemainingMin(positionMs: number, durationMs: number): string {
 export default function ShiurimScreen() {
   const { currentShiurId, isPlaying, isLoading: audioLoading, play, pauseResume } = useYtcPlayer();
   const { getPosition } = usePositions();
+  const { downloadEpisode, removeDownload, isDownloaded, isDownloading, downloadProgress } = useDownloads();
 
   const [shiurim, setShiurim] = useState<Shiur[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -95,10 +97,24 @@ export default function ShiurimScreen() {
   const renderShiur = ({ item }: { item: Shiur }) => {
     const isActive = currentShiurId === item.id;
     const isExpanded = expandedId === item.id;
-    const saved = getPosition(`${YTC_EPISODE_PREFIX}${item.id}`);
+    const epId = `${YTC_EPISODE_PREFIX}${item.id}`;
+    const saved = getPosition(epId);
     const hasProgress = saved && saved.durationMs > 0 && saved.positionMs > 0;
     const pct = hasProgress ? Math.min(Math.round((saved!.positionMs / saved!.durationMs) * 100), 100) : 0;
     const completed = hasProgress && pct >= 95;
+    const downloaded = isDownloaded(epId);
+    const downloading = isDownloading(epId);
+    const dlPct = downloading ? (downloadProgress.get(epId) || 0) : 0;
+    const onDownloadPress = () => {
+      if (!item.audioUrl) return;
+      if (downloaded) {
+        removeDownload(epId);
+        return;
+      }
+      if (downloading) return;
+      const { episode, feed } = ytcShiurToEpisodeAndFeed(item);
+      downloadEpisode(episode, feed);
+    };
     return (
       <View style={[styles.shiurCard, isActive && styles.shiurCardActive]}>
         <TouchableOpacity style={styles.shiurHeader} onPress={() => setExpandedId(isExpanded ? null : item.id)}>
@@ -117,12 +133,24 @@ export default function ShiurimScreen() {
               <Text style={[styles.shiurTitle, isActive && styles.shiurTitleActive]} numberOfLines={2}>{item.title}</Text>
               <Text style={styles.shiurRebbeDate}>{item.rebbe} · {formatDate(item.date)}</Text>
               {item.series && <Text style={styles.seriesText}>Series: {item.series}</Text>}
-              {hasProgress && !completed && (
+              {downloading && (
+                <Text style={styles.progressText}>Downloading {Math.round(dlPct * 100)}%</Text>
+              )}
+              {!downloading && hasProgress && !completed && (
                 <Text style={styles.progressText}>{pct}% · {formatRemainingMin(saved!.positionMs, saved!.durationMs)}</Text>
               )}
-              {completed && <Text style={styles.completedText}>Completed</Text>}
+              {!downloading && completed && <Text style={styles.completedText}>Completed</Text>}
             </View>
           </View>
+          {item.audioUrl && (
+            <TouchableOpacity onPress={onDownloadPress} hitSlop={8} style={styles.downloadBtn}>
+              {downloading
+                ? <ActivityIndicator size="small" color={Colors.navy} />
+                : downloaded
+                ? <Ionicons name="checkmark-circle" size={22} color={Colors.gold} />
+                : <Ionicons name="download-outline" size={22} color={Colors.navyOpacity70} />}
+            </TouchableOpacity>
+          )}
           <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={16} color={Colors.navyOpacity50} />
         </TouchableOpacity>
         {isExpanded && (
@@ -273,6 +301,7 @@ const styles = StyleSheet.create({
   shiurRebbeDate: { fontSize: 12, color: Colors.navyOpacity70, marginTop: 2 },
   seriesText: { fontSize: 11, color: Colors.gold, marginTop: 2, fontWeight: "500" },
   progressText: { fontSize: 11, color: Colors.gold, marginTop: 2, fontWeight: "500" },
+  downloadBtn: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
   completedText: { fontSize: 11, color: Colors.navyOpacity50, marginTop: 2, fontWeight: "500" },
   progressTrack: { height: 3, backgroundColor: Colors.creamDark },
   progressFill: { height: 3, backgroundColor: Colors.gold },

@@ -73,6 +73,7 @@ function YtcGate() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="settings" />
       </Stack>
       <CloseButton />
     </View>

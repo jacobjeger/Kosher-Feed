@@ -283,11 +283,19 @@ export default function TabLayout() {
             title: "YTC",
             href: showYtcTab ? undefined : null,
             tabBarIcon: ({ focused }) => (
-              <Image
-                source={require("@/assets/images/ytc-logo.png")}
-                style={{ width: 26, height: 26, opacity: focused ? 1 : 0.7 }}
-                resizeMode="contain"
-              />
+              <View style={{
+                width: 30, height: 30, borderRadius: 15,
+                backgroundColor: ytcColors.cream,
+                alignItems: "center", justifyContent: "center",
+                borderWidth: focused ? 1.5 : 0,
+                borderColor: ytcColors.gold,
+              }}>
+                <Image
+                  source={require("@/assets/images/ytc-logo.png")}
+                  style={{ width: 26, height: 26 }}
+                  resizeMode="contain"
+                />
+              </View>
             ),
             tabBarButton: showYtcTab
               ? (props: any) => (

@@ -22,6 +22,8 @@ export default function ContactsScreen() {
   const [activeTab, setActiveTab] = useState<ContactTab>("rebbeim");
   const [alumniSearch, setAlumniSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [alumniPage, setAlumniPage] = useState(1);
+  const ALUMNI_PAGE_SIZE = 50;
 
   const loadData = async () => {
     try {
@@ -50,8 +52,19 @@ export default function ContactsScreen() {
       a.location?.toLowerCase().includes(alumniSearch.toLowerCase()),
   );
 
+  // Reset pagination when search/tab changes so the first results render fast.
+  useEffect(() => { setAlumniPage(1); }, [alumniSearch, activeTab]);
+
+  // Slice the visible window. SectionList's onEndReached bumps the page;
+  // the user sees an instant first paint with up to 50 contacts and more
+  // load on scroll. With ~hundreds of alumni the full-list render was the
+  // slowest part of contacts; this paginates without a network round trip.
+  const visibleCount = alumniPage * ALUMNI_PAGE_SIZE;
+  const visibleAlumni = filteredAlumni.slice(0, visibleCount);
+  const hasMoreAlumni = filteredAlumni.length > visibleCount;
+
   const alumniSections = Object.entries(
-    filteredAlumni.reduce<Record<string, AlumniContact[]>>((acc, contact) => {
+    visibleAlumni.reduce<Record<string, AlumniContact[]>>((acc, contact) => {
       const letter = contact.name[0]?.toUpperCase() ?? "#";
       if (!acc[letter]) acc[letter] = [];
       acc[letter].push(contact);
@@ -167,6 +180,14 @@ export default function ContactsScreen() {
               );
             }}
             ListEmptyComponent={<EmptyState message="No alumni found" />}
+            onEndReachedThreshold={0.5}
+            onEndReached={() => { if (hasMoreAlumni) setAlumniPage((p) => p + 1); }}
+            ListFooterComponent={hasMoreAlumni ? (
+              <View style={styles.loadMoreFooter}>
+                <ActivityIndicator size="small" color={Colors.navy} />
+                <Text style={styles.loadMoreText}>Loading more…</Text>
+              </View>
+            ) : null}
           />
         </>
       )}
@@ -220,4 +241,6 @@ const styles = StyleSheet.create({
   alumniExpanded: { paddingHorizontal: 14, paddingBottom: 14 },
   empty: { alignItems: "center", padding: 40, gap: 12 },
   emptyText: { fontSize: 15, color: Colors.navyOpacity50 },
+  loadMoreFooter: { flexDirection: "row", alignItems: "center", justifyContent: "center", padding: 16, gap: 8 },
+  loadMoreText: { fontSize: 13, color: Colors.navyOpacity70 },
 });

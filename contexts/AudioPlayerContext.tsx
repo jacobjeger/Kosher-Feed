@@ -214,6 +214,10 @@ async function saveFeedSpeed(feedId: string, rate: number) {
 }
 
 async function fetchEpisodeAndFeed(episodeId: string, feedId: string): Promise<{ episode: Episode; feed: Feed } | null> {
+  // YTC: synthesized ids have no server row to refetch — calling the API would 404.
+  // Queue replay / cold-start restore for YTC items is handled at the source
+  // (the play call carries fresh objects), so returning null here is safe.
+  if (episodeId.startsWith("ytc:") || feedId.startsWith("ytc:")) return null;
   try {
     const baseUrl = getApiUrl();
     const feedUrl = new URL(`/api/feeds/${feedId}`, baseUrl);
