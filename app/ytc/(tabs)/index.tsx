@@ -160,7 +160,7 @@ export default function HomeScreen() {
               }}
               renderItem={({ item }) => (
                 <View style={styles.carouselSlide}>
-                  <Image source={{ uri: item.url }} style={styles.carouselImage} contentFit="cover" />
+                  <Image source={{ uri: item.url }} style={styles.carouselImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={item.id} transition={150} />
                   {item.caption && <View style={styles.captionOverlay}><Text style={styles.caption}>{item.caption}</Text></View>}
                 </View>
               )}
@@ -278,7 +278,7 @@ export default function HomeScreen() {
                 contentContainerStyle={{ gap: 12, paddingRight: 16 }}
                 renderItem={({ item }) => (
                   <View style={styles.spotlightCard}>
-                    <Image source={{ uri: item.url }} style={styles.spotlightImg} contentFit="cover" />
+                    <Image source={{ uri: item.url }} style={styles.spotlightImg} contentFit="cover" cachePolicy="memory-disk" recyclingKey={item.id} transition={150} />
                     {item.name ? <Text style={styles.spotlightName} numberOfLines={1}>{item.name}</Text> : null}
                     {item.year ? <Text style={styles.spotlightYear}>{item.year}</Text> : null}
                   </View>

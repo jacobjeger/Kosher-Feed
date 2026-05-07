@@ -17,10 +17,42 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { signInEmailPassword, createUserEmailPassword, submitAccessRequest } from "@/lib/ytc/firebase";
 import { ytcColors as Colors } from "@/constants/ytcColors";
+
+/** Map Firebase auth error codes to short, user-readable strings. */
+function friendlyAuthError(error: any): string {
+  const code = (error?.code || "").toString();
+  const msg = (error?.message || "").toString();
+  // Codes appear in error.code on @react-native-firebase, embedded in
+  // error.message on the firebase JS SDK ("Firebase: Error (auth/...)").
+  const codeFromMsg = msg.match(/\(auth\/[\w-]+\)/)?.[0]?.replace(/[()]/g, "") || "";
+  const c = code || codeFromMsg;
+  switch (c) {
+    case "auth/invalid-credential":
+    case "auth/wrong-password":
+    case "auth/user-not-found":
+    case "auth/invalid-login-credentials":
+      return "Invalid email or password. Please try again.";
+    case "auth/invalid-email":
+      return "That email address doesn't look right.";
+    case "auth/email-already-in-use":
+      return "An account with this email already exists. Try signing in instead.";
+    case "auth/weak-password":
+      return "Password is too weak. Use at least 6 characters.";
+    case "auth/too-many-requests":
+      return "Too many failed attempts. Please wait a minute and try again.";
+    case "auth/network-request-failed":
+      return "Network error. Check your connection and try again.";
+    case "auth/user-disabled":
+      return "This account has been disabled. Please contact alumni@ytchaim.com.";
+    default:
+      return "Something went wrong. Please try again.";
+  }
+}
 
 export default function LoginScreen() {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -49,7 +81,7 @@ export default function LoginScreen() {
         await signInEmailPassword(email.trim(), password);
       }
     } catch (error: any) {
-      Alert.alert("Error", error?.message ?? "Authentication failed.");
+      Alert.alert(isSignUp ? "Sign-up failed" : "Sign-in failed", friendlyAuthError(error));
     } finally {
       setIsLoading(false);
     }
@@ -60,7 +92,11 @@ export default function LoginScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
           <View style={styles.header}>
-            <View style={styles.logoPlaceholder}><Text style={styles.logoText}>YTC</Text></View>
+            <Image
+              source={require("@/assets/images/ytc-logo.png")}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
             <Text style={styles.title}>Yeshiva Toras Chaim Alumni</Text>
             <Text style={styles.subtitle}>{isSignUp ? "Create your account" : "Sign in to access the alumni portal"}</Text>
           </View>
@@ -133,8 +169,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.cream },
   container: { padding: 24, paddingBottom: 48 },
   header: { alignItems: "center", paddingTop: 40, marginBottom: 24 },
-  logoPlaceholder: { width: 80, height: 80, borderRadius: 40, backgroundColor: Colors.navy, alignItems: "center", justifyContent: "center", marginBottom: 12 },
-  logoText: { color: Colors.gold, fontSize: 24, fontWeight: "bold" },
+  logoImage: { width: 110, height: 110, marginBottom: 12 },
   title: { fontSize: 22, fontWeight: "bold", color: Colors.navy, textAlign: "center", fontFamily: Platform.OS === "ios" ? "Georgia" : "serif" },
   subtitle: { fontSize: 14, color: Colors.navyOpacity70, marginTop: 6, textAlign: "center" },
   infoBox: { backgroundColor: Colors.navyOpacity05, borderRadius: 12, borderWidth: 1, borderColor: Colors.navyOpacity10, padding: 16, marginBottom: 20 },

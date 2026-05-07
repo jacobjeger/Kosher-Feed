@@ -122,7 +122,7 @@ export default function ContactsScreen() {
           renderItem={({ item: rebbe }) => (
             <View style={styles.rebbeCard}>
               {rebbe.photoUrl
-                ? <Image source={{ uri: rebbe.photoUrl }} style={styles.rebbePhoto} contentFit="cover" />
+                ? <Image source={{ uri: rebbe.photoUrl }} style={styles.rebbePhoto} contentFit="cover" cachePolicy="memory-disk" recyclingKey={rebbe.id} transition={150} />
                 : <View style={styles.rebbePhotoPlaceholder}><Text style={styles.rebbeInitial}>{rebbe.name[0]}</Text></View>}
               <View style={styles.rebbeInfo}>
                 <Text style={styles.rebbeName}>{rebbe.name}</Text>

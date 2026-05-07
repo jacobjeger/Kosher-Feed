@@ -29,10 +29,9 @@ import { useDownloads } from "@/contexts/DownloadsContext";
 import {
   getMasterPrefs, setMasterPref, getSubscribedRebbeim, isRebbeSubscribed,
   subscribeToRebbe, unsubscribeFromRebbe, isYtcPushConfigured, rebbeTopic,
+  YTC_PUSH_FEATURE_ENABLED,
   type DefaultTopic,
 } from "@/lib/ytc/push";
-import { fetchRebbeim } from "@/lib/ytc/firebase";
-import type { Rebbe } from "@/types/ytc";
 
 const MAX_ITEM_OPTIONS: { label: string; value: number }[] = [
   { label: "50",        value: 50 },
@@ -59,10 +58,9 @@ export default function YtcSettingsScreen() {
   const [running, setRunning] = useState(false);
   const [lastResult, setLastResult] = useState<AutoDownloadResult | null>(null);
 
-  // Push state
+  // Push state — only loaded when the master feature flag is on.
   const [pushConfigured, setPushConfigured] = useState(false);
   const [masterPrefs, setMasterPrefs] = useState<{ announcements: boolean; new_shiurim: boolean; simchas: boolean; events: boolean } | null>(null);
-  const [pushRebbeim, setPushRebbeim] = useState<Rebbe[]>([]);
   const [subscribedRebbeTopics, setSubscribedRebbeTopics] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -71,10 +69,11 @@ export default function YtcSettingsScreen() {
       .then(setRebbeim)
       .catch(() => setRebbeim([]))
       .finally(() => setRebbeimLoading(false));
-    isYtcPushConfigured().then(setPushConfigured);
-    getMasterPrefs().then(setMasterPrefs);
-    getSubscribedRebbeim().then((arr) => setSubscribedRebbeTopics(new Set(arr)));
-    fetchRebbeim().then((r) => setPushRebbeim(r as Rebbe[])).catch(() => {});
+    if (YTC_PUSH_FEATURE_ENABLED) {
+      isYtcPushConfigured().then(setPushConfigured);
+      getMasterPrefs().then(setMasterPrefs);
+      getSubscribedRebbeim().then((arr) => setSubscribedRebbeTopics(new Set(arr)));
+    }
   }, []);
 
   const ytcDownloadCount = useMemo(
@@ -174,61 +173,68 @@ export default function YtcSettingsScreen() {
 
       <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 80 }}>
 
-        <Text style={styles.sectionTitle}>Notifications</Text>
-        {!pushConfigured && (
-          <View style={styles.warnCard}>
-            <Ionicons name="alert-circle-outline" size={20} color={Colors.error} />
-            <Text style={styles.warnText}>
-              Push notifications are pending Firebase setup. The toggles save your preference but won't deliver until the app is built with the YTC project's google-services.json.
-            </Text>
-          </View>
-        )}
-        {masterPrefs && (
-          <View style={styles.card}>
-            {([
-              ["announcements", "Announcements", "General announcements from the yeshiva"],
-              ["new_shiurim", "New Shiurim", "Get notified for every new shiur posted"],
-              ["simchas", "Simchas & Mazel Tovs", "When fellow alumni share simchas"],
-              ["events", "Events", "Yeshiva events"],
-            ] as Array<[DefaultTopic, string, string]>).map(([topic, label, sub]) => (
-              <View key={topic} style={styles.row}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.rowTitle}>{label}</Text>
-                  <Text style={styles.rowSubtitleInline}>{sub}</Text>
-                </View>
-                <Switch
-                  value={masterPrefs[topic]}
-                  onValueChange={(v) => togglePushMaster(topic, v)}
-                  trackColor={{ false: Colors.navyOpacity30, true: Colors.gold }}
-                  thumbColor={Platform.OS === "android" ? Colors.cream : undefined}
-                />
-              </View>
-            ))}
-          </View>
-        )}
-
-        {pushRebbeim.length > 0 && (
+        {YTC_PUSH_FEATURE_ENABLED && (
           <>
-            <Text style={styles.sectionTitle}>Per-rebbe notifications</Text>
-            <View style={styles.card}>
-              {pushRebbeim.map((r) => {
-                const subscribed = subscribedRebbeTopics.has(rebbeTopic(r.name));
-                return (
-                  <View key={r.id} style={styles.row}>
+            <Text style={styles.sectionTitle}>Notifications</Text>
+            {!pushConfigured && (
+              <View style={styles.warnCard}>
+                <Ionicons name="alert-circle-outline" size={20} color={Colors.error} />
+                <Text style={styles.warnText}>
+                  Push notifications are pending Firebase setup.
+                </Text>
+              </View>
+            )}
+            {masterPrefs && (
+              <View style={styles.card}>
+                {([
+                  ["announcements", "Announcements", "General announcements from the yeshiva"],
+                  ["new_shiurim", "New Shiurim", "Get notified for every new shiur posted"],
+                  ["simchas", "Simchas & Mazel Tovs", "When fellow alumni share simchas"],
+                  ["events", "Events", "Yeshiva events"],
+                ] as Array<[DefaultTopic, string, string]>).map(([topic, label, sub]) => (
+                  <View key={topic} style={styles.row}>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.rowTitle} numberOfLines={1}>{r.name}</Text>
-                      {r.title ? <Text style={styles.rowSubtitleInline}>{r.title}</Text> : null}
+                      <Text style={styles.rowTitle}>{label}</Text>
+                      <Text style={styles.rowSubtitleInline}>{sub}</Text>
                     </View>
                     <Switch
-                      value={subscribed}
-                      onValueChange={() => togglePushRebbe(r.name)}
+                      value={masterPrefs[topic]}
+                      onValueChange={(v) => togglePushMaster(topic, v)}
                       trackColor={{ false: Colors.navyOpacity30, true: Colors.gold }}
                       thumbColor={Platform.OS === "android" ? Colors.cream : undefined}
                     />
                   </View>
-                );
-              })}
-            </View>
+                ))}
+              </View>
+            )}
+
+            {/* Per-rebbe: source is the unique speaker list (Shiur.rebbe)
+                via listAllRebbeim() — same `rebbeim` state used by the
+                auto-download section. The website's per-rebbe topic
+                naming sanitizes the speaker name verbatim, so this
+                guarantees the topic the user toggles matches the topic
+                the backend sends to. */}
+            {!rebbeimLoading && rebbeim.length > 0 && (
+              <>
+                <Text style={styles.sectionTitle}>Per-rebbe notifications</Text>
+                <View style={styles.card}>
+                  {rebbeim.map((name) => {
+                    const subscribed = subscribedRebbeTopics.has(rebbeTopic(name));
+                    return (
+                      <View key={name} style={styles.row}>
+                        <Text style={[styles.rowTitle, { flex: 1 }]} numberOfLines={1}>{name}</Text>
+                        <Switch
+                          value={subscribed}
+                          onValueChange={() => togglePushRebbe(name)}
+                          trackColor={{ false: Colors.navyOpacity30, true: Colors.gold }}
+                          thumbColor={Platform.OS === "android" ? Colors.cream : undefined}
+                        />
+                      </View>
+                    );
+                  })}
+                </View>
+              </>
+            )}
           </>
         )}
 

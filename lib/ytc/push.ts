@@ -59,6 +59,14 @@ async function getMessaging() {
 
 const YTC_PROJECT_ID = "toras-chaim-shiurim";
 
+// Master kill-switch: when false, hide ALL notification preferences UI
+// and short-circuit every push entry point. Flip to true only when:
+//   1. The build's google-services.json points at toras-chaim-shiurim
+//   2. @react-native-firebase/messaging is natively linked
+//   3. End-to-end test send works
+// Until then we ship "off" so users don't see broken toggles.
+export const YTC_PUSH_FEATURE_ENABLED = false;
+
 const DEFAULT_TOPICS = ["announcements", "new_shiurim", "simchas", "events"] as const;
 export type DefaultTopic = (typeof DEFAULT_TOPICS)[number];
 
@@ -87,6 +95,7 @@ export function rebbeTopic(name: string): string {
 /** Check whether the build's Firebase config is the YTC project. False
  *  means we'd subscribe to wrong-project topics — caller must skip. */
 export async function isYtcPushConfigured(): Promise<boolean> {
+  if (!YTC_PUSH_FEATURE_ENABLED) return false;
   if (Platform.OS !== "android") return false;
   const mod = await getMessaging();
   if (!mod) return false;
