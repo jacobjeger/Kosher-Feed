@@ -59,13 +59,22 @@ async function getMessaging() {
 
 const YTC_PROJECT_ID = "toras-chaim-shiurim";
 
-// Master kill-switch: when false, hide ALL notification preferences UI
-// and short-circuit every push entry point. Flip to true only when:
-//   1. The build's google-services.json points at toras-chaim-shiurim
-//   2. @react-native-firebase/messaging is natively linked
-//   3. End-to-end test send works
-// Until then we ship "off" so users don't see broken toggles.
-export const YTC_PUSH_FEATURE_ENABLED = false;
+// Master kill-switch — true ONLY for builds where we know
+// google-services.json + react-native-firebase native are wired up.
+//
+// We resolve this from a build-time env var so it can be true for
+// EAS Build (preview/production profiles set EXPO_PUBLIC_YTC_PUSH=1
+// in their env block) and false for EAS Update OTAs (the env var
+// isn't set when running `eas update`, so the bundled code reads
+// undefined → false). This keeps the existing OTA channel safe to
+// push to users who are still on an old APK without the native
+// module / wrong-project google-services.json — they'd otherwise
+// see a notification UI that does nothing.
+//
+// EXPO_PUBLIC_* env vars are statically inlined into the JS bundle
+// by Metro at bundle time, so this constant compiles down to
+// `const YTC_PUSH_FEATURE_ENABLED = false;` in OTA bundles.
+export const YTC_PUSH_FEATURE_ENABLED = process.env.EXPO_PUBLIC_YTC_PUSH === "1";
 
 const DEFAULT_TOPICS = ["announcements", "new_shiurim", "simchas", "events"] as const;
 export type DefaultTopic = (typeof DEFAULT_TOPICS)[number];

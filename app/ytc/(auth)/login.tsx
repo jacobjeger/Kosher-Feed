@@ -20,7 +20,7 @@ import {
   Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { signInEmailPassword, createUserEmailPassword, submitAccessRequest } from "@/lib/ytc/firebase";
+import { signInEmailPassword, handleYtcSignup } from "@/lib/ytc/firebase";
 import { ytcColors as Colors } from "@/constants/ytcColors";
 import { YtcFocusable } from "@/components/ytc/YtcFocusable";
 
@@ -76,8 +76,19 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       if (isSignUp) {
-        await createUserEmailPassword(email.trim(), password);
-        await submitAccessRequest(email.trim().toLowerCase(), `${firstName.trim()} ${lastName.trim()}`);
+        // handleYtcSignup creates the auth user, writes the
+        // accessRequests doc, fires the admin signup-notification
+        // email, and (if auto-approved) the user's welcome email.
+        // Mirrors the website's lib/auth-context.tsx signup flow so
+        // app + web signups produce identical Firestore + email
+        // side-effects.
+        await handleYtcSignup({
+          email: email.trim(),
+          password,
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          graduationYear: null,
+        });
       } else {
         await signInEmailPassword(email.trim(), password);
       }

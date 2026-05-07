@@ -124,6 +124,103 @@ export async function submitAccessRequest(email: string, name: string): Promise<
 }
 
 /**
+ * End-to-end YTC sign-up: mirrors the website's lib/auth-context.tsx
+ * signup flow at github.com/abbrach1/YTC-ALUMNI-MAIN-WEBSITE so users
+ * get the same emails + accessRequests doc shape regardless of
+ * whether they signed up on web or in the app.
+ *
+ * Steps:
+ *   1. Create the Firebase Auth user.
+ *   2. Probe alumniDatabase / approvedEmails / admins to determine
+ *      auto-approval state (checkUserApproval).
+ *   3. setDoc accessRequests/{lowercaseEmail} with the canonical
+ *      shape (firstName, lastName, fullName, graduationYear, status,
+ *      autoApproved, approvalSource, approvedAt).
+ *   4. POST /api/send-signup-notification — admin notification
+ *      email regardless of approval state.
+ *   5. If auto-approved, POST /api/send-welcome-email — the welcome
+ *      email to the new user.
+ *
+ * Steps 4 + 5 are fire-and-forget: the user is signed up and seeing
+ * the right screen even if Resend is down.
+ */
+const YTC_API_BASE = "https://alumni.ytchaim.com";
+
+export async function handleYtcSignup(input: {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  graduationYear?: string | null;
+}): Promise<{ approved: boolean; admin: boolean }> {
+  const trimmedEmail = input.email.trim();
+  const lowerEmail = trimmedEmail.toLowerCase();
+  const firstName = input.firstName.trim();
+  const lastName = input.lastName.trim();
+  const fullName = `${firstName} ${lastName}`.trim();
+  const graduationYear = input.graduationYear ?? null;
+
+  // 1. Create the auth user (throws on duplicate / weak password etc.;
+  //    caller maps codes to user-friendly messages via friendlyAuthError).
+  await createUserEmailPassword(trimmedEmail, input.password);
+
+  // 2. Determine approval state via the same checks the website runs.
+  const { approved, admin } = await checkUserApproval(trimmedEmail);
+  const approvalSource = approved
+    ? (admin ? "admin" : "alumni-database")
+    : "manual-review";
+  const nowIso = new Date().toISOString();
+
+  // 3. Write the canonical accessRequests doc (setDoc with email-as-id
+  //    so a user can re-sign up if they ever delete and recreate).
+  try {
+    const { db } = await getYtcFirebase();
+    const { doc, setDoc } = await import("firebase/firestore");
+    const docData: Record<string, any> = {
+      email: lowerEmail,
+      firstName, lastName, fullName,
+      graduationYear,
+      requestedAt: nowIso,
+      status: approved ? "approved" : "pending",
+      autoApproved: approved,
+      approvalSource,
+    };
+    if (approved) docData.approvedAt = nowIso;
+    await setDoc(doc(db, "accessRequests", lowerEmail), docData);
+  } catch (e: any) {
+    // eslint-disable-next-line no-console
+    console.error("[ytc-signup] accessRequests write failed:", e?.message || e);
+  }
+
+  // 4. Admin notification (always).
+  fetch(`${YTC_API_BASE}/api/send-signup-notification`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      userEmail: lowerEmail,
+      userName: fullName,
+      graduationYear,
+      isApproved: approved,
+      isAdmin: admin,
+      approvalSource,
+    }),
+  }).catch(() => {});
+
+  // 5. Welcome email — only when auto-approved. Manual-review users get
+  //    a welcome email later, when an admin approves them on the
+  //    website (which fires /api/send-approval-email server-side).
+  if (approved) {
+    fetch(`${YTC_API_BASE}/api/send-welcome-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: lowerEmail, userName: fullName }),
+    }).catch(() => {});
+  }
+
+  return { approved, admin };
+}
+
+/**
  * Upload a simcha image to Firebase Storage and return its download URL.
  * Path matches the website's user-facing flow: simcha-images/{ts}-{filename}.
  * Pass either a local file URI (RN ImagePicker result) or a remote URL.
