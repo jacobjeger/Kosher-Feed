@@ -25,6 +25,7 @@ import { useDownloads } from "@/contexts/DownloadsContext";
 import { runYtcAutoDownload } from "@/lib/ytc/downloads";
 import { startYtcPositionSync, hydrateYtcPositions } from "@/lib/ytc/position-sync";
 import { bootstrapYtcPush, requestNotificationPermission } from "@/lib/ytc/push";
+import { YtcFocusable } from "@/components/ytc/YtcFocusable";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -138,10 +139,10 @@ export default function HomeScreen() {
             <Text style={styles.headerSubtitle}>Alumni Portal</Text>
           </View>
           <View style={styles.headerActions}>
-            <TouchableOpacity onPress={() => router.push("/ytc/settings" as any)} hitSlop={8} style={styles.headerIconBtn}>
+            <YtcFocusable onPress={() => router.push("/ytc/settings" as any)} hitSlop={8} style={styles.headerIconBtn} focusRadius={16}>
               <Ionicons name="settings-outline" size={20} color={Colors.gold} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={signOut} style={styles.signOutBtn}><Text style={styles.signOutText}>Sign Out</Text></TouchableOpacity>
+            </YtcFocusable>
+            <YtcFocusable onPress={signOut} style={styles.signOutBtn} focusRadius={6}><Text style={styles.signOutText}>Sign Out</Text></YtcFocusable>
           </View>
         </View>
 
@@ -232,9 +233,9 @@ export default function HomeScreen() {
                       )}
                     </View>
                     {recentShiur.audioUrl && (
-                      <TouchableOpacity style={styles.playBtn} onPress={() => playShiur(recentShiur)}>
+                      <YtcFocusable style={styles.playBtn} onPress={() => playShiur(recentShiur)} focusRadius={24}>
                         <Text style={styles.playIcon}>▶</Text>
-                      </TouchableOpacity>
+                      </YtcFocusable>
                     )}
                   </View>
                   {hasProgress && !completed && (
@@ -251,10 +252,11 @@ export default function HomeScreen() {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Collections</Text>
               {collections.map((c) => (
-                <TouchableOpacity
+                <YtcFocusable
                   key={c.id}
                   style={styles.collectionCard}
                   onPress={() => router.push(`/ytc/collections/${c.id}` as any)}
+                  focusRadius={12}
                 >
                   <View style={{ flex: 1 }}>
                     <Text style={styles.collectionName}>{c.name}</Text>
@@ -262,7 +264,7 @@ export default function HomeScreen() {
                     <Text style={styles.collectionCount}>{c.shiurIds.length} shiurim</Text>
                   </View>
                   <Ionicons name="chevron-forward" size={18} color={Colors.navyOpacity50} />
-                </TouchableOpacity>
+                </YtcFocusable>
               ))}
             </View>
           )}

@@ -16,6 +16,7 @@ import { usePositions } from "@/contexts/PositionsContext";
 import { useDownloads } from "@/contexts/DownloadsContext";
 import { trackShiurDownload } from "@/lib/ytc/analytics";
 import { useSavedShiurim } from "@/lib/ytc/useSavedShiurim";
+import { YtcFocusable } from "@/components/ytc/YtcFocusable";
 
 type SortOrder = "dateDesc" | "dateAsc" | "titleAZ" | "rebbeAZ";
 
@@ -150,17 +151,18 @@ export default function ShiurimScreen() {
     };
     return (
       <View style={[styles.shiurCard, isActive && styles.shiurCardActive]}>
-        <TouchableOpacity style={styles.shiurHeader} onPress={() => setExpandedId(isExpanded ? null : item.id)}>
+        <YtcFocusable style={styles.shiurHeader} onPress={() => setExpandedId(isExpanded ? null : item.id)} focusRadius={12}>
           <View style={styles.shiurLeft}>
             {item.audioUrl && (
-              <TouchableOpacity
+              <YtcFocusable
                 style={[styles.playBtn, isActive && styles.playBtnActive]}
                 onPress={() => { if (isActive) pauseResume(); else play(item); }}
+                focusRadius={19}
               >
                 {isActive && audioLoading
                   ? <ActivityIndicator size="small" color={Colors.cream} />
                   : <Ionicons name={isActive && isPlaying ? "pause" : "play"} size={18} color={isActive ? Colors.cream : Colors.navy} />}
-              </TouchableOpacity>
+              </YtcFocusable>
             )}
             <View style={styles.shiurMeta}>
               <Text style={[styles.shiurTitle, isActive && styles.shiurTitleActive]} numberOfLines={2}>{item.title}</Text>
@@ -175,20 +177,20 @@ export default function ShiurimScreen() {
               {!downloading && completed && <Text style={styles.completedText}>Completed</Text>}
             </View>
           </View>
-          <TouchableOpacity onPress={() => toggleSaved(item.id)} hitSlop={8} style={styles.downloadBtn}>
+          <YtcFocusable onPress={() => toggleSaved(item.id)} hitSlop={8} style={styles.downloadBtn} focusRadius={16}>
             <Ionicons name={saved2 ? "heart" : "heart-outline"} size={20} color={saved2 ? Colors.gold : Colors.navyOpacity70} />
-          </TouchableOpacity>
+          </YtcFocusable>
           {item.audioUrl && (
-            <TouchableOpacity onPress={onDownloadPress} hitSlop={8} style={styles.downloadBtn}>
+            <YtcFocusable onPress={onDownloadPress} hitSlop={8} style={styles.downloadBtn} focusRadius={16}>
               {downloading
                 ? <ActivityIndicator size="small" color={Colors.navy} />
                 : downloaded
                 ? <Ionicons name="trash-outline" size={20} color={Colors.error} />
                 : <Ionicons name="download-outline" size={22} color={Colors.navyOpacity70} />}
-            </TouchableOpacity>
+            </YtcFocusable>
           )}
           <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={16} color={Colors.navyOpacity50} />
-        </TouchableOpacity>
+        </YtcFocusable>
         {isExpanded && (
           <View style={styles.shiurDetail}>
             {item.description && <Text style={styles.description}>{item.description}</Text>}
@@ -228,26 +230,28 @@ export default function ShiurimScreen() {
           <TextInput style={styles.searchInput} placeholder="Search shiurim..." placeholderTextColor={Colors.navyOpacity50} value={search} onChangeText={setSearch} />
           {search ? <TouchableOpacity onPress={() => setSearch("")}><Ionicons name="close-circle" size={18} color={Colors.navyOpacity50} /></TouchableOpacity> : null}
         </View>
-        <TouchableOpacity style={[styles.filterBtn, hasFilters && styles.filterBtnActive]} onPress={() => setShowFilters(true)}>
+        <YtcFocusable style={[styles.filterBtn, hasFilters && styles.filterBtnActive]} onPress={() => setShowFilters(true)} focusRadius={10}>
           <Ionicons name="options" size={20} color={hasFilters ? Colors.cream : Colors.navy} />
-        </TouchableOpacity>
+        </YtcFocusable>
       </View>
 
       <View style={styles.quickFilters}>
-        <TouchableOpacity
+        <YtcFocusable
           style={[styles.quickChip, showSavedOnly && styles.quickChipActive]}
           onPress={() => setShowSavedOnly((v) => !v)}
+          focusRadius={16}
         >
           <Ionicons name={showSavedOnly ? "heart" : "heart-outline"} size={14} color={showSavedOnly ? Colors.cream : Colors.navy} />
           <Text style={[styles.quickChipText, showSavedOnly && styles.quickChipTextActive]}>Saved</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
+        </YtcFocusable>
+        <YtcFocusable
           style={[styles.quickChip, showInProgressOnly && styles.quickChipActive]}
           onPress={() => setShowInProgressOnly((v) => !v)}
+          focusRadius={16}
         >
           <Ionicons name={showInProgressOnly ? "play-circle" : "play-circle-outline"} size={14} color={showInProgressOnly ? Colors.cream : Colors.navy} />
           <Text style={[styles.quickChipText, showInProgressOnly && styles.quickChipTextActive]}>In progress</Text>
-        </TouchableOpacity>
+        </YtcFocusable>
       </View>
 
       {(selectedRebbeFilter || selectedTagFilter || selectedSeriesFilter) && (

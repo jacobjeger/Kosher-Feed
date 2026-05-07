@@ -26,6 +26,7 @@ import {
   type YtcAutoDownloadMode, type YtcDownloadSettings, type AutoDownloadResult,
 } from "@/lib/ytc/downloads";
 import { useDownloads } from "@/contexts/DownloadsContext";
+import { YtcFocusable } from "@/components/ytc/YtcFocusable";
 import {
   getMasterPrefs, setMasterPref, getSubscribedRebbeim, isRebbeSubscribed,
   subscribeToRebbe, unsubscribeFromRebbe, isYtcPushConfigured, rebbeTopic,
@@ -241,10 +242,11 @@ export default function YtcSettingsScreen() {
         <Text style={styles.sectionTitle}>Auto-download</Text>
         <View style={styles.card}>
           {(["off", "all", "selected"] as YtcAutoDownloadMode[]).map((mode) => (
-            <TouchableOpacity
+            <YtcFocusable
               key={mode}
               style={styles.row}
               onPress={() => update({ mode })}
+              focusRadius={4}
             >
               <View style={{ flex: 1 }}>
                 <Text style={styles.rowTitle}>
@@ -263,7 +265,7 @@ export default function YtcSettingsScreen() {
                 size={22}
                 color={settings.mode === mode ? Colors.gold : Colors.navyOpacity50}
               />
-            </TouchableOpacity>
+            </YtcFocusable>
           ))}
         </View>
 
@@ -281,14 +283,14 @@ export default function YtcSettingsScreen() {
                 rebbeim.map((name) => {
                   const checked = settings.selectedRebbeim.includes(name);
                   return (
-                    <TouchableOpacity key={name} style={styles.row} onPress={() => toggleRebbe(name)}>
+                    <YtcFocusable key={name} style={styles.row} onPress={() => toggleRebbe(name)} focusRadius={4}>
                       <Text style={[styles.rowTitle, { flex: 1 }]} numberOfLines={1}>{name}</Text>
                       <Ionicons
                         name={checked ? "checkbox" : "square-outline"}
                         size={22}
                         color={checked ? Colors.gold : Colors.navyOpacity50}
                       />
-                    </TouchableOpacity>
+                    </YtcFocusable>
                   );
                 })
               )}
@@ -302,13 +304,14 @@ export default function YtcSettingsScreen() {
             {MAX_ITEM_OPTIONS.map((opt) => {
               const active = settings.maxItems === opt.value;
               return (
-                <TouchableOpacity
+                <YtcFocusable
                   key={opt.value}
                   style={[styles.chip, active && styles.chipActive]}
                   onPress={() => update({ maxItems: opt.value })}
+                  focusRadius={20}
                 >
                   <Text style={[styles.chipText, active && styles.chipTextActive]}>{opt.label}</Text>
-                </TouchableOpacity>
+                </YtcFocusable>
               );
             })}
           </View>
@@ -323,13 +326,14 @@ export default function YtcSettingsScreen() {
             {AUTO_DELETE_OPTIONS.map((opt) => {
               const active = settings.autoDeleteAfterMs === opt.value;
               return (
-                <TouchableOpacity
+                <YtcFocusable
                   key={opt.value}
                   style={[styles.chip, active && styles.chipActive]}
                   onPress={() => update({ autoDeleteAfterMs: opt.value })}
+                  focusRadius={20}
                 >
                   <Text style={[styles.chipText, active && styles.chipTextActive]}>{opt.label}</Text>
-                </TouchableOpacity>
+                </YtcFocusable>
               );
             })}
           </View>
@@ -372,19 +376,20 @@ export default function YtcSettingsScreen() {
               </View>
             </View>
           )}
-          <TouchableOpacity style={[styles.runBtn, running && styles.runBtnDisabled]} onPress={runNow} disabled={running}>
+          <YtcFocusable style={[styles.runBtn, running && styles.runBtnDisabled]} onPress={runNow} disabled={running} focusRadius={10}>
             {running
               ? <ActivityIndicator size="small" color={Colors.cream} />
               : <Text style={styles.runBtnText}>Run auto-download now</Text>}
-          </TouchableOpacity>
-          <TouchableOpacity
+          </YtcFocusable>
+          <YtcFocusable
             style={[styles.deleteAllBtn, ytcDownloadCount === 0 && styles.runBtnDisabled]}
             onPress={deleteAll}
             disabled={ytcDownloadCount === 0}
+            focusRadius={10}
           >
             <Ionicons name="trash-outline" size={16} color={Colors.error} />
             <Text style={styles.deleteAllBtnText}>Delete all downloaded shiurim</Text>
-          </TouchableOpacity>
+          </YtcFocusable>
         </View>
       </ScrollView>
     </SafeAreaView>

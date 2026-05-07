@@ -22,6 +22,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { signInEmailPassword, createUserEmailPassword, submitAccessRequest } from "@/lib/ytc/firebase";
 import { ytcColors as Colors } from "@/constants/ytcColors";
+import { YtcFocusable } from "@/components/ytc/YtcFocusable";
 
 /** Map Firebase auth error codes to short, user-readable strings. */
 function friendlyAuthError(error: any): string {
@@ -152,13 +153,13 @@ export default function LoginScreen() {
             )}
           </View>
 
-          <TouchableOpacity style={[styles.primaryBtn, isLoading && styles.primaryBtnDisabled]} onPress={handleAuth} disabled={isLoading}>
+          <YtcFocusable style={[styles.primaryBtn, isLoading && styles.primaryBtnDisabled]} onPress={handleAuth} disabled={isLoading} focusRadius={12}>
             {isLoading ? <ActivityIndicator color={Colors.cream} /> : <Text style={styles.primaryBtnText}>{isSignUp ? "Sign Up" : "Sign In"}</Text>}
-          </TouchableOpacity>
+          </YtcFocusable>
 
-          <TouchableOpacity onPress={() => setIsSignUp((v) => !v)} disabled={isLoading}>
+          <YtcFocusable onPress={() => setIsSignUp((v) => !v)} disabled={isLoading} style={styles.toggleBtn} focusRadius={6}>
             <Text style={styles.toggleText}>{isSignUp ? "Already have an account? Sign in" : "Don't have an account? Sign up"}</Text>
-          </TouchableOpacity>
+          </YtcFocusable>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -187,5 +188,6 @@ const styles = StyleSheet.create({
   primaryBtn: { backgroundColor: Colors.navy, borderRadius: 12, paddingVertical: 16, alignItems: "center", marginBottom: 16 },
   primaryBtnDisabled: { opacity: 0.5 },
   primaryBtnText: { color: Colors.cream, fontSize: 16, fontWeight: "600" },
+  toggleBtn: { paddingVertical: 8, alignItems: "center" },
   toggleText: { textAlign: "center", fontSize: 14, color: Colors.navy },
 });
