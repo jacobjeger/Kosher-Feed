@@ -43,6 +43,10 @@ export async function cleanupExpiredDownloads(favoriteEpisodeIds: string[]): Pro
 
     const toDelete: string[] = [];
     for (const [episodeId, completedAt] of Object.entries(completed)) {
+      // YTC items have their own auto-delete TTL (lib/ytc/downloads.ts).
+      // Skip them here so the global ShiurPod sweep can't pre-empt the
+      // user's YTC choice (e.g. "Off" or "30 days").
+      if (episodeId.startsWith("ytc:")) continue;
       if (now - completedAt >= DELETE_DELAY_MS && !favSet.has(episodeId)) {
         toDelete.push(episodeId);
       }

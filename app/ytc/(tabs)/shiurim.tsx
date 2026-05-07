@@ -4,7 +4,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput,
-  ActivityIndicator, Modal, ScrollView, Platform, RefreshControl,
+  ActivityIndicator, Modal, ScrollView, Platform, RefreshControl, Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -108,7 +108,14 @@ export default function ShiurimScreen() {
     const onDownloadPress = () => {
       if (!item.audioUrl) return;
       if (downloaded) {
-        removeDownload(epId);
+        Alert.alert(
+          "Remove download?",
+          item.title,
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Remove", style: "destructive", onPress: () => { removeDownload(epId); } },
+          ],
+        );
         return;
       }
       if (downloading) return;
@@ -147,7 +154,7 @@ export default function ShiurimScreen() {
               {downloading
                 ? <ActivityIndicator size="small" color={Colors.navy} />
                 : downloaded
-                ? <Ionicons name="checkmark-circle" size={22} color={Colors.gold} />
+                ? <Ionicons name="trash-outline" size={20} color={Colors.error} />
                 : <Ionicons name="download-outline" size={22} color={Colors.navyOpacity70} />}
             </TouchableOpacity>
           )}

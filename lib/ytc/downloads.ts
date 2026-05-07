@@ -31,6 +31,7 @@ export interface YtcDownloadSettings {
   selectedRebbeim: string[]; // rebbe names from Shiur.rebbe — case-sensitive match
   maxItems: number; // 50 | 100 | 250 | -1 (unlimited)
   wifiOnly: boolean;
+  autoDeleteAfterMs: number; // 0 = off; common: 24h / 48h / 7d / 30d
 }
 
 const DEFAULTS: YtcDownloadSettings = {
@@ -38,7 +39,14 @@ const DEFAULTS: YtcDownloadSettings = {
   selectedRebbeim: [],
   maxItems: 50,
   wifiOnly: true,
+  autoDeleteAfterMs: 0,
 };
+
+// ShiurPod's COMPLETED_KEY (lib/auto-delete-download.ts). YTC episodes get
+// marked there too because the shared AudioPlayerContext.markDownloadCompleted
+// fires for any played-through episode regardless of source. The global
+// ShiurPod sweep skips ytc:* ids; we own the YTC-side cleanup here.
+const COMPLETED_KEY = "@shiurpod_completed_downloads";
 
 let _cached: YtcDownloadSettings | null = null;
 type Listener = (s: YtcDownloadSettings) => void;
@@ -97,6 +105,64 @@ export function getYtcDownloads(ctx: DownloadsLike): DownloadedEpisode[] {
   return ctx.downloads.filter((d) => isYtcEpisodeId(d.id));
 }
 
+/** Remove all YTC items from the user's downloads. Used by the
+ *  "Delete all YTC downloads" action in settings. */
+export async function deleteAllYtcDownloads(ctx: DownloadsLike): Promise<number> {
+  const ytc = getYtcDownloads(ctx);
+  for (const item of ytc) {
+    try { await ctx.removeDownload(item.id); } catch {}
+  }
+  // Also clear their entries from the shared completion log so a future
+  // re-download starts a fresh TTL.
+  try {
+    const raw = await AsyncStorage.getItem(COMPLETED_KEY);
+    if (raw) {
+      const completed = JSON.parse(raw) as Record<string, number>;
+      let changed = false;
+      for (const id of Object.keys(completed)) {
+        if (id.startsWith("ytc:")) { delete completed[id]; changed = true; }
+      }
+      if (changed) await AsyncStorage.setItem(COMPLETED_KEY, JSON.stringify(completed));
+    }
+  } catch {}
+  return ytc.length;
+}
+
+/** Sweep YTC downloads whose listen-completion is older than the user's
+ *  configured TTL. No-op when settings.autoDeleteAfterMs is 0. */
+export async function cleanupExpiredYtcDownloads(ctx: DownloadsLike): Promise<number> {
+  const settings = await getYtcDownloadSettings();
+  if (settings.autoDeleteAfterMs <= 0) return 0;
+
+  let completed: Record<string, number>;
+  try {
+    const raw = await AsyncStorage.getItem(COMPLETED_KEY);
+    if (!raw) return 0;
+    completed = JSON.parse(raw);
+  } catch { return 0; }
+
+  const now = Date.now();
+  const ttl = settings.autoDeleteAfterMs;
+  const downloadedSet = new Set(getYtcDownloads(ctx).map((d) => d.id));
+  const expired: string[] = [];
+  for (const [id, completedAt] of Object.entries(completed)) {
+    if (!id.startsWith("ytc:")) continue;
+    if (!downloadedSet.has(id)) continue; // already removed by other path
+    if (now - completedAt >= ttl) expired.push(id);
+  }
+  for (const id of expired) {
+    try { await ctx.removeDownload(id); } catch {}
+  }
+  // Prune the completion log so it doesn't grow forever.
+  if (expired.length > 0) {
+    try {
+      for (const id of expired) delete completed[id];
+      await AsyncStorage.setItem(COMPLETED_KEY, JSON.stringify(completed));
+    } catch {}
+  }
+  return expired.length;
+}
+
 /** Evict the oldest YTC downloads until count ≤ max. Skips eviction when
  *  max < 0 (unlimited). Items are sorted by `downloadedAt` descending so
  *  the most recent stay. */
@@ -128,6 +194,11 @@ export interface AutoDownloadResult {
 export async function runYtcAutoDownload(ctx: DownloadsLike): Promise<AutoDownloadResult> {
   const ranAt = new Date().toISOString();
   const settings = await getYtcDownloadSettings();
+
+  // Auto-delete runs regardless of auto-download mode — the user can
+  // turn auto-download off but still want completed shiurim cleared.
+  await cleanupExpiredYtcDownloads(ctx).catch(() => {});
+
   if (settings.mode === "off") return { ranAt, skippedReason: "off", queued: 0, alreadyHave: 0, evicted: 0 };
 
   if (settings.wifiOnly) {

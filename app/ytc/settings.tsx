@@ -23,7 +23,7 @@ import { router } from "expo-router";
 import { ytcColors as Colors } from "@/constants/ytcColors";
 import {
   getYtcDownloadSettings, setYtcDownloadSettings, listAllRebbeim,
-  runYtcAutoDownload, getYtcDownloads,
+  runYtcAutoDownload, getYtcDownloads, deleteAllYtcDownloads,
   type YtcAutoDownloadMode, type YtcDownloadSettings, type AutoDownloadResult,
 } from "@/lib/ytc/downloads";
 import { useDownloads } from "@/contexts/DownloadsContext";
@@ -34,6 +34,16 @@ const MAX_ITEM_OPTIONS: { label: string; value: number }[] = [
   { label: "100",       value: 100 },
   { label: "250",       value: 250 },
   { label: "Unlimited", value: -1 },
+];
+
+const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
+const AUTO_DELETE_OPTIONS: { label: string; value: number }[] = [
+  { label: "Off",     value: 0 },
+  { label: "1 day",   value: 1 * DAY },
+  { label: "2 days",  value: 2 * DAY },
+  { label: "7 days",  value: 7 * DAY },
+  { label: "30 days", value: 30 * DAY },
 ];
 
 export default function YtcSettingsScreen() {
@@ -83,6 +93,21 @@ export default function YtcSettingsScreen() {
     const result = await runYtcAutoDownload(downloadsCtx);
     setLastResult(result);
     setRunning(false);
+  };
+
+  const deleteAll = async () => {
+    if (ytcDownloadCount === 0) return;
+    Alert.alert(
+      "Delete all YTC downloads?",
+      `This removes ${ytcDownloadCount} downloaded shiurim from this device. Your auto-download settings stay as-is.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete all", style: "destructive",
+          onPress: async () => { await deleteAllYtcDownloads(downloadsCtx); },
+        },
+      ],
+    );
   };
 
   if (!settings) {
@@ -184,6 +209,27 @@ export default function YtcSettingsScreen() {
           </Text>
         </View>
 
+        <Text style={styles.sectionTitle}>Auto-delete after listening</Text>
+        <View style={styles.card}>
+          <View style={styles.rowChips}>
+            {AUTO_DELETE_OPTIONS.map((opt) => {
+              const active = settings.autoDeleteAfterMs === opt.value;
+              return (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[styles.chip, active && styles.chipActive]}
+                  onPress={() => update({ autoDeleteAfterMs: opt.value })}
+                >
+                  <Text style={[styles.chipText, active && styles.chipTextActive]}>{opt.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={styles.rowSubtitle}>
+            Once a shiur plays through, remove the downloaded file after this delay. Off keeps every downloaded shiur until you delete it manually.
+          </Text>
+        </View>
+
         <Text style={styles.sectionTitle}>Network</Text>
         <View style={styles.card}>
           <View style={styles.row}>
@@ -222,6 +268,14 @@ export default function YtcSettingsScreen() {
             {running
               ? <ActivityIndicator size="small" color={Colors.cream} />
               : <Text style={styles.runBtnText}>Run auto-download now</Text>}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.deleteAllBtn, ytcDownloadCount === 0 && styles.runBtnDisabled]}
+            onPress={deleteAll}
+            disabled={ytcDownloadCount === 0}
+          >
+            <Ionicons name="trash-outline" size={16} color={Colors.error} />
+            <Text style={styles.deleteAllBtnText}>Delete all downloaded shiurim</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -264,7 +318,13 @@ const styles = StyleSheet.create({
     margin: 12, paddingVertical: 12, borderRadius: 10, backgroundColor: Colors.navy,
     alignItems: "center", justifyContent: "center",
   },
-  runBtnDisabled: { opacity: 0.6 },
+  runBtnDisabled: { opacity: 0.5 },
   runBtnText: { color: Colors.cream, fontSize: 14, fontWeight: "600" },
+  deleteAllBtn: {
+    marginHorizontal: 12, marginBottom: 12, paddingVertical: 12, borderRadius: 10,
+    backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.error,
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+  },
+  deleteAllBtnText: { color: Colors.error, fontSize: 14, fontWeight: "600" },
   emptyText: { fontSize: 13, color: Colors.navyOpacity70, padding: 16 },
 });
