@@ -15,7 +15,7 @@
 //     mini-player floats above this layout's content.
 import React, { useEffect } from "react";
 import { Stack, router } from "expo-router";
-import { View, ActivityIndicator, Pressable, Platform } from "react-native";
+import { View, ActivityIndicator, Pressable, Platform, Text } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { YtcAuthProvider, useYtcAuth } from "@/contexts/YtcAuthContext";
@@ -23,6 +23,44 @@ import { ytcColors } from "@/constants/ytcColors";
 import { lightHaptic } from "@/lib/haptics";
 import { YtcAnalyticsObserver } from "@/components/YtcAnalyticsObserver";
 import { YtcPushHost } from "@/components/ytc/YtcPushHost";
+
+// Inline error boundary so any render-time throw inside YTC shows a
+// visible fallback (with the X to close) instead of leaving the user
+// staring at a black modal they can't dismiss without force-quitting.
+class YtcErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  componentDidCatch(error: Error) {
+    try {
+      // Use console.error so it lands in logcat under ReactNativeJS,
+      // making post-mortem diagnosis from adb possible.
+      // eslint-disable-next-line no-console
+      console.error("[YTC] render boundary caught:", error?.message, error?.stack);
+    } catch {}
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <View style={{ flex: 1, backgroundColor: ytcColors.cream, justifyContent: "center", alignItems: "center", padding: 24 }}>
+          <Ionicons name="alert-circle-outline" size={48} color={ytcColors.navy} />
+          <Text style={{ color: ytcColors.navy, fontSize: 16, fontWeight: "600", marginTop: 12, textAlign: "center" }}>
+            YTC failed to load
+          </Text>
+          <Text style={{ color: ytcColors.navyOpacity70, fontSize: 13, marginTop: 8, textAlign: "center" }}>
+            {this.state.error.message || "Unknown error"}
+          </Text>
+          <Pressable onPress={() => { try { router.back(); } catch {} }} style={{ marginTop: 24, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 10, backgroundColor: ytcColors.navy }}>
+            <Text style={{ color: ytcColors.cream, fontSize: 14, fontWeight: "600" }}>Close</Text>
+          </Pressable>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function CloseButton() {
   const insets = useSafeAreaInsets();
@@ -87,8 +125,12 @@ function YtcGate() {
 
 export default function YtcRootLayout() {
   return (
-    <YtcAuthProvider>
-      <YtcGate />
-    </YtcAuthProvider>
+    <View style={{ flex: 1, backgroundColor: ytcColors.cream }}>
+      <YtcErrorBoundary>
+        <YtcAuthProvider>
+          <YtcGate />
+        </YtcAuthProvider>
+      </YtcErrorBoundary>
+    </View>
   );
 }

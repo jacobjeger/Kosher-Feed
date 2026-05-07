@@ -33,6 +33,7 @@
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { addLog } from "@/lib/error-logger";
+import { isReactNativeFirebaseAvailable } from "@/lib/ytc/push-availability";
 
 // Lazy require so the bundle doesn't barf if the native module isn't
 // linked (e.g., on web or during a bad build). All call sites
@@ -41,6 +42,12 @@ type FBMessagingMod = typeof import("@react-native-firebase/messaging");
 let _messagingMod: FBMessagingMod | null = null;
 async function getMessaging() {
   if (_messagingMod) return _messagingMod;
+  // Hard gate: don't even attempt require() when the native side isn't
+  // there. require() loads the package's JS which may cause side-effect
+  // throws despite our try/catch (top-level NativeEventEmitter setup,
+  // async unhandled rejections, etc). The native-module check is
+  // synchronous and safe.
+  if (!isReactNativeFirebaseAvailable()) return null;
   try {
     _messagingMod = require("@react-native-firebase/messaging");
     return _messagingMod;

@@ -19,6 +19,7 @@ import { Platform } from "react-native";
 import * as Notifications from "expo-notifications";
 import { addLog } from "@/lib/error-logger";
 import { consumeYtcNotification } from "@/lib/ytc/notification-handler";
+import { isReactNativeFirebaseAvailable } from "@/lib/ytc/push-availability";
 
 const CHANNEL_ID = "ytc_general";
 
@@ -39,6 +40,17 @@ export function YtcPushHost() {
         });
       } catch (e: any) {
         addLog("warn", `YTC push channel create failed: ${e?.message || e}`, undefined, "ytc-push");
+      }
+
+      // Hard gate: skip ALL react-native-firebase work if the native
+      // side isn't linked. Older APKs that received today's OTA bundle
+      // don't have the native module, and require()-ing the package
+      // there can cause side-effect throws that black-screen the YTC
+      // modal. NativeModules.RNFBAppModule presence is a clean proxy
+      // for "is the package usable here?".
+      if (!isReactNativeFirebaseAvailable()) {
+        addLog("info", "YTC push: native module not linked in this build, skipping", undefined, "ytc-push");
+        return;
       }
 
       // Lazy import — module load shouldn't block YTC mount, and we
