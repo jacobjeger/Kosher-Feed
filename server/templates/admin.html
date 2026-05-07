@@ -2288,15 +2288,15 @@ function switchTab(tab, btn) {
   if (tab === 'settings') { loadTATStatus(); setTimeout(() => { loadAllOUStatuses(); loadTDStatus(); loadMergers(); loadGlobalMergeHistory(); }, 300); }
 }
 
-// YTC: load + save handlers for the access code panel. Backed by
-// /api/admin/config/ytc-unlock-code (server/routes.ts).
+// YTC: load + save handlers for the access code panel. Uses the existing
+// api() helper (auto-injects the Basic auth token from login state) and
+// parses JSON. Backed by /api/admin/config/ytc-unlock-code in routes.ts.
 async function loadYtcCode() {
   const maskEl = document.getElementById('ytcCurrentMask');
   const badgeEl = document.getElementById('ytcStatusBadge');
   if (!maskEl || !badgeEl) return;
   try {
-    const r = await fetch('/api/admin/config/ytc-unlock-code', { headers: authHeaders() });
-    const d = await r.json();
+    const d = await api('/api/admin/config/ytc-unlock-code');
     if (d.set) {
       maskEl.textContent = d.mask || '••••';
       badgeEl.textContent = 'Enabled';
@@ -2318,12 +2318,7 @@ async function saveYtcCode() {
   const value = (input.value || '').trim();
   if (!value) { alertEl.innerHTML = '<div class="alert alert-error">Enter a code, or use "Disable feature" to clear.</div>'; return; }
   try {
-    const r = await fetch('/api/admin/config/ytc-unlock-code', {
-      method: 'PUT',
-      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ value }),
-    });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
+    await api('/api/admin/config/ytc-unlock-code', { method: 'PUT', body: JSON.stringify({ value }) });
     input.value = '';
     alertEl.innerHTML = '<div class="alert alert-success">Saved. App clients will pick up the new code within ~5 min (config cache window).</div>';
     loadYtcCode();
@@ -2336,12 +2331,7 @@ async function disableYtc() {
   if (!confirm('Disable YTC access? The unlock code will be cleared. The settings entry to enter the code will disappear from the app within ~5 min. Currently-unlocked devices stay unlocked until they sign out.')) return;
   const alertEl = document.getElementById('ytcSaveAlert');
   try {
-    const r = await fetch('/api/admin/config/ytc-unlock-code', {
-      method: 'PUT',
-      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ value: '' }),
-    });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
+    await api('/api/admin/config/ytc-unlock-code', { method: 'PUT', body: JSON.stringify({ value: '' }) });
     if (alertEl) alertEl.innerHTML = '<div class="alert alert-success">YTC feature disabled.</div>';
     loadYtcCode();
   } catch (e) {
