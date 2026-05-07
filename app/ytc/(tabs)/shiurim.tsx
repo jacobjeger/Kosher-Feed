@@ -9,14 +9,25 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { ytcColors as Colors } from "@/constants/ytcColors";
-import { fetchShiurim } from "@/lib/ytc/firebase";
+import { fetchShiurim, invalidateYtcCache } from "@/lib/ytc/firebase";
 import type { Shiur } from "@/types/ytc";
-import { useYtcPlayer } from "@/lib/ytc/audio-adapter";
+import { useYtcPlayer, YTC_EPISODE_PREFIX } from "@/lib/ytc/audio-adapter";
+import { usePositions } from "@/contexts/PositionsContext";
 
 type SortOrder = "dateDesc" | "dateAsc" | "titleAZ" | "rebbeAZ";
 
+function formatRemainingMin(positionMs: number, durationMs: number): string {
+  const remainingMs = Math.max(0, durationMs - positionMs);
+  const total = Math.floor(remainingMs / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m left`;
+  return `${m} min left`;
+}
+
 export default function ShiurimScreen() {
   const { currentShiurId, isPlaying, isLoading: audioLoading, play, pauseResume } = useYtcPlayer();
+  const { getPosition } = usePositions();
 
   const [shiurim, setShiurim] = useState<Shiur[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -41,7 +52,11 @@ export default function ShiurimScreen() {
   };
 
   useEffect(() => { loadShiurim(); }, []);
-  const onRefresh = useCallback(() => { setRefreshing(true); loadShiurim(); }, []);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await invalidateYtcCache("shiurim");
+    loadShiurim();
+  }, []);
 
   const allRebbeim = useMemo(() => [...new Set(shiurim.map((s) => s.rebbe))].sort(), [shiurim]);
   const allTags = useMemo(() => [...new Set(shiurim.flatMap((s) => s.tags))].sort(), [shiurim]);
@@ -80,6 +95,10 @@ export default function ShiurimScreen() {
   const renderShiur = ({ item }: { item: Shiur }) => {
     const isActive = currentShiurId === item.id;
     const isExpanded = expandedId === item.id;
+    const saved = getPosition(`${YTC_EPISODE_PREFIX}${item.id}`);
+    const hasProgress = saved && saved.durationMs > 0 && saved.positionMs > 0;
+    const pct = hasProgress ? Math.min(Math.round((saved!.positionMs / saved!.durationMs) * 100), 100) : 0;
+    const completed = hasProgress && pct >= 95;
     return (
       <View style={[styles.shiurCard, isActive && styles.shiurCardActive]}>
         <TouchableOpacity style={styles.shiurHeader} onPress={() => setExpandedId(isExpanded ? null : item.id)}>
@@ -98,6 +117,10 @@ export default function ShiurimScreen() {
               <Text style={[styles.shiurTitle, isActive && styles.shiurTitleActive]} numberOfLines={2}>{item.title}</Text>
               <Text style={styles.shiurRebbeDate}>{item.rebbe} · {formatDate(item.date)}</Text>
               {item.series && <Text style={styles.seriesText}>Series: {item.series}</Text>}
+              {hasProgress && !completed && (
+                <Text style={styles.progressText}>{pct}% · {formatRemainingMin(saved!.positionMs, saved!.durationMs)}</Text>
+              )}
+              {completed && <Text style={styles.completedText}>Completed</Text>}
             </View>
           </View>
           <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={16} color={Colors.navyOpacity50} />
@@ -117,6 +140,11 @@ export default function ShiurimScreen() {
             <View style={styles.statsRow}>
               {item.playCount != null && <Text style={styles.stat}>▶ {item.playCount} plays</Text>}
             </View>
+          </View>
+        )}
+        {hasProgress && !completed && (
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${pct}%` }]} />
           </View>
         )}
       </View>
@@ -217,33 +245,37 @@ export default function ShiurimScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.cream },
-  header: { backgroundColor: Colors.navy, paddingHorizontal: 20, paddingVertical: 20, alignItems: "center" },
-  headerTitle: { color: Colors.cream, fontSize: 24, fontWeight: "bold", fontFamily: Platform.OS === "ios" ? "Georgia" : "serif" },
-  headerSubtitle: { color: Colors.creamOpacity70, fontSize: 13, marginTop: 4 },
-  searchRow: { flexDirection: "row", padding: 12, gap: 10, backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.creamDark },
-  searchBox: { flex: 1, flexDirection: "row", alignItems: "center", backgroundColor: Colors.cream, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
+  header: { backgroundColor: Colors.navy, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10, alignItems: "center" },
+  headerTitle: { color: Colors.cream, fontSize: 18, fontWeight: "bold", fontFamily: Platform.OS === "ios" ? "Georgia" : "serif" },
+  headerSubtitle: { color: Colors.creamOpacity70, fontSize: 12, marginTop: 2 },
+  searchRow: { flexDirection: "row", paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8, gap: 10, backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.creamDark },
+  searchBox: { flex: 1, flexDirection: "row", alignItems: "center", backgroundColor: Colors.cream, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 },
   searchInput: { flex: 1, fontSize: 15, color: Colors.navy },
-  filterBtn: { width: 40, height: 40, borderRadius: 10, backgroundColor: Colors.creamDark, alignItems: "center", justifyContent: "center" },
+  filterBtn: { width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.creamDark, alignItems: "center", justifyContent: "center" },
   filterBtnActive: { backgroundColor: Colors.navy },
-  activeFilters: { flexDirection: "row", flexWrap: "wrap", paddingHorizontal: 12, paddingVertical: 8, gap: 8, backgroundColor: Colors.white },
+  activeFilters: { flexDirection: "row", flexWrap: "wrap", paddingHorizontal: 12, paddingVertical: 6, gap: 8, backgroundColor: Colors.white },
   filterChip: { backgroundColor: Colors.goldOpacity15, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4 },
   filterChipText: { fontSize: 12, color: Colors.navy, fontWeight: "500" },
-  countText: { paddingHorizontal: 16, paddingVertical: 6, fontSize: 12, color: Colors.navyOpacity50 },
+  countText: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 2, fontSize: 12, color: Colors.navyOpacity50 },
   loader: { flex: 1, justifyContent: "center", alignItems: "center" },
-  listContent: { padding: 12, gap: 8, paddingBottom: 120 },
+  listContent: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 120 },
   empty: { alignItems: "center", padding: 40, gap: 12 },
   emptyText: { fontSize: 15, color: Colors.navyOpacity50 },
   shiurCard: { backgroundColor: Colors.white, borderRadius: 12, marginBottom: 8, shadowColor: Colors.black, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2, overflow: "hidden" },
   shiurCardActive: { borderLeftWidth: 3, borderLeftColor: Colors.gold },
-  shiurHeader: { flexDirection: "row", alignItems: "center", padding: 14, gap: 12 },
+  shiurHeader: { flexDirection: "row", alignItems: "center", padding: 12, gap: 12 },
   shiurLeft: { flex: 1, flexDirection: "row", alignItems: "center", gap: 12 },
-  playBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.creamDark, alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  playBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: Colors.creamDark, alignItems: "center", justifyContent: "center", flexShrink: 0 },
   playBtnActive: { backgroundColor: Colors.navy },
   shiurMeta: { flex: 1 },
   shiurTitle: { fontSize: 14, fontWeight: "600", color: Colors.navy, lineHeight: 20 },
   shiurTitleActive: { color: Colors.navy },
   shiurRebbeDate: { fontSize: 12, color: Colors.navyOpacity70, marginTop: 2 },
   seriesText: { fontSize: 11, color: Colors.gold, marginTop: 2, fontWeight: "500" },
+  progressText: { fontSize: 11, color: Colors.gold, marginTop: 2, fontWeight: "500" },
+  completedText: { fontSize: 11, color: Colors.navyOpacity50, marginTop: 2, fontWeight: "500" },
+  progressTrack: { height: 3, backgroundColor: Colors.creamDark },
+  progressFill: { height: 3, backgroundColor: Colors.gold },
   shiurDetail: { paddingHorizontal: 14, paddingBottom: 14, paddingTop: 0 },
   description: { fontSize: 13, color: Colors.navyOpacity70, lineHeight: 19, marginBottom: 10 },
   tags: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 },

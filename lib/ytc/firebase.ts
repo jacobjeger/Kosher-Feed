@@ -123,6 +123,121 @@ export async function submitAccessRequest(email: string, name: string): Promise<
   });
 }
 
+// ─── Caching ────────────────────────────────────────────────────────────────
+//
+// Aggressive two-layer cache so every YTC screen loads instantly after
+// the very first fetch. Without this every tab switch / app reopen
+// re-fetched from Firestore and the section felt sluggish.
+//
+// Layer 1: in-memory Map<key, {data, ts}> — instant hits during a session.
+// Layer 2: AsyncStorage — survives cold start so the FIRST tap on the
+//   YTC tab after relaunch shows data immediately while a background
+//   refresh updates it.
+//
+// Stale-while-revalidate semantics: cached data is returned right away
+// whether fresh or stale. If stale, a background refetch fires; the
+// next call (or the next render that subscribes via the cache key)
+// gets the new data. Pull-to-refresh handlers should call
+// invalidateYtcCache() to force the next read to bypass the cache.
+//
+// Long TTLs intentionally — rebbeim and alumni rarely change, so a 24h
+// TTL is fine and gives true offline-after-first-load behavior.
+
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+const STORAGE_PREFIX = "@ytc_cache:v1:";
+type CacheEntry<T> = { data: T; ts: number };
+const _mem = new Map<string, CacheEntry<any>>();
+const _inflight = new Map<string, Promise<any>>();
+
+async function readDisk<T>(key: string): Promise<CacheEntry<T> | null> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_PREFIX + key);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+async function writeDisk<T>(key: string, entry: CacheEntry<T>): Promise<void> {
+  try { await AsyncStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(entry)); } catch {}
+}
+
+async function cached<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
+  const now = Date.now();
+  // Layer 1: in-memory
+  const memHit = _mem.get(key) as CacheEntry<T> | undefined;
+  if (memHit) {
+    if (now - memHit.ts < ttlMs) return memHit.data;
+    // Stale: return immediately, refresh in background.
+    refreshInBackground(key, fn);
+    return memHit.data;
+  }
+  // Layer 2: disk (one-time hydration into memory)
+  const diskHit = await readDisk<T>(key);
+  if (diskHit) {
+    _mem.set(key, diskHit);
+    if (now - diskHit.ts < ttlMs) return diskHit.data;
+    // Stale on disk too — return what we have, refresh in background.
+    refreshInBackground(key, fn);
+    return diskHit.data;
+  }
+  // Cold cache: must wait for network. Subsequent calls are instant.
+  return fetchAndStore(key, fn);
+}
+
+function refreshInBackground<T>(key: string, fn: () => Promise<T>): void {
+  if (_inflight.has(key)) return; // already refreshing
+  fetchAndStore(key, fn).catch(() => {}); // background; failures don't propagate
+}
+
+async function fetchAndStore<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const existing = _inflight.get(key) as Promise<T> | undefined;
+  if (existing) return existing;
+  const promise = (async () => {
+    try {
+      const data = await fn();
+      const entry: CacheEntry<T> = { data, ts: Date.now() };
+      _mem.set(key, entry);
+      writeDisk(key, entry); // fire-and-forget — disk persistence is best-effort
+      return data;
+    } finally {
+      _inflight.delete(key);
+    }
+  })();
+  _inflight.set(key, promise);
+  return promise;
+}
+
+/**
+ * Force-invalidate cached data so the next call hits the network.
+ * Pull-to-refresh handlers in /ytc screens call this before re-fetching.
+ * Pass no argument to clear EVERYTHING (used on sign-out).
+ */
+export async function invalidateYtcCache(key?: string): Promise<void> {
+  if (key) {
+    _mem.delete(key);
+    _inflight.delete(key);
+    try { await AsyncStorage.removeItem(STORAGE_PREFIX + key); } catch {}
+    return;
+  }
+  _mem.clear();
+  _inflight.clear();
+  try {
+    const all = await AsyncStorage.getAllKeys();
+    const ours = all.filter((k) => k.startsWith(STORAGE_PREFIX));
+    if (ours.length) await AsyncStorage.multiRemove(ours);
+  } catch {}
+}
+
+// TTL choices:
+// - Shiurim, events, announcements, carousel: 30 min — they update
+//   weekly at most, but a half-hour is a safe daily-use freshness window.
+// - Rebbeim, alumni: 24 hours — rarely change, big payoff for caching.
+// - Most-recent-shiur: 5 min — home screen shows it prominently and a
+//   missing newest shiur is more noticeable than a stale list.
+const TTL_RECENT = 5 * 60 * 1000;
+const TTL_LIST = 30 * 60 * 1000;
+const TTL_DIRECTORY = 24 * 60 * 60 * 1000;
+
 // ─── Doc → typed object helpers ─────────────────────────────────────────────
 
 function docToShiur(d: DocumentSnapshot) {
@@ -160,22 +275,34 @@ function docToEvent(d: DocumentSnapshot) {
 }
 
 // ─── Shiurim ────────────────────────────────────────────────────────────────
+// All fetchers below go through cached() — see the Caching section above.
+// Cache key is the fetcher name (extended with arg suffixes when the call
+// is parameterized). Keys must stay stable across releases or users will
+// see a cold-cache hit on app update; if you need to bust, change the
+// STORAGE_PREFIX version number above.
 
 export async function fetchShiurim() {
-  const { db } = await getYtcFirebase();
-  const { collection, query, orderBy, getDocs } = await import("firebase/firestore");
-  const snap = await getDocs(query(collection(db, "shiurim"), orderBy("date", "desc")));
-  return snap.docs.map(docToShiur).filter(Boolean);
+  return cached("shiurim", TTL_LIST, async () => {
+    const { db } = await getYtcFirebase();
+    const { collection, query, orderBy, getDocs } = await import("firebase/firestore");
+    const snap = await getDocs(query(collection(db, "shiurim"), orderBy("date", "desc")));
+    return snap.docs.map(docToShiur).filter(Boolean);
+  });
 }
 
 export async function fetchMostRecentShiur() {
-  const { db } = await getYtcFirebase();
-  const { collection, query, orderBy, limit, getDocs } = await import("firebase/firestore");
-  const snap = await getDocs(query(collection(db, "shiurim"), orderBy("date", "desc"), limit(1)));
-  return snap.docs[0] ? docToShiur(snap.docs[0]) : null;
+  return cached("mostRecentShiur", TTL_RECENT, async () => {
+    const { db } = await getYtcFirebase();
+    const { collection, query, orderBy, limit, getDocs } = await import("firebase/firestore");
+    const snap = await getDocs(query(collection(db, "shiurim"), orderBy("date", "desc"), limit(1)));
+    return snap.docs[0] ? docToShiur(snap.docs[0]) : null;
+  });
 }
 
 export async function incrementPlayCount(shiurId: string) {
+  // Not cached — fire-and-forget mutation. The home/list screens read
+  // playCount from cached data, so the new count won't show until the
+  // shiurim cache hits TTL or the user pulls-to-refresh.
   const { db } = await getYtcFirebase();
   const { doc, updateDoc, increment } = await import("firebase/firestore");
   try { await updateDoc(doc(db, "shiurim", shiurId), { playCount: increment(1) }); } catch {}
@@ -184,92 +311,106 @@ export async function incrementPlayCount(shiurId: string) {
 // ─── Events ─────────────────────────────────────────────────────────────────
 
 export async function fetchEvents() {
-  const { db } = await getYtcFirebase();
-  const { collection, query, orderBy, getDocs } = await import("firebase/firestore");
-  const snap = await getDocs(query(collection(db, "events"), orderBy("date", "asc")));
-  return snap.docs.map(docToEvent).filter(Boolean);
+  return cached("events", TTL_LIST, async () => {
+    const { db } = await getYtcFirebase();
+    const { collection, query, orderBy, getDocs } = await import("firebase/firestore");
+    const snap = await getDocs(query(collection(db, "events"), orderBy("date", "asc")));
+    return snap.docs.map(docToEvent).filter(Boolean);
+  });
 }
 
 export async function fetchUpcomingEvents(eventLimit = 3) {
-  const { db } = await getYtcFirebase();
-  const { collection, query, where, orderBy, limit, getDocs } = await import("firebase/firestore");
-  const today = new Date().toISOString().split("T")[0];
-  const snap = await getDocs(
-    query(collection(db, "events"), where("date", ">=", today), orderBy("date", "asc"), limit(eventLimit)),
-  );
-  return snap.docs.map(docToEvent).filter(Boolean);
+  // Cache key includes the limit so different callers don't share an
+  // entry. TTL_RECENT (5 min) since the home screen shows them.
+  return cached(`upcomingEvents:${eventLimit}`, TTL_RECENT, async () => {
+    const { db } = await getYtcFirebase();
+    const { collection, query, where, orderBy, limit, getDocs } = await import("firebase/firestore");
+    const today = new Date().toISOString().split("T")[0];
+    const snap = await getDocs(
+      query(collection(db, "events"), where("date", ">=", today), orderBy("date", "asc"), limit(eventLimit)),
+    );
+    return snap.docs.map(docToEvent).filter(Boolean);
+  });
 }
 
 // ─── Announcements ──────────────────────────────────────────────────────────
 
 export async function fetchAnnouncements() {
-  const { db } = await getYtcFirebase();
-  const { collection, query, where, orderBy, getDocs } = await import("firebase/firestore");
-  const snap = await getDocs(
-    query(collection(db, "announcements"), where("enabled", "==", true), orderBy("date", "desc")),
-  );
-  return snap.docs.map((d) => {
-    const data = d.data();
-    return {
-      id: d.id,
-      title: data.title ?? "",
-      content: data.content ?? "",
-      type: data.type ?? "announcement",
-      date: data.date ?? "",
-      enabled: data.enabled ?? false,
-    };
+  return cached("announcements", TTL_LIST, async () => {
+    const { db } = await getYtcFirebase();
+    const { collection, query, where, orderBy, getDocs } = await import("firebase/firestore");
+    const snap = await getDocs(
+      query(collection(db, "announcements"), where("enabled", "==", true), orderBy("date", "desc")),
+    );
+    return snap.docs.map((d) => {
+      const data = d.data();
+      return {
+        id: d.id,
+        title: data.title ?? "",
+        content: data.content ?? "",
+        type: data.type ?? "announcement",
+        date: data.date ?? "",
+        enabled: data.enabled ?? false,
+      };
+    });
   });
 }
 
 // ─── Carousel ───────────────────────────────────────────────────────────────
 
 export async function fetchCarouselImages() {
-  const { db } = await getYtcFirebase();
-  const { collection, getDocs } = await import("firebase/firestore");
-  const snap = await getDocs(collection(db, "carouselImages"));
-  return snap.docs
-    .map((d) => {
-      const data = d.data();
-      return { id: d.id, url: data.url ?? "", caption: data.caption as string | undefined, order: data.order ?? 0 };
-    })
-    .sort((a, b) => a.order - b.order);
+  return cached("carouselImages", TTL_LIST, async () => {
+    const { db } = await getYtcFirebase();
+    const { collection, getDocs } = await import("firebase/firestore");
+    const snap = await getDocs(collection(db, "carouselImages"));
+    return snap.docs
+      .map((d) => {
+        const data = d.data();
+        return { id: d.id, url: data.url ?? "", caption: data.caption as string | undefined, order: data.order ?? 0 };
+      })
+      .sort((a, b) => a.order - b.order);
+  });
 }
 
 // ─── Contacts ───────────────────────────────────────────────────────────────
 
 export async function fetchRebbeim() {
-  const { db } = await getYtcFirebase();
-  const { collection, getDocs } = await import("firebase/firestore");
-  const snap = await getDocs(collection(db, "rebbeim"));
-  return snap.docs.map((d) => {
-    const data = d.data();
-    return {
-      id: d.id,
-      name: data.name ?? "",
-      title: data.title ?? "",
-      email: data.email as string | undefined,
-      phone: data.phone as string | undefined,
-      photoUrl: data.photoUrl as string | undefined,
-    };
-  });
-}
-
-export async function fetchApprovedAlumni() {
-  const { db } = await getYtcFirebase();
-  const { collection, getDocs } = await import("firebase/firestore");
-  const snap = await getDocs(collection(db, "alumniContactSubmissions"));
-  return snap.docs
-    .filter((d) => d.data().status === "approved")
-    .map((d) => {
+  return cached("rebbeim", TTL_DIRECTORY, async () => {
+    const { db } = await getYtcFirebase();
+    const { collection, getDocs } = await import("firebase/firestore");
+    const snap = await getDocs(collection(db, "rebbeim"));
+    return snap.docs.map((d) => {
       const data = d.data();
       return {
         id: d.id,
         name: data.name ?? "",
+        title: data.title ?? "",
         email: data.email as string | undefined,
         phone: data.phone as string | undefined,
-        location: data.location ?? "",
-        submittedAt: data.submittedAt as any,
+        photoUrl: data.photoUrl as string | undefined,
       };
-    })
-    .sort((a, b) => a.name.localeCompare(b.name));
+    });
+  });
+}
+
+export async function fetchApprovedAlumni() {
+  return cached("approvedAlumni", TTL_DIRECTORY, async () => {
+    const { db } = await getYtcFirebase();
+    const { collection, getDocs } = await import("firebase/firestore");
+    const snap = await getDocs(collection(db, "alumniContactSubmissions"));
+    return snap.docs
+      .filter((d) => d.data().status === "approved")
+      .map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          name: data.name ?? "",
+          email: data.email as string | undefined,
+          phone: data.phone as string | undefined,
+          location: data.location ?? "",
+          submittedAt: data.submittedAt as any,
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  });
 }

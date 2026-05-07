@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, FlatList, StyleSheet, ActivityIndicator, Platform, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ytcColors as Colors } from "@/constants/ytcColors";
-import { fetchEvents } from "@/lib/ytc/firebase";
+import { fetchEvents, invalidateYtcCache } from "@/lib/ytc/firebase";
 import type { YtcEvent } from "@/types/ytc";
 
 export default function EventsScreen() {
@@ -25,7 +25,11 @@ export default function EventsScreen() {
   };
 
   useEffect(() => { loadEvents(); }, []);
-  const onRefresh = useCallback(() => { setRefreshing(true); loadEvents(); }, []);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await invalidateYtcCache("events");
+    loadEvents();
+  }, []);
 
   const today = new Date().toISOString().split("T")[0];
   const upcoming = useMemo(() => events.filter((e) => e.date >= today), [events, today]);
@@ -102,8 +106,8 @@ export default function EventsScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.cream },
-  header: { backgroundColor: Colors.navy, paddingVertical: 28, alignItems: "center" },
-  headerTitle: { color: Colors.cream, fontSize: 24, fontWeight: "bold", fontFamily: Platform.OS === "ios" ? "Georgia" : "serif" },
+  header: { backgroundColor: Colors.navy, paddingTop: 8, paddingBottom: 10, alignItems: "center" },
+  headerTitle: { color: Colors.cream, fontSize: 18, fontWeight: "bold", fontFamily: Platform.OS === "ios" ? "Georgia" : "serif" },
   loader: { flex: 1, justifyContent: "center", alignItems: "center" },
   body: { padding: 16, gap: 24, paddingBottom: 120 },
   section: { gap: 12 },

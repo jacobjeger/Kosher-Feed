@@ -1,7 +1,7 @@
 import { Tabs, usePathname } from "expo-router";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
-import { Platform, StyleSheet, View, Text, Pressable, Dimensions } from "react-native";
+import { Platform, StyleSheet, View, Text, Pressable, Dimensions, Image } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useState, useEffect, useCallback } from "react";
@@ -283,10 +283,10 @@ export default function TabLayout() {
             title: "YTC",
             href: showYtcTab ? undefined : null,
             tabBarIcon: ({ focused }) => (
-              <Ionicons
-                name={focused ? "school" : "school-outline"}
-                size={22}
-                color={ytcColors.gold}
+              <Image
+                source={require("@/assets/images/ytc-logo.png")}
+                style={{ width: 26, height: 26, opacity: focused ? 1 : 0.7 }}
+                resizeMode="contain"
               />
             ),
             tabBarButton: showYtcTab

@@ -9,7 +9,7 @@ import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { ytcColors as Colors } from "@/constants/ytcColors";
-import { fetchRebbeim, fetchApprovedAlumni } from "@/lib/ytc/firebase";
+import { fetchRebbeim, fetchApprovedAlumni, invalidateYtcCache } from "@/lib/ytc/firebase";
 import type { Rebbe, AlumniContact } from "@/types/ytc";
 
 type ContactTab = "rebbeim" | "alumni";
@@ -37,7 +37,11 @@ export default function ContactsScreen() {
   };
 
   useEffect(() => { loadData(); }, []);
-  const onRefresh = useCallback(() => { setRefreshing(true); loadData(); }, []);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([invalidateYtcCache("rebbeim"), invalidateYtcCache("approvedAlumni")]);
+    loadData();
+  }, []);
 
   const filteredAlumni = alumni.filter(
     (a) =>
@@ -181,9 +185,9 @@ function EmptyState({ message }: { message: string }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.cream },
-  header: { backgroundColor: Colors.navy, paddingVertical: 24, alignItems: "center" },
-  headerTitle: { color: Colors.cream, fontSize: 24, fontWeight: "bold", fontFamily: Platform.OS === "ios" ? "Georgia" : "serif" },
-  headerSubtitle: { color: Colors.creamOpacity70, fontSize: 13, marginTop: 4 },
+  header: { backgroundColor: Colors.navy, paddingTop: 8, paddingBottom: 10, alignItems: "center" },
+  headerTitle: { color: Colors.cream, fontSize: 18, fontWeight: "bold", fontFamily: Platform.OS === "ios" ? "Georgia" : "serif" },
+  headerSubtitle: { color: Colors.creamOpacity70, fontSize: 12, marginTop: 2 },
   tabRow: { flexDirection: "row", backgroundColor: Colors.white, padding: 6, margin: 12, borderRadius: 12, shadowColor: Colors.black, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 1 },
   tab: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 8 },
   tabActive: { backgroundColor: Colors.navy },

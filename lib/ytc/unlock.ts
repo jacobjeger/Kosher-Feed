@@ -60,8 +60,9 @@ export async function lock(): Promise<void> {
     // Lazy import keeps lib/ytc/firebase.ts (and the entire Firebase JS
     // SDK it transitively pulls in) out of the cold-start bundle. This
     // module only loads when the user actually locks an existing session.
-    const { firebaseSignOutIfInitialized } = await import("@/lib/ytc/firebase");
+    const { firebaseSignOutIfInitialized, invalidateYtcCache } = await import("@/lib/ytc/firebase");
     await firebaseSignOutIfInitialized();
+    await invalidateYtcCache();
   } catch {}
   emit();
 }
