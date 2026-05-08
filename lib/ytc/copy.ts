@@ -1,35 +1,55 @@
-// YTC: copy-to-clipboard helper with a graceful fallback for builds
-// that don't have expo-clipboard's native module linked yet (OTA
-// users on older APKs). Tries expo-clipboard's setStringAsync first;
-// if that throws — most likely because the native module isn't
-// registered — falls back to React Native's Share API which exposes
-// a "Copy" option in the system sheet on every supported platform.
+// YTC: copy-to-clipboard helper.
+//
+// Path 1 (NEW APK): expo-clipboard's native module is linked.
+//   setStringAsync(value) writes silently → toast confirmation.
+//
+// Path 2 (OLD APK / OTA users): native module not linked.
+//   Show an Alert with the value pre-formatted; on Android the user
+//   can long-press to copy. Faster + less surprising than popping the
+//   system share sheet (the previous fallback could take 30s+ on
+//   slow devices because the share sheet enumerates installed apps).
+//
+// Lazy require on FIRST CALL — module init shouldn't trigger native
+// module probing for OTA users where the require may take a noticeable
+// chunk of JS-thread time.
 
-import { Share, ToastAndroid, Platform, Alert } from "react-native";
+import { ToastAndroid, Platform, Alert } from "react-native";
 
-let clipboardMod: typeof import("expo-clipboard") | null = null;
-try { clipboardMod = require("expo-clipboard"); } catch { /* native not linked */ }
+type ClipboardModule = typeof import("expo-clipboard");
+let _clipboardMod: ClipboardModule | null = null;
+let _attemptedRequire = false;
 
-/** Toast confirmation. Android: native toast. iOS: small Alert. */
+function getClipboardMod(): ClipboardModule | null {
+  if (_attemptedRequire) return _clipboardMod;
+  _attemptedRequire = true;
+  try { _clipboardMod = require("expo-clipboard"); }
+  catch { _clipboardMod = null; }
+  return _clipboardMod;
+}
+
+/** Toast confirmation. Android: native toast. iOS: nothing —
+ *  ToastAndroid is Android-only and we don't want to pop another
+ *  Alert chained on iOS. */
 function flashCopiedToast(label: string): void {
-  const msg = `${label} copied`;
   if (Platform.OS === "android") {
-    try { ToastAndroid.show(msg, ToastAndroid.SHORT); return; } catch {}
+    try { ToastAndroid.show(`${label} copied`, ToastAndroid.SHORT); } catch {}
   }
-  Alert.alert(msg);
 }
 
 export async function copyToClipboard(value: string, labelForToast: string): Promise<void> {
   if (!value) return;
-  if (clipboardMod) {
+  const mod = getClipboardMod();
+  if (mod) {
     try {
-      await clipboardMod.setStringAsync(value);
+      await mod.setStringAsync(value);
       flashCopiedToast(labelForToast);
       return;
     } catch {
-      /* fall through */
+      /* fall through to manual Alert */
     }
   }
-  // Last-resort: open the system share sheet which includes "Copy".
-  try { await Share.share({ message: value }); } catch {}
+  // OLD APK fallback — show the value so the user can long-press +
+  // Android system "Copy" picker. Resolves immediately; doesn't
+  // depend on the system share sheet's slow enumeration.
+  Alert.alert(labelForToast, value, [{ text: "OK", style: "default" }]);
 }

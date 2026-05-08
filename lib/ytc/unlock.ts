@@ -62,28 +62,25 @@ export async function tryUnlock(entered: string, expected: string | null | undef
   return true;
 }
 
-/** Kick off all of YTC's public-collection fetchers so the cache is
+/** Kick off YTC's CRITICAL public-collection fetchers so the cache is
  *  warm by the time the user opens /ytc. Re-callable; cache layer
- *  dedupes duplicates. Lazy-imports lib/ytc/firebase to keep this
- *  module's cold-start free of Firebase. */
+ *  dedupes duplicates.
+ *
+ *  Trimmed from the original 11-fetch fan-out to 4 essentials —
+ *  saturating an 11-way Firestore parallel hit on slow networks
+ *  could actually slow the experience instead of helping. The other
+ *  fetchers (events, collections, alumni photos, rebbeim, alumni
+ *  contacts) hit when the user navigates to those tabs and pre-warm
+ *  again at sign-in via YtcAuthContext.checkAndSetApproval. */
 export function prewarmYtcDataIfPossible(): void {
   (async () => {
     try {
       const f = await import("@/lib/ytc/firebase");
-      // Fire all in parallel. Each fetcher hits the same shared cache
-      // so duplicates from a future home-mount are no-ops.
       await Promise.all([
-        f.fetchCarouselImages(),
-        f.fetchAnnouncements(),
-        f.fetchUpcomingEvents(3),
-        f.fetchEvents(),
-        f.fetchMostRecentShiur(),
-        f.fetchFeaturedShiur(),
-        f.fetchActiveCollections(),
-        f.fetchAlumniPhotos(),
-        f.fetchRebbeim(),
-        f.fetchApprovedAlumni(),
-        f.fetchShiurim(),
+        f.fetchCarouselImages(),    // home hero backdrop
+        f.fetchAnnouncements(),     // home top section
+        f.fetchMostRecentShiur(),   // home + CTA target
+        f.fetchShiurim(),           // shiurim list (slowest fetch — 800+ docs)
       ]);
     } catch {}
   })();
