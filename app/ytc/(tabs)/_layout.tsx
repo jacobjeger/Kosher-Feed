@@ -2,23 +2,34 @@
 // /tmp/ytc-source/expo-app/app/(tabs)/_layout.tsx with the in-file
 // MiniPlayer wrapper REMOVED — shiurpod's <MiniPlayerHost> renders
 // globally above tab bars on all routes including this one.
+//
+// "Audio player tab gray-out" (Batch G, option b): when a YTC shiur
+// is currently playing, the bar visually dims to convey "you're
+// focused on a shiur" — but tabs stay tappable. Color tokens swap to
+// muted variants; tabs aren't disabled.
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { ytcColors as Colors } from "@/constants/ytcColors";
+import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
+import { isYtcEpisodeId } from "@/lib/ytc/audio-adapter";
 
 export default function TabLayout() {
+  const { currentEpisode, playback } = useAudioPlayer();
+  const ytcAudioActive =
+    !!currentEpisode && isYtcEpisodeId(currentEpisode.id) && !!playback.isPlaying;
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: Colors.gold,
-        tabBarInactiveTintColor: Colors.navyOpacity50,
+        tabBarActiveTintColor: ytcAudioActive ? Colors.goldOpacity30 : Colors.gold,
+        tabBarInactiveTintColor: ytcAudioActive ? Colors.navyOpacity30 : Colors.navyOpacity50,
         tabBarStyle: {
-          backgroundColor: Colors.white,
+          backgroundColor: ytcAudioActive ? Colors.creamDark : Colors.white,
           borderTopColor: Colors.creamDark,
           borderTopWidth: 1,
           height: 56,
           paddingBottom: 6,
+          opacity: ytcAudioActive ? 0.65 : 1,
         },
         tabBarLabelStyle: { fontSize: 11, fontWeight: "500" },
       }}

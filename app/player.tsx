@@ -360,9 +360,11 @@ export default function PlayerScreen() {
           </Text>
         </FocusableView>
         {currentFeed.sourceNetwork && (
-          <View style={styles.sourceNetworkBadge}>
+          <View style={[styles.sourceNetworkBadge, currentFeed.sourceNetwork === "ytc" && { backgroundColor: "#d4af37" }]}>
             <Ionicons name="globe-outline" size={11} color="#fff" />
-            <Text style={styles.sourceNetworkText}>{currentFeed.sourceNetwork}</Text>
+            <Text style={styles.sourceNetworkText}>
+              {currentFeed.sourceNetwork === "ytc" ? "From YTC Alumni" : currentFeed.sourceNetwork}
+            </Text>
           </View>
         )}
       </View>

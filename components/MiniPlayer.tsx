@@ -84,6 +84,12 @@ export default function MiniPlayer() {
                 <Text style={[styles.subtitle, { color: "#ef4444" }]} numberOfLines={1}>
                   {playback.playbackError} Tap to retry.
                 </Text>
+              ) : currentEpisode.id.startsWith("ytc:") ? (
+                // YTC shiur — surface the source on the mini-player so
+                // the user knows playback is from the YTC alumni library.
+                <Text style={[styles.subtitle, { color: "rgba(212, 175, 55, 0.85)" }]} numberOfLines={1}>
+                  From YTC Alumni · {currentFeed?.title}
+                </Text>
               ) : (
                 <Pressable onPress={(e) => { e.stopPropagation(); if (currentFeed) router.push(`/podcast/${currentFeed.id}`); }} hitSlop={4}>
                   <Text style={[styles.subtitle, { color: "rgba(255,255,255,0.55)" }]} numberOfLines={1}>
