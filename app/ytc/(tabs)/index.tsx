@@ -8,7 +8,7 @@
 //    property that the type def doesn't expose)
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  View, Text, ScrollView, StyleSheet, FlatList, Dimensions,
+  View, Text, ScrollView, StyleSheet, FlatList,
   TouchableOpacity, ActivityIndicator, RefreshControl, Platform, Pressable, Modal,
 } from "react-native";
 import { Image } from "expo-image";
@@ -29,7 +29,6 @@ import { startYtcPositionSync, hydrateYtcPositions } from "@/lib/ytc/position-sy
 import { bootstrapYtcPush, requestNotificationPermission } from "@/lib/ytc/push";
 import { YtcFocusable } from "@/components/ytc/YtcFocusable";
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export default function HomeScreen() {
   const { user, isAdmin, signOut } = useYtcAuth();
@@ -37,6 +36,12 @@ export default function HomeScreen() {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [hasAlumniEntry, setHasAlumniEntry] = useState<boolean | null>(null);
+  // Show-more toggles for the announcement and upcoming-simcha sections.
+  // Default 3 visible to mirror the website's preview-then-expand pattern.
+  const [showAllAnnouncements, setShowAllAnnouncements] = useState(false);
+  const [showAllSimchas, setShowAllSimchas] = useState(false);
+  const ANNOUNCEMENT_PREVIEW = 3;
+  const SIMCHA_PREVIEW = 3;
 
   // First letter of displayName, falling back to email's first letter,
   // falling back to "Y" (for YTC) — never show "?" since that suggests
@@ -86,7 +91,6 @@ export default function HomeScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [carouselIndex, setCarouselIndex] = useState(0);
-  const carouselRef = useRef<FlatList>(null);
 
   const loadData = async () => {
     try {
@@ -140,15 +144,14 @@ export default function HomeScreen() {
     loadData();
   }, []);
 
+  // Hero backdrop auto-cycle through carousel images every 6 seconds
+  // when there's more than one. The hero just reads carouselImages[
+  // carouselIndex] — no FlatList anymore.
   useEffect(() => {
     if (carouselImages.length <= 1) return;
     const timer = setInterval(() => {
-      setCarouselIndex((i) => {
-        const next = (i + 1) % carouselImages.length;
-        carouselRef.current?.scrollToIndex({ index: next, animated: true });
-        return next;
-      });
-    }, 4000);
+      setCarouselIndex((i) => (i + 1) % carouselImages.length);
+    }, 6000);
     return () => clearInterval(timer);
   }, [carouselImages.length]);
 
@@ -166,53 +169,71 @@ export default function HomeScreen() {
   // on warm cache. Cold-cache: small spinner inside each section's
   // empty state if needed (currently we just don't render the section).
 
-  return (
-    <SafeAreaView style={styles.safe} edges={["top"]}>
-      <ScrollView style={styles.scroll} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.navy} />}>
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.headerTitle}>Yeshiva Toras Chaim</Text>
-            <Text style={styles.headerSubtitle}>Alumni Portal</Text>
-          </View>
-          {/* Profile circle that drops a menu — single nav surface for
-               settings / admin / sign-out, mirroring iOS HomeView profile
-               button. */}
-          <YtcFocusable onPress={() => setProfileMenuOpen(true)} hitSlop={8} style={styles.profileBtn} focusRadius={20}>
-            <Text style={styles.profileBtnInitial}>{userInitial}</Text>
-          </YtcFocusable>
-        </View>
+  // Tap "View Most Recent Shiur" CTA → scroll to and play the latest
+  // shiur, or fall back to navigating into the shiurim list when no
+  // recent is loaded yet.
+  const onViewMostRecent = useCallback(() => {
+    if (recentShiur?.audioUrl) {
+      playShiur(recentShiur);
+    } else {
+      router.push("/ytc/(tabs)/shiurim" as any);
+    }
+  }, [recentShiur, playShiur]);
 
-        {carouselImages.length > 0 && (
-          <View style={styles.carouselContainer}>
-            <FlatList
-              ref={carouselRef}
-              data={carouselImages}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              keyExtractor={(item) => item.id}
-              onMomentumScrollEnd={(e) => {
-                const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
-                setCarouselIndex(idx);
-              }}
-              renderItem={({ item }) => (
-                <View style={styles.carouselSlide}>
-                  <Image source={{ uri: item.url }} style={styles.carouselImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={item.id} transition={150} />
-                  {item.caption && <View style={styles.captionOverlay}><Text style={styles.caption}>{item.caption}</Text></View>}
-                </View>
-              )}
+  return (
+    <SafeAreaView style={styles.safe} edges={[]}>
+      <ScrollView style={styles.scroll} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.navy} />}>
+        {/* Hero — full-bleed image backdrop with overlay text + watermark
+             logo + CTA. Mirrors the website's home hero. The first
+             carousel image is the backdrop; if multiple, it auto-cycles
+             on a 6s timer (existing carouselIndex/setCarouselIndex
+             state controls it). Profile circle floats top-right. */}
+        <View style={styles.hero}>
+          {carouselImages.length > 0 ? (
+            <Image
+              source={{ uri: carouselImages[carouselIndex]?.url ?? carouselImages[0].url }}
+              style={StyleSheet.absoluteFillObject as any}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              recyclingKey={carouselImages[carouselIndex]?.id}
+              transition={300}
             />
-            {carouselImages.length > 1 && (
-              <View style={styles.dots}>{carouselImages.map((_, i) => <View key={i} style={[styles.dot, i === carouselIndex && styles.dotActive]} />)}</View>
-            )}
+          ) : (
+            <View style={[StyleSheet.absoluteFillObject, { backgroundColor: Colors.navy }]} />
+          )}
+          {/* Dark overlay so cream text reads against any backdrop. */}
+          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(10, 22, 40, 0.55)" }]} />
+
+          {/* Watermark logo upper-left. */}
+          <Image
+            source={require("@/assets/images/ytc-logo.png")}
+            style={styles.heroLogoWatermark}
+            contentFit="contain"
+          />
+
+          {/* Profile circle upper-right. */}
+          <View style={styles.heroProfileWrap}>
+            <YtcFocusable onPress={() => setProfileMenuOpen(true)} hitSlop={8} style={styles.profileBtn} focusRadius={20}>
+              <Text style={styles.profileBtnInitial}>{userInitial}</Text>
+            </YtcFocusable>
           </View>
-        )}
+
+          {/* Title + subtitle + CTA at the bottom, left-aligned. */}
+          <View style={styles.heroContent}>
+            <Text style={styles.heroTitle}>Yeshiva Toras Chaim</Text>
+            <Text style={styles.heroSubtitle}>Alumni Network</Text>
+            <YtcFocusable style={styles.heroCta} onPress={onViewMostRecent} focusRadius={28}>
+              <Text style={styles.heroCtaText}>View Most Recent Shiur</Text>
+              <Ionicons name="chevron-forward" size={18} color={Colors.navy} />
+            </YtcFocusable>
+          </View>
+        </View>
 
         <View style={styles.body}>
           {announcements.length > 0 && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Announcements</Text>
-              {announcements.map((ann) => {
+              <Text style={styles.sectionTitle}>Mazel Tovs & Announcements</Text>
+              {(showAllAnnouncements ? announcements : announcements.slice(0, ANNOUNCEMENT_PREVIEW)).map((ann) => {
                 const isMazelTov = ann.type === "mazel_tov";
                 return (
                   <View key={ann.id} style={styles.announcementCard}>
@@ -233,32 +254,21 @@ export default function HomeScreen() {
                   </View>
                 );
               })}
-            </View>
-          )}
-
-          {upcomingEvents.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Upcoming Simchos</Text>
-              {upcomingEvents.map((event) => (
-                <View key={event.id} style={styles.eventCard}>
-                  <View style={styles.eventDateBadge}>
-                    <Text style={styles.eventMonth}>{formatEventMonth(event.date)}</Text>
-                    <Text style={styles.eventDay}>{formatEventDay(event.date)}</Text>
-                  </View>
-                  <View style={styles.eventInfo}>
-                    <Text style={styles.eventName}>{event.eventName}</Text>
-                    <Text style={styles.eventFamily}>{event.personFamily}</Text>
-                    <Text style={styles.eventLocation}>{event.location}</Text>
-                    {event.time && <Text style={styles.eventTime}>{event.time}</Text>}
-                  </View>
-                </View>
-              ))}
+              {announcements.length > ANNOUNCEMENT_PREVIEW && (
+                <YtcFocusable style={styles.showMoreBtn} onPress={() => setShowAllAnnouncements((v) => !v)} focusRadius={10}>
+                  <Text style={styles.showMoreText}>
+                    {showAllAnnouncements ? "Show less" : `Show ${announcements.length - ANNOUNCEMENT_PREVIEW} more`}
+                  </Text>
+                  <Ionicons name={showAllAnnouncements ? "chevron-up" : "chevron-down"} size={16} color={Colors.gold} />
+                </YtcFocusable>
+              )}
             </View>
           )}
 
           {/* Featured shiur — admin-pinned via settings/featuredShiur.
                Rendered with a gold-accented title to differentiate from
-               the most-recent slot below. */}
+               the most-recent slot below. Placed BEFORE upcoming simchas
+               so the user lands on featured Torah content first. */}
           {featuredShiur && (
             <ShiurHomeCard
               shiur={featuredShiur}
@@ -281,6 +291,40 @@ export default function HomeScreen() {
               playShiur={playShiur}
               formatDate={formatDate}
             />
+          )}
+
+          {upcomingEvents.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Upcoming Simchos</Text>
+              {(showAllSimchas ? upcomingEvents : upcomingEvents.slice(0, SIMCHA_PREVIEW)).map((event) => (
+                <YtcFocusable
+                  key={event.id}
+                  style={styles.eventCard}
+                  onPress={() => router.push("/ytc/(tabs)/events" as any)}
+                  focusRadius={14}
+                >
+                  <View style={styles.eventDateBadge}>
+                    <Text style={styles.eventMonth}>{formatEventMonth(event.date)}</Text>
+                    <Text style={styles.eventDay}>{formatEventDay(event.date)}</Text>
+                  </View>
+                  <View style={styles.eventInfo}>
+                    <Text style={styles.eventName}>{event.eventName}</Text>
+                    <Text style={styles.eventFamily}>{event.personFamily}</Text>
+                    <Text style={styles.eventLocation}>{event.location}</Text>
+                    {event.time && <Text style={styles.eventTime}>{event.time}</Text>}
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={Colors.navyOpacity50} />
+                </YtcFocusable>
+              ))}
+              {upcomingEvents.length > SIMCHA_PREVIEW && (
+                <YtcFocusable style={styles.showMoreBtn} onPress={() => setShowAllSimchas((v) => !v)} focusRadius={10}>
+                  <Text style={styles.showMoreText}>
+                    {showAllSimchas ? "Show less" : `Show ${upcomingEvents.length - SIMCHA_PREVIEW} more`}
+                  </Text>
+                  <Ionicons name={showAllSimchas ? "chevron-up" : "chevron-down"} size={16} color={Colors.gold} />
+                </YtcFocusable>
+              )}
+            </View>
           )}
 
           {collections.length > 0 && (
@@ -469,9 +513,35 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.cream },
   loading: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: Colors.cream },
   scroll: { flex: 1 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: Colors.navy, paddingHorizontal: 16, paddingVertical: 10 },
-  headerTitle: { color: Colors.cream, fontSize: 16, fontWeight: "bold", fontFamily: Platform.OS === "ios" ? "Georgia" : "serif" },
-  headerSubtitle: { color: Colors.creamOpacity70, fontSize: 11 },
+  // Hero — full-bleed photo backdrop with overlay text + watermark logo +
+  // CTA. Mirrors the website's home hero. Height ~440px on a typical
+  // phone leaves room for the system status bar to overlay cleanly.
+  hero: { width: "100%", height: 440, position: "relative", overflow: "hidden" },
+  heroLogoWatermark: { position: "absolute", top: 50, left: 16, width: 90, height: 90, opacity: 0.55 },
+  heroProfileWrap: { position: "absolute", top: 56, right: 16 },
+  heroContent: { position: "absolute", left: 20, right: 20, bottom: 36 },
+  heroTitle: {
+    color: Colors.cream, fontSize: 36, fontWeight: "700", lineHeight: 42,
+    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+  },
+  heroSubtitle: {
+    color: Colors.gold, fontSize: 22, fontWeight: "600", marginTop: 4,
+    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+  },
+  heroCta: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: Colors.gold,
+    alignSelf: "flex-start",
+    paddingHorizontal: 18, paddingVertical: 12,
+    borderRadius: 28, marginTop: 18,
+  },
+  heroCtaText: { color: Colors.navy, fontSize: 14, fontWeight: "700" },
+
+  showMoreBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4,
+    paddingVertical: 10, marginTop: 4,
+  },
+  showMoreText: { color: Colors.gold, fontSize: 13, fontWeight: "600" },
   profileBtn: {
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: Colors.gold,
@@ -512,17 +582,9 @@ const styles = StyleSheet.create({
   menuItemDanger: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.creamDark },
   menuItemText: { fontSize: 14, color: Colors.navy, fontWeight: "500" },
   menuItemTextDanger: { color: Colors.error },
-  carouselContainer: { position: "relative" },
-  carouselSlide: { width: SCREEN_WIDTH, height: 220 },
   // backgroundColor on the Image style is what expo-image paints before
   // decode finishes — gives an instant cream placeholder instead of a
   // black void, even on cold cache.
-  carouselImage: { width: "100%", height: "100%", backgroundColor: Colors.creamDark },
-  captionOverlay: { position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "rgba(0,0,0,0.4)", padding: 10 },
-  caption: { color: Colors.white, fontSize: 13, textAlign: "center" },
-  dots: { flexDirection: "row", justifyContent: "center", paddingVertical: 8, gap: 6 },
-  dot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: Colors.navyOpacity30 },
-  dotActive: { backgroundColor: Colors.navy, width: 18 },
   body: { padding: 16, gap: 24 },
   section: { gap: 12 },
   sectionTitle: { fontSize: 18, fontWeight: "600", color: Colors.navy, fontFamily: Platform.OS === "ios" ? "Georgia" : "serif" },

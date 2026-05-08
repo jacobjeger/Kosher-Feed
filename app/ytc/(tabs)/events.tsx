@@ -8,7 +8,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { ytcColors as Colors } from "@/constants/ytcColors";
 import { fetchEvents, invalidateYtcCache } from "@/lib/ytc/firebase";
 import { useYtcAuth } from "@/contexts/YtcAuthContext";
-import { SubmitSimchaModal } from "@/components/ytc/SubmitSimchaModal";
+import { SubmitSimchaForm } from "@/components/ytc/SubmitSimchaForm";
 import { YtcFocusable } from "@/components/ytc/YtcFocusable";
 import type { YtcEvent } from "@/types/ytc";
 
@@ -23,7 +23,6 @@ export default function EventsScreen() {
   const [events, setEvents] = useState<YtcEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [showSubmit, setShowSubmit] = useState(false);
   const [zoomImage, setZoomImage] = useState<string | null>(null);
 
   const loadEvents = async () => {
@@ -92,38 +91,26 @@ export default function EventsScreen() {
     );
   };
 
-  // Past simchos render as a compact 2-column grid card. iOS caps at 8
-  // (Views/Events/EventsView.swift:73 .prefix(8)) — same here.
+  // Past simchos: compact list-style chips matching the website's
+  // /events Past section (no images, just date pill + name + family).
+  // The website uses a simple grid of cards with a JAN/24 navy date
+  // badge on the left and event details on the right — drop image
+  // entirely.
   const renderPastTile = ({ item: event }: { item: YtcEvent }) => {
     const d = new Date(event.date + "T00:00:00");
     const month = d.toLocaleString("en-US", { month: "short" }).toUpperCase();
     const day = String(d.getDate());
     return (
-      <YtcFocusable
-        style={styles.pastTile}
-        focusRadius={12}
-        onPress={() => { if (event.imageUrl) setZoomImage(event.imageUrl); }}
-      >
-        {event.imageUrl ? (
-          <Image
-            source={{ uri: event.imageUrl }}
-            style={styles.pastTileImage}
-            contentFit="cover"
-            cachePolicy="memory-disk"
-            recyclingKey={event.id}
-            transition={150}
-          />
-        ) : (
-          <View style={styles.pastTileImagePlaceholder}>
-            <Text style={styles.pastTilePlaceholderInitial}>{month.charAt(0)}</Text>
-          </View>
-        )}
-        <View style={styles.pastTileBody}>
-          <Text style={styles.pastTileDate}>{month} {day}</Text>
-          <Text style={styles.pastTileName} numberOfLines={1}>{event.eventName}</Text>
-          <Text style={styles.pastTileFamily} numberOfLines={1}>{event.personFamily}</Text>
+      <View style={styles.pastChip}>
+        <View style={styles.pastChipBadge}>
+          <Text style={styles.pastChipMonth}>{month}</Text>
+          <Text style={styles.pastChipDay}>{day}</Text>
         </View>
-      </YtcFocusable>
+        <View style={styles.pastChipBody}>
+          <Text style={styles.pastChipName} numberOfLines={1}>{event.eventName}</Text>
+          <Text style={styles.pastChipFamily} numberOfLines={1}>{event.personFamily}</Text>
+        </View>
+      </View>
     );
   };
 
@@ -138,13 +125,6 @@ export default function EventsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <SubmitSimchaModal
-        visible={showSubmit}
-        onClose={() => setShowSubmit(false)}
-        onSubmitted={() => { invalidateYtcCache("events").then(() => loadEvents()); }}
-        submitterEmail={user?.email ?? ""}
-      />
-
       {/* Fullscreen image viewer — tap backdrop to dismiss. */}
       <Modal visible={!!zoomImage} transparent animationType="fade" onRequestClose={() => setZoomImage(null)}>
         <Pressable style={styles.zoomBackdrop} onPress={() => setZoomImage(null)}>
@@ -171,11 +151,7 @@ export default function EventsScreen() {
         ListHeaderComponent={
           <>
             <View style={styles.header}>
-              <View style={{ width: 30 }} />
               <Text style={styles.headerTitle}>Yeshiva Simchos</Text>
-              <YtcFocusable onPress={() => setShowSubmit(true)} hitSlop={8} style={styles.headerAction} focusRadius={15}>
-                <Ionicons name="add-circle-outline" size={22} color={Colors.gold} />
-              </YtcFocusable>
             </View>
             <View style={styles.body}>
               {upcoming.length > 0 ? (
@@ -185,7 +161,7 @@ export default function EventsScreen() {
                 </View>
               ) : (
                 <View style={styles.emptySection}>
-                  <Text style={styles.emptyIcon}>📅</Text>
+                  <Ionicons name="calendar-outline" size={40} color={Colors.gold} />
                   <Text style={styles.emptyText}>No upcoming simchos</Text>
                 </View>
               )}
@@ -203,6 +179,16 @@ export default function EventsScreen() {
                   />
                 </View>
               )}
+
+              {/* Inline "Share Your Simcha" form — replaces the old +
+                   button modal. Matches the website's events page where
+                   the form sits directly below the past simchos grid. */}
+              {user?.email ? (
+                <SubmitSimchaForm
+                  submitterEmail={user.email}
+                  onSubmitted={() => { invalidateYtcCache("events").then(() => loadEvents()); }}
+                />
+              ) : null}
             </View>
           </>
         }
@@ -251,22 +237,24 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.45)",
     alignItems: "center", justifyContent: "center",
   },
-  pastTile: {
+  // Past chip: compact horizontal card matching the website's past-event grid.
+  pastChip: {
     width: PAST_GRID_COL_WIDTH,
-    backgroundColor: Colors.white, borderRadius: 12, overflow: "hidden",
+    backgroundColor: Colors.white, borderRadius: 10, overflow: "hidden",
+    flexDirection: "row", alignItems: "center", padding: 8, gap: 10,
     shadowColor: Colors.black, shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+    shadowOpacity: 0.04, shadowRadius: 2, elevation: 1,
   },
-  pastTileImage: { width: "100%", height: PAST_GRID_COL_WIDTH * 0.75, backgroundColor: Colors.creamDark },
-  pastTileImagePlaceholder: {
-    width: "100%", height: PAST_GRID_COL_WIDTH * 0.75,
-    backgroundColor: Colors.navy, alignItems: "center", justifyContent: "center",
+  pastChipBadge: {
+    width: 40, height: 40, borderRadius: 6,
+    backgroundColor: Colors.creamDark,
+    alignItems: "center", justifyContent: "center",
   },
-  pastTilePlaceholderInitial: { color: Colors.gold, fontSize: 32, fontWeight: "700" },
-  pastTileBody: { padding: 10, gap: 2 },
-  pastTileDate: { fontSize: 10, color: Colors.gold, fontWeight: "700", letterSpacing: 0.5 },
-  pastTileName: { fontSize: 13, fontWeight: "600", color: Colors.navy },
-  pastTileFamily: { fontSize: 11, color: Colors.navyOpacity70 },
+  pastChipMonth: { color: Colors.gold, fontSize: 9, fontWeight: "700", letterSpacing: 0.5 },
+  pastChipDay: { color: Colors.navy, fontSize: 16, fontWeight: "700", lineHeight: 18 },
+  pastChipBody: { flex: 1, gap: 1 },
+  pastChipName: { fontSize: 13, fontWeight: "600", color: Colors.navy },
+  pastChipFamily: { fontSize: 11, color: Colors.navyOpacity70 },
   zoomBackdrop: {
     flex: 1, backgroundColor: "rgba(0,0,0,0.92)",
     alignItems: "center", justifyContent: "center",

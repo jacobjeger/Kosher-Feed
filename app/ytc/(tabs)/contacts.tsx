@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   View, Text, SectionList, StyleSheet, TouchableOpacity, TextInput,
-  ActivityIndicator, Linking, Platform, RefreshControl,
+  ActivityIndicator, Platform, RefreshControl,
 } from "react-native";
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -12,6 +12,7 @@ import { ytcColors as Colors } from "@/constants/ytcColors";
 import { fetchRebbeim, fetchApprovedAlumni, invalidateYtcCache } from "@/lib/ytc/firebase";
 import { useYtcAuth } from "@/contexts/YtcAuthContext";
 import { SubmitAlumniContactModal } from "@/components/ytc/SubmitAlumniContactModal";
+import { copyToClipboard } from "@/lib/ytc/copy";
 import type { Rebbe, AlumniContact } from "@/types/ytc";
 
 type ContactTab = "rebbeim" | "alumni";
@@ -85,8 +86,9 @@ export default function ContactsScreen() {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([title, data]) => ({ title, data }));
 
-  const openPhone = (phone: string) => Linking.openURL(`tel:${phone}`);
-  const openEmail = (email: string) => Linking.openURL(`mailto:${email}`);
+  // openPhone / openEmail removed in favor of copy-to-clipboard
+  // (lib/ytc/copy.ts). Tap the row → copies the value + flashes a
+  // toast. Mirrors the website's behavior.
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -129,33 +131,60 @@ export default function ContactsScreen() {
           keyExtractor={(item) => item.id}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.navy} />}
           contentContainerStyle={styles.listContent}
-          renderItem={({ item: rebbe }) => (
-            <View style={styles.rebbeCard}>
-              {rebbe.photoUrl
-                ? <Image source={{ uri: rebbe.photoUrl }} style={styles.rebbePhoto} contentFit="cover" cachePolicy="memory-disk" recyclingKey={rebbe.id} transition={150} />
-                : <View style={styles.rebbePhotoPlaceholder}>
-                    <Ionicons name="person-outline" size={28} color={Colors.gold} />
-                  </View>}
-              <View style={styles.rebbeInfo}>
-                <Text style={styles.rebbeName}>{rebbe.name}</Text>
-                <Text style={styles.rebbeTitle}>{rebbe.title}</Text>
-                <View style={styles.contactBtns}>
-                  {rebbe.email && (
-                    <TouchableOpacity style={styles.contactBtn} onPress={() => openEmail(rebbe.email!)}>
-                      <Ionicons name="mail-outline" size={16} color={Colors.navy} />
-                      <Text style={styles.contactBtnText}>Email</Text>
-                    </TouchableOpacity>
-                  )}
-                  {rebbe.phone && (
-                    <TouchableOpacity style={styles.contactBtn} onPress={() => openPhone(rebbe.phone!)}>
-                      <Ionicons name="call-outline" size={16} color={Colors.navy} />
-                      <Text style={styles.contactBtnText}>Call</Text>
-                    </TouchableOpacity>
+          renderItem={({ item: rebbe }) => {
+            const isExpanded = expandedId === rebbe.id;
+            const hasContact = !!(rebbe.email || rebbe.phone);
+            return (
+              <TouchableOpacity
+                style={styles.rebbeCard}
+                onPress={() => hasContact && setExpandedId(isExpanded ? null : rebbe.id)}
+                activeOpacity={hasContact ? 0.7 : 1}
+              >
+                <View style={styles.rebbeRow}>
+                  {rebbe.photoUrl
+                    ? <Image source={{ uri: rebbe.photoUrl }} style={styles.rebbePhoto} contentFit="cover" cachePolicy="memory-disk" recyclingKey={rebbe.id} transition={150} />
+                    : <View style={styles.rebbePhotoPlaceholder}>
+                        <Ionicons name="person-outline" size={28} color={Colors.gold} />
+                      </View>}
+                  <View style={styles.rebbeInfo}>
+                    <Text style={styles.rebbeName}>{rebbe.name}</Text>
+                    <Text style={styles.rebbeTitle}>{rebbe.title}</Text>
+                  </View>
+                  {hasContact && (
+                    <Ionicons
+                      name={isExpanded ? "chevron-up" : "chevron-down"}
+                      size={18}
+                      color={Colors.navyOpacity50}
+                    />
                   )}
                 </View>
-              </View>
-            </View>
-          )}
+                {isExpanded && hasContact && (
+                  <View style={styles.rebbeContactBlock}>
+                    {rebbe.email && (
+                      <TouchableOpacity
+                        style={styles.copyRow}
+                        onPress={() => copyToClipboard(rebbe.email!, "Email")}
+                      >
+                        <Ionicons name="mail-outline" size={16} color={Colors.navy} />
+                        <Text style={styles.copyValue} numberOfLines={1}>{rebbe.email}</Text>
+                        <Ionicons name="copy-outline" size={16} color={Colors.gold} />
+                      </TouchableOpacity>
+                    )}
+                    {rebbe.phone && (
+                      <TouchableOpacity
+                        style={styles.copyRow}
+                        onPress={() => copyToClipboard(rebbe.phone!, "Phone")}
+                      >
+                        <Ionicons name="call-outline" size={16} color={Colors.navy} />
+                        <Text style={styles.copyValue} numberOfLines={1}>{rebbe.phone}</Text>
+                        <Ionicons name="copy-outline" size={16} color={Colors.gold} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          }}
           ListEmptyComponent={<EmptyState message="No rebbeim found" />}
           renderSectionHeader={() => null}
         />
@@ -195,20 +224,26 @@ export default function ContactsScreen() {
                   </View>
                   {isExpanded && (
                     <View style={styles.alumniExpanded}>
-                      <View style={styles.contactBtns}>
-                        {contact.email && (
-                          <TouchableOpacity style={styles.contactBtn} onPress={() => openEmail(contact.email!)}>
-                            <Ionicons name="mail-outline" size={16} color={Colors.navy} />
-                            <Text style={styles.contactBtnText}>{contact.email}</Text>
-                          </TouchableOpacity>
-                        )}
-                        {contact.phone && (
-                          <TouchableOpacity style={styles.contactBtn} onPress={() => openPhone(contact.phone!)}>
-                            <Ionicons name="call-outline" size={16} color={Colors.navy} />
-                            <Text style={styles.contactBtnText}>{contact.phone}</Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
+                      {contact.email && (
+                        <TouchableOpacity
+                          style={styles.copyRow}
+                          onPress={() => copyToClipboard(contact.email!, "Email")}
+                        >
+                          <Ionicons name="mail-outline" size={16} color={Colors.navy} />
+                          <Text style={styles.copyValue} numberOfLines={1}>{contact.email}</Text>
+                          <Ionicons name="copy-outline" size={16} color={Colors.gold} />
+                        </TouchableOpacity>
+                      )}
+                      {contact.phone && (
+                        <TouchableOpacity
+                          style={styles.copyRow}
+                          onPress={() => copyToClipboard(contact.phone!, "Phone")}
+                        >
+                          <Ionicons name="call-outline" size={16} color={Colors.navy} />
+                          <Text style={styles.copyValue} numberOfLines={1}>{contact.phone}</Text>
+                          <Ionicons name="copy-outline" size={16} color={Colors.gold} />
+                        </TouchableOpacity>
+                      )}
                       {isMine && (
                         <TouchableOpacity style={styles.editMyInline} onPress={() => setShowSubmit(true)}>
                           <Ionicons name="create-outline" size={16} color={Colors.cream} />
@@ -260,7 +295,15 @@ const styles = StyleSheet.create({
   searchRow: { paddingHorizontal: 12, paddingBottom: 8 },
   searchBox: { flexDirection: "row", alignItems: "center", backgroundColor: Colors.white, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: Colors.creamDark },
   searchInput: { flex: 1, fontSize: 14, color: Colors.navy, paddingVertical: 0 },
-  rebbeCard: { flexDirection: "row", backgroundColor: Colors.white, borderRadius: 14, padding: 16, marginBottom: 10, gap: 14, shadowColor: Colors.black, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
+  rebbeCard: { backgroundColor: Colors.white, borderRadius: 14, padding: 14, marginBottom: 10, shadowColor: Colors.black, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
+  rebbeRow: { flexDirection: "row", alignItems: "center", gap: 14 },
+  rebbeContactBlock: { marginTop: 10, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.creamDark, gap: 8 },
+  copyRow: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingVertical: 8, paddingHorizontal: 10,
+    backgroundColor: Colors.cream, borderRadius: 8,
+  },
+  copyValue: { flex: 1, fontSize: 13, color: Colors.navy },
   rebbePhoto: { width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.creamDark },
   rebbePhotoPlaceholder: { width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.navy, alignItems: "center", justifyContent: "center" },
   rebbeInitial: { color: Colors.gold, fontSize: 24, fontWeight: "bold" },

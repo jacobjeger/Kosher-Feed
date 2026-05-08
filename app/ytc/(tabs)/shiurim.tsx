@@ -149,65 +149,88 @@ export default function ShiurimScreen() {
       trackShiurDownload(item.id).catch(() => {});
       downloadEpisode(episode, feed);
     };
+    // New card layout — mirrors the website's shiurim/page.tsx card:
+    //   [4px gold top accent]
+    //   row: [headphone icon] [title (flex:1)] [bookmark icon]
+    //   "by Rabbi X" (gold italic, under title)
+    //   meta row: [clock] [date]   ·   [progress / completed badge]
+    //   tags inline (always visible — no expand chevron)
+    //   description (when set, dimmer)
+    //   bottom row: [navy Play button (flex:1)] [download icon button]
+    //   [thin gold progress bar at very bottom if hasProgress]
     return (
       <View style={[styles.shiurCard, isActive && styles.shiurCardActive]}>
-        <YtcFocusable style={styles.shiurHeader} onPress={() => setExpandedId(isExpanded ? null : item.id)} focusRadius={12}>
-          <View style={styles.shiurLeft}>
-            {item.audioUrl && (
+        <View style={styles.shiurAccent} />
+        <View style={styles.shiurBody}>
+          <View style={styles.shiurTopRow}>
+            <Ionicons name="headset-outline" size={20} color={Colors.gold} style={{ marginTop: 1 }} />
+            <Text style={styles.shiurTitle} numberOfLines={3}>{item.title}</Text>
+            <YtcFocusable onPress={() => toggleSaved(item.id)} hitSlop={8} style={styles.iconBtn} focusRadius={14}>
+              <Ionicons name={saved2 ? "bookmark" : "bookmark-outline"} size={20} color={saved2 ? Colors.gold : Colors.navyOpacity50} />
+            </YtcFocusable>
+          </View>
+
+          {item.rebbe ? <Text style={styles.shiurRebbe}>by {item.rebbe}</Text> : null}
+
+          <View style={styles.shiurMetaRow}>
+            <Ionicons name="time-outline" size={13} color={Colors.navyOpacity50} />
+            <Text style={styles.shiurMetaText}>{formatDate(item.date)}</Text>
+            {downloading ? (
+              <Text style={[styles.shiurMetaText, { color: Colors.gold }]}>· Downloading {Math.round(dlPct * 100)}%</Text>
+            ) : completed ? (
+              <Text style={[styles.shiurMetaText, { color: Colors.gold }]}>· Completed</Text>
+            ) : hasProgress ? (
+              <Text style={[styles.shiurMetaText, { color: Colors.gold }]}>· Paused at {formatRemainingMin(saved!.positionMs, saved!.durationMs)}</Text>
+            ) : null}
+          </View>
+
+          {item.series ? (
+            <View style={[styles.tag, { alignSelf: "flex-start", marginTop: 8 }]}>
+              <Ionicons name="folder-outline" size={11} color={Colors.navyOpacity70} style={{ marginRight: 4 }} />
+              <Text style={styles.tagText}>{item.series}</Text>
+            </View>
+          ) : null}
+
+          {item.tags.length > 0 && (
+            <View style={styles.tagsRow}>
+              {item.tags.slice(0, 4).map((tag) => (
+                <TouchableOpacity key={tag} style={styles.tag} onPress={() => setSelectedTagFilter(selectedTagFilter === tag ? null : tag)}>
+                  <Text style={styles.tagText}>{tag}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {item.description ? (
+            <Text style={styles.shiurDescription} numberOfLines={3}>{item.description}</Text>
+          ) : null}
+
+          {item.audioUrl && (
+            <View style={styles.shiurActionsRow}>
               <YtcFocusable
-                style={[styles.playBtn, isActive && styles.playBtnActive]}
+                style={styles.playButton}
                 onPress={() => { if (isActive) pauseResume(); else play(item); }}
-                focusRadius={19}
+                focusRadius={10}
               >
                 {isActive && audioLoading
                   ? <ActivityIndicator size="small" color={Colors.cream} />
-                  : <Ionicons name={isActive && isPlaying ? "pause" : "play"} size={18} color={isActive ? Colors.cream : Colors.navy} />}
+                  : (
+                    <>
+                      <Ionicons name={isActive && isPlaying ? "pause" : "play"} size={16} color={Colors.cream} />
+                      <Text style={styles.playButtonText}>{isActive && isPlaying ? "Pause" : "Play"}</Text>
+                    </>
+                  )}
               </YtcFocusable>
-            )}
-            <View style={styles.shiurMeta}>
-              <Text style={[styles.shiurTitle, isActive && styles.shiurTitleActive]} numberOfLines={2}>{item.title}</Text>
-              <Text style={styles.shiurRebbeDate}>{item.rebbe} · {formatDate(item.date)}</Text>
-              {item.series && <Text style={styles.seriesText}>Series: {item.series}</Text>}
-              {downloading && (
-                <Text style={styles.progressText}>Downloading {Math.round(dlPct * 100)}%</Text>
-              )}
-              {!downloading && hasProgress && !completed && (
-                <Text style={styles.progressText}>{formatRemainingMin(saved!.positionMs, saved!.durationMs)}</Text>
-              )}
-              {!downloading && completed && <Text style={styles.completedText}>Completed</Text>}
+              <YtcFocusable onPress={onDownloadPress} hitSlop={4} style={styles.downloadIconBtn} focusRadius={10}>
+                {downloading
+                  ? <ActivityIndicator size="small" color={Colors.navy} />
+                  : downloaded
+                  ? <Ionicons name="trash-outline" size={20} color={Colors.error} />
+                  : <Ionicons name="download-outline" size={22} color={Colors.navy} />}
+              </YtcFocusable>
             </View>
-          </View>
-          <YtcFocusable onPress={() => toggleSaved(item.id)} hitSlop={8} style={styles.downloadBtn} focusRadius={16}>
-            <Ionicons name={saved2 ? "bookmark" : "bookmark-outline"} size={20} color={saved2 ? Colors.gold : Colors.navyOpacity70} />
-          </YtcFocusable>
-          {item.audioUrl && (
-            <YtcFocusable onPress={onDownloadPress} hitSlop={8} style={styles.downloadBtn} focusRadius={16}>
-              {downloading
-                ? <ActivityIndicator size="small" color={Colors.navy} />
-                : downloaded
-                ? <Ionicons name="trash-outline" size={20} color={Colors.error} />
-                : <Ionicons name="download-outline" size={22} color={Colors.navyOpacity70} />}
-            </YtcFocusable>
           )}
-          <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={16} color={Colors.navyOpacity50} />
-        </YtcFocusable>
-        {isExpanded && (
-          <View style={styles.shiurDetail}>
-            {item.description && <Text style={styles.description}>{item.description}</Text>}
-            {item.tags.length > 0 && (
-              <View style={styles.tags}>
-                {item.tags.map((tag) => (
-                  <TouchableOpacity key={tag} style={styles.tag} onPress={() => { setSelectedTagFilter(selectedTagFilter === tag ? null : tag); setShowFilters(false); }}>
-                    <Text style={styles.tagText}>{tag}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-            <View style={styles.statsRow}>
-              {item.playCount != null && <Text style={styles.stat}>▶ {item.playCount} plays</Text>}
-            </View>
-          </View>
-        )}
+        </View>
         {hasProgress && !completed && (
           <View style={styles.progressTrack}>
             <View style={[styles.progressFill, { width: `${pct}%` }]} />
@@ -369,29 +392,53 @@ const styles = StyleSheet.create({
   listContent: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 120 },
   empty: { alignItems: "center", padding: 40, gap: 12 },
   emptyText: { fontSize: 15, color: Colors.navyOpacity50 },
-  shiurCard: { backgroundColor: Colors.white, borderRadius: 12, marginBottom: 8, shadowColor: Colors.black, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2, overflow: "hidden" },
-  shiurCardActive: { borderLeftWidth: 3, borderLeftColor: Colors.gold },
-  shiurHeader: { flexDirection: "row", alignItems: "center", padding: 12, gap: 12 },
-  shiurLeft: { flex: 1, flexDirection: "row", alignItems: "center", gap: 12 },
-  playBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: Colors.creamDark, alignItems: "center", justifyContent: "center", flexShrink: 0 },
-  playBtnActive: { backgroundColor: Colors.navy },
-  shiurMeta: { flex: 1 },
-  shiurTitle: { fontSize: 14, fontWeight: "600", color: Colors.navy, lineHeight: 20 },
-  shiurTitleActive: { color: Colors.navy },
-  shiurRebbeDate: { fontSize: 12, color: Colors.navyOpacity70, marginTop: 2 },
-  seriesText: { fontSize: 11, color: Colors.gold, marginTop: 2, fontWeight: "500" },
-  progressText: { fontSize: 11, color: Colors.gold, marginTop: 2, fontWeight: "500" },
-  downloadBtn: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
-  completedText: { fontSize: 11, color: Colors.navyOpacity50, marginTop: 2, fontWeight: "500" },
+  shiurCard: {
+    backgroundColor: Colors.white, borderRadius: 12, marginBottom: 10,
+    overflow: "hidden",
+    borderWidth: 1, borderColor: Colors.goldOpacity30,
+    shadowColor: Colors.black, shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05, shadowRadius: 3, elevation: 1,
+  },
+  shiurCardActive: { borderColor: Colors.gold },
+  // Top accent line (4px gold) — matches the website's h-1 gradient.
+  shiurAccent: { height: 4, width: "100%", backgroundColor: Colors.gold },
+  shiurBody: { padding: 14 },
+  shiurTopRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  shiurTitle: {
+    flex: 1, fontSize: 16, fontWeight: "700", color: Colors.navy, lineHeight: 22,
+    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+  },
+  iconBtn: { width: 28, height: 28, alignItems: "center", justifyContent: "center" },
+  shiurRebbe: {
+    fontSize: 13, color: Colors.gold, fontWeight: "600", marginTop: 4, marginLeft: 30,
+    fontStyle: "italic",
+  },
+  shiurMetaRow: {
+    flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6, marginLeft: 30,
+  },
+  shiurMetaText: { fontSize: 12, color: Colors.navyOpacity70 },
+  tagsRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },
+  tag: {
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: Colors.navyOpacity05,
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6,
+  },
+  tagText: { fontSize: 11, color: Colors.navy, fontWeight: "500" },
+  shiurDescription: { fontSize: 13, color: Colors.navyOpacity70, lineHeight: 19, marginTop: 8 },
+  shiurActionsRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 12 },
+  playButton: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    backgroundColor: Colors.navy, paddingVertical: 12, borderRadius: 8,
+  },
+  playButtonText: { color: Colors.cream, fontSize: 14, fontWeight: "600" },
+  downloadIconBtn: {
+    width: 44, height: 44, alignItems: "center", justifyContent: "center",
+    borderWidth: 1, borderColor: Colors.goldOpacity30, borderRadius: 8,
+  },
   progressTrack: { height: 3, backgroundColor: Colors.creamDark },
   progressFill: { height: 3, backgroundColor: Colors.gold },
-  shiurDetail: { paddingHorizontal: 14, paddingBottom: 14, paddingTop: 0 },
-  description: { fontSize: 13, color: Colors.navyOpacity70, lineHeight: 19, marginBottom: 10 },
-  tags: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 },
-  tag: { backgroundColor: Colors.navyOpacity10, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
-  tagText: { fontSize: 11, color: Colors.navy },
-  statsRow: { flexDirection: "row", gap: 16 },
-  stat: { fontSize: 11, color: Colors.navyOpacity50 },
+  progressText: { fontSize: 11, color: Colors.gold, marginTop: 2, fontWeight: "500" },
+  completedText: { fontSize: 11, color: Colors.navyOpacity50, marginTop: 2, fontWeight: "500" },
   modalSafe: { flex: 1, backgroundColor: Colors.cream },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: 1, borderBottomColor: Colors.creamDark, backgroundColor: Colors.white },
   modalTitle: { fontSize: 18, fontWeight: "600", color: Colors.navy },
