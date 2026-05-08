@@ -39,10 +39,48 @@ export async function getYtcFirebase(): Promise<Initialized> {
   if (!_initPromise) {
     _initPromise = (async () => {
       const { initializeApp, getApps } = await import("firebase/app");
-      const { getAuth } = await import("firebase/auth");
+      const authMod: any = await import("firebase/auth");
       const { getFirestore } = await import("firebase/firestore");
       const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-      _initialized = { app, auth: getAuth(app), db: getFirestore(app) };
+
+      // Auth persistence on React Native:
+      //
+      // `getAuth()` defaults to MEMORY-only persistence on RN — every
+      // app cold start wipes the session, forcing the user to sign in
+      // again. That was the actual cause of the "made me re-log in"
+      // report after the new APK install.
+      //
+      // The fix is `initializeAuth(app, { persistence: getReactNativePersistence(AsyncStorage) })`,
+      // which Firebase exposes specifically for React Native via the
+      // package's `react-native` field (Metro resolves
+      // `firebase/auth` → `@firebase/auth/dist/rn/index.js` which
+      // exports `getReactNativePersistence`). Once persistence is
+      // wired up, the auth-state listener (subscribeAuth) emits the
+      // saved user immediately on next launch instead of null.
+      //
+      // Subsequent calls in the same JS context must use `getAuth(app)`
+      // — `initializeAuth` throws if called twice. We try it first and
+      // fall back to getAuth on the "already-initialized" error.
+      let auth: Auth;
+      try {
+        const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
+        if (typeof authMod.getReactNativePersistence === "function" && typeof authMod.initializeAuth === "function") {
+          auth = authMod.initializeAuth(app, {
+            persistence: authMod.getReactNativePersistence(AsyncStorage),
+          });
+        } else {
+          // Older Firebase or non-RN platform — fall back to default.
+          auth = authMod.getAuth(app);
+        }
+      } catch (e: any) {
+        // initializeAuth throws "auth/already-initialized" when this
+        // file evaluates twice in the same RN runtime. That's safe —
+        // the previous initializeAuth() set up persistence; we just
+        // need the existing instance.
+        auth = authMod.getAuth(app);
+      }
+
+      _initialized = { app, auth, db: getFirestore(app) };
       return _initialized;
     })();
   }

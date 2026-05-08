@@ -1,12 +1,13 @@
 // YTC: shiurim list with search/filter/sort. Verbatim port from
 // /tmp/ytc-source/expo-app/app/(tabs)/shiurim.tsx with imports remapped
 // and useAudio() → useYtcPlayer() (richer audio adapter hook).
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput,
   ActivityIndicator, Modal, ScrollView, Platform, RefreshControl, Alert,
+  StatusBar,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { ytcColors as Colors } from "@/constants/ytcColors";
 import { fetchShiurim, invalidateYtcCache } from "@/lib/ytc/firebase";
@@ -29,7 +30,17 @@ function formatRemainingMin(positionMs: number, durationMs: number): string {
   return `${m} min left`;
 }
 
+// Sort labels mirror the Swift app verbatim.
+const SORT_LABELS: Record<SortOrder, string> = {
+  dateDesc: "Newest First",
+  dateAsc: "Oldest First",
+  titleAZ: "Title A–Z",
+  rebbeAZ: "Rebbe A–Z",
+};
+const SORT_ORDER_CYCLE: SortOrder[] = ["dateDesc", "dateAsc", "titleAZ", "rebbeAZ"];
+
 export default function ShiurimScreen() {
+  const insets = useSafeAreaInsets();
   const { currentShiurId, isPlaying, isLoading: audioLoading, play, pauseResume } = useYtcPlayer();
   const { getPosition } = usePositions();
   const { downloadEpisode, removeDownload, isDownloaded, isDownloading, downloadProgress } = useDownloads();
@@ -49,6 +60,7 @@ export default function ShiurimScreen() {
   const [selectedSeries, setSelectedSeries] = useState<Set<string>>(new Set());
   const [showSavedOnly, setShowSavedOnly] = useState(false);
   const [showInProgressOnly, setShowInProgressOnly] = useState(false);
+  const [showDownloadedOnly, setShowDownloadedOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   // Which filter accordion is expanded inside the Filters modal. Only
   // one open at a time so the modal stays scannable.
@@ -103,6 +115,9 @@ export default function ShiurimScreen() {
     if (selectedTags.size > 0) result = result.filter((s) => s.tags.some((t) => selectedTags.has(t)));
     if (selectedSeries.size > 0) result = result.filter((s) => !!s.series && selectedSeries.has(s.series));
     if (showSavedOnly) result = result.filter((s) => isSaved(s.id));
+    if (showDownloadedOnly) {
+      result = result.filter((s) => isDownloaded(`${YTC_EPISODE_PREFIX}${s.id}`));
+    }
     if (showInProgressOnly) {
       result = result.filter((s) => {
         const pos = getPosition(`${YTC_EPISODE_PREFIX}${s.id}`);
@@ -211,62 +226,134 @@ export default function ShiurimScreen() {
     );
   }, [currentShiurId, isPlaying, audioLoading, getPosition, isSaved, isDownloaded, isDownloading, downloadProgress, onPlayPress, onSavePress, onDownloadPressFor, onTagPress, formatDate]);
 
+  // Active-filter count badge for the slider button.
+  const advancedFilterCount = selectedRebbeim.size + selectedTags.size + selectedSeries.size;
+
+  // Cycle through the sort orders on tap. Matches the Swift quick-chip
+  // behavior — long-press would open a menu but a single tap rotates.
+  const cycleSortOrder = useCallback(() => {
+    setSortOrder((cur) => {
+      const i = SORT_ORDER_CYCLE.indexOf(cur);
+      return SORT_ORDER_CYCLE[(i + 1) % SORT_ORDER_CYCLE.length];
+    });
+  }, []);
+
+  const clearAllQuickFilters = useCallback(() => {
+    setSelectedRebbeim(new Set());
+    setSelectedTags(new Set());
+    setSelectedSeries(new Set());
+    setShowSavedOnly(false);
+    setShowInProgressOnly(false);
+    setShowDownloadedOnly(false);
+    setSortOrder("dateDesc");
+    setSearch("");
+  }, []);
+
   return (
-    <SafeAreaView style={styles.safe} edges={["top"]}>
-      <View style={styles.header}>
+    // edges={[]} — the navy header bleeds under the status bar so the
+    // time / battery / signal area is navy too (matches the screenshot
+    // from the Swift app). We pad-by-inset.top inside the header.
+    <SafeAreaView style={styles.safe} edges={[]}>
+      <StatusBar barStyle="light-content" backgroundColor={Colors.navy} />
+
+      {/* Full navy header — title + search + chip scroll row. Bleeds
+           under the status bar via paddingTop = insets.top. */}
+      <View style={[styles.headerNavy, { paddingTop: insets.top + 12 }]}>
         <Text style={styles.headerTitle}>Shiurim</Text>
-        <Text style={styles.headerSubtitle}>Browse and listen to Torah shiurim from our Rebbeim</Text>
-      </View>
 
-      <View style={styles.searchRow}>
-        <View style={styles.searchBox}>
-          <Ionicons name="search" size={16} color={Colors.navyOpacity50} style={{ marginRight: 8 }} />
-          <TextInput style={styles.searchInput} placeholder="Search shiurim..." placeholderTextColor={Colors.navyOpacity50} value={search} onChangeText={setSearch} />
-          {search ? <TouchableOpacity onPress={() => setSearch("")}><Ionicons name="close-circle" size={18} color={Colors.navyOpacity50} /></TouchableOpacity> : null}
+        <View style={styles.searchRow}>
+          <View style={styles.searchBox}>
+            <Ionicons name="search" size={16} color={Colors.navyOpacity50} style={{ marginRight: 8 }} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search by title, rebbe, or topic..."
+              placeholderTextColor={Colors.navyOpacity50}
+              value={search}
+              onChangeText={setSearch}
+            />
+            {search ? <TouchableOpacity onPress={() => setSearch("")}><Ionicons name="close-circle" size={18} color={Colors.navyOpacity50} /></TouchableOpacity> : null}
+          </View>
+          <YtcFocusable style={styles.filterBtn} onPress={() => setShowFilters(true)} focusRadius={10}>
+            <Ionicons name="options" size={20} color={Colors.cream} />
+            {advancedFilterCount > 0 && (
+              <View style={styles.filterBadge}>
+                <Text style={styles.filterBadgeText}>{advancedFilterCount}</Text>
+              </View>
+            )}
+          </YtcFocusable>
         </View>
-        <YtcFocusable style={[styles.filterBtn, hasFilters && styles.filterBtnActive]} onPress={() => setShowFilters(true)} focusRadius={10}>
-          <Ionicons name="options" size={20} color={hasFilters ? Colors.cream : Colors.navy} />
-        </YtcFocusable>
-      </View>
 
-      <View style={styles.quickFilters}>
-        <YtcFocusable
-          style={[styles.quickChip, showSavedOnly && styles.quickChipActive]}
-          onPress={() => setShowSavedOnly((v) => !v)}
-          focusRadius={16}
+        {/* Horizontally scrolling chip row — Saved, In Progress, Downloaded,
+             Sort cycle, Clear (when any filter active). Outline-style:
+             gold border + cream text on transparent navy until active,
+             then gold-filled with navy text. */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipRowContent}
         >
-          <Ionicons name={showSavedOnly ? "bookmark" : "bookmark-outline"} size={14} color={showSavedOnly ? Colors.cream : Colors.navy} />
-          <Text style={[styles.quickChipText, showSavedOnly && styles.quickChipTextActive]}>Saved</Text>
-        </YtcFocusable>
-        <YtcFocusable
-          style={[styles.quickChip, showInProgressOnly && styles.quickChipActive]}
-          onPress={() => setShowInProgressOnly((v) => !v)}
-          focusRadius={16}
-        >
-          <Ionicons name={showInProgressOnly ? "time" : "time-outline"} size={14} color={showInProgressOnly ? Colors.cream : Colors.navy} />
-          <Text style={[styles.quickChipText, showInProgressOnly && styles.quickChipTextActive]}>In progress</Text>
-        </YtcFocusable>
-      </View>
+          <QuickChip
+            label="Saved"
+            iconActive="bookmark"
+            iconInactive="bookmark-outline"
+            active={showSavedOnly}
+            onPress={() => setShowSavedOnly((v) => !v)}
+          />
+          <QuickChip
+            label="In Progress"
+            iconActive="time"
+            iconInactive="time-outline"
+            active={showInProgressOnly}
+            onPress={() => setShowInProgressOnly((v) => !v)}
+          />
+          <QuickChip
+            label="Downloaded"
+            iconActive="cloud-download"
+            iconInactive="cloud-download-outline"
+            active={showDownloadedOnly}
+            onPress={() => setShowDownloadedOnly((v) => !v)}
+          />
+          <QuickChip
+            label={SORT_LABELS[sortOrder]}
+            iconActive="swap-vertical"
+            iconInactive="swap-vertical"
+            active={sortOrder !== "dateDesc"}
+            onPress={cycleSortOrder}
+          />
+          {(hasFilters || sortOrder !== "dateDesc" || search) && (
+            <YtcFocusable style={styles.clearChip} onPress={clearAllQuickFilters} focusRadius={16}>
+              <Ionicons name="close" size={12} color={Colors.gold} />
+              <Text style={styles.clearChipText}>Clear</Text>
+            </YtcFocusable>
+          )}
+        </ScrollView>
 
-      {(selectedRebbeim.size > 0 || selectedTags.size > 0 || selectedSeries.size > 0) && (
-        <View style={styles.activeFilters}>
-          {Array.from(selectedRebbeim).map((r) => (
-            <TouchableOpacity key={`r-${r}`} style={styles.filterChip} onPress={() => toggleInSet(setSelectedRebbeim, r)}>
-              <Text style={styles.filterChipText}>{r} ✕</Text>
-            </TouchableOpacity>
-          ))}
-          {Array.from(selectedTags).map((t) => (
-            <TouchableOpacity key={`t-${t}`} style={styles.filterChip} onPress={() => toggleInSet(setSelectedTags, t)}>
-              <Text style={styles.filterChipText}>{t} ✕</Text>
-            </TouchableOpacity>
-          ))}
-          {Array.from(selectedSeries).map((s) => (
-            <TouchableOpacity key={`s-${s}`} style={styles.filterChip} onPress={() => toggleInSet(setSelectedSeries, s)}>
-              <Text style={styles.filterChipText}>{s} ✕</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
+        {/* Active advanced filters (rebbe/topic/series picks from the
+             modal). Shown as removable gold pills inside the navy block
+             so they read against the dark background. */}
+        {(selectedRebbeim.size > 0 || selectedTags.size > 0 || selectedSeries.size > 0) && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.activeFilters}>
+            {Array.from(selectedRebbeim).map((r) => (
+              <TouchableOpacity key={`r-${r}`} style={styles.activePill} onPress={() => toggleInSet(setSelectedRebbeim, r)}>
+                <Text style={styles.activePillText}>{r}</Text>
+                <Ionicons name="close" size={11} color={Colors.navy} />
+              </TouchableOpacity>
+            ))}
+            {Array.from(selectedTags).map((t) => (
+              <TouchableOpacity key={`t-${t}`} style={styles.activePill} onPress={() => toggleInSet(setSelectedTags, t)}>
+                <Text style={styles.activePillText}>{t}</Text>
+                <Ionicons name="close" size={11} color={Colors.navy} />
+              </TouchableOpacity>
+            ))}
+            {Array.from(selectedSeries).map((s) => (
+              <TouchableOpacity key={`s-${s}`} style={styles.activePill} onPress={() => toggleInSet(setSelectedSeries, s)}>
+                <Text style={styles.activePillText}>{s}</Text>
+                <Ionicons name="close" size={11} color={Colors.navy} />
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+      </View>
 
       {!isLoading && <Text style={styles.countText}>{filtered.length} shiur{filtered.length !== 1 ? "im" : ""}</Text>}
 
@@ -465,85 +552,138 @@ interface ShiurCardProps {
   formatDate: (dateStr: string) => string;
 }
 
+// QuickChip — outline-style chip for the navy header's filter row.
+// Matches the screenshot: gold border + gold icon/text on transparent
+// background until active, then filled gold with navy text.
+function QuickChip({ label, iconActive, iconInactive, active, onPress }: {
+  label: string;
+  iconActive: any;
+  iconInactive: any;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <YtcFocusable
+      style={[styles.quickChip, active && styles.quickChipActive]}
+      onPress={onPress}
+      focusRadius={20}
+    >
+      <Ionicons
+        name={active ? iconActive : iconInactive}
+        size={13}
+        color={active ? Colors.navy : Colors.gold}
+      />
+      <Text style={[styles.quickChipText, active && styles.quickChipTextActive]} numberOfLines={1}>
+        {label}
+      </Text>
+    </YtcFocusable>
+  );
+}
+
+// Card layout mirrors /tmp/ytc-source/ytcalumni1/Views/Shiurim/ShiurimView.swift
+// → ShiurRowView. Avatar circle (44px) on the left with headphones icon,
+// serif title + italic gold rebbe + date · series row, horizontal-scroll
+// tag chips, optional resume line, full-width navy Play button +
+// download button, gold bookmark in the top-right corner.
 const ShiurCard = React.memo(function ShiurCardImpl(p: ShiurCardProps) {
   const { item, isActive, isPlaying, audioLoading, savedPosition, isSaved, downloaded, downloading, downloadPct, onPlay, onSave, onDownload, onTagPress, formatDate } = p;
   const hasProgress = !!savedPosition && savedPosition.durationMs > 0 && savedPosition.positionMs > 0;
   const pct = hasProgress ? Math.min(Math.round((savedPosition!.positionMs / savedPosition!.durationMs) * 100), 100) : 0;
   const completed = hasProgress && pct >= 95;
+  const playLabel = isActive && isPlaying ? "Pause" : (hasProgress && !completed ? "Resume" : "Play");
   return (
     <View style={[styles.shiurCard, isActive && styles.shiurCardActive]}>
-      <View style={styles.shiurAccent} />
-      <View style={styles.shiurBody}>
-        <View style={styles.shiurTopRow}>
-          <Ionicons name="headset-outline" size={20} color={Colors.gold} style={{ marginTop: 1 }} />
-          <Text style={styles.shiurTitle} numberOfLines={3}>{item.title}</Text>
-          <YtcFocusable onPress={() => onSave(item.id)} hitSlop={8} style={styles.iconBtn} focusRadius={14}>
-            <Ionicons name={isSaved ? "bookmark" : "bookmark-outline"} size={20} color={isSaved ? Colors.gold : Colors.navyOpacity50} />
+      {/* Top row: avatar + title block + bookmark */}
+      <View style={styles.shiurTopRow}>
+        <View style={[styles.avatar, isActive && styles.avatarActive]}>
+          <Ionicons
+            name={isActive && isPlaying ? "musical-notes" : "headset"}
+            size={20}
+            color={isActive ? Colors.navy : Colors.navyOpacity50}
+          />
+        </View>
+        <View style={styles.shiurInfo}>
+          <Text style={styles.shiurTitle} numberOfLines={2}>{item.title}</Text>
+          {item.rebbe ? <Text style={styles.shiurRebbe}>{item.rebbe}</Text> : null}
+          <View style={styles.shiurDateRow}>
+            <Text style={styles.shiurDate}>{formatDate(item.date)}</Text>
+            {item.series ? (
+              <>
+                <Text style={styles.shiurDot}>·</Text>
+                <Text style={styles.shiurSeries} numberOfLines={1}>{item.series}</Text>
+              </>
+            ) : null}
+          </View>
+        </View>
+        <YtcFocusable onPress={() => onSave(item.id)} hitSlop={8} style={styles.bookmarkBtn} focusRadius={14}>
+          <Ionicons name={isSaved ? "bookmark" : "bookmark-outline"} size={20} color={isSaved ? Colors.gold : Colors.navyOpacity30} />
+        </YtcFocusable>
+      </View>
+
+      {/* Tags row — horizontal scroll, small navy/opacity chips */}
+      {item.tags.length > 0 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagsScroll} contentContainerStyle={styles.tagsScrollContent}>
+          {item.tags.map((tag) => (
+            <TouchableOpacity key={tag} style={styles.tag} onPress={() => onTagPress(tag)}>
+              <Text style={styles.tagText}>{tag}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
+
+      {/* Resume / Completed / Downloading status line */}
+      {downloading ? (
+        <View style={styles.statusLine}>
+          <Ionicons name="cloud-download-outline" size={12} color={Colors.gold} />
+          <Text style={styles.statusText}>Downloading {Math.round(downloadPct * 100)}%</Text>
+        </View>
+      ) : completed ? (
+        <View style={styles.statusLine}>
+          <Ionicons name="checkmark-circle-outline" size={12} color={Colors.navyOpacity50} />
+          <Text style={[styles.statusText, { color: Colors.navyOpacity50 }]}>Completed</Text>
+        </View>
+      ) : hasProgress && !isActive ? (
+        <View style={styles.statusLine}>
+          <Ionicons name="time-outline" size={12} color={Colors.gold} />
+          <Text style={styles.statusText}>Resume from {formatRemainingMin(savedPosition!.positionMs, savedPosition!.durationMs)}</Text>
+        </View>
+      ) : null}
+
+      {/* Action row: full-width Play / Resume / Pause + download icon */}
+      {item.audioUrl && (
+        <View style={styles.shiurActionsRow}>
+          <YtcFocusable
+            style={[styles.playButton, isActive && styles.playButtonActive]}
+            onPress={() => onPlay(item, isActive)}
+            focusRadius={10}
+          >
+            {isActive && audioLoading
+              ? <ActivityIndicator size="small" color={isActive ? Colors.navy : Colors.cream} />
+              : (
+                <>
+                  <Ionicons
+                    name={isActive && isPlaying ? "pause" : "play"}
+                    size={14}
+                    color={isActive ? Colors.navy : Colors.cream}
+                  />
+                  <Text style={[styles.playButtonText, isActive && styles.playButtonTextActive]}>{playLabel}</Text>
+                </>
+              )}
+          </YtcFocusable>
+          <YtcFocusable onPress={() => onDownload(item, downloaded, downloading)} hitSlop={4} style={styles.downloadIconBtn} focusRadius={10}>
+            {downloading
+              ? <ActivityIndicator size="small" color={Colors.navy} />
+              : downloaded
+              ? <Ionicons name="trash-outline" size={18} color={Colors.error} />
+              : <Ionicons name="download-outline" size={20} color={Colors.navy} />}
           </YtcFocusable>
         </View>
+      )}
 
-        {item.rebbe ? <Text style={styles.shiurRebbe}>by {item.rebbe}</Text> : null}
-
-        <View style={styles.shiurMetaRow}>
-          <Ionicons name="time-outline" size={13} color={Colors.navyOpacity50} />
-          <Text style={styles.shiurMetaText}>{formatDate(item.date)}</Text>
-          {downloading ? (
-            <Text style={[styles.shiurMetaText, { color: Colors.gold }]}>· Downloading {Math.round(downloadPct * 100)}%</Text>
-          ) : completed ? (
-            <Text style={[styles.shiurMetaText, { color: Colors.gold }]}>· Completed</Text>
-          ) : hasProgress ? (
-            <Text style={[styles.shiurMetaText, { color: Colors.gold }]}>· Paused at {formatRemainingMin(savedPosition!.positionMs, savedPosition!.durationMs)}</Text>
-          ) : null}
-        </View>
-
-        {item.series ? (
-          <View style={[styles.tag, { alignSelf: "flex-start", marginTop: 8 }]}>
-            <Ionicons name="folder-outline" size={11} color={Colors.navyOpacity70} style={{ marginRight: 4 }} />
-            <Text style={styles.tagText}>{item.series}</Text>
-          </View>
-        ) : null}
-
-        {item.tags.length > 0 && (
-          <View style={styles.tagsRow}>
-            {item.tags.slice(0, 4).map((tag) => (
-              <TouchableOpacity key={tag} style={styles.tag} onPress={() => onTagPress(tag)}>
-                <Text style={styles.tagText}>{tag}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {item.description ? (
-          <Text style={styles.shiurDescription} numberOfLines={3}>{item.description}</Text>
-        ) : null}
-
-        {item.audioUrl && (
-          <View style={styles.shiurActionsRow}>
-            <YtcFocusable
-              style={styles.playButton}
-              onPress={() => onPlay(item, isActive)}
-              focusRadius={10}
-            >
-              {isActive && audioLoading
-                ? <ActivityIndicator size="small" color={Colors.cream} />
-                : (
-                  <>
-                    <Ionicons name={isActive && isPlaying ? "pause" : "play"} size={16} color={Colors.cream} />
-                    <Text style={styles.playButtonText}>{isActive && isPlaying ? "Pause" : "Play"}</Text>
-                  </>
-                )}
-            </YtcFocusable>
-            <YtcFocusable onPress={() => onDownload(item, downloaded, downloading)} hitSlop={4} style={styles.downloadIconBtn} focusRadius={10}>
-              {downloading
-                ? <ActivityIndicator size="small" color={Colors.navy} />
-                : downloaded
-                ? <Ionicons name="trash-outline" size={20} color={Colors.error} />
-                : <Ionicons name="download-outline" size={22} color={Colors.navy} />}
-            </YtcFocusable>
-          </View>
-        )}
-      </View>
-      {hasProgress && !completed && (
+      {/* Slim progress track at the very bottom of the card while a
+           shiur has unfinished playback. Removed when active/playing
+           since the card chrome already shows that state. */}
+      {hasProgress && !completed && !isActive && (
         <View style={styles.progressTrack}>
           <View style={[styles.progressFill, { width: `${pct}%` }]} />
         </View>
@@ -554,78 +694,139 @@ const ShiurCard = React.memo(function ShiurCardImpl(p: ShiurCardProps) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.cream },
-  header: { backgroundColor: Colors.navy, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10, alignItems: "center" },
-  headerTitle: { color: Colors.cream, fontSize: 18, fontWeight: "bold", fontFamily: Platform.OS === "ios" ? "Georgia" : "serif" },
-  headerSubtitle: { color: Colors.creamOpacity70, fontSize: 12, marginTop: 2 },
-  searchRow: { flexDirection: "row", paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8, gap: 10, backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.creamDark },
-  searchBox: { flex: 1, flexDirection: "row", alignItems: "center", backgroundColor: Colors.cream, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 },
-  searchInput: { flex: 1, fontSize: 15, color: Colors.navy },
-  filterBtn: { width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.creamDark, alignItems: "center", justifyContent: "center" },
-  filterBtnActive: { backgroundColor: Colors.navy },
-  quickFilters: { flexDirection: "row", paddingHorizontal: 12, paddingTop: 6, paddingBottom: 4, gap: 8, backgroundColor: Colors.white },
-  quickChip: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16,
-    backgroundColor: Colors.creamDark,
+
+  // Full navy header — bleeds under the status bar (paddingTop applied
+  // inline from useSafeAreaInsets). Mirrors the Swift app's ShiurimView
+  // header block (verified against
+  // /tmp/ytc-source/ytcalumni1/Views/Shiurim/ShiurimView.swift).
+  headerNavy: {
+    backgroundColor: Colors.navy,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    gap: 12,
   },
-  quickChipActive: { backgroundColor: Colors.navy },
-  quickChipText: { fontSize: 12, color: Colors.navy, fontWeight: "500" },
-  quickChipTextActive: { color: Colors.cream },
-  activeFilters: { flexDirection: "row", flexWrap: "wrap", paddingHorizontal: 12, paddingVertical: 6, gap: 8, backgroundColor: Colors.white },
-  filterChip: { backgroundColor: Colors.goldOpacity15, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4 },
-  filterChipText: { fontSize: 12, color: Colors.navy, fontWeight: "500" },
-  countText: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 2, fontSize: 12, color: Colors.navyOpacity50 },
-  loader: { flex: 1, justifyContent: "center", alignItems: "center" },
-  listContent: { paddingHorizontal: 12, paddingTop: 6, paddingBottom: 120 },
-  empty: { alignItems: "center", padding: 40, gap: 12 },
-  emptyText: { fontSize: 15, color: Colors.navyOpacity50 },
-  shiurCard: {
-    backgroundColor: Colors.white, borderRadius: 12, marginBottom: 10,
-    overflow: "hidden",
-    borderWidth: 1, borderColor: Colors.goldOpacity30,
-    shadowColor: Colors.black, shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05, shadowRadius: 3, elevation: 1,
-  },
-  shiurCardActive: { borderColor: Colors.gold },
-  // Top accent line (4px gold) — matches the website's h-1 gradient.
-  shiurAccent: { height: 4, width: "100%", backgroundColor: Colors.gold },
-  shiurBody: { padding: 14 },
-  shiurTopRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
-  shiurTitle: {
-    flex: 1, fontSize: 16, fontWeight: "700", color: Colors.navy, lineHeight: 22,
+  headerTitle: {
+    color: Colors.cream, fontSize: 28, fontWeight: "700", letterSpacing: 0.2,
     fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
   },
-  iconBtn: { width: 28, height: 28, alignItems: "center", justifyContent: "center" },
+
+  searchRow: { flexDirection: "row", gap: 10, alignItems: "center" },
+  searchBox: {
+    flex: 1, flexDirection: "row", alignItems: "center",
+    backgroundColor: Colors.white, borderRadius: 12,
+    paddingHorizontal: 12, paddingVertical: 10,
+  },
+  searchInput: { flex: 1, fontSize: 14, color: Colors.navy, paddingVertical: 0 },
+  filterBtn: {
+    width: 44, height: 44, borderRadius: 12,
+    backgroundColor: "rgba(250, 248, 243, 0.15)",
+    alignItems: "center", justifyContent: "center",
+  },
+  filterBadge: {
+    position: "absolute", top: -4, right: -4,
+    minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4,
+    backgroundColor: Colors.gold,
+    alignItems: "center", justifyContent: "center",
+  },
+  filterBadgeText: { fontSize: 10, fontWeight: "700", color: Colors.navy },
+
+  // Outline-style chip — gold border on transparent navy until tapped,
+  // then filled gold with navy text. Matches the screenshot from the
+  // Swift original.
+  chipRowContent: { flexDirection: "row", gap: 8, alignItems: "center", paddingRight: 16 },
+  quickChip: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20,
+    borderWidth: 1, borderColor: Colors.gold,
+    backgroundColor: "transparent",
+  },
+  quickChipActive: { backgroundColor: Colors.gold },
+  quickChipText: { fontSize: 12, color: Colors.gold, fontWeight: "600" },
+  quickChipTextActive: { color: Colors.navy },
+  clearChip: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    paddingHorizontal: 10, paddingVertical: 6,
+  },
+  clearChipText: { fontSize: 12, color: Colors.gold, fontWeight: "600" },
+
+  // Active filter pills (rebbe / topic / series picks from the modal)
+  // — gold-tinted and removable. Sit just below the chip row inside
+  // the navy header.
+  activeFilters: { flexDirection: "row", gap: 6, paddingRight: 16 },
+  activePill: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14,
+    backgroundColor: "rgba(212, 175, 55, 0.3)",
+  },
+  activePillText: { fontSize: 11, color: Colors.navy, fontWeight: "600" },
+
+  countText: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 2, fontSize: 12, color: Colors.navyOpacity50 },
+  loader: { flex: 1, justifyContent: "center", alignItems: "center" },
+  listContent: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 120 },
+  empty: { alignItems: "center", padding: 40, gap: 12 },
+  emptyText: { fontSize: 15, color: Colors.navyOpacity50 },
+
+  // Card — matches Swift ShiurRowView (16px radius, soft shadow).
+  shiurCard: {
+    backgroundColor: Colors.white, borderRadius: 16, marginBottom: 12,
+    padding: 16, gap: 12,
+    shadowColor: Colors.black, shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
+  },
+  shiurCardActive: { borderWidth: 1, borderColor: Colors.gold },
+
+  // Top row — avatar circle + title/rebbe/date stack + bookmark.
+  shiurTopRow: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+  avatar: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: Colors.navyOpacity10,
+    alignItems: "center", justifyContent: "center",
+  },
+  avatarActive: { backgroundColor: Colors.gold },
+  shiurInfo: { flex: 1, gap: 4 },
+  shiurTitle: {
+    fontSize: 16, fontWeight: "700", color: Colors.navy, lineHeight: 21,
+    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+  },
   shiurRebbe: {
-    fontSize: 13, color: Colors.gold, fontWeight: "600", marginTop: 4, marginLeft: 30,
+    fontSize: 12, color: Colors.gold, fontWeight: "600",
     fontStyle: "italic",
   },
-  shiurMetaRow: {
-    flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6, marginLeft: 30,
-  },
-  shiurMetaText: { fontSize: 12, color: Colors.navyOpacity70 },
-  tagsRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },
+  shiurDateRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 },
+  shiurDate: { fontSize: 11, color: Colors.navyOpacity50 },
+  shiurDot: { fontSize: 11, color: Colors.navyOpacity30 },
+  shiurSeries: { flex: 1, fontSize: 11, color: Colors.gold, fontWeight: "500" },
+  bookmarkBtn: { width: 28, height: 28, alignItems: "center", justifyContent: "center" },
+
+  // Tag chips — horizontal scroll matches the Swift design exactly.
+  tagsScroll: { marginHorizontal: -16 },
+  tagsScrollContent: { paddingHorizontal: 16, gap: 6 },
   tag: {
     flexDirection: "row", alignItems: "center",
     backgroundColor: Colors.navyOpacity05,
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6,
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 4,
   },
-  tagText: { fontSize: 11, color: Colors.navy, fontWeight: "500" },
-  shiurDescription: { fontSize: 13, color: Colors.navyOpacity70, lineHeight: 19, marginTop: 8 },
-  shiurActionsRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 12 },
+  tagText: { fontSize: 11, color: Colors.navyOpacity70, fontWeight: "500" },
+
+  // Resume / Completed / Downloading status line.
+  statusLine: { flexDirection: "row", alignItems: "center", gap: 6 },
+  statusText: { fontSize: 11, color: Colors.gold, fontWeight: "500" },
+
+  // Action row.
+  shiurActionsRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   playButton: {
     flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-    backgroundColor: Colors.navy, paddingVertical: 12, borderRadius: 8,
+    backgroundColor: Colors.navy, paddingVertical: 11, borderRadius: 10,
   },
-  playButtonText: { color: Colors.cream, fontSize: 14, fontWeight: "600" },
+  playButtonActive: { backgroundColor: Colors.gold },
+  playButtonText: { color: Colors.cream, fontSize: 13, fontWeight: "600" },
+  playButtonTextActive: { color: Colors.navy },
   downloadIconBtn: {
-    width: 44, height: 44, alignItems: "center", justifyContent: "center",
-    borderWidth: 1, borderColor: Colors.goldOpacity30, borderRadius: 8,
+    width: 42, height: 42, alignItems: "center", justifyContent: "center",
+    borderWidth: 1, borderColor: Colors.goldOpacity30, borderRadius: 10,
   },
-  progressTrack: { height: 3, backgroundColor: Colors.creamDark },
-  progressFill: { height: 3, backgroundColor: Colors.gold },
-  progressText: { fontSize: 11, color: Colors.gold, marginTop: 2, fontWeight: "500" },
-  completedText: { fontSize: 11, color: Colors.navyOpacity50, marginTop: 2, fontWeight: "500" },
+  progressTrack: { height: 3, backgroundColor: Colors.creamDark, borderRadius: 1.5, marginHorizontal: -16, marginBottom: -16 },
+  progressFill: { height: 3, backgroundColor: Colors.gold, borderRadius: 1.5 },
   modalSafe: { flex: 1, backgroundColor: Colors.cream },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: 1, borderBottomColor: Colors.creamDark, backgroundColor: Colors.white },
   modalTitle: { fontSize: 18, fontWeight: "600", color: Colors.navy },

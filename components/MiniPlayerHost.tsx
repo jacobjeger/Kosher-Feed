@@ -20,9 +20,26 @@ const TAB_ROUTES = new Set([
   "/settings",
 ]);
 
+// YTC tab routes — pathname for app/ytc/(tabs)/* strips the (tabs)
+// group, so /ytc/(tabs)/index → "/ytc" and /ytc/(tabs)/shiurim →
+// "/ytc/shiurim", etc. Without this set the MiniPlayer was rendering
+// flush to the bottom edge on /ytc/* and visually covering the YTC
+// gold-pill tab bar (user-reported: "what can we do that the nav bar
+// should not get blocked when listening to shiurim").
+const YTC_TAB_ROUTES = new Set([
+  "/ytc",
+  "/ytc/index",
+  "/ytc/shiurim",
+  "/ytc/events",
+  "/ytc/contacts",
+]);
+
 const ANDROID_TAB_BAR = 56;
 const IOS_TAB_BAR = 80;
 const WEB_TAB_BAR = 56 + 34;
+// YTC tab bar height — kept in sync with app/ytc/(tabs)/_layout.tsx
+// (we set tabBarStyle.height = 64 there to fit the gold-pill icon).
+const YTC_TAB_BAR = 64;
 
 export default function MiniPlayerHost() {
   const pathname = usePathname();
@@ -34,10 +51,18 @@ export default function MiniPlayerHost() {
     (r) => pathname === r || pathname.startsWith(r + "/"),
   );
   const isTabRoute = TAB_ROUTES.has(pathname);
+  const isYtcTabRoute = YTC_TAB_ROUTES.has(pathname);
 
-  // Compute bottom offset
+  // Compute bottom offset so the mini-player floats ABOVE whichever
+  // tab bar is currently on screen. Without the YTC branch, the
+  // mini-player would sit on the bottom edge and cover the YTC tab
+  // bar's gold-pill row.
   let bottom: number;
-  if (isTabRoute) {
+  if (isYtcTabRoute) {
+    // YTC tabs handle insets.bottom internally via paddingBottom on
+    // tabBarStyle, so just stack above the bar.
+    bottom = YTC_TAB_BAR + insets.bottom;
+  } else if (isTabRoute) {
     bottom = isWeb ? WEB_TAB_BAR : (isIOS ? IOS_TAB_BAR : ANDROID_TAB_BAR) + insets.bottom;
   } else {
     bottom = insets.bottom;

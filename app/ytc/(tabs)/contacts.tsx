@@ -3,10 +3,10 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   View, Text, SectionList, StyleSheet, TouchableOpacity, TextInput,
-  ActivityIndicator, Platform, RefreshControl,
+  ActivityIndicator, Platform, RefreshControl, StatusBar,
 } from "react-native";
 import { Image } from "expo-image";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { ytcColors as Colors } from "@/constants/ytcColors";
 import { fetchRebbeim, fetchApprovedAlumni, fetchMyAlumniContact, invalidateYtcCache } from "@/lib/ytc/firebase";
@@ -18,6 +18,7 @@ import type { Rebbe, AlumniContact } from "@/types/ytc";
 type ContactTab = "rebbeim" | "alumni";
 
 export default function ContactsScreen() {
+  const insets = useSafeAreaInsets();
   const { user } = useYtcAuth();
   const [rebbeim, setRebbeim] = useState<Rebbe[]>([]);
   const [alumni, setAlumni] = useState<AlumniContact[]>([]);
@@ -116,8 +117,9 @@ export default function ContactsScreen() {
   // toast. Mirrors the website's behavior.
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top"]}>
-      <View style={styles.header}>
+    <SafeAreaView style={styles.safe} edges={[]}>
+      <StatusBar barStyle="light-content" backgroundColor={Colors.navy} />
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <Text style={styles.headerTitle}>Directory</Text>
         <Text style={styles.headerSubtitle}>Connect with Rebbeim and fellow alumni</Text>
       </View>

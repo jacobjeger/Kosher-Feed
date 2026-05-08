@@ -49,6 +49,11 @@ export default function MiniPlayer() {
         onPressIn={() => { pressScale.value = withSpring(0.98, { damping: 15 }); }}
         onPressOut={() => { pressScale.value = withSpring(1, { damping: 15 }); }}
       >
+        {/* Progress bar — slimmer + dot-less per "make footer cleaner".
+             A 2px gradient line at the top of the player reads as a
+             progress indicator without the visual noise of a draggable
+             dot (the user taps the player to open the full screen
+             where they can scrub). */}
         <View style={[styles.progressBar, { backgroundColor: "rgba(255,255,255,0.08)" }]}>
           <LinearGradient
             colors={[colors.gradientStart, colors.gradientEnd]}
@@ -56,7 +61,6 @@ export default function MiniPlayer() {
             end={{ x: 1, y: 0 }}
             style={[styles.progressFill, { width: `${progress * 100}%` }, isWeb ? { transition: 'width 0.3s ease' } as any : undefined]}
           />
-          <View style={[styles.progressDot, { left: `${progress * 100}%`, backgroundColor: colors.gradientEnd }]} />
         </View>
 
         <View style={styles.content}>
@@ -86,10 +90,17 @@ export default function MiniPlayer() {
                 </Text>
               ) : currentEpisode.id.startsWith("ytc:") ? (
                 // YTC shiur — surface the source on the mini-player so
-                // the user knows playback is from the YTC alumni library.
-                <Text style={[styles.subtitle, { color: "rgba(212, 175, 55, 0.85)" }]} numberOfLines={1}>
-                  From YTC Alumni · {currentFeed?.title}
-                </Text>
+                // the user knows playback is from the YTC alumni
+                // library, AND make it tappable to jump back into
+                // /ytc. Without this branch the player was effectively
+                // a dead end once the user navigated out of YTC: tap
+                // the title or feed name and they'd land on
+                // /podcast/{ytc:rebbe} which doesn't exist.
+                <Pressable onPress={(e) => { e.stopPropagation(); router.push("/ytc" as any); }} hitSlop={4}>
+                  <Text style={[styles.subtitle, { color: "rgba(212, 175, 55, 0.85)" }]} numberOfLines={1}>
+                    From YTC Alumni · {currentFeed?.title}
+                  </Text>
+                </Pressable>
               ) : (
                 <Pressable onPress={(e) => { e.stopPropagation(); if (currentFeed) router.push(`/podcast/${currentFeed.id}`); }} hitSlop={4}>
                   <Text style={[styles.subtitle, { color: "rgba(255,255,255,0.55)" }]} numberOfLines={1}>
@@ -180,19 +191,11 @@ const styles = StyleSheet.create({
     }),
   },
   progressBar: {
-    height: 4,
+    height: 2,
   },
   progressFill: {
     height: "100%" as any,
-    borderRadius: 2,
-  },
-  progressDot: {
-    position: "absolute" as const,
-    top: -2,
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    marginLeft: -4,
+    borderRadius: 1,
   },
   content: {
     flexDirection: "row",

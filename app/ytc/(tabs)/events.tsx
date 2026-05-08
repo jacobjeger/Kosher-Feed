@@ -1,8 +1,8 @@
 // YTC: events list. Verbatim port from
 // /tmp/ytc-source/expo-app/app/(tabs)/events.tsx with imports remapped.
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, Platform, RefreshControl, TouchableOpacity, Modal, Pressable, Dimensions } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, Platform, RefreshControl, TouchableOpacity, Modal, Pressable, Dimensions, StatusBar } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { ytcColors as Colors } from "@/constants/ytcColors";
@@ -19,6 +19,7 @@ const PAST_GRID_COL_WIDTH = (SCREEN_W - PAST_GRID_PADDING * 2 - PAST_GRID_GUTTER
 const PAST_GRID_CAP = 8;
 
 export default function EventsScreen() {
+  const insets = useSafeAreaInsets();
   const { user } = useYtcAuth();
   const [events, setEvents] = useState<YtcEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -118,15 +119,21 @@ export default function EventsScreen() {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.safe} edges={["top"]}>
-        <View style={styles.header}><Text style={styles.headerTitle}>Yeshiva Simchos</Text></View>
+      <SafeAreaView style={styles.safe} edges={[]}>
+        <StatusBar barStyle="light-content" backgroundColor={Colors.navy} />
+        <View style={[styles.header, { paddingTop: insets.top + 18 }]}>
+          <Text style={styles.headerTitle}>Yeshiva Simchos</Text>
+        </View>
         <View style={styles.loader}><ActivityIndicator size="large" color={Colors.navy} /></View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top"]}>
+    // edges={[]} — header bleeds into the status bar so the time area
+    // is navy (matches the Swift screenshot).
+    <SafeAreaView style={styles.safe} edges={[]}>
+      <StatusBar barStyle="light-content" backgroundColor={Colors.navy} />
       {/* Fullscreen image viewer — tap backdrop to dismiss. */}
       <Modal visible={!!zoomImage} transparent animationType="fade" onRequestClose={() => setZoomImage(null)}>
         <Pressable style={styles.zoomBackdrop} onPress={() => setZoomImage(null)}>
@@ -152,7 +159,7 @@ export default function EventsScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.navy} />}
         ListHeaderComponent={
           <>
-            <View style={styles.header}>
+            <View style={[styles.header, { paddingTop: insets.top + 18 }]}>
               <Text style={styles.headerTitle}>Yeshiva Simchos</Text>
             </View>
             <View style={styles.body}>

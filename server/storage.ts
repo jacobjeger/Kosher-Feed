@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { isApiOnlyUrl } from "./alldaf";
-import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals, queueItems, notificationTaps, feedMergeHistory, appConfig, deviceProfiles, conversations, conversationMessages, pageViews } from "@shared/schema";
+import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals, queueItems, notificationTaps, feedMergeHistory, appConfig, deviceProfiles, conversations, conversationMessages, pageViews, ytcUnlocks } from "@shared/schema";
 import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor, NotificationPreference, Announcement, AnnouncementDismissal, NotificationTap, AppConfig, DeviceProfile, Conversation, ConversationMessage, PageView } from "@shared/schema";
 import { eq, and, desc, asc, inArray, sql, count, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
@@ -3301,5 +3301,72 @@ export async function getWebsiteAnalytics(): Promise<{
     byDeviceType: byDeviceType.map(d => ({ ...d, count: Number(d.count) })),
     byCountry: byCountry.map(c => ({ ...c, count: Number(c.count) })),
     dailyViews: dailyViews.map(d => ({ ...d, count: Number(d.count) })),
+  };
+}
+
+// YTC unlock analytics — drives the ShiurPod admin dashboard's "YTC
+// section" tile so we can answer "how many users unlocked YTC?"
+// without scraping logs. One row per successful tryUnlock() call from
+// the mobile client.
+export async function recordYtcUnlock(data: {
+  deviceId?: string | null;
+  platform?: string | null;
+  appVersion?: string | null;
+  userAgent?: string | null;
+  ipAddress?: string | null;
+}): Promise<void> {
+  await db.insert(ytcUnlocks).values({
+    deviceId: data.deviceId ?? null,
+    platform: data.platform ?? null,
+    appVersion: data.appVersion ?? null,
+    userAgent: data.userAgent ?? null,
+    ipAddress: data.ipAddress ?? null,
+  });
+}
+
+export interface YtcUnlockStats {
+  totalUnlocks: number;
+  unlocks24h: number;
+  unlocks7d: number;
+  unlocks30d: number;
+  /** Distinct device-id count over the last 30 days. Falls back to
+   *  distinct IP for clients that didn't send a deviceId. */
+  uniqueDevices30d: number;
+  /** Per-day unlocks for the last 30 days — admin can render a sparkline. */
+  dailyUnlocks: { day: string; count: number }[];
+}
+
+export async function getYtcUnlockStats(): Promise<YtcUnlockStats> {
+  const now = new Date();
+  const h24 = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const d7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const d30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  const [[total], [r24], [r7], [r30], [uDev30], dailyRows] = await Promise.all([
+    db.select({ count: count() }).from(ytcUnlocks),
+    db.select({ count: count() }).from(ytcUnlocks).where(sql`${ytcUnlocks.createdAt} > ${h24}`),
+    db.select({ count: count() }).from(ytcUnlocks).where(sql`${ytcUnlocks.createdAt} > ${d7}`),
+    db.select({ count: count() }).from(ytcUnlocks).where(sql`${ytcUnlocks.createdAt} > ${d30}`),
+    // Count distinct deviceId; rows without a deviceId fall back to ipAddress
+    // so anonymous clients still contribute to the unique-device estimate.
+    db.select({
+      count: sql<number>`COUNT(DISTINCT COALESCE(${ytcUnlocks.deviceId}, ${ytcUnlocks.ipAddress}))`,
+    }).from(ytcUnlocks).where(sql`${ytcUnlocks.createdAt} > ${d30}`),
+    db.select({
+      day: sql<string>`DATE(${ytcUnlocks.createdAt})`,
+      count: count(),
+    }).from(ytcUnlocks)
+      .where(sql`${ytcUnlocks.createdAt} > ${d30}`)
+      .groupBy(sql`DATE(${ytcUnlocks.createdAt})`)
+      .orderBy(sql`DATE(${ytcUnlocks.createdAt})`),
+  ]);
+
+  return {
+    totalUnlocks: Number(total.count),
+    unlocks24h: Number(r24.count),
+    unlocks7d: Number(r7.count),
+    unlocks30d: Number(r30.count),
+    uniqueDevices30d: Number(uDev30.count),
+    dailyUnlocks: dailyRows.map((d) => ({ day: d.day, count: Number(d.count) })),
   };
 }

@@ -271,7 +271,18 @@ export default function PlayerScreen() {
           sleepActive={sleepTimer.active}
           bookmarkSaved={bookmarkSaved}
           isFavorited={isFavorite(currentEpisode.id)}
-          onOpenPodcast={() => { router.back(); router.push(`/podcast/${currentFeed.id}`); }}
+          onOpenPodcast={() => {
+            // YTC episodes don't have a /podcast/{id} target — route
+            // back into the YTC mini-app instead so the user has a
+            // working "back to source" affordance.
+            if (currentFeed.sourceNetwork === "ytc") {
+              router.back();
+              router.push("/ytc" as any);
+            } else {
+              router.back();
+              router.push(`/podcast/${currentFeed.id}`);
+            }
+          }}
           onSkipPrevEpisode={() => { lightHaptic(); skipToPreviousEpisode(); }}
           onSkipNextEpisode={() => { lightHaptic(); skipToNextEpisode(); }}
         />
@@ -349,9 +360,21 @@ export default function PlayerScreen() {
         <Text style={[styles.episodeTitle, { color: colors.text }, isSmallScreen && styles.episodeTitleSmall]} numberOfLines={2}>
           {currentEpisode.title}
         </Text>
+        {/* Feed-name link. For YTC episodes the destination is /ytc
+             (so tapping the rebbe / "From YTC Alumni" caption brings
+             the user back into the YTC mini-app), NOT /podcast/{id}
+             — that route doesn't exist for YTC feeds. */}
         <FocusableView
           focusRadius={6}
-          onPress={() => { router.back(); router.push(`/podcast/${currentFeed.id}`); }}
+          onPress={() => {
+            if (currentFeed.sourceNetwork === "ytc") {
+              router.back();
+              router.push("/ytc" as any);
+            } else {
+              router.back();
+              router.push(`/podcast/${currentFeed.id}`);
+            }
+          }}
           style={{ zIndex: 10, paddingVertical: 6, marginBottom: 4 }}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
@@ -359,14 +382,28 @@ export default function PlayerScreen() {
             {currentFeed.title}
           </Text>
         </FocusableView>
-        {currentFeed.sourceNetwork && (
-          <View style={[styles.sourceNetworkBadge, currentFeed.sourceNetwork === "ytc" && { backgroundColor: "#d4af37" }]}>
+        {currentFeed.sourceNetwork === "ytc" ? (
+          // Prominent YTC caption — bigger + tappable so the expanded
+          // player matches the mini-player's "From YTC Alumni"
+          // affordance and the user has a clear way back to /ytc.
+          <FocusableView
+            focusRadius={8}
+            onPress={() => { router.back(); router.push("/ytc" as any); }}
+            hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}
+          >
+            <View style={[styles.sourceNetworkBadge, { backgroundColor: "#d4af37", paddingHorizontal: 12, paddingVertical: 5 }]}>
+              <Ionicons name="headset-outline" size={13} color="#0a1628" />
+              <Text style={[styles.sourceNetworkText, { color: "#0a1628", fontWeight: "700", fontSize: 12 }]}>
+                From YTC Alumni
+              </Text>
+            </View>
+          </FocusableView>
+        ) : currentFeed.sourceNetwork ? (
+          <View style={styles.sourceNetworkBadge}>
             <Ionicons name="globe-outline" size={11} color="#fff" />
-            <Text style={styles.sourceNetworkText}>
-              {currentFeed.sourceNetwork === "ytc" ? "From YTC Alumni" : currentFeed.sourceNetwork}
-            </Text>
+            <Text style={styles.sourceNetworkText}>{currentFeed.sourceNetwork}</Text>
           </View>
-        )}
+        ) : null}
       </View>
 
       <View style={[styles.sliderSection, isSmallScreen && styles.sliderSectionSmall]}>

@@ -10,6 +10,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   View, Text, ScrollView, StyleSheet, FlatList,
   TouchableOpacity, ActivityIndicator, RefreshControl, Platform, Pressable, Modal,
+  Dimensions, StatusBar,
 } from "react-native";
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -146,16 +147,30 @@ export default function HomeScreen() {
     loadData();
   }, []);
 
-  // Hero backdrop auto-cycle through carousel images every 6 seconds
-  // when there's more than one. The hero just reads carouselImages[
-  // carouselIndex] — no FlatList anymore.
+  // Hero is now a swipeable horizontal FlatList (per user feedback —
+  // images should be user-scrollable, not just an auto-rotator). The
+  // auto-cycle still runs as a hint that there's more, but a user
+  // touch / swipe pauses it for 8s so the user can dwell on the image
+  // they're looking at.
+  const heroFlatListRef = useRef<FlatList<CarouselImage>>(null);
+  const heroAutoPausedUntilRef = useRef<number>(0);
   useEffect(() => {
     if (carouselImages.length <= 1) return;
     const timer = setInterval(() => {
-      setCarouselIndex((i) => (i + 1) % carouselImages.length);
+      // Skip the tick if the user touched recently.
+      if (Date.now() < heroAutoPausedUntilRef.current) return;
+      setCarouselIndex((i) => {
+        const next = (i + 1) % carouselImages.length;
+        try { heroFlatListRef.current?.scrollToIndex({ index: next, animated: true }); } catch {}
+        return next;
+      });
     }, 6000);
     return () => clearInterval(timer);
   }, [carouselImages.length]);
+
+  // Width-based snap target — used by both `getItemLayout` and the
+  // momentum-end index calc.
+  const HERO_WIDTH = Dimensions.get("window").width;
 
   // useCallback: stabilize the reference so React.memo on
   // ShiurHomeCard short-circuits on re-renders.
@@ -176,6 +191,7 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={[]}>
+      <StatusBar barStyle="light-content" backgroundColor={Colors.navy} />
       <ScrollView style={styles.scroll} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.navy} />}>
         {/* Hero — full-bleed image backdrop with overlay text + watermark
              logo + CTA. Mirrors the website's home hero. The first
@@ -184,29 +200,47 @@ export default function HomeScreen() {
              state controls it). Profile circle floats top-right. */}
         <View style={styles.hero}>
           {carouselImages.length > 0 ? (
-            <Image
-              source={{ uri: carouselImages[carouselIndex]?.url ?? carouselImages[0].url }}
-              style={StyleSheet.absoluteFillObject as any}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-              recyclingKey={carouselImages[carouselIndex]?.id}
-              // Trim transition time + ask expo-image to schedule the
-              // decode at high priority — perceptibly faster paint on
-              // first hero render.
-              transition={120}
-              priority="high"
+            <FlatList
+              ref={heroFlatListRef}
+              data={carouselImages}
+              keyExtractor={(item, idx) => item.id ?? String(idx)}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onTouchStart={() => { heroAutoPausedUntilRef.current = Date.now() + 8000; }}
+              onMomentumScrollEnd={(e) => {
+                const x = e.nativeEvent.contentOffset.x;
+                const idx = Math.round(x / HERO_WIDTH);
+                setCarouselIndex(idx);
+              }}
+              getItemLayout={(_, index) => ({ length: HERO_WIDTH, offset: HERO_WIDTH * index, index })}
+              renderItem={({ item }) => (
+                <View style={{ width: HERO_WIDTH, height: "100%" }}>
+                  <Image
+                    source={{ uri: item.url }}
+                    style={StyleSheet.absoluteFillObject as any}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                    recyclingKey={item.id}
+                    transition={120}
+                    priority="high"
+                  />
+                </View>
+              )}
             />
           ) : (
             <View style={[StyleSheet.absoluteFillObject, { backgroundColor: Colors.navy }]} />
           )}
-          {/* Dark overlay so cream text reads against any backdrop. */}
-          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(10, 22, 40, 0.55)" }]} />
+          {/* Dark overlay so cream text reads against any backdrop.
+               pointerEvents="none" so it doesn't swallow the swipes. */}
+          <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(10, 22, 40, 0.55)" }]} />
 
           {/* Watermark logo upper-left. */}
           <Image
             source={require("@/assets/images/ytc-logo.png")}
             style={styles.heroLogoWatermark}
             contentFit="contain"
+            pointerEvents={"none" as any}
           />
 
           {/* Profile circle upper-right. */}
@@ -216,14 +250,25 @@ export default function HomeScreen() {
             </YtcFocusable>
           </View>
 
-          {/* Title + subtitle at the bottom, left-aligned.
-               CTA button removed per user feedback — the most-recent
-               shiur card below provides the same affordance without
-               taking hero real estate. */}
-          <View style={styles.heroContent}>
+          {/* Title + subtitle at the bottom, left-aligned. */}
+          <View pointerEvents="none" style={styles.heroContent}>
             <Text style={styles.heroTitle}>Yeshiva Toras Chaim</Text>
             <Text style={styles.heroSubtitle}>Alumni Network</Text>
           </View>
+
+          {/* Page-indicator dots — shown only when there's more than one
+               image. Sits just under the title block so the user knows
+               the hero is swipeable. */}
+          {carouselImages.length > 1 && (
+            <View pointerEvents="none" style={styles.heroDots}>
+              {carouselImages.map((_, i) => (
+                <View
+                  key={i}
+                  style={[styles.heroDot, i === carouselIndex && styles.heroDotActive]}
+                />
+              ))}
+            </View>
+          )}
         </View>
 
         <View style={styles.body}>
@@ -534,6 +579,14 @@ const styles = StyleSheet.create({
     color: Colors.gold, fontSize: 18, fontWeight: "600", marginTop: 2,
     fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
   },
+  // Page-indicator dots for the swipeable hero. Sit centered along
+  // the bottom edge above the system gesture area.
+  heroDots: {
+    position: "absolute", bottom: 8, left: 0, right: 0,
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+  },
+  heroDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "rgba(250, 248, 243, 0.4)" },
+  heroDotActive: { width: 18, backgroundColor: Colors.gold },
 
   showMoreBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4,
@@ -551,7 +604,7 @@ const styles = StyleSheet.create({
     paddingTop: 60, paddingHorizontal: 12, alignItems: "flex-end",
   },
   menuCard: {
-    backgroundColor: Colors.white, borderRadius: 12, minWidth: 240,
+    backgroundColor: Colors.white, borderRadius: 16, minWidth: 240,
     paddingVertical: 6, shadowColor: Colors.black,
     shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18,
     shadowRadius: 12, elevation: 6,
@@ -586,8 +639,10 @@ const styles = StyleSheet.create({
   body: { padding: 16, gap: 24 },
   section: { gap: 12 },
   sectionTitle: { fontSize: 18, fontWeight: "600", color: Colors.navy, fontFamily: Platform.OS === "ios" ? "Georgia" : "serif" },
+  // Card radius — bumped from 10/12 → 16 across the home-page cards
+  // per user feedback ("make the home page cards more rounded").
   announcementCard: {
-    backgroundColor: Colors.white, borderRadius: 10, overflow: "hidden",
+    backgroundColor: Colors.white, borderRadius: 16, overflow: "hidden",
     borderWidth: 1, borderColor: Colors.creamDark,
     shadowColor: Colors.black, shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
@@ -604,7 +659,7 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
   },
   announcementContent: { fontSize: 13, color: Colors.navyOpacity70, lineHeight: 18 },
-  eventCard: { flexDirection: "row", backgroundColor: Colors.white, borderRadius: 12, padding: 14, gap: 14, shadowColor: Colors.black, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
+  eventCard: { flexDirection: "row", backgroundColor: Colors.white, borderRadius: 16, padding: 14, gap: 14, shadowColor: Colors.black, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
   eventDateBadge: { width: 52, height: 52, borderRadius: 8, backgroundColor: Colors.navy, alignItems: "center", justifyContent: "center" },
   eventMonth: { color: Colors.gold, fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },
   eventDay: { color: Colors.cream, fontSize: 20, fontWeight: "bold" },
@@ -616,7 +671,7 @@ const styles = StyleSheet.create({
   // shiurSectionTitleRow / shiurCardWrapFeatured removed — the row was
   // only there to hold the star icon next to the title, and the
   // featured variant border was dropped per user feedback.
-  shiurCardWrap: { backgroundColor: Colors.white, borderRadius: 12, overflow: "hidden", shadowColor: Colors.black, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 2 },
+  shiurCardWrap: { backgroundColor: Colors.white, borderRadius: 16, overflow: "hidden", shadowColor: Colors.black, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 2 },
   shiurCard: { flexDirection: "row", padding: 16, gap: 12, alignItems: "center" },
   shiurInfo: { flex: 1 },
   shiurTitle: { fontSize: 15, fontWeight: "600", color: Colors.navy, marginBottom: 4 },
@@ -627,7 +682,7 @@ const styles = StyleSheet.create({
   progressFill: { height: 3, backgroundColor: Colors.gold },
   collectionCard: {
     flexDirection: "row", alignItems: "center", gap: 10,
-    backgroundColor: Colors.white, borderRadius: 12, padding: 14, marginBottom: 8,
+    backgroundColor: Colors.white, borderRadius: 16, padding: 14, marginBottom: 8,
     shadowColor: Colors.black, shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
   },
@@ -635,7 +690,7 @@ const styles = StyleSheet.create({
   collectionDesc: { fontSize: 12, color: Colors.navyOpacity70, marginTop: 2 },
   collectionCount: { fontSize: 11, color: Colors.gold, marginTop: 4, fontWeight: "500" },
   spotlightCard: { width: 120, alignItems: "center" },
-  spotlightImg: { width: 120, height: 120, borderRadius: 12, backgroundColor: Colors.creamDark },
+  spotlightImg: { width: 120, height: 120, borderRadius: 16, backgroundColor: Colors.creamDark },
   spotlightName: { fontSize: 12, fontWeight: "600", color: Colors.navy, marginTop: 6, textAlign: "center" },
   spotlightYear: { fontSize: 11, color: Colors.navyOpacity50, marginTop: 1 },
   tags: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 },

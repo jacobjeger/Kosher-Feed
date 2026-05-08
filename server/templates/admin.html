@@ -299,6 +299,19 @@
           <div id="websiteCountries" style="background:#0f172a;border-radius:10px;padding:14px;"></div>
         </div>
       </div>
+
+      <!-- YTC Alumni: how many ShiurPod users have unlocked the YTC
+           section. Populated by /api/admin/analytics/ytc-unlocks which
+           reads from the ytc_unlocks table written by the mobile
+           client's lib/ytc/unlock.ts on every successful tryUnlock(). -->
+      <div class="card" style="margin-top:16px;">
+        <div class="card-header"><h2>YTC Alumni Unlocks</h2></div>
+        <div id="ytcUnlockStats" class="stats" style="margin-bottom:16px;"></div>
+        <div class="card">
+          <div class="card-header"><h2>Daily Unlocks (Last 30 Days)</h2></div>
+          <div id="ytcUnlockChart" class="chart-container"></div>
+        </div>
+      </div>
     </div>
 
     <div id="usersTab" class="hidden">
@@ -1079,7 +1092,7 @@ async function loadAnalytics() {
     renderFeedPerformance();
     if (enhanced) renderEnhancedStats();
     // Defer secondary analytics to avoid thundering herd
-    setTimeout(() => { loadListenerAnalytics(); loadSourceBreakdown(); loadDeviceAnalytics(); loadWebsiteAnalytics(); }, 500);
+    setTimeout(() => { loadListenerAnalytics(); loadSourceBreakdown(); loadDeviceAnalytics(); loadWebsiteAnalytics(); loadYtcUnlockStats(); }, 500);
   } catch(e) {
     console.error('Analytics error:', e);
   }
@@ -4957,6 +4970,38 @@ async function loadWebsiteAnalytics() {
     renderWebBreakdown('websiteCountries', 'Countries', data.byCountry, 'country');
   } catch(e) {
     console.error('Website analytics load failed:', e);
+  }
+}
+
+// YTC Alumni Unlocks — answers "how many users have unlocked the YTC
+// section?". Each successful tryUnlock() in the mobile client POSTs to
+// /api/track/ytc-unlock which inserts into the ytc_unlocks table; this
+// reads the aggregated stats off /api/admin/analytics/ytc-unlocks.
+async function loadYtcUnlockStats() {
+  try {
+    const data = await api('/api/admin/analytics/ytc-unlocks');
+    document.getElementById('ytcUnlockStats').innerHTML = `
+      <div class="stat-card"><div class="stat-value">${data.totalUnlocks.toLocaleString()}</div><div class="stat-label">Total Unlocks</div></div>
+      <div class="stat-card"><div class="stat-value">${data.uniqueDevices30d.toLocaleString()}</div><div class="stat-label">Unique Devices (30d)</div></div>
+      <div class="stat-card"><div class="stat-value">${data.unlocks24h.toLocaleString()}</div><div class="stat-label">Unlocks (24h)</div></div>
+      <div class="stat-card"><div class="stat-value">${data.unlocks7d.toLocaleString()}</div><div class="stat-label">Unlocks (7d)</div></div>
+      <div class="stat-card"><div class="stat-value">${data.unlocks30d.toLocaleString()}</div><div class="stat-label">Unlocks (30d)</div></div>
+    `;
+    const chart = document.getElementById('ytcUnlockChart');
+    if (data.dailyUnlocks && data.dailyUnlocks.length > 0) {
+      const maxCount = Math.max(...data.dailyUnlocks.map(d => d.count), 1);
+      const bars = data.dailyUnlocks.map(d => {
+        const height = Math.max((d.count / maxCount) * 100, 2);
+        const label = new Date(d.day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        // Gold bars to mirror the YTC brand color in the mobile UI.
+        return '<div class="chart-bar" style="height:' + height + '%;background:#d4af37;" data-tooltip="' + d.count + ' unlocks on ' + label + '"></div>';
+      }).join('');
+      chart.innerHTML = '<div class="chart-bar-container">' + bars + '</div>';
+    } else {
+      chart.innerHTML = '<p style="color:#64748b;text-align:center;padding:40px;">No YTC unlocks yet</p>';
+    }
+  } catch(e) {
+    console.error('YTC unlock stats load failed:', e);
   }
 }
 

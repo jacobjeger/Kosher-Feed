@@ -13,9 +13,48 @@
 // when the user actually locks (after a YTC session existed).
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Platform } from "react-native";
+import Constants from "expo-constants";
 import { useEffect, useState } from "react";
 
 const UNLOCK_KEY = "@shiurpod_ytc_unlocked";
+
+// ShiurPod's own backend URL — distinct from YTC's
+// alumni.ytchaim.com. The unlock event is reported HERE (not to YTC)
+// because the ShiurPod admin dashboard is what surfaces "how many
+// users have unlocked YTC?" to me / the team.
+const SHIURPOD_BASE = process.env.EXPO_PUBLIC_API_URL || "https://shiurpod.com";
+
+const APP_VERSION =
+  (Constants.expoConfig?.version as string | undefined) ??
+  ((Constants as any).manifest?.version as string | undefined) ??
+  "unknown";
+
+/** POST a one-shot YTC-unlock event to ShiurPod's backend. Fire-and-
+ *  forget — never await; the unlock UX never blocks on this. */
+function reportUnlockToShiurpod(): void {
+  (async () => {
+    try {
+      // Use a stable per-install device id from AsyncStorage so the
+      // admin's "unique devices" stat doesn't double-count one device
+      // that re-locks/re-unlocks. We seed it lazily.
+      let deviceId = await AsyncStorage.getItem("@shiurpod_device_id");
+      if (!deviceId) {
+        deviceId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        await AsyncStorage.setItem("@shiurpod_device_id", deviceId);
+      }
+      await fetch(`${SHIURPOD_BASE}/api/track/ytc-unlock`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          deviceId,
+          platform: Platform.OS,
+          appVersion: APP_VERSION,
+        }),
+      }).catch(() => {});
+    } catch {}
+  })();
+}
 
 // In-memory pub-sub so the settings UI / tab bar can react to lock /
 // unlock without an app reload. Light-weight; no React context needed.
@@ -59,6 +98,8 @@ export async function tryUnlock(entered: string, expected: string | null | undef
   await AsyncStorage.setItem(UNLOCK_KEY, "1");
   emit();
   prewarmYtcDataIfPossible();
+  // Fire-and-forget admin-dashboard tracking. See helper comment.
+  reportUnlockToShiurpod();
   return true;
 }
 

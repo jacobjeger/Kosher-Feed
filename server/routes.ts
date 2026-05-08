@@ -2144,6 +2144,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // YTC unlock tracking — fire-and-forget POST from lib/ytc/unlock.ts
+  // when the user enters the correct access code. We rate-limit by IP
+  // to a few unlocks/min so a misbehaving client can't spam the table,
+  // and the endpoint NEVER returns an error to the client (the unlock
+  // itself succeeds either way).
+  const _ytcUnlockRateLimit = new Map<string, number>();
+  app.post("/api/track/ytc-unlock", async (req: Request, res: Response) => {
+    try {
+      const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
+      const now = Date.now();
+      const lastHit = _ytcUnlockRateLimit.get(clientIp) || 0;
+      // Same device shouldn't unlock more than once per ~10s. Anything
+      // faster is a misconfigured client; silently skip.
+      if (now - lastHit < 10_000) return res.json({ ok: true });
+      _ytcUnlockRateLimit.set(clientIp, now);
+      if (_ytcUnlockRateLimit.size > 1000) {
+        for (const [ip, ts] of _ytcUnlockRateLimit) { if (now - ts > 60000) _ytcUnlockRateLimit.delete(ip); }
+      }
+
+      const ua = (req.headers["user-agent"] || "").substring(0, 500);
+      await storage.recordYtcUnlock({
+        deviceId: (req.body?.deviceId ? String(req.body.deviceId).substring(0, 200) : null),
+        platform: (req.body?.platform ? String(req.body.platform).substring(0, 32) : null),
+        appVersion: (req.body?.appVersion ? String(req.body.appVersion).substring(0, 32) : null),
+        userAgent: ua,
+        ipAddress: clientIp,
+      });
+      res.json({ ok: true });
+    } catch {
+      // Never fail the unlock itself — analytics is best-effort.
+      res.json({ ok: true });
+    }
+  });
+
+  // Admin: YTC Unlock Stats — drives the YTC tile on the admin
+  // dashboard ("how many users unlocked the YTC section?").
+  app.get("/api/admin/analytics/ytc-unlocks", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const data = await storage.getYtcUnlockStats();
+      res.json(data);
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
   // TEMP diagnostic / fix: re-derive publishedAt for OU episodes whose
   // publishDate is more than 24h in the future. OU's API occasionally
   // returns wildly wrong dates; createdAt is reliable.

@@ -1,12 +1,22 @@
 // YTC: pending-approval screen. Verbatim port from
 // /tmp/ytc-source/expo-app/app/(auth)/pending.tsx with imports remapped.
+//
+// Layout: a ScrollView wrapper so the Check-Status + Sign-Out buttons
+// are always reachable even on small-display phones — the previous
+// version used flex-1 spacers which clipped the buttons below the fold
+// on Android phones with shorter viewports (the user reported the
+// "refresh status" button was unreachable). The visible content is
+// still vertically centered when there's room (minHeight + justify).
 import React, { useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, Dimensions } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { ytcColors as Colors } from "@/constants/ytcColors";
 import { useYtcAuth } from "@/contexts/YtcAuthContext";
 
+const { height: SCREEN_H } = Dimensions.get("window");
+
 export default function PendingScreen() {
+  const insets = useSafeAreaInsets();
   const { signOut, refreshStatus } = useYtcAuth();
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -17,9 +27,21 @@ export default function PendingScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.container}>
-        <View style={styles.spacer} />
+    <SafeAreaView style={styles.safe} edges={["bottom"]}>
+      <ScrollView
+        style={{ flex: 1 }}
+        // contentContainerStyle uses minHeight so on tall screens the
+        // content centers vertically; on short screens the button row
+        // pushes the layout taller and ScrollView scrolls naturally.
+        contentContainerStyle={[
+          styles.scrollContent,
+          // Top padding accounts for the floating close-X (rendered by
+          // app/ytc/_layout.tsx at insets.top + 8) so the icon circle
+          // doesn't tuck under it on edge-to-edge devices.
+          { paddingTop: Math.max(insets.top + 56, 80), minHeight: SCREEN_H - insets.top - insets.bottom },
+        ]}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.iconCircle}><Text style={styles.iconText}>⏳</Text></View>
         <Text style={styles.title}>Access Pending</Text>
         <Text style={styles.subtitle}>
@@ -35,31 +57,39 @@ export default function PendingScreen() {
             <Text style={styles.infoText}>Questions? Contact alumni@ytchaim.com</Text>
           </View>
         </View>
-        <View style={styles.spacer} />
+
+        {/* Buttons — pushed to the bottom of the scroll content with a
+             flexible spacer above so they sit at the bottom on tall
+             screens AND remain reachable on short ones. */}
+        <View style={styles.flexSpacer} />
         <TouchableOpacity style={[styles.primaryBtn, isRefreshing && styles.btnDisabled]} onPress={handleRefresh} disabled={isRefreshing}>
           {isRefreshing ? <ActivityIndicator color={Colors.cream} /> : <Text style={styles.primaryBtnText}>Check Status</Text>}
         </TouchableOpacity>
         <TouchableOpacity onPress={signOut} style={styles.signOutBtn}>
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.cream },
-  container: { flex: 1, alignItems: "center", paddingHorizontal: 24, paddingBottom: 40 },
-  spacer: { flex: 1 },
-  iconCircle: { width: 120, height: 120, borderRadius: 60, backgroundColor: Colors.goldOpacity15, alignItems: "center", justifyContent: "center", marginBottom: 24 },
-  iconText: { fontSize: 48 },
-  title: { fontSize: 28, fontWeight: "bold", color: Colors.navy, marginBottom: 12 },
-  subtitle: { fontSize: 15, color: Colors.navyOpacity70, textAlign: "center", lineHeight: 22, paddingHorizontal: 16, marginBottom: 24 },
-  infoBox: { backgroundColor: Colors.navyOpacity05, borderRadius: 16, padding: 20, width: "100%", gap: 12 },
+  scrollContent: {
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingBottom: 32,
+  },
+  flexSpacer: { flex: 1, minHeight: 24 },
+  iconCircle: { width: 110, height: 110, borderRadius: 55, backgroundColor: Colors.goldOpacity15, alignItems: "center", justifyContent: "center", marginBottom: 20 },
+  iconText: { fontSize: 44 },
+  title: { fontSize: 26, fontWeight: "bold", color: Colors.navy, marginBottom: 10 },
+  subtitle: { fontSize: 15, color: Colors.navyOpacity70, textAlign: "center", lineHeight: 22, paddingHorizontal: 16, marginBottom: 22 },
+  infoBox: { backgroundColor: Colors.navyOpacity05, borderRadius: 16, padding: 18, width: "100%", gap: 12 },
   infoRow: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
   infoIcon: { fontSize: 20 },
   infoText: { flex: 1, fontSize: 14, color: Colors.navyOpacity70, lineHeight: 20 },
-  primaryBtn: { backgroundColor: Colors.navy, borderRadius: 12, paddingVertical: 16, alignItems: "center", width: "100%", marginBottom: 16 },
+  primaryBtn: { backgroundColor: Colors.navy, borderRadius: 12, paddingVertical: 16, alignItems: "center", width: "100%", marginBottom: 12 },
   btnDisabled: { opacity: 0.5 },
   primaryBtnText: { color: Colors.cream, fontSize: 16, fontWeight: "600" },
   signOutBtn: { paddingVertical: 8 },

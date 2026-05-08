@@ -111,6 +111,16 @@ export default function TinyPlayerLayout(props: Props) {
           <Pressable onPress={onOpenPodcast} hitSlop={8}>
             <Text style={[styles.feedName, { color: colors.accent }]} numberOfLines={2}>{feed.title}</Text>
           </Pressable>
+          {/* YTC source caption — surfaces "From YTC Alumni" on the
+               tiny-screen player (the regular layout has its own
+               badge). Tap routes to /ytc via onOpenPodcast — the
+               parent already knows to redirect for YTC episodes. */}
+          {feed.sourceNetwork === "ytc" && (
+            <Pressable onPress={onOpenPodcast} hitSlop={6} style={ytcStyles.badgeWrap}>
+              <Ionicons name="headset-outline" size={11} color="#0a1628" />
+              <Text style={ytcStyles.badgeText}>From YTC Alumni</Text>
+            </Pressable>
+          )}
         </View>
       </View>
 
@@ -212,4 +222,18 @@ const styles = StyleSheet.create({
   playBtn: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center" },
   secondary: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 14, paddingVertical: 4, paddingBottom: 8 },
   secBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
+});
+
+// YTC source-of-content badge — kept in a separate sheet so the
+// brand-specific tokens (gold #d4af37, navy #0a1628) don't pollute
+// the generic player styles object.
+const ytcStyles = StyleSheet.create({
+  badgeWrap: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: "#d4af37",
+    alignSelf: "flex-start",
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 12, marginTop: 4,
+  },
+  badgeText: { color: "#0a1628", fontSize: 11, fontWeight: "700" },
 });

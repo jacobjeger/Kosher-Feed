@@ -405,3 +405,24 @@ export const pageViews = pgTable("page_views", {
 ]);
 
 export type PageView = typeof pageViews.$inferSelect;
+
+// YTC unlocks — one row per successful tryUnlock() in lib/ytc/unlock.ts.
+// Used by the ShiurPod admin dashboard to show total unlocks + unique
+// device count, so the admin can answer "how many users have unlocked
+// the YTC section?" without scraping logs. We keep it deliberately
+// shallow (no userId / email — that's YTC's private project; we just
+// count the unlock event itself from the client device).
+export const ytcUnlocks = pgTable("ytc_unlocks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  deviceId: text("device_id"),         // optional — sent if available
+  platform: text("platform"),          // "ios" | "android" | "web"
+  appVersion: text("app_version"),     // e.g. "2.0.0"
+  userAgent: text("user_agent"),
+  ipAddress: text("ip_address"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("ytc_unlocks_created_at_idx").on(table.createdAt),
+  index("ytc_unlocks_device_id_idx").on(table.deviceId),
+]);
+
+export type YtcUnlock = typeof ytcUnlocks.$inferSelect;
