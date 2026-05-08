@@ -125,7 +125,9 @@ export default function HomeScreen() {
   // the profile menu. Independent of the home data fetch.
   useEffect(() => {
     if (!user?.email) { setHasAlumniEntry(false); return; }
-    fetchMyAlumniContact(user.email.toLowerCase())
+    // Pass raw email — fetchMyAlumniContact now scans the collection
+    // for `data.email === user.email` (matches website behavior).
+    fetchMyAlumniContact(user.email)
       .then((entry) => setHasAlumniEntry(!!entry))
       .catch(() => setHasAlumniEntry(false));
   }, [user?.email]);

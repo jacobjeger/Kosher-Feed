@@ -1,57 +1,69 @@
 // YTC: shiur-update email subscription preferences.
 //
-// Lets a user opt in to per-rebbe and per-topic email alerts when a
-// new shiur matching their picks is uploaded. The server-side trigger
-// (Firebase function on shiurim collection writes) reads this doc to
-// decide which users to email.
+// Lets a user opt in to per-rebbe and per-tag email alerts when a new
+// shiur matching their picks is uploaded. The website's
+// /api/notify-new-shiur reads from `subscriptions/{uid}` and emails
+// every user whose `rebbeim` or `tags` overlap with the new shiur.
 //
-// Firestore doc shape (mirrors the saved-shiurim / playback-positions
-// pattern this project uses for user prefs):
+// Schema verified against the website source
+// (github.com/abbrach1/YTC-ALUMNI-MAIN-WEBSITE → app/subscriptions/page.tsx
+// and app/api/notify-new-shiur/route.ts):
 //
-//   users/{uid}/preferences/shiurEmailSubscriptions:
+//   subscriptions/{user.uid}:
 //     {
-//       enabled:     boolean,    // master toggle
-//       rebbeim:     string[],   // raw speaker names from Shiur.rebbe
-//       topics:      string[],   // tag strings from Shiur.tags
-//       email:       string,     // duplicate of the user's email at
-//                                // write time so the server function
-//                                // can dispatch without a second
-//                                // auth lookup
-//       lastUpdated: number,     // ms epoch
-//       syncedAt:    number,     // ms epoch
+//       userId:    string,    // duplicate of user.uid
+//       email:     string,    // raw user.email at write time
+//       rebbeim:   string[],  // raw speaker names from Shiur.rebbe
+//       tags:      string[],  // tag strings from Shiur.tags
+//       updatedAt: string,    // ISO 8601 timestamp
 //     }
 //
-// IMPORTANT: this path is speculative — it follows the conventions
-// the rest of this codebase uses for per-user prefs, but the YTC
-// website backend was updated server-side with this feature and we
-// don't have its source on this machine. If the website writes a
-// different doc/collection, change the constants below to match
-// (the rest of this module + the screen don't care about the path).
+// IMPORTANT — naming differences from this app's other prefs:
+//   - The collection is TOP-LEVEL (`subscriptions/`), NOT nested under
+//     `users/{uid}/preferences/...`. The server-side route reads the
+//     entire collection in one getDocs() call.
+//   - The picks field is `tags`, not `topics`. The website uses `tags`
+//     because that's the field name on the Shiur doc itself, and the
+//     match logic compares set-equal.
+//   - There is NO `enabled` master switch on the doc. Empty arrays mean
+//     "no emails". The settings UI mirrors that — no master toggle, just
+//     the picks themselves.
+//
+// Available rebbeim/tags options come from `settings/shiurOptions`
+// (admin-curated list), NOT from scanning the shiurim collection. We
+// expose `getShiurOptions()` for the screen to use.
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { addLog } from "@/lib/error-logger";
 import { getYtcFirebase } from "@/lib/ytc/firebase";
 
-const LOCAL_KEY = "@ytc_email_subs:v1";
-const COLLECTION = "users";
-const SUBCOLLECTION = "preferences";
-const DOC_ID = "shiurEmailSubscriptions";
+const LOCAL_KEY = "@ytc_email_subs:v2";
 
 export interface ShiurEmailSubs {
-  enabled: boolean;
-  rebbeim: string[];
-  topics: string[];
+  /** uid; "" if no user (cache-only state). */
+  userId: string;
+  /** Raw user email at write time. */
   email: string;
-  lastUpdated: number;
+  /** Picked rebbeim — raw Shiur.rebbe values. */
+  rebbeim: string[];
+  /** Picked tags — raw Shiur.tags values. */
+  tags: string[];
+  /** ISO 8601 timestamp of last write. */
+  updatedAt: string;
 }
 
 const DEFAULT_SUBS: ShiurEmailSubs = {
-  enabled: false,
-  rebbeim: [],
-  topics: [],
+  userId: "",
   email: "",
-  lastUpdated: 0,
+  rebbeim: [],
+  tags: [],
+  updatedAt: "",
 };
+
+export interface ShiurOptions {
+  rebbeim: string[];
+  tags: string[];
+}
 
 let _cached: ShiurEmailSubs | null = null;
 
@@ -70,8 +82,7 @@ async function persistLocal(s: ShiurEmailSubs): Promise<void> {
   try { await AsyncStorage.setItem(LOCAL_KEY, JSON.stringify(s)); } catch {}
 }
 
-/** Fetch the current prefs. Returns the cached value if loaded; else
- *  reads from AsyncStorage; else returns the default (everything off). */
+/** Fetch the current prefs from cache → AsyncStorage → defaults. */
 export async function getSubs(): Promise<ShiurEmailSubs> {
   if (_cached) return _cached;
   let next: ShiurEmailSubs;
@@ -85,24 +96,37 @@ export async function getSubs(): Promise<ShiurEmailSubs> {
   return next;
 }
 
-/** Pull the user's prefs from Firestore into the local cache. Called
- *  on the email-subscriptions screen mount and on YTC unlock so a
- *  user's website-side picks land in the app. */
+/** Pull the user's picks from Firestore into the local cache. Called
+ *  on screen mount and on YTC unlock so a website-side change shows
+ *  up here. No-ops if the user isn't signed in. */
 export async function hydrateSubs(): Promise<void> {
   try {
     const { auth, db } = await getYtcFirebase();
     const user = auth.currentUser;
     if (!user) return;
     const { doc, getDoc } = await import("firebase/firestore");
-    const snap = await getDoc(doc(db, COLLECTION, user.uid, SUBCOLLECTION, DOC_ID));
-    if (!snap.exists()) return;
+    const snap = await getDoc(doc(db, "subscriptions", user.uid));
+    if (!snap.exists()) {
+      // No website-side subscription doc yet — keep whatever the local
+      // cache has but stamp the userId/email so the next write writes
+      // the correct identity.
+      const next: ShiurEmailSubs = {
+        ...(await getSubs()),
+        userId: user.uid,
+        email: user.email ?? "",
+      };
+      _cached = next;
+      await persistLocal(next);
+      emit();
+      return;
+    }
     const data = snap.data() as Partial<ShiurEmailSubs>;
     _cached = {
-      enabled: data.enabled ?? false,
-      rebbeim: Array.isArray(data.rebbeim) ? data.rebbeim : [],
-      topics: Array.isArray(data.topics) ? data.topics : [],
+      userId: typeof data.userId === "string" ? data.userId : user.uid,
       email: typeof data.email === "string" ? data.email : (user.email ?? ""),
-      lastUpdated: typeof data.lastUpdated === "number" ? data.lastUpdated : 0,
+      rebbeim: Array.isArray(data.rebbeim) ? data.rebbeim : [],
+      tags: Array.isArray(data.tags) ? data.tags : [],
+      updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : "",
     };
     await persistLocal(_cached);
     emit();
@@ -111,15 +135,21 @@ export async function hydrateSubs(): Promise<void> {
   }
 }
 
-/** Write the prefs through to Firestore. AsyncStorage is updated
- *  optimistically so the UI is instant; sync is fire-and-forget and
- *  failures are logged but not surfaced. */
-export async function setSubs(patch: Partial<ShiurEmailSubs>): Promise<ShiurEmailSubs> {
+/** Write the prefs through to Firestore. Mirrors the website's
+ *  app/subscriptions/page.tsx setDoc shape exactly so a save from the
+ *  app produces a doc indistinguishable from a save on the site. */
+export async function setSubs(patch: Partial<Pick<ShiurEmailSubs, "rebbeim" | "tags">>): Promise<ShiurEmailSubs> {
   const prev = await getSubs();
+  const { auth } = await getYtcFirebase();
+  const user = auth.currentUser;
+  const userId = user?.uid ?? prev.userId;
+  const email = user?.email ?? prev.email;
   const next: ShiurEmailSubs = {
-    ...prev,
-    ...patch,
-    lastUpdated: Date.now(),
+    userId,
+    email,
+    rebbeim: patch.rebbeim !== undefined ? patch.rebbeim : prev.rebbeim,
+    tags: patch.tags !== undefined ? patch.tags : prev.tags,
+    updatedAt: new Date().toISOString(),
   };
   _cached = next;
   await persistLocal(next);
@@ -127,24 +157,16 @@ export async function setSubs(patch: Partial<ShiurEmailSubs>): Promise<ShiurEmai
   // Fire-and-forget Firestore write.
   (async () => {
     try {
-      const { auth, db } = await getYtcFirebase();
-      const user = auth.currentUser;
       if (!user) return;
+      const { db } = await getYtcFirebase();
       const { doc, setDoc } = await import("firebase/firestore");
-      await setDoc(
-        doc(db, COLLECTION, user.uid, SUBCOLLECTION, DOC_ID),
-        {
-          enabled: next.enabled,
-          rebbeim: next.rebbeim,
-          topics: next.topics,
-          // Always stamp the auth email so the server function has the
-          // current address even if the user changed it on the website.
-          email: user.email ?? next.email,
-          lastUpdated: next.lastUpdated,
-          syncedAt: Date.now(),
-        },
-        { merge: true },
-      );
+      await setDoc(doc(db, "subscriptions", user.uid), {
+        userId: user.uid,
+        email: user.email ?? next.email,
+        rebbeim: next.rebbeim,
+        tags: next.tags,
+        updatedAt: next.updatedAt,
+      });
     } catch (e: any) {
       addLog("warn", `YTC email-subs sync failed: ${e?.message || e}`, undefined, "ytc-email-subs");
     }
@@ -160,10 +182,32 @@ export async function toggleRebbe(name: string): Promise<ShiurEmailSubs> {
   return setSubs({ rebbeim });
 }
 
-/** Toggle one topic in the picks. Returns the new prefs. */
-export async function toggleTopic(tag: string): Promise<ShiurEmailSubs> {
+/** Toggle one tag in the picks. Returns the new prefs. */
+export async function toggleTag(tag: string): Promise<ShiurEmailSubs> {
   const prev = await getSubs();
-  const has = prev.topics.includes(tag);
-  const topics = has ? prev.topics.filter((t) => t !== tag) : [...prev.topics, tag];
-  return setSubs({ topics });
+  const has = prev.tags.includes(tag);
+  const tags = has ? prev.tags.filter((t) => t !== tag) : [...prev.tags, tag];
+  return setSubs({ tags });
+}
+
+/** Fetch the admin-curated list of rebbeim + tags shown in the picker.
+ *  Source: `settings/shiurOptions` — same doc the website uses. We
+ *  intentionally do NOT derive from the shiurim collection because:
+ *  (1) the website doesn't, so we'd drift, and (2) it's a single 1KB
+ *  doc read vs scanning ~800 shiur docs. */
+export async function getShiurOptions(): Promise<ShiurOptions> {
+  try {
+    const { db } = await getYtcFirebase();
+    const { doc, getDoc } = await import("firebase/firestore");
+    const snap = await getDoc(doc(db, "settings", "shiurOptions"));
+    if (!snap.exists()) return { rebbeim: [], tags: [] };
+    const data = snap.data() as Partial<ShiurOptions>;
+    return {
+      rebbeim: Array.isArray(data.rebbeim) ? data.rebbeim : [],
+      tags: Array.isArray(data.tags) ? data.tags : [],
+    };
+  } catch (e: any) {
+    addLog("warn", `YTC shiurOptions fetch failed: ${e?.message || e}`, undefined, "ytc-email-subs");
+    return { rebbeim: [], tags: [] };
+  }
 }

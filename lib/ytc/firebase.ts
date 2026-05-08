@@ -254,7 +254,10 @@ export async function submitSimcha(input: {
   submittedBy: string; // user email
 }): Promise<void> {
   const { db } = await getYtcFirebase();
-  const { addDoc, collection, serverTimestamp } = await import("firebase/firestore");
+  const { addDoc, collection } = await import("firebase/firestore");
+  // submittedAt: ISO string (NOT serverTimestamp). The website + admin
+  // pages do `new Date(submittedAt)` which silently breaks for the
+  // Firestore Timestamp object that serverTimestamp() resolves to.
   await addDoc(collection(db, "simchaSubmissions"), {
     fullName: input.fullName,
     simchaType: input.simchaType,
@@ -263,68 +266,100 @@ export async function submitSimcha(input: {
     message: input.message,
     imageUrl: input.imageUrl ?? null,
     submittedBy: input.submittedBy,
-    submittedAt: serverTimestamp(),
+    submittedAt: new Date().toISOString(),
     status: "new",
   });
 }
 
 /**
  * Submit (or update) the user's entry in the alumni contact directory.
- * The website uses a setDoc-on-same-id pattern so a user can edit their
- * own submission later. We follow the same pattern: doc id keyed by the
- * submitter's email lowercased.
+ *
+ * Matches the website's pattern (verified against
+ * github.com/abbrach1/YTC-ALUMNI-MAIN-WEBSITE → app/contacts/contacts-content.tsx
+ * and components/first-login-popup.tsx):
+ *
+ *   New record  → addDoc(collection("alumniContactSubmissions"), …)  // auto-ID
+ *   Edit record → setDoc(doc("alumniContactSubmissions", existingDocId), …)
+ *
+ * We do NOT use lowercased email as a doc ID here. Earlier versions of
+ * this file did, but that diverges from the website's auto-ID pattern
+ * and led to duplicate docs (one per surface) plus the user-visible
+ * "Add yourself" misfire when a user had submitted from the site only.
+ *
+ * Lookup of "does the user already have a record" is by EMAIL match,
+ * not doc-ID — matches the website's `data.email === user.email` scan
+ * in contacts-content.tsx. We accept the matching record's id from the
+ * caller (so contacts.tsx can pass through what it already has cached
+ * from fetchApprovedAlumni / fetchMyAlumniContact) instead of re-scanning.
  */
 export async function submitAlumniContact(input: {
+  /** Existing doc ID if editing, else null/undefined for a new record. */
+  existingId?: string | null;
   name: string;
   email: string | null;
   phone: string | null;
   location: string;
-  submittedBy: string; // user email
+  submittedBy: string; // user email — used as fallback identity stamp
 }): Promise<void> {
   const { db } = await getYtcFirebase();
-  const { doc, setDoc, getDoc, serverTimestamp } = await import("firebase/firestore");
-  const id = input.submittedBy.toLowerCase();
-  const ref = doc(db, "alumniContactSubmissions", id);
-  const existing = await getDoc(ref);
-  if (existing.exists()) {
-    // Edit: preserve original status + submittedAt, stamp updatedAt.
-    const old = existing.data();
-    await setDoc(ref, {
-      ...old,
-      name: input.name,
-      email: input.email,
-      phone: input.phone,
-      location: input.location,
-      updatedAt: serverTimestamp(),
-    });
-  } else {
+  const { doc, setDoc, addDoc, collection, serverTimestamp } = await import("firebase/firestore");
+  if (input.existingId) {
+    const ref = doc(db, "alumniContactSubmissions", input.existingId);
+    // Edit — match the website's setDoc(merge:true-style) shape: keep the
+    // original submittedAt + status, stamp updatedAt.
     await setDoc(ref, {
       name: input.name,
       email: input.email,
       phone: input.phone,
       location: input.location,
       submittedBy: input.submittedBy,
-      submittedAt: serverTimestamp(),
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+  } else {
+    await addDoc(collection(db, "alumniContactSubmissions"), {
+      name: input.name,
+      email: input.email,
+      phone: input.phone,
+      location: input.location,
+      submittedBy: input.submittedBy,
+      submittedAt: new Date().toISOString(),
       status: "pending",
     });
   }
 }
 
-/** Fetch the current user's existing alumni-contact submission, if any. */
-export async function fetchMyAlumniContact(emailLower: string) {
+/**
+ * Find the current user's existing alumni-contact submission, if any.
+ *
+ * Mirrors the website's lookup: scan the collection for the first doc
+ * where `data.email === userEmail`. Case-sensitive — the website does
+ * `data.email === user.email` directly, no normalization, so we match
+ * that to avoid edge cases where the website finds a record but we
+ * don't (or vice versa).
+ *
+ * The caller passes the *raw* user.email (NOT a lowercased version). The
+ * old API was `fetchMyAlumniContact(emailLower)` doing a doc-ID lookup;
+ * that was wrong — see submitAlumniContact's header comment for context.
+ */
+export async function fetchMyAlumniContact(userEmail: string | null | undefined) {
+  if (!userEmail) return null;
   const { db } = await getYtcFirebase();
-  const { doc, getDoc } = await import("firebase/firestore");
-  const snap = await getDoc(doc(db, "alumniContactSubmissions", emailLower));
-  if (!snap.exists()) return null;
-  const data = snap.data();
-  return {
-    id: snap.id,
-    name: (data.name ?? "") as string,
-    email: (data.email ?? null) as string | null,
-    phone: (data.phone ?? null) as string | null,
-    location: (data.location ?? "") as string,
-    status: (data.status ?? "pending") as "pending" | "approved" | "rejected",
-  };
+  const { collection, getDocs } = await import("firebase/firestore");
+  const snap = await getDocs(collection(db, "alumniContactSubmissions"));
+  for (const d of snap.docs) {
+    const data = d.data() as any;
+    if (data?.email === userEmail) {
+      return {
+        id: d.id,
+        name: (data.name ?? "") as string,
+        email: (data.email ?? null) as string | null,
+        phone: (data.phone ?? null) as string | null,
+        location: (data.location ?? "") as string,
+        status: (data.status ?? "pending") as "pending" | "approved" | "rejected",
+      };
+    }
+  }
+  return null;
 }
 
 // ─── Caching ────────────────────────────────────────────────────────────────
