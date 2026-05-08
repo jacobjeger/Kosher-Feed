@@ -115,6 +115,7 @@ function YtcGate() {
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="settings" />
+        <Stack.Screen name="email-updates" />
         <Stack.Screen name="collections/[id]" />
       </Stack>
       <CloseButton />

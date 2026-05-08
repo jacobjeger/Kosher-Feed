@@ -40,12 +40,23 @@ export default function ShiurimScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
   const [sortOrder, setSortOrder] = useState<SortOrder>("dateDesc");
-  const [selectedRebbeFilter, setSelectedRebbeFilter] = useState<string | null>(null);
-  const [selectedTagFilter, setSelectedTagFilter] = useState<string | null>(null);
-  const [selectedSeriesFilter, setSelectedSeriesFilter] = useState<string | null>(null);
+  // Multi-select filters — Sets so we can union match (e.g. show
+  // shiurim by EITHER R' Reichman OR R' Friedman, AND tagged with
+  // EITHER Halacha OR Mussar). Mirrors the website's
+  // /shiurim?rebbe=A&rebbe=B&topic=Halacha pattern.
+  const [selectedRebbeim, setSelectedRebbeim] = useState<Set<string>>(new Set());
+  const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
+  const [selectedSeries, setSelectedSeries] = useState<Set<string>>(new Set());
   const [showSavedOnly, setShowSavedOnly] = useState(false);
   const [showInProgressOnly, setShowInProgressOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  // Which filter accordion is expanded inside the Filters modal. Only
+  // one open at a time so the modal stays scannable.
+  const [openFilterSection, setOpenFilterSection] = useState<"sort" | "rebbe" | "topic" | "series" | null>("sort");
+  // Visible shiur count — paginated 20-at-a-time as the user scrolls.
+  // Reset whenever the filter inputs change so a new query renders fast.
+  const PAGE_SIZE = 20;
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const loadShiurim = async () => {
@@ -86,9 +97,11 @@ export default function ShiurimScreen() {
           (s.series?.toLowerCase().includes(q) ?? false),
       );
     }
-    if (selectedRebbeFilter) result = result.filter((s) => s.rebbe === selectedRebbeFilter);
-    if (selectedTagFilter) result = result.filter((s) => s.tags.includes(selectedTagFilter));
-    if (selectedSeriesFilter) result = result.filter((s) => s.series === selectedSeriesFilter);
+    // Multi-select: a shiur passes if it matches ANY selected value
+    // within a category (OR), and matches ALL active categories (AND).
+    if (selectedRebbeim.size > 0) result = result.filter((s) => selectedRebbeim.has(s.rebbe));
+    if (selectedTags.size > 0) result = result.filter((s) => s.tags.some((t) => selectedTags.has(t)));
+    if (selectedSeries.size > 0) result = result.filter((s) => !!s.series && selectedSeries.has(s.series));
     if (showSavedOnly) result = result.filter((s) => isSaved(s.id));
     if (showInProgressOnly) {
       result = result.filter((s) => {
@@ -106,11 +119,28 @@ export default function ShiurimScreen() {
       default: result.sort((a, b) => b.date.localeCompare(a.date));
     }
     return result;
-  }, [shiurim, search, selectedRebbeFilter, selectedTagFilter, selectedSeriesFilter, showSavedOnly, showInProgressOnly, isSaved, getPosition, sortOrder]);
+  }, [shiurim, search, selectedRebbeim, selectedTags, selectedSeries, showSavedOnly, showInProgressOnly, isSaved, getPosition, sortOrder]);
+
+  // Reset pagination whenever the active filter window changes so the
+  // first render shows the most relevant top-of-list slice fast.
+  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [search, selectedRebbeim, selectedTags, selectedSeries, showSavedOnly, showInProgressOnly, sortOrder]);
+
+  const visibleShiurim = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
+  const hasMoreShiurim = filtered.length > visibleCount;
 
   const hasFilters =
-    !!selectedRebbeFilter || !!selectedTagFilter || !!selectedSeriesFilter ||
+    selectedRebbeim.size > 0 || selectedTags.size > 0 || selectedSeries.size > 0 ||
     showSavedOnly || showInProgressOnly;
+
+  // Toggle helpers for multi-select. Returning a *new* Set on every
+  // toggle is what triggers the dependent useEffect / useMemo recalcs.
+  const toggleInSet = useCallback(<T,>(setter: React.Dispatch<React.SetStateAction<Set<T>>>, value: T) => {
+    setter((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value); else next.add(value);
+      return next;
+    });
+  }, []);
 
   // Stable callbacks so the memoized ShiurCard doesn't re-render on
   // every parent state change. Each accepts the shiur as an argument
@@ -121,7 +151,12 @@ export default function ShiurimScreen() {
   }, []);
 
   const onTagPress = useCallback((tag: string) => {
-    setSelectedTagFilter((cur) => (cur === tag ? null : tag));
+    // Multi-select: tap a tag inline → toggles it in the topic filter set.
+    setSelectedTags((prev) => {
+      const next = new Set(prev);
+      if (next.has(tag)) next.delete(tag); else next.add(tag);
+      return next;
+    });
   }, []);
 
   const onSavePress = useCallback((shiurId: string) => {
@@ -213,11 +248,23 @@ export default function ShiurimScreen() {
         </YtcFocusable>
       </View>
 
-      {(selectedRebbeFilter || selectedTagFilter || selectedSeriesFilter) && (
+      {(selectedRebbeim.size > 0 || selectedTags.size > 0 || selectedSeries.size > 0) && (
         <View style={styles.activeFilters}>
-          {selectedRebbeFilter && <TouchableOpacity style={styles.filterChip} onPress={() => setSelectedRebbeFilter(null)}><Text style={styles.filterChipText}>{selectedRebbeFilter} ✕</Text></TouchableOpacity>}
-          {selectedTagFilter && <TouchableOpacity style={styles.filterChip} onPress={() => setSelectedTagFilter(null)}><Text style={styles.filterChipText}>{selectedTagFilter} ✕</Text></TouchableOpacity>}
-          {selectedSeriesFilter && <TouchableOpacity style={styles.filterChip} onPress={() => setSelectedSeriesFilter(null)}><Text style={styles.filterChipText}>{selectedSeriesFilter} ✕</Text></TouchableOpacity>}
+          {Array.from(selectedRebbeim).map((r) => (
+            <TouchableOpacity key={`r-${r}`} style={styles.filterChip} onPress={() => toggleInSet(setSelectedRebbeim, r)}>
+              <Text style={styles.filterChipText}>{r} ✕</Text>
+            </TouchableOpacity>
+          ))}
+          {Array.from(selectedTags).map((t) => (
+            <TouchableOpacity key={`t-${t}`} style={styles.filterChip} onPress={() => toggleInSet(setSelectedTags, t)}>
+              <Text style={styles.filterChipText}>{t} ✕</Text>
+            </TouchableOpacity>
+          ))}
+          {Array.from(selectedSeries).map((s) => (
+            <TouchableOpacity key={`s-${s}`} style={styles.filterChip} onPress={() => toggleInSet(setSelectedSeries, s)}>
+              <Text style={styles.filterChipText}>{s} ✕</Text>
+            </TouchableOpacity>
+          ))}
         </View>
       )}
 
@@ -227,22 +274,34 @@ export default function ShiurimScreen() {
         <View style={styles.loader}><ActivityIndicator size="large" color={Colors.navy} /></View>
       ) : (
         <FlatList
-          data={filtered}
+          // Pagination: render only the first `visibleCount` (default
+          // 20) and grow on scroll-to-bottom. Mirrors the website's
+          // /shiurim infinite-scroll behavior — the user sees a
+          // ready-to-scroll first page instantly even with 800+
+          // shiurim in the underlying dataset.
+          data={visibleShiurim}
           keyExtractor={(item) => item.id}
           renderItem={renderShiur}
           contentContainerStyle={styles.listContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.navy} />}
           ListEmptyComponent={<View style={styles.empty}><Ionicons name="musical-notes" size={40} color={Colors.navyOpacity30} /><Text style={styles.emptyText}>No shiurim found</Text></View>}
-          // Perf tuning for the 800+ shiurim list:
-          //  - removeClippedSubviews: detaches off-screen rows from
-          //    the native view hierarchy (Android only; ignored on web)
-          //  - initialNumToRender: 8 ≈ first viewport
-          //  - maxToRenderPerBatch / windowSize: keep render bursts
-          //    small so scrolling stays at 60fps on mid-tier devices
+          // Perf tuning kept from the previous pass — initialNumToRender
+          // of 8 matches the first viewport; the rest of the 20-item
+          // page renders during idle frames.
           removeClippedSubviews={Platform.OS !== "web"}
           initialNumToRender={8}
           maxToRenderPerBatch={6}
           windowSize={7}
+          onEndReachedThreshold={0.5}
+          onEndReached={() => {
+            if (hasMoreShiurim) setVisibleCount((c) => c + PAGE_SIZE);
+          }}
+          ListFooterComponent={hasMoreShiurim ? (
+            <View style={styles.loadMoreFooter}>
+              <ActivityIndicator size="small" color={Colors.navy} />
+              <Text style={styles.loadMoreText}>Loading more…</Text>
+            </View>
+          ) : null}
         />
       )}
 
@@ -252,53 +311,95 @@ export default function ShiurimScreen() {
             <Text style={styles.modalTitle}>Filters & Sort</Text>
             <TouchableOpacity onPress={() => setShowFilters(false)}><Ionicons name="close" size={24} color={Colors.navy} /></TouchableOpacity>
           </View>
+          {/* Accordion: each category collapses to a header row that
+               shows a count badge + chevron. Tapping the header expands
+               that section and collapses any other open section so the
+               modal stays scannable on a small screen. Multi-select
+               within each list — all "All ..." reset rows are gone in
+               favor of the active-chips trail in the toolbar above. */}
           <ScrollView style={styles.modalBody}>
-            <Text style={styles.filterSectionTitle}>Sort By</Text>
-            {([["dateDesc", "Newest First"], ["dateAsc", "Oldest First"], ["titleAZ", "Title A–Z"], ["rebbeAZ", "Rebbe A–Z"]] as [SortOrder, string][]).map(([value, label]) => (
-              <TouchableOpacity key={value} style={styles.filterOption} onPress={() => setSortOrder(value)}>
-                <Text style={styles.filterOptionText}>{label}</Text>
-                {sortOrder === value && <Ionicons name="checkmark" size={18} color={Colors.gold} />}
-              </TouchableOpacity>
-            ))}
-            {allRebbeim.length > 0 && <>
-              <Text style={styles.filterSectionTitle}>Filter by Rebbe</Text>
-              <TouchableOpacity style={styles.filterOption} onPress={() => setSelectedRebbeFilter(null)}>
-                <Text style={styles.filterOptionText}>All Rebbeim</Text>
-                {!selectedRebbeFilter && <Ionicons name="checkmark" size={18} color={Colors.gold} />}
-              </TouchableOpacity>
-              {allRebbeim.map((r) => (
-                <TouchableOpacity key={r} style={styles.filterOption} onPress={() => setSelectedRebbeFilter(r === selectedRebbeFilter ? null : r)}>
-                  <Text style={styles.filterOptionText}>{r}</Text>
-                  {selectedRebbeFilter === r && <Ionicons name="checkmark" size={18} color={Colors.gold} />}
+            <FilterSection
+              label="Sort By"
+              count={sortOrder === "dateDesc" ? 0 : 1}
+              isOpen={openFilterSection === "sort"}
+              onToggle={() => setOpenFilterSection(openFilterSection === "sort" ? null : "sort")}
+            >
+              {([["dateDesc", "Newest First"], ["dateAsc", "Oldest First"], ["titleAZ", "Title A–Z"], ["rebbeAZ", "Rebbe A–Z"]] as [SortOrder, string][]).map(([value, label]) => (
+                <TouchableOpacity key={value} style={styles.filterOption} onPress={() => setSortOrder(value)}>
+                  <Text style={styles.filterOptionText}>{label}</Text>
+                  {sortOrder === value && <Ionicons name="checkmark" size={18} color={Colors.gold} />}
                 </TouchableOpacity>
               ))}
-            </>}
-            {allTags.length > 0 && <>
-              <Text style={styles.filterSectionTitle}>Filter by Topic</Text>
-              <View style={styles.tagsGrid}>
-                {allTags.map((tag) => (
-                  <TouchableOpacity key={tag} style={[styles.tagChip, selectedTagFilter === tag && styles.tagChipActive]} onPress={() => setSelectedTagFilter(selectedTagFilter === tag ? null : tag)}>
-                    <Text style={[styles.tagChipText, selectedTagFilter === tag && styles.tagChipTextActive]}>{tag}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </>}
-            {allSeries.length > 0 && <>
-              <Text style={styles.filterSectionTitle}>Filter by Series</Text>
-              <TouchableOpacity style={styles.filterOption} onPress={() => setSelectedSeriesFilter(null)}>
-                <Text style={styles.filterOptionText}>All Series</Text>
-                {!selectedSeriesFilter && <Ionicons name="checkmark" size={18} color={Colors.gold} />}
-              </TouchableOpacity>
-              {allSeries.map((s) => (
-                <TouchableOpacity key={s} style={styles.filterOption} onPress={() => setSelectedSeriesFilter(selectedSeriesFilter === s ? null : s)}>
-                  <Text style={styles.filterOptionText}>{s}</Text>
-                  {selectedSeriesFilter === s && <Ionicons name="checkmark" size={18} color={Colors.gold} />}
-                </TouchableOpacity>
-              ))}
-            </>}
+            </FilterSection>
+
+            {allRebbeim.length > 0 && (
+              <FilterSection
+                label={`Filter by Rebbe`}
+                count={selectedRebbeim.size}
+                isOpen={openFilterSection === "rebbe"}
+                onToggle={() => setOpenFilterSection(openFilterSection === "rebbe" ? null : "rebbe")}
+              >
+                {allRebbeim.map((r) => {
+                  const checked = selectedRebbeim.has(r);
+                  return (
+                    <TouchableOpacity key={r} style={styles.filterOption} onPress={() => toggleInSet(setSelectedRebbeim, r)}>
+                      <Text style={styles.filterOptionText}>{r}</Text>
+                      <Ionicons
+                        name={checked ? "checkbox" : "square-outline"}
+                        size={20}
+                        color={checked ? Colors.gold : Colors.navyOpacity50}
+                      />
+                    </TouchableOpacity>
+                  );
+                })}
+              </FilterSection>
+            )}
+
+            {allTags.length > 0 && (
+              <FilterSection
+                label="Filter by Topic"
+                count={selectedTags.size}
+                isOpen={openFilterSection === "topic"}
+                onToggle={() => setOpenFilterSection(openFilterSection === "topic" ? null : "topic")}
+              >
+                <View style={styles.tagsGrid}>
+                  {allTags.map((tag) => {
+                    const checked = selectedTags.has(tag);
+                    return (
+                      <TouchableOpacity key={tag} style={[styles.tagChip, checked && styles.tagChipActive]} onPress={() => toggleInSet(setSelectedTags, tag)}>
+                        <Text style={[styles.tagChipText, checked && styles.tagChipTextActive]}>{tag}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </FilterSection>
+            )}
+
+            {allSeries.length > 0 && (
+              <FilterSection
+                label="Filter by Series"
+                count={selectedSeries.size}
+                isOpen={openFilterSection === "series"}
+                onToggle={() => setOpenFilterSection(openFilterSection === "series" ? null : "series")}
+              >
+                {allSeries.map((s) => {
+                  const checked = selectedSeries.has(s);
+                  return (
+                    <TouchableOpacity key={s} style={styles.filterOption} onPress={() => toggleInSet(setSelectedSeries, s)}>
+                      <Text style={styles.filterOptionText}>{s}</Text>
+                      <Ionicons
+                        name={checked ? "checkbox" : "square-outline"}
+                        size={20}
+                        color={checked ? Colors.gold : Colors.navyOpacity50}
+                      />
+                    </TouchableOpacity>
+                  );
+                })}
+              </FilterSection>
+            )}
           </ScrollView>
           <View style={styles.modalFooter}>
-            <TouchableOpacity style={styles.clearBtn} onPress={() => { setSelectedRebbeFilter(null); setSelectedTagFilter(null); setSelectedSeriesFilter(null); setShowSavedOnly(false); setShowInProgressOnly(false); setSortOrder("dateDesc"); }}>
+            <TouchableOpacity style={styles.clearBtn} onPress={() => { setSelectedRebbeim(new Set()); setSelectedTags(new Set()); setSelectedSeries(new Set()); setShowSavedOnly(false); setShowInProgressOnly(false); setSortOrder("dateDesc"); }}>
               <Text style={styles.clearBtnText}>Clear All</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.applyBtn} onPress={() => setShowFilters(false)}>
@@ -308,6 +409,37 @@ export default function ShiurimScreen() {
         </SafeAreaView>
       </Modal>
     </SafeAreaView>
+  );
+}
+
+// Accordion section header for the Filters modal. Shows the section
+// label, an active-count badge if any picks are made, and a chevron
+// that rotates with the open/closed state. Children render only when
+// open — keeps the modal short and the user oriented.
+function FilterSection({ label, count, isOpen, onToggle, children }: {
+  label: string;
+  count: number;
+  isOpen: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={styles.accordion}>
+      <TouchableOpacity style={styles.accordionHeader} onPress={onToggle} activeOpacity={0.7}>
+        <Text style={styles.accordionTitle}>{label}</Text>
+        {count > 0 && (
+          <View style={styles.accordionBadge}>
+            <Text style={styles.accordionBadgeText}>{count}</Text>
+          </View>
+        )}
+        <Ionicons
+          name={isOpen ? "chevron-up" : "chevron-down"}
+          size={18}
+          color={Colors.navyOpacity50}
+        />
+      </TouchableOpacity>
+      {isOpen && <View>{children}</View>}
+    </View>
   );
 }
 
@@ -498,9 +630,27 @@ const styles = StyleSheet.create({
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: 1, borderBottomColor: Colors.creamDark, backgroundColor: Colors.white },
   modalTitle: { fontSize: 18, fontWeight: "600", color: Colors.navy },
   modalBody: { flex: 1 },
-  filterSectionTitle: { fontSize: 13, fontWeight: "600", color: Colors.navyOpacity50, textTransform: "uppercase", letterSpacing: 0.8, paddingHorizontal: 16, paddingTop: 20, paddingBottom: 8 },
+  // Accordion: each section is a card-like container with a header row
+  // that toggles the body's visibility. Top border on the first row
+  // gives a clean stack appearance.
+  accordion: { backgroundColor: Colors.white, borderTopWidth: 1, borderTopColor: Colors.creamDark },
+  accordionHeader: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingHorizontal: 16, paddingVertical: 14,
+  },
+  accordionTitle: {
+    flex: 1, fontSize: 14, fontWeight: "600", color: Colors.navyOpacity70,
+    textTransform: "uppercase", letterSpacing: 0.6,
+  },
+  accordionBadge: {
+    minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6,
+    backgroundColor: Colors.gold, alignItems: "center", justifyContent: "center",
+  },
+  accordionBadgeText: { fontSize: 11, color: Colors.navy, fontWeight: "700" },
   filterOption: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14, backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.creamDark },
   filterOptionText: { fontSize: 15, color: Colors.navy },
+  loadMoreFooter: { flexDirection: "row", alignItems: "center", justifyContent: "center", padding: 16, gap: 8 },
+  loadMoreText: { fontSize: 13, color: Colors.navyOpacity70 },
   tagsGrid: { flexDirection: "row", flexWrap: "wrap", padding: 12, gap: 8 },
   tagChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: Colors.creamDark, borderWidth: 1, borderColor: "transparent" },
   tagChipActive: { backgroundColor: Colors.navy },

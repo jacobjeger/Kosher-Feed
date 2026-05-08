@@ -8,38 +8,52 @@
 // (admin reviews + creates the public events doc), uploads any
 // attached image to Firebase Storage simcha-images/{ts}-{filename}.
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Alert,
-  ActivityIndicator, Platform, Image,
+  ActivityIndicator, Platform, Image, Modal, Pressable,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { ytcColors as Colors } from "@/constants/ytcColors";
 import { submitSimcha, uploadSimchaImage } from "@/lib/ytc/firebase";
 
-const SIMCHA_TYPES = [
-  "Bar Mitzvah", "Wedding", "Engagement", "Birth", "Bris", "Pidyon Haben",
-  "Anniversary", "Other",
-];
-
 interface Props {
   submitterEmail: string;
   onSubmitted?: () => void;
 }
 
+// YYYY-MM-DD format used by the events backend. Helpers keep the
+// inline calendar's date math local to this file.
+function pad(n: number): string { return n < 10 ? `0${n}` : String(n); }
+function toIsoDate(d: Date): string {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+function formatDisplayDate(iso: string): string {
+  if (!iso) return "";
+  const d = new Date(iso + "T00:00:00");
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+}
+
 export function SubmitSimchaForm({ submitterEmail, onSubmitted }: Props) {
   const [fullName, setFullName] = useState("");
-  const [simchaType, setSimchaType] = useState(SIMCHA_TYPES[0]);
+  // Type-of-simcha: free-text now (per user feedback). The previous
+  // 8-chip menu didn't cover edge cases (sheva brachos, vort, hachnasas
+  // sefer torah, etc) and forced people into "Other".
+  const [simchaType, setSimchaType] = useState("");
   const [date, setDate] = useState("");
   const [connection, setConnection] = useState("");
   const [message, setMessage] = useState("");
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [imageName, setImageName] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Inline calendar modal state — kept local since this is the only
+  // form using a date picker.
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
 
   const reset = () => {
-    setFullName(""); setSimchaType(SIMCHA_TYPES[0]); setDate("");
+    setFullName(""); setSimchaType(""); setDate("");
     setConnection(""); setMessage(""); setImageUri(null); setImageName(null);
   };
 
@@ -116,27 +130,27 @@ export function SubmitSimchaForm({ submitterEmail, onSubmitted }: Props) {
         </View>
         <View style={styles.col}>
           <Text style={styles.label}>Type of Simcha <Text style={styles.req}>*</Text></Text>
-          <View style={styles.chipRow}>
-            {SIMCHA_TYPES.map((t) => (
-              <TouchableOpacity key={t} style={[styles.chip, simchaType === t && styles.chipActive]} onPress={() => setSimchaType(t)}>
-                <Text style={[styles.chipText, simchaType === t && styles.chipTextActive]}>{t}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <TextInput
+            style={styles.input}
+            value={simchaType} onChangeText={setSimchaType}
+            placeholder="e.g. Bar Mitzvah, Wedding, Sheva Brachos"
+            placeholderTextColor={Colors.navyOpacity50}
+          />
         </View>
       </View>
 
       <View style={styles.row}>
         <View style={styles.col}>
           <Text style={styles.label}>Date <Text style={styles.req}>*</Text></Text>
-          <TextInput
-            style={styles.input}
-            value={date} onChangeText={setDate}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor={Colors.navyOpacity50}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
+          {/* Tap-to-open calendar — replaces the YYYY-MM-DD typed text
+               input. Stores the raw ISO string for the backend; shows
+               a friendly "Sun, Jan 12, 2026" label to the user. */}
+          <TouchableOpacity style={styles.dateBtn} onPress={() => setDatePickerOpen(true)} activeOpacity={0.7}>
+            <Ionicons name="calendar-outline" size={16} color={Colors.navy} />
+            <Text style={[styles.dateBtnText, !date && styles.dateBtnPlaceholder]}>
+              {date ? formatDisplayDate(date) : "Pick a date"}
+            </Text>
+          </TouchableOpacity>
         </View>
         <View style={styles.col}>
           <Text style={styles.label}>Connection to Yeshiva</Text>
@@ -182,9 +196,136 @@ export function SubmitSimchaForm({ submitterEmail, onSubmitted }: Props) {
       <TouchableOpacity style={[styles.submitBtn, submitting && styles.submitBtnDisabled]} onPress={submit} disabled={submitting}>
         {submitting ? <ActivityIndicator color={Colors.cream} /> : <Text style={styles.submitBtnText}>Share Your Simcha</Text>}
       </TouchableOpacity>
+
+      {/* Lightweight inline calendar — pure JS so it stays OTA-able
+           (no native @react-native-community/datetimepicker dep). */}
+      <InlineDatePicker
+        visible={datePickerOpen}
+        valueIso={date}
+        onClose={() => setDatePickerOpen(false)}
+        onPick={(iso) => { setDate(iso); setDatePickerOpen(false); }}
+      />
     </View>
   );
 }
+
+// ── Inline calendar ─────────────────────────────────────────────────
+//
+// Renders a month grid with prev/next-month nav. Today is bordered;
+// the picked day is filled gold. We render it inside a Modal so it
+// floats above the form without affecting the layout flow.
+
+const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
+
+function InlineDatePicker({ visible, valueIso, onClose, onPick }: {
+  visible: boolean;
+  valueIso: string;
+  onClose: () => void;
+  onPick: (iso: string) => void;
+}) {
+  const initial = useMemo(() => {
+    if (valueIso) {
+      const d = new Date(valueIso + "T00:00:00");
+      if (!isNaN(d.getTime())) return d;
+    }
+    return new Date();
+  }, [valueIso]);
+
+  const [viewDate, setViewDate] = useState(() => new Date(initial.getFullYear(), initial.getMonth(), 1));
+
+  const cells = useMemo(() => {
+    const year = viewDate.getFullYear();
+    const month = viewDate.getMonth();
+    const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const out: Array<{ day: number | null; iso: string | null }> = [];
+    for (let i = 0; i < firstDay; i++) out.push({ day: null, iso: null });
+    for (let d = 1; d <= daysInMonth; d++) {
+      out.push({ day: d, iso: toIsoDate(new Date(year, month, d)) });
+    }
+    return out;
+  }, [viewDate]);
+
+  const monthLabel = viewDate.toLocaleString("en-US", { month: "long", year: "numeric" });
+  const todayIso = toIsoDate(new Date());
+
+  const goPrev = () => setViewDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1));
+  const goNext = () => setViewDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1));
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={dpStyles.backdrop} onPress={onClose}>
+        <Pressable style={dpStyles.card} onPress={() => {}}>
+          <View style={dpStyles.navRow}>
+            <TouchableOpacity onPress={goPrev} hitSlop={8} style={dpStyles.navBtn}>
+              <Ionicons name="chevron-back" size={20} color={Colors.navy} />
+            </TouchableOpacity>
+            <Text style={dpStyles.monthLabel}>{monthLabel}</Text>
+            <TouchableOpacity onPress={goNext} hitSlop={8} style={dpStyles.navBtn}>
+              <Ionicons name="chevron-forward" size={20} color={Colors.navy} />
+            </TouchableOpacity>
+          </View>
+          <View style={dpStyles.weekRow}>
+            {WEEKDAYS.map((w, i) => <Text key={i} style={dpStyles.weekday}>{w}</Text>)}
+          </View>
+          <View style={dpStyles.grid}>
+            {cells.map((c, i) => {
+              if (!c.iso) return <View key={i} style={dpStyles.cell} />;
+              const isPicked = c.iso === valueIso;
+              const isToday = c.iso === todayIso;
+              return (
+                <TouchableOpacity
+                  key={i}
+                  style={[
+                    dpStyles.cell,
+                    isToday && !isPicked && dpStyles.cellToday,
+                    isPicked && dpStyles.cellPicked,
+                  ]}
+                  onPress={() => onPick(c.iso!)}
+                >
+                  <Text style={[
+                    dpStyles.cellText,
+                    isPicked && dpStyles.cellTextPicked,
+                  ]}>{c.day}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <View style={dpStyles.footer}>
+            <TouchableOpacity style={dpStyles.todayBtn} onPress={() => onPick(todayIso)}>
+              <Text style={dpStyles.todayBtnText}>Today</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={dpStyles.cancelBtn} onPress={onClose}>
+              <Text style={dpStyles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+const CELL_SIZE = 40;
+const dpStyles = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", alignItems: "center", justifyContent: "center", padding: 24 },
+  card: { width: "100%", maxWidth: 340, backgroundColor: Colors.white, borderRadius: 14, padding: 16, gap: 10 },
+  navRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  navBtn: { width: 32, height: 32, alignItems: "center", justifyContent: "center", borderRadius: 16, backgroundColor: Colors.cream },
+  monthLabel: { fontSize: 16, fontWeight: "700", color: Colors.navy },
+  weekRow: { flexDirection: "row" },
+  weekday: { width: CELL_SIZE, textAlign: "center", fontSize: 11, fontWeight: "600", color: Colors.navyOpacity50, paddingVertical: 6 },
+  grid: { flexDirection: "row", flexWrap: "wrap" },
+  cell: { width: CELL_SIZE, height: CELL_SIZE, alignItems: "center", justifyContent: "center", borderRadius: 20 },
+  cellToday: { borderWidth: 1, borderColor: Colors.gold },
+  cellPicked: { backgroundColor: Colors.navy },
+  cellText: { fontSize: 14, color: Colors.navy },
+  cellTextPicked: { color: Colors.cream, fontWeight: "700" },
+  footer: { flexDirection: "row", gap: 8, marginTop: 4 },
+  todayBtn: { flex: 1, backgroundColor: Colors.gold, paddingVertical: 10, borderRadius: 8, alignItems: "center" },
+  todayBtnText: { fontSize: 13, fontWeight: "700", color: Colors.navy },
+  cancelBtn: { flex: 1, backgroundColor: Colors.cream, paddingVertical: 10, borderRadius: 8, alignItems: "center" },
+  cancelBtnText: { fontSize: 13, fontWeight: "600", color: Colors.navy },
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -215,11 +356,13 @@ const styles = StyleSheet.create({
     padding: 12, fontSize: 14, color: Colors.navy,
   },
   textarea: { minHeight: 100 },
-  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, backgroundColor: Colors.creamDark },
-  chipActive: { backgroundColor: Colors.navy },
-  chipText: { fontSize: 12, color: Colors.navy, fontWeight: "500" },
-  chipTextActive: { color: Colors.cream },
+  dateBtn: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: Colors.white, borderRadius: 8, borderWidth: 1, borderColor: Colors.creamDark,
+    padding: 12,
+  },
+  dateBtnText: { fontSize: 14, color: Colors.navy, fontWeight: "500" },
+  dateBtnPlaceholder: { color: Colors.navyOpacity50, fontWeight: "400" },
   pickImageBtn: {
     flexDirection: "row", alignItems: "center", gap: 8,
     backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.creamDark,

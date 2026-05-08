@@ -20,7 +20,13 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { ytcColors as StaticColors } from "@/constants/ytcColors";
-import { useYtcColors, makeYtcStyles } from "@/contexts/YtcThemeContext";
+// Force-light: this page renders the same regardless of the user's
+// theme preference, per user feedback ("auto light mode"). Matches
+// the website's settings/profile look — the alumni-network site is
+// light-only on those surfaces. The Appearance toggle still lives
+// at the top of THIS page so the user can flip the rest of the app.
+// makeYtcStyles is still imported for the Appearance toggle styling
+// signature, but we feed it the static light palette directly.
 import {
   getYtcDownloadSettings, setYtcDownloadSettings, listAllRebbeim,
   runYtcAutoDownload, getYtcDownloads, deleteAllYtcDownloads,
@@ -35,6 +41,12 @@ import {
   type DefaultTopic,
 } from "@/lib/ytc/push";
 import { useYtcTheme, type YtcThemeMode } from "@/contexts/YtcThemeContext";
+
+// Bind C to the static light palette + augment with the missing
+// semantic tokens that makeYtcStyles would normally add. This is the
+// "force light" hatch — keeps the file's existing C.* references
+// working without re-deriving from the theme context.
+const C = StaticColors;
 
 const MAX_ITEM_OPTIONS: { label: string; value: number }[] = [
   { label: "50",        value: 50 },
@@ -56,11 +68,9 @@ const AUTO_DELETE_OPTIONS: { label: string; value: number }[] = [
 export default function YtcSettingsScreen() {
   const downloadsCtx = useDownloads();
   const { mode: themeMode, setMode: setThemeMode } = useYtcTheme();
-  // Theme-aware palette for backgrounds + body text. Static `StaticColors`
-  // is still used for icon tints / brand-color references that shouldn't
-  // change with theme.
-  const Colors = useYtcColors();
-  const styles = useStyles();
+  // Force-light palette + styles — see header comment.
+  const Colors = StaticColors;
+  const styles = lightStyles;
   const [settings, setSettings] = useState<YtcDownloadSettings | null>(null);
   const [rebbeim, setRebbeim] = useState<string[]>([]);
   const [rebbeimLoading, setRebbeimLoading] = useState(true);
@@ -429,9 +439,11 @@ export default function YtcSettingsScreen() {
   );
 }
 
-// Theme-parameterized styles — flip cleanly between light + dark.
-// `C` is the active palette (light or dark variant of ytcColors).
-const useStyles = makeYtcStyles((C) => StyleSheet.create({
+// Static light styles — this page does NOT honor the dark theme
+// (per user feedback). The semantic-token names are kept for
+// readability vs the rest of the codebase, but they're hardcoded
+// to the light palette here.
+const lightStyles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
   loader: { flex: 1, alignItems: "center", justifyContent: "center" },
   header: {
@@ -482,4 +494,4 @@ const useStyles = makeYtcStyles((C) => StyleSheet.create({
   },
   deleteAllBtnText: { color: C.error, fontSize: 14, fontWeight: "600" },
   emptyText: { fontSize: 13, color: C.textMuted, padding: 16 },
-}));
+});

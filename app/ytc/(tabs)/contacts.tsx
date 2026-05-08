@@ -9,7 +9,7 @@ import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { ytcColors as Colors } from "@/constants/ytcColors";
-import { fetchRebbeim, fetchApprovedAlumni, invalidateYtcCache } from "@/lib/ytc/firebase";
+import { fetchRebbeim, fetchApprovedAlumni, fetchMyAlumniContact, invalidateYtcCache } from "@/lib/ytc/firebase";
 import { useYtcAuth } from "@/contexts/YtcAuthContext";
 import { SubmitAlumniContactModal } from "@/components/ytc/SubmitAlumniContactModal";
 import { copyToClipboard } from "@/lib/ytc/copy";
@@ -30,11 +30,22 @@ export default function ContactsScreen() {
   const [showSubmit, setShowSubmit] = useState(false);
   const ALUMNI_PAGE_SIZE = 50;
 
-  // The signed-in user's own alumni entry — matches by lowercased email,
-  // since the website writes alumniContactSubmissions/{lowercaseEmail}.
-  // We highlight this row with a "You" badge + inline edit button so the
-  // user can find and update their own entry without scrolling the list.
+  // The signed-in user's own alumni-directory doc.
+  //
+  // Source of truth: alumniContactSubmissions/{lowercase email}, which
+  // is the same doc the website's profile page writes to. We CANNOT
+  // rely on the public `alumni` list because that filter only returns
+  // entries with status === "approved" — a user with a pending or
+  // freshly-edited submission would falsely see "Add yourself".
+  // Instead we fetch the doc directly on mount via fetchMyAlumniContact
+  // (no status filter) so the button reflects whether *any* doc exists.
   const myAlumniId = (user?.email ?? "").toLowerCase();
+  // Tri-state: null = haven't loaded yet, false = no doc, true = has a doc.
+  // We hide the "Add yourself" button while still loading to avoid
+  // flashing the wrong CTA at users who already have an entry.
+  const [hasMyEntry, setHasMyEntry] = useState<boolean | null>(null);
+  // The merged list still gets a "You" badge + inline edit on the
+  // user's own row when they show up in the approved list.
   const myAlumniEntry = alumni.find((a) => a.id === myAlumniId);
 
   const loadData = async () => {
@@ -49,6 +60,17 @@ export default function ContactsScreen() {
       setRefreshing(false);
     }
   };
+
+  // Independent self-lookup. Runs once when the user's email becomes
+  // known and again whenever the directory cache invalidates so a
+  // fresh edit promotes the button → "Edit your info" without a
+  // forced reload.
+  useEffect(() => {
+    if (!user?.email) { setHasMyEntry(false); return; }
+    fetchMyAlumniContact(user.email.toLowerCase())
+      .then((entry) => setHasMyEntry(!!entry))
+      .catch(() => setHasMyEntry(false));
+  }, [user?.email, alumni.length]);
 
   useEffect(() => { loadData(); }, []);
   const onRefresh = useCallback(async () => {
@@ -105,13 +127,23 @@ export default function ContactsScreen() {
         ))}
       </View>
 
-      {/* Top-of-list button only when the user does NOT yet have an
-           entry. After submitting, the user can edit inline from their
-           own card (look for the "You" badge). */}
-      {activeTab === "alumni" && user?.email && !myAlumniEntry && (
+      {/* Top-of-list button — only when the self-lookup confirms NO
+           doc exists. While `hasMyEntry === null` we haven't checked
+           yet, so suppress to avoid flashing "Add yourself" at users
+           who already have a pending submission. After submitting,
+           the user can edit inline from their own card (look for the
+           "You" badge), or use "Edit your info" if their submission
+           is still pending and not in the approved list yet. */}
+      {activeTab === "alumni" && user?.email && hasMyEntry === false && (
         <TouchableOpacity style={styles.editMyInfoBtn} onPress={() => setShowSubmit(true)}>
-          <Ionicons name="person-add-outline" size={16} color={Colors.cream} />
+          <Ionicons name="person-add-outline" size={14} color={Colors.cream} />
           <Text style={styles.editMyInfoText}>Add yourself to the directory</Text>
+        </TouchableOpacity>
+      )}
+      {activeTab === "alumni" && user?.email && hasMyEntry === true && !myAlumniEntry && (
+        <TouchableOpacity style={styles.editMyInfoBtn} onPress={() => setShowSubmit(true)}>
+          <Ionicons name="create-outline" size={14} color={Colors.cream} />
+          <Text style={styles.editMyInfoText}>Edit your info</Text>
         </TouchableOpacity>
       )}
 
@@ -285,10 +317,12 @@ const styles = StyleSheet.create({
   header: { backgroundColor: Colors.navy, paddingTop: 8, paddingBottom: 10, alignItems: "center" },
   headerTitle: { color: Colors.cream, fontSize: 18, fontWeight: "bold", fontFamily: Platform.OS === "ios" ? "Georgia" : "serif" },
   headerSubtitle: { color: Colors.creamOpacity70, fontSize: 12, marginTop: 2 },
-  tabRow: { flexDirection: "row", backgroundColor: Colors.white, padding: 6, margin: 12, borderRadius: 12, shadowColor: Colors.black, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 1 },
-  tab: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 8 },
+  // Tab selector — slimmed per user feedback (was 10px vertical pad +
+  // 6px outer pad, now 6px + 4px). Same shape, less screen weight.
+  tabRow: { flexDirection: "row", backgroundColor: Colors.white, padding: 4, marginHorizontal: 12, marginTop: 8, marginBottom: 8, borderRadius: 10, shadowColor: Colors.black, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1 },
+  tab: { flex: 1, paddingVertical: 6, alignItems: "center", borderRadius: 6 },
   tabActive: { backgroundColor: Colors.navy },
-  tabText: { fontSize: 14, fontWeight: "500", color: Colors.navyOpacity70 },
+  tabText: { fontSize: 13, fontWeight: "500", color: Colors.navyOpacity70 },
   tabTextActive: { color: Colors.cream },
   loader: { flex: 1, justifyContent: "center", alignItems: "center" },
   listContent: { padding: 12, paddingBottom: 120 },
@@ -338,10 +372,11 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 15, color: Colors.navyOpacity50 },
   loadMoreFooter: { flexDirection: "row", alignItems: "center", justifyContent: "center", padding: 16, gap: 8 },
   loadMoreText: { fontSize: 13, color: Colors.navyOpacity70 },
+  // "Add yourself" / "Edit your info" CTA — slimmed (was 10pv).
   editMyInfoBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-    backgroundColor: Colors.navy, marginHorizontal: 12, marginBottom: 8,
-    paddingVertical: 10, borderRadius: 10,
+    backgroundColor: Colors.navy, marginHorizontal: 12, marginBottom: 6,
+    paddingVertical: 7, borderRadius: 8,
   },
-  editMyInfoText: { color: Colors.cream, fontSize: 13, fontWeight: "500" },
+  editMyInfoText: { color: Colors.cream, fontSize: 12, fontWeight: "500" },
 });

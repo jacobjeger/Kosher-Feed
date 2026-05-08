@@ -61,9 +61,11 @@ export default function EventsScreen() {
         <View style={styles.eventBody}>
           <Text style={styles.eventName}>{event.eventName}</Text>
           <Text style={styles.eventFamily}>{event.personFamily}</Text>
+          {/* Location/time row — emojis dropped per user feedback.
+               The label color + spacing carries enough hierarchy. */}
           <View style={styles.eventMeta}>
-            <Text style={styles.metaText}>📍 {event.location}</Text>
-            {event.time && <Text style={styles.metaText}>🕐 {event.time}</Text>}
+            {event.location ? <Text style={styles.metaText}>{event.location}</Text> : null}
+            {event.time ? <Text style={styles.metaText}>{event.time}</Text> : null}
           </View>
           {event.type && <View style={styles.typeBadge}><Text style={styles.typeBadgeText}>{event.type}</Text></View>}
           {event.description && <Text style={styles.eventDesc}>{event.description}</Text>}
@@ -200,11 +202,18 @@ export default function EventsScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.cream },
   header: {
-    backgroundColor: Colors.navy, paddingTop: 8, paddingBottom: 10, paddingHorizontal: 12,
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    backgroundColor: Colors.navy,
+    // Thicker + centered per user feedback. The previous header was a
+    // sliver — easy to miss on a phone. Bumped vertical padding and
+    // dropped the row layout so the title centers cleanly.
+    paddingTop: 18, paddingBottom: 18, paddingHorizontal: 16,
+    alignItems: "center", justifyContent: "center",
   },
   headerAction: { width: 30, height: 30, alignItems: "center", justifyContent: "center" },
-  headerTitle: { color: Colors.cream, fontSize: 18, fontWeight: "bold", fontFamily: Platform.OS === "ios" ? "Georgia" : "serif" },
+  headerTitle: {
+    color: Colors.cream, fontSize: 22, fontWeight: "700", letterSpacing: 0.3,
+    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+  },
   loader: { flex: 1, justifyContent: "center", alignItems: "center" },
   body: { padding: 16, gap: 24, paddingBottom: 120 },
   section: { gap: 12 },

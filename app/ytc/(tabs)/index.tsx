@@ -169,16 +169,8 @@ export default function HomeScreen() {
   // on warm cache. Cold-cache: small spinner inside each section's
   // empty state if needed (currently we just don't render the section).
 
-  // Tap "View Most Recent Shiur" CTA → scroll to and play the latest
-  // shiur, or fall back to navigating into the shiurim list when no
-  // recent is loaded yet.
-  const onViewMostRecent = useCallback(() => {
-    if (recentShiur?.audioUrl) {
-      playShiur(recentShiur);
-    } else {
-      router.push("/ytc/(tabs)/shiurim" as any);
-    }
-  }, [recentShiur, playShiur]);
+  // (Hero CTA removed — see commit log. The most-recent shiur card
+  // below provides the same play affordance.)
 
   return (
     <SafeAreaView style={styles.safe} edges={[]}>
@@ -196,7 +188,11 @@ export default function HomeScreen() {
               contentFit="cover"
               cachePolicy="memory-disk"
               recyclingKey={carouselImages[carouselIndex]?.id}
-              transition={300}
+              // Trim transition time + ask expo-image to schedule the
+              // decode at high priority — perceptibly faster paint on
+              // first hero render.
+              transition={120}
+              priority="high"
             />
           ) : (
             <View style={[StyleSheet.absoluteFillObject, { backgroundColor: Colors.navy }]} />
@@ -218,14 +214,13 @@ export default function HomeScreen() {
             </YtcFocusable>
           </View>
 
-          {/* Title + subtitle + CTA at the bottom, left-aligned. */}
+          {/* Title + subtitle at the bottom, left-aligned.
+               CTA button removed per user feedback — the most-recent
+               shiur card below provides the same affordance without
+               taking hero real estate. */}
           <View style={styles.heroContent}>
             <Text style={styles.heroTitle}>Yeshiva Toras Chaim</Text>
             <Text style={styles.heroSubtitle}>Alumni Network</Text>
-            <YtcFocusable style={styles.heroCta} onPress={onViewMostRecent} focusRadius={28}>
-              <Text style={styles.heroCtaText}>View Most Recent Shiur</Text>
-              <Ionicons name="chevron-forward" size={18} color={Colors.navy} />
-            </YtcFocusable>
           </View>
         </View>
 
@@ -236,16 +231,16 @@ export default function HomeScreen() {
               {(showAllAnnouncements ? announcements : announcements.slice(0, ANNOUNCEMENT_PREVIEW)).map((ann) => {
                 const isMazelTov = ann.type === "mazel_tov";
                 return (
+                  // Slim card — top gold/navy accent strip removed per
+                  // user feedback ("make mazel tovs even thinner"). The
+                  // icon (PartyPopper / Megaphone) keeps the type signal.
                   <View key={ann.id} style={styles.announcementCard}>
-                    {/* Top accent line — gold for mazel tov, navy for general
-                        announcements. Mirrors website's h-1 w-full gradient. */}
-                    <View style={[styles.announcementAccent, { backgroundColor: isMazelTov ? Colors.gold : Colors.navy }]} />
                     <View style={styles.announcementBody}>
                       <View style={styles.announcementIconRow}>
                         <View style={[styles.announcementIconBadge, { backgroundColor: isMazelTov ? Colors.goldOpacity15 : Colors.navyOpacity10 }]}>
                           {isMazelTov
-                            ? <PartyPopper size={22} color={Colors.gold} />
-                            : <Megaphone size={22} color={Colors.navy} />}
+                            ? <PartyPopper size={18} color={Colors.gold} />
+                            : <Megaphone size={18} color={Colors.navy} />}
                         </View>
                         <Text style={styles.announcementTitle}>{ann.title}</Text>
                       </View>
@@ -416,6 +411,14 @@ export default function HomeScreen() {
             </YtcFocusable>
             <YtcFocusable
               style={styles.menuItem}
+              onPress={() => { setProfileMenuOpen(false); router.push("/ytc/email-updates" as any); }}
+              focusRadius={4}
+            >
+              <Ionicons name="mail-outline" size={18} color={Colors.navy} />
+              <Text style={styles.menuItemText}>Email Updates</Text>
+            </YtcFocusable>
+            <YtcFocusable
+              style={styles.menuItem}
               onPress={() => { setProfileMenuOpen(false); router.push("/ytc/settings" as any); }}
               focusRadius={4}
             >
@@ -474,11 +477,12 @@ const ShiurHomeCard = React.memo(function ShiurHomeCardImpl({ shiur, sectionTitl
   const completed = hasProgress && pct >= 95;
   return (
     <View style={styles.section}>
-      <View style={styles.shiurSectionTitleRow}>
-        {isFeatured && <Ionicons name="star" size={14} color={Colors.gold} style={{ marginRight: 6 }} />}
-        <Text style={styles.sectionTitle}>{sectionTitle}</Text>
-      </View>
-      <View style={[styles.shiurCardWrap, isFeatured && styles.shiurCardWrapFeatured]}>
+      {/* Star icon + isFeatured gold border were here — both removed
+           per user feedback. The "Featured Shiur" / "Most Recent Shiur"
+           section title alone signals the role; the card itself looks
+           identical to other shiur cards. */}
+      <Text style={styles.sectionTitle}>{sectionTitle}</Text>
+      <View style={styles.shiurCardWrap}>
         <View style={styles.shiurCard}>
           <View style={styles.shiurInfo}>
             <Text style={styles.shiurTitle}>{shiur.title}</Text>
@@ -513,29 +517,21 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.cream },
   loading: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: Colors.cream },
   scroll: { flex: 1 },
-  // Hero — full-bleed photo backdrop with overlay text + watermark logo +
-  // CTA. Mirrors the website's home hero. Height ~440px on a typical
-  // phone leaves room for the system status bar to overlay cleanly.
-  hero: { width: "100%", height: 440, position: "relative", overflow: "hidden" },
-  heroLogoWatermark: { position: "absolute", top: 50, left: 16, width: 90, height: 90, opacity: 0.55 },
-  heroProfileWrap: { position: "absolute", top: 56, right: 16 },
-  heroContent: { position: "absolute", left: 20, right: 20, bottom: 36 },
+  // Hero — full-bleed photo backdrop with overlay text + watermark logo.
+  // Trimmed from 440 → 280 per user feedback ("pictures take up too much
+  // of the screen"). The CTA button was removed too — see render block.
+  hero: { width: "100%", height: 280, position: "relative", overflow: "hidden" },
+  heroLogoWatermark: { position: "absolute", top: 40, left: 16, width: 70, height: 70, opacity: 0.55 },
+  heroProfileWrap: { position: "absolute", top: 46, right: 16 },
+  heroContent: { position: "absolute", left: 20, right: 20, bottom: 24 },
   heroTitle: {
-    color: Colors.cream, fontSize: 36, fontWeight: "700", lineHeight: 42,
+    color: Colors.cream, fontSize: 30, fontWeight: "700", lineHeight: 36,
     fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
   },
   heroSubtitle: {
-    color: Colors.gold, fontSize: 22, fontWeight: "600", marginTop: 4,
+    color: Colors.gold, fontSize: 18, fontWeight: "600", marginTop: 2,
     fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
   },
-  heroCta: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    backgroundColor: Colors.gold,
-    alignSelf: "flex-start",
-    paddingHorizontal: 18, paddingVertical: 12,
-    borderRadius: 28, marginTop: 18,
-  },
-  heroCtaText: { color: Colors.navy, fontSize: 14, fontWeight: "700" },
 
   showMoreBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4,
@@ -589,23 +585,23 @@ const styles = StyleSheet.create({
   section: { gap: 12 },
   sectionTitle: { fontSize: 18, fontWeight: "600", color: Colors.navy, fontFamily: Platform.OS === "ios" ? "Georgia" : "serif" },
   announcementCard: {
-    backgroundColor: Colors.white, borderRadius: 12, overflow: "hidden",
-    borderWidth: 1, borderColor: Colors.goldOpacity30,
-    shadowColor: Colors.black, shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08, shadowRadius: 8, elevation: 2,
+    backgroundColor: Colors.white, borderRadius: 10, overflow: "hidden",
+    borderWidth: 1, borderColor: Colors.creamDark,
+    shadowColor: Colors.black, shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
   },
-  announcementAccent: { height: 4, width: "100%" },
-  announcementBody: { padding: 16 },
-  announcementIconRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 8 },
+  // announcementAccent removed — was the gold/navy h-1 strip on top.
+  announcementBody: { padding: 12 },
+  announcementIconRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 6 },
   announcementIconBadge: {
-    width: 40, height: 40, borderRadius: 8,
+    width: 30, height: 30, borderRadius: 6,
     alignItems: "center", justifyContent: "center",
   },
   announcementTitle: {
-    flex: 1, fontSize: 17, fontWeight: "600", color: Colors.navy,
+    flex: 1, fontSize: 15, fontWeight: "600", color: Colors.navy,
     fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
   },
-  announcementContent: { fontSize: 14, color: Colors.navyOpacity70, lineHeight: 20 },
+  announcementContent: { fontSize: 13, color: Colors.navyOpacity70, lineHeight: 18 },
   eventCard: { flexDirection: "row", backgroundColor: Colors.white, borderRadius: 12, padding: 14, gap: 14, shadowColor: Colors.black, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
   eventDateBadge: { width: 52, height: 52, borderRadius: 8, backgroundColor: Colors.navy, alignItems: "center", justifyContent: "center" },
   eventMonth: { color: Colors.gold, fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },
@@ -615,9 +611,10 @@ const styles = StyleSheet.create({
   eventFamily: { fontSize: 13, color: Colors.navyOpacity70, marginTop: 2 },
   eventLocation: { fontSize: 12, color: Colors.navyOpacity50, marginTop: 2 },
   eventTime: { fontSize: 12, color: Colors.gold, marginTop: 2, fontWeight: "500" },
-  shiurSectionTitleRow: { flexDirection: "row", alignItems: "center" },
+  // shiurSectionTitleRow / shiurCardWrapFeatured removed — the row was
+  // only there to hold the star icon next to the title, and the
+  // featured variant border was dropped per user feedback.
   shiurCardWrap: { backgroundColor: Colors.white, borderRadius: 12, overflow: "hidden", shadowColor: Colors.black, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 2 },
-  shiurCardWrapFeatured: { borderWidth: 1, borderColor: Colors.gold },
   shiurCard: { flexDirection: "row", padding: 16, gap: 12, alignItems: "center" },
   shiurInfo: { flex: 1 },
   shiurTitle: { fontSize: 15, fontWeight: "600", color: Colors.navy, marginBottom: 4 },
