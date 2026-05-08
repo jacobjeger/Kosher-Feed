@@ -40,13 +40,53 @@ export async function isUnlocked(): Promise<boolean> {
  * (from useRemoteConfig().config.ytcUnlockCode). Both are trimmed and
  * compared case-sensitively. Empty/null expected → always rejects (the
  * feature is disabled by the admin).
+ *
+ * Side effect: as soon as the unlock succeeds we kick off YTC's public
+ * Firestore reads (carousel, announcements, events, featured/recent
+ * shiurim, collections, alumni photos, rebbeim, full shiurim list).
+ * They flow through the cache layer in lib/ytc/firebase.ts so when
+ * the user navigates into /ytc after sign-in the screens hit
+ * cache instantly — no perceptible Firestore wait. This is the user's
+ * own suggested optimization: pre-warm the moment they enter the
+ * access code, not after they've already drilled in.
+ *
+ * The pre-warm runs in the background (Promise not awaited). Failures
+ * are silent — sign-in still works, screens just hit a cold cache.
  */
 export async function tryUnlock(entered: string, expected: string | null | undefined): Promise<boolean> {
   if (!expected || !entered) return false;
   if (entered.trim() !== expected.trim()) return false;
   await AsyncStorage.setItem(UNLOCK_KEY, "1");
   emit();
+  prewarmYtcDataIfPossible();
   return true;
+}
+
+/** Kick off all of YTC's public-collection fetchers so the cache is
+ *  warm by the time the user opens /ytc. Re-callable; cache layer
+ *  dedupes duplicates. Lazy-imports lib/ytc/firebase to keep this
+ *  module's cold-start free of Firebase. */
+export function prewarmYtcDataIfPossible(): void {
+  (async () => {
+    try {
+      const f = await import("@/lib/ytc/firebase");
+      // Fire all in parallel. Each fetcher hits the same shared cache
+      // so duplicates from a future home-mount are no-ops.
+      await Promise.all([
+        f.fetchCarouselImages(),
+        f.fetchAnnouncements(),
+        f.fetchUpcomingEvents(3),
+        f.fetchEvents(),
+        f.fetchMostRecentShiur(),
+        f.fetchFeaturedShiur(),
+        f.fetchActiveCollections(),
+        f.fetchAlumniPhotos(),
+        f.fetchRebbeim(),
+        f.fetchApprovedAlumni(),
+        f.fetchShiurim(),
+      ]);
+    } catch {}
+  })();
 }
 
 /**

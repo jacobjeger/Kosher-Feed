@@ -13,7 +13,7 @@ import { setErrorContext } from "@/lib/error-logger";
 // unlock code AND this device has unlocked it. Hidden by default so
 // the feature stays invisible to all other users (kill-switch + opt-in).
 import { useRemoteConfig } from "@/contexts/RemoteConfigContext";
-import { useYtcUnlocked } from "@/lib/ytc/unlock";
+import { useYtcUnlocked, prewarmYtcDataIfPossible } from "@/lib/ytc/unlock";
 import { ytcColors } from "@/constants/ytcColors";
 
 /** Tab bar button that navigates on D-pad focus (Android) */
@@ -180,6 +180,15 @@ export default function TabLayout() {
   const ytcEnabled = !!(remoteConfig.config.ytcUnlockCode as string | null | undefined);
   const ytcUnlocked = useYtcUnlocked();
   const showYtcTab = !isWeb && ytcEnabled && ytcUnlocked;
+
+  // App-boot pre-warm: if the user was unlocked from a previous
+  // session, fan out YTC's public Firestore reads in the background
+  // the moment we know the YTC tab will appear. By the time they
+  // tap into /ytc the cache layer (lib/ytc/firebase.ts cached())
+  // returns instantly. Idempotent — ran behind in-flight dedupe.
+  useEffect(() => {
+    if (showYtcTab) prewarmYtcDataIfPossible();
+  }, [showYtcTab]);
 
   useKeyboardShortcuts();
   const pathname = usePathname();

@@ -112,133 +112,69 @@ export default function ShiurimScreen() {
     !!selectedRebbeFilter || !!selectedTagFilter || !!selectedSeriesFilter ||
     showSavedOnly || showInProgressOnly;
 
-  const formatDate = (dateStr: string) => {
+  // Stable callbacks so the memoized ShiurCard doesn't re-render on
+  // every parent state change. Each accepts the shiur as an argument
+  // since the actions are global from the parent's perspective.
+  const formatDate = useCallback((dateStr: string) => {
     const d = new Date(dateStr + "T00:00:00");
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  };
+  }, []);
 
-  const renderShiur = ({ item }: { item: Shiur }) => {
-    const isActive = currentShiurId === item.id;
-    const isExpanded = expandedId === item.id;
+  const onTagPress = useCallback((tag: string) => {
+    setSelectedTagFilter((cur) => (cur === tag ? null : tag));
+  }, []);
+
+  const onSavePress = useCallback((shiurId: string) => {
+    toggleSaved(shiurId);
+  }, [toggleSaved]);
+
+  const onPlayPress = useCallback((shiur: Shiur, isCurrentlyActive: boolean) => {
+    if (isCurrentlyActive) pauseResume(); else play(shiur);
+  }, [play, pauseResume]);
+
+  const onDownloadPressFor = useCallback((shiur: Shiur, isAlreadyDownloaded: boolean, isCurrentlyDownloading: boolean) => {
+    if (!shiur.audioUrl) return;
+    const epId = `${YTC_EPISODE_PREFIX}${shiur.id}`;
+    if (isAlreadyDownloaded) {
+      Alert.alert(
+        "Remove download?",
+        shiur.title,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Remove", style: "destructive", onPress: () => { removeDownload(epId); } },
+        ],
+      );
+      return;
+    }
+    if (isCurrentlyDownloading) return;
+    const { episode, feed } = ytcShiurToEpisodeAndFeed(shiur);
+    trackShiurDownload(shiur.id).catch(() => {});
+    downloadEpisode(episode, feed);
+  }, [downloadEpisode, removeDownload]);
+
+  const renderShiur = useCallback(({ item }: { item: Shiur }) => {
     const epId = `${YTC_EPISODE_PREFIX}${item.id}`;
+    const isActive = currentShiurId === item.id;
     const saved = getPosition(epId);
-    const hasProgress = saved && saved.durationMs > 0 && saved.positionMs > 0;
-    const pct = hasProgress ? Math.min(Math.round((saved!.positionMs / saved!.durationMs) * 100), 100) : 0;
-    const completed = hasProgress && pct >= 95;
-    const downloaded = isDownloaded(epId);
-    const downloading = isDownloading(epId);
-    const saved2 = isSaved(item.id);
-    const dlPct = downloading ? (downloadProgress.get(epId) || 0) : 0;
-    const onDownloadPress = () => {
-      if (!item.audioUrl) return;
-      if (downloaded) {
-        Alert.alert(
-          "Remove download?",
-          item.title,
-          [
-            { text: "Cancel", style: "cancel" },
-            { text: "Remove", style: "destructive", onPress: () => { removeDownload(epId); } },
-          ],
-        );
-        return;
-      }
-      if (downloading) return;
-      const { episode, feed } = ytcShiurToEpisodeAndFeed(item);
-      // Fire analytics + downloadCount increment via the YTC track endpoint
-      // BEFORE handing off to the downloader. Fire-and-forget; UI never waits.
-      trackShiurDownload(item.id).catch(() => {});
-      downloadEpisode(episode, feed);
-    };
-    // New card layout — mirrors the website's shiurim/page.tsx card:
-    //   [4px gold top accent]
-    //   row: [headphone icon] [title (flex:1)] [bookmark icon]
-    //   "by Rabbi X" (gold italic, under title)
-    //   meta row: [clock] [date]   ·   [progress / completed badge]
-    //   tags inline (always visible — no expand chevron)
-    //   description (when set, dimmer)
-    //   bottom row: [navy Play button (flex:1)] [download icon button]
-    //   [thin gold progress bar at very bottom if hasProgress]
     return (
-      <View style={[styles.shiurCard, isActive && styles.shiurCardActive]}>
-        <View style={styles.shiurAccent} />
-        <View style={styles.shiurBody}>
-          <View style={styles.shiurTopRow}>
-            <Ionicons name="headset-outline" size={20} color={Colors.gold} style={{ marginTop: 1 }} />
-            <Text style={styles.shiurTitle} numberOfLines={3}>{item.title}</Text>
-            <YtcFocusable onPress={() => toggleSaved(item.id)} hitSlop={8} style={styles.iconBtn} focusRadius={14}>
-              <Ionicons name={saved2 ? "bookmark" : "bookmark-outline"} size={20} color={saved2 ? Colors.gold : Colors.navyOpacity50} />
-            </YtcFocusable>
-          </View>
-
-          {item.rebbe ? <Text style={styles.shiurRebbe}>by {item.rebbe}</Text> : null}
-
-          <View style={styles.shiurMetaRow}>
-            <Ionicons name="time-outline" size={13} color={Colors.navyOpacity50} />
-            <Text style={styles.shiurMetaText}>{formatDate(item.date)}</Text>
-            {downloading ? (
-              <Text style={[styles.shiurMetaText, { color: Colors.gold }]}>· Downloading {Math.round(dlPct * 100)}%</Text>
-            ) : completed ? (
-              <Text style={[styles.shiurMetaText, { color: Colors.gold }]}>· Completed</Text>
-            ) : hasProgress ? (
-              <Text style={[styles.shiurMetaText, { color: Colors.gold }]}>· Paused at {formatRemainingMin(saved!.positionMs, saved!.durationMs)}</Text>
-            ) : null}
-          </View>
-
-          {item.series ? (
-            <View style={[styles.tag, { alignSelf: "flex-start", marginTop: 8 }]}>
-              <Ionicons name="folder-outline" size={11} color={Colors.navyOpacity70} style={{ marginRight: 4 }} />
-              <Text style={styles.tagText}>{item.series}</Text>
-            </View>
-          ) : null}
-
-          {item.tags.length > 0 && (
-            <View style={styles.tagsRow}>
-              {item.tags.slice(0, 4).map((tag) => (
-                <TouchableOpacity key={tag} style={styles.tag} onPress={() => setSelectedTagFilter(selectedTagFilter === tag ? null : tag)}>
-                  <Text style={styles.tagText}>{tag}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
-          {item.description ? (
-            <Text style={styles.shiurDescription} numberOfLines={3}>{item.description}</Text>
-          ) : null}
-
-          {item.audioUrl && (
-            <View style={styles.shiurActionsRow}>
-              <YtcFocusable
-                style={styles.playButton}
-                onPress={() => { if (isActive) pauseResume(); else play(item); }}
-                focusRadius={10}
-              >
-                {isActive && audioLoading
-                  ? <ActivityIndicator size="small" color={Colors.cream} />
-                  : (
-                    <>
-                      <Ionicons name={isActive && isPlaying ? "pause" : "play"} size={16} color={Colors.cream} />
-                      <Text style={styles.playButtonText}>{isActive && isPlaying ? "Pause" : "Play"}</Text>
-                    </>
-                  )}
-              </YtcFocusable>
-              <YtcFocusable onPress={onDownloadPress} hitSlop={4} style={styles.downloadIconBtn} focusRadius={10}>
-                {downloading
-                  ? <ActivityIndicator size="small" color={Colors.navy} />
-                  : downloaded
-                  ? <Ionicons name="trash-outline" size={20} color={Colors.error} />
-                  : <Ionicons name="download-outline" size={22} color={Colors.navy} />}
-              </YtcFocusable>
-            </View>
-          )}
-        </View>
-        {hasProgress && !completed && (
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${pct}%` }]} />
-          </View>
-        )}
-      </View>
+      <ShiurCard
+        item={item}
+        isActive={isActive}
+        isPlaying={isActive ? isPlaying : false}
+        audioLoading={isActive ? audioLoading : false}
+        savedPosition={saved}
+        isSaved={isSaved(item.id)}
+        downloaded={isDownloaded(epId)}
+        downloading={isDownloading(epId)}
+        downloadPct={isDownloading(epId) ? (downloadProgress.get(epId) || 0) : 0}
+        onPlay={onPlayPress}
+        onSave={onSavePress}
+        onDownload={onDownloadPressFor}
+        onTagPress={onTagPress}
+        formatDate={formatDate}
+      />
     );
-  };
+  }, [currentShiurId, isPlaying, audioLoading, getPosition, isSaved, isDownloaded, isDownloading, downloadProgress, onPlayPress, onSavePress, onDownloadPressFor, onTagPress, formatDate]);
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -297,6 +233,16 @@ export default function ShiurimScreen() {
           contentContainerStyle={styles.listContent}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.navy} />}
           ListEmptyComponent={<View style={styles.empty}><Ionicons name="musical-notes" size={40} color={Colors.navyOpacity30} /><Text style={styles.emptyText}>No shiurim found</Text></View>}
+          // Perf tuning for the 800+ shiurim list:
+          //  - removeClippedSubviews: detaches off-screen rows from
+          //    the native view hierarchy (Android only; ignored on web)
+          //  - initialNumToRender: 8 ≈ first viewport
+          //  - maxToRenderPerBatch / windowSize: keep render bursts
+          //    small so scrolling stays at 60fps on mid-tier devices
+          removeClippedSubviews={Platform.OS !== "web"}
+          initialNumToRender={8}
+          maxToRenderPerBatch={6}
+          windowSize={7}
         />
       )}
 
@@ -364,6 +310,115 @@ export default function ShiurimScreen() {
     </SafeAreaView>
   );
 }
+
+// Memoized card — re-renders only when its own props change.
+// Crucial for the 800+ shiurim list performance: when a position
+// updates for one playing shiur, only that one card re-renders;
+// all other cards skip via React.memo's shallow comparison on the
+// (primitive) props.
+interface ShiurCardProps {
+  item: Shiur;
+  isActive: boolean;
+  isPlaying: boolean;
+  audioLoading: boolean;
+  savedPosition: { positionMs: number; durationMs: number } | null;
+  isSaved: boolean;
+  downloaded: boolean;
+  downloading: boolean;
+  downloadPct: number;
+  onPlay: (s: Shiur, isCurrentlyActive: boolean) => void;
+  onSave: (id: string) => void;
+  onDownload: (s: Shiur, isAlreadyDownloaded: boolean, isCurrentlyDownloading: boolean) => void;
+  onTagPress: (tag: string) => void;
+  formatDate: (dateStr: string) => string;
+}
+
+const ShiurCard = React.memo(function ShiurCardImpl(p: ShiurCardProps) {
+  const { item, isActive, isPlaying, audioLoading, savedPosition, isSaved, downloaded, downloading, downloadPct, onPlay, onSave, onDownload, onTagPress, formatDate } = p;
+  const hasProgress = !!savedPosition && savedPosition.durationMs > 0 && savedPosition.positionMs > 0;
+  const pct = hasProgress ? Math.min(Math.round((savedPosition!.positionMs / savedPosition!.durationMs) * 100), 100) : 0;
+  const completed = hasProgress && pct >= 95;
+  return (
+    <View style={[styles.shiurCard, isActive && styles.shiurCardActive]}>
+      <View style={styles.shiurAccent} />
+      <View style={styles.shiurBody}>
+        <View style={styles.shiurTopRow}>
+          <Ionicons name="headset-outline" size={20} color={Colors.gold} style={{ marginTop: 1 }} />
+          <Text style={styles.shiurTitle} numberOfLines={3}>{item.title}</Text>
+          <YtcFocusable onPress={() => onSave(item.id)} hitSlop={8} style={styles.iconBtn} focusRadius={14}>
+            <Ionicons name={isSaved ? "bookmark" : "bookmark-outline"} size={20} color={isSaved ? Colors.gold : Colors.navyOpacity50} />
+          </YtcFocusable>
+        </View>
+
+        {item.rebbe ? <Text style={styles.shiurRebbe}>by {item.rebbe}</Text> : null}
+
+        <View style={styles.shiurMetaRow}>
+          <Ionicons name="time-outline" size={13} color={Colors.navyOpacity50} />
+          <Text style={styles.shiurMetaText}>{formatDate(item.date)}</Text>
+          {downloading ? (
+            <Text style={[styles.shiurMetaText, { color: Colors.gold }]}>· Downloading {Math.round(downloadPct * 100)}%</Text>
+          ) : completed ? (
+            <Text style={[styles.shiurMetaText, { color: Colors.gold }]}>· Completed</Text>
+          ) : hasProgress ? (
+            <Text style={[styles.shiurMetaText, { color: Colors.gold }]}>· Paused at {formatRemainingMin(savedPosition!.positionMs, savedPosition!.durationMs)}</Text>
+          ) : null}
+        </View>
+
+        {item.series ? (
+          <View style={[styles.tag, { alignSelf: "flex-start", marginTop: 8 }]}>
+            <Ionicons name="folder-outline" size={11} color={Colors.navyOpacity70} style={{ marginRight: 4 }} />
+            <Text style={styles.tagText}>{item.series}</Text>
+          </View>
+        ) : null}
+
+        {item.tags.length > 0 && (
+          <View style={styles.tagsRow}>
+            {item.tags.slice(0, 4).map((tag) => (
+              <TouchableOpacity key={tag} style={styles.tag} onPress={() => onTagPress(tag)}>
+                <Text style={styles.tagText}>{tag}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        {item.description ? (
+          <Text style={styles.shiurDescription} numberOfLines={3}>{item.description}</Text>
+        ) : null}
+
+        {item.audioUrl && (
+          <View style={styles.shiurActionsRow}>
+            <YtcFocusable
+              style={styles.playButton}
+              onPress={() => onPlay(item, isActive)}
+              focusRadius={10}
+            >
+              {isActive && audioLoading
+                ? <ActivityIndicator size="small" color={Colors.cream} />
+                : (
+                  <>
+                    <Ionicons name={isActive && isPlaying ? "pause" : "play"} size={16} color={Colors.cream} />
+                    <Text style={styles.playButtonText}>{isActive && isPlaying ? "Pause" : "Play"}</Text>
+                  </>
+                )}
+            </YtcFocusable>
+            <YtcFocusable onPress={() => onDownload(item, downloaded, downloading)} hitSlop={4} style={styles.downloadIconBtn} focusRadius={10}>
+              {downloading
+                ? <ActivityIndicator size="small" color={Colors.navy} />
+                : downloaded
+                ? <Ionicons name="trash-outline" size={20} color={Colors.error} />
+                : <Ionicons name="download-outline" size={22} color={Colors.navy} />}
+            </YtcFocusable>
+          </View>
+        )}
+      </View>
+      {hasProgress && !completed && (
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${pct}%` }]} />
+        </View>
+      )}
+    </View>
+  );
+});
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.cream },
