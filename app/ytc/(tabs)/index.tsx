@@ -14,10 +14,12 @@ import {
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { PartyPopper, Megaphone } from "lucide-react-native";
 import { router } from "expo-router";
 import { ytcColors as Colors } from "@/constants/ytcColors";
 import { useYtcAuth } from "@/contexts/YtcAuthContext";
-import { fetchCarouselImages, fetchAnnouncements, fetchUpcomingEvents, fetchMostRecentShiur, fetchFeaturedShiur, fetchActiveCollections, fetchAlumniPhotos, invalidateYtcCache } from "@/lib/ytc/firebase";
+import { fetchCarouselImages, fetchAnnouncements, fetchUpcomingEvents, fetchMostRecentShiur, fetchFeaturedShiur, fetchActiveCollections, fetchAlumniPhotos, fetchMyAlumniContact, invalidateYtcCache } from "@/lib/ytc/firebase";
+import { SubmitAlumniContactModal } from "@/components/ytc/SubmitAlumniContactModal";
 import type { CarouselImage, Announcement, YtcEvent, Shiur, ShiurCollection, AlumniPhoto } from "@/types/ytc";
 import { useYtcPlay, YTC_EPISODE_PREFIX } from "@/lib/ytc/audio-adapter";
 import { usePositions } from "@/contexts/PositionsContext";
@@ -33,8 +35,20 @@ export default function HomeScreen() {
   const { user, isAdmin, signOut } = useYtcAuth();
   const playShiur = useYtcPlay();
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [showInfoModal, setShowInfoModal] = useState(false);
+  const [hasAlumniEntry, setHasAlumniEntry] = useState<boolean | null>(null);
 
-  const userInitial = (user?.displayName || user?.email || "?").trim().charAt(0).toUpperCase();
+  // First letter of displayName, falling back to email's first letter,
+  // falling back to "Y" (for YTC) — never show "?" since that suggests
+  // an unauthenticated state when actually we just don't know the user's
+  // chosen display name yet.
+  const userInitial = (() => {
+    const name = (user?.displayName || "").trim();
+    if (name) return name.charAt(0).toUpperCase();
+    const email = (user?.email || "").trim();
+    if (email) return email.charAt(0).toUpperCase();
+    return "Y";
+  })();
   const { getPosition } = usePositions();
   const downloadsCtx = useDownloads();
 
@@ -101,6 +115,16 @@ export default function HomeScreen() {
   };
 
   useEffect(() => { loadData(); }, []);
+
+  // Detect whether the signed-in user already has an alumni-directory
+  // entry. Drives the "Edit your info" vs "Add your info" label in
+  // the profile menu. Independent of the home data fetch.
+  useEffect(() => {
+    if (!user?.email) { setHasAlumniEntry(false); return; }
+    fetchMyAlumniContact(user.email.toLowerCase())
+      .then((entry) => setHasAlumniEntry(!!entry))
+      .catch(() => setHasAlumniEntry(false));
+  }, [user?.email]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -191,10 +215,21 @@ export default function HomeScreen() {
               {announcements.map((ann) => {
                 const isMazelTov = ann.type === "mazel_tov";
                 return (
-                  <View key={ann.id} style={[styles.card, isMazelTov && styles.mazelTovCard]}>
-                    {isMazelTov && <View style={styles.mazelTovBadge}><Text style={styles.mazelTovBadgeText}>🎉 Mazel Tov</Text></View>}
-                    <Text style={styles.cardTitle}>{ann.title}</Text>
-                    <Text style={styles.cardContent}>{ann.content}</Text>
+                  <View key={ann.id} style={styles.announcementCard}>
+                    {/* Top accent line — gold for mazel tov, navy for general
+                        announcements. Mirrors website's h-1 w-full gradient. */}
+                    <View style={[styles.announcementAccent, { backgroundColor: isMazelTov ? Colors.gold : Colors.navy }]} />
+                    <View style={styles.announcementBody}>
+                      <View style={styles.announcementIconRow}>
+                        <View style={[styles.announcementIconBadge, { backgroundColor: isMazelTov ? Colors.goldOpacity15 : Colors.navyOpacity10 }]}>
+                          {isMazelTov
+                            ? <PartyPopper size={22} color={Colors.gold} />
+                            : <Megaphone size={22} color={Colors.navy} />}
+                        </View>
+                        <Text style={styles.announcementTitle}>{ann.title}</Text>
+                      </View>
+                      <Text style={styles.announcementContent}>{ann.content}</Text>
+                    </View>
                   </View>
                 );
               })}
@@ -291,6 +326,21 @@ export default function HomeScreen() {
         </View>
       </ScrollView>
 
+      {/* Alumni-directory submit/edit modal triggered from the profile
+           menu. Same component the Contacts tab uses. */}
+      <SubmitAlumniContactModal
+        visible={showInfoModal}
+        onClose={() => setShowInfoModal(false)}
+        onSubmitted={() => {
+          // Refresh the gating state so the menu label flips
+          // immediately on first submission.
+          setHasAlumniEntry(true);
+          invalidateYtcCache("approvedAlumni").catch(() => {});
+        }}
+        submitterEmail={user?.email ?? ""}
+        submitterDisplayName={user?.displayName ?? null}
+      />
+
       {/* Profile menu — anchored top-right, dismissable by backdrop tap.
            Notification Settings entry is intentionally omitted while
            YTC_PUSH_FEATURE_ENABLED is false (lib/ytc/push.ts). */}
@@ -312,6 +362,14 @@ export default function HomeScreen() {
                 {isAdmin ? <Text style={styles.menuAdminBadge}>Admin</Text> : null}
               </View>
             </View>
+            <YtcFocusable
+              style={styles.menuItem}
+              onPress={() => { setProfileMenuOpen(false); setShowInfoModal(true); }}
+              focusRadius={4}
+            >
+              <Ionicons name={hasAlumniEntry ? "create-outline" : "person-add-outline"} size={18} color={Colors.navy} />
+              <Text style={styles.menuItemText}>{hasAlumniEntry ? "Edit your info" : "Add your info"}</Text>
+            </YtcFocusable>
             <YtcFocusable
               style={styles.menuItem}
               onPress={() => { setProfileMenuOpen(false); router.push("/ytc/settings" as any); }}
@@ -382,7 +440,7 @@ const ShiurHomeCard = React.memo(function ShiurHomeCardImpl({ shiur, sectionTitl
             <Text style={styles.shiurTitle}>{shiur.title}</Text>
             <Text style={styles.shiurRebbeDate}>{shiur.rebbe} · {formatDate(shiur.date)}</Text>
             {hasProgress && !completed && (
-              <Text style={styles.progressText}>{pct}% · {formatRemainingMin(saved!.positionMs, saved!.durationMs)}</Text>
+              <Text style={styles.progressText}>{formatRemainingMin(saved!.positionMs, saved!.durationMs)}</Text>
             )}
             {completed && <Text style={styles.completedText}>Completed</Text>}
             {shiur.tags.length > 0 && (
@@ -468,12 +526,24 @@ const styles = StyleSheet.create({
   body: { padding: 16, gap: 24 },
   section: { gap: 12 },
   sectionTitle: { fontSize: 18, fontWeight: "600", color: Colors.navy, fontFamily: Platform.OS === "ios" ? "Georgia" : "serif" },
-  card: { backgroundColor: Colors.white, borderRadius: 12, padding: 16, shadowColor: Colors.black, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 2 },
-  mazelTovCard: { borderLeftWidth: 3, borderLeftColor: Colors.gold },
-  mazelTovBadge: { flexDirection: "row", backgroundColor: Colors.goldOpacity15, alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, marginBottom: 8 },
-  mazelTovBadgeText: { fontSize: 12, color: Colors.navy, fontWeight: "500" },
-  cardTitle: { fontSize: 15, fontWeight: "600", color: Colors.navy, marginBottom: 6 },
-  cardContent: { fontSize: 14, color: Colors.navyOpacity70, lineHeight: 20 },
+  announcementCard: {
+    backgroundColor: Colors.white, borderRadius: 12, overflow: "hidden",
+    borderWidth: 1, borderColor: Colors.goldOpacity30,
+    shadowColor: Colors.black, shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08, shadowRadius: 8, elevation: 2,
+  },
+  announcementAccent: { height: 4, width: "100%" },
+  announcementBody: { padding: 16 },
+  announcementIconRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 8 },
+  announcementIconBadge: {
+    width: 40, height: 40, borderRadius: 8,
+    alignItems: "center", justifyContent: "center",
+  },
+  announcementTitle: {
+    flex: 1, fontSize: 17, fontWeight: "600", color: Colors.navy,
+    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+  },
+  announcementContent: { fontSize: 14, color: Colors.navyOpacity70, lineHeight: 20 },
   eventCard: { flexDirection: "row", backgroundColor: Colors.white, borderRadius: 12, padding: 14, gap: 14, shadowColor: Colors.black, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
   eventDateBadge: { width: 52, height: 52, borderRadius: 8, backgroundColor: Colors.navy, alignItems: "center", justifyContent: "center" },
   eventMonth: { color: Colors.gold, fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },

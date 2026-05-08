@@ -172,13 +172,13 @@ export default function ShiurimScreen() {
                 <Text style={styles.progressText}>Downloading {Math.round(dlPct * 100)}%</Text>
               )}
               {!downloading && hasProgress && !completed && (
-                <Text style={styles.progressText}>{pct}% · {formatRemainingMin(saved!.positionMs, saved!.durationMs)}</Text>
+                <Text style={styles.progressText}>{formatRemainingMin(saved!.positionMs, saved!.durationMs)}</Text>
               )}
               {!downloading && completed && <Text style={styles.completedText}>Completed</Text>}
             </View>
           </View>
           <YtcFocusable onPress={() => toggleSaved(item.id)} hitSlop={8} style={styles.downloadBtn} focusRadius={16}>
-            <Ionicons name={saved2 ? "heart" : "heart-outline"} size={20} color={saved2 ? Colors.gold : Colors.navyOpacity70} />
+            <Ionicons name={saved2 ? "bookmark" : "bookmark-outline"} size={20} color={saved2 ? Colors.gold : Colors.navyOpacity70} />
           </YtcFocusable>
           {item.audioUrl && (
             <YtcFocusable onPress={onDownloadPress} hitSlop={8} style={styles.downloadBtn} focusRadius={16}>
@@ -221,7 +221,7 @@ export default function ShiurimScreen() {
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Shiurim</Text>
-        <Text style={styles.headerSubtitle}>Torah lectures from our Rebbeim</Text>
+        <Text style={styles.headerSubtitle}>Browse and listen to Torah shiurim from our Rebbeim</Text>
       </View>
 
       <View style={styles.searchRow}>
@@ -241,7 +241,7 @@ export default function ShiurimScreen() {
           onPress={() => setShowSavedOnly((v) => !v)}
           focusRadius={16}
         >
-          <Ionicons name={showSavedOnly ? "heart" : "heart-outline"} size={14} color={showSavedOnly ? Colors.cream : Colors.navy} />
+          <Ionicons name={showSavedOnly ? "bookmark" : "bookmark-outline"} size={14} color={showSavedOnly ? Colors.cream : Colors.navy} />
           <Text style={[styles.quickChipText, showSavedOnly && styles.quickChipTextActive]}>Saved</Text>
         </YtcFocusable>
         <YtcFocusable
@@ -249,7 +249,7 @@ export default function ShiurimScreen() {
           onPress={() => setShowInProgressOnly((v) => !v)}
           focusRadius={16}
         >
-          <Ionicons name={showInProgressOnly ? "play-circle" : "play-circle-outline"} size={14} color={showInProgressOnly ? Colors.cream : Colors.navy} />
+          <Ionicons name={showInProgressOnly ? "time" : "time-outline"} size={14} color={showInProgressOnly ? Colors.cream : Colors.navy} />
           <Text style={[styles.quickChipText, showInProgressOnly && styles.quickChipTextActive]}>In progress</Text>
         </YtcFocusable>
       </View>

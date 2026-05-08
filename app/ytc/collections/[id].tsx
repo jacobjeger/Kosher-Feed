@@ -135,7 +135,7 @@ export default function CollectionDetailScreen() {
               <Text style={styles.progressText}>Downloading {Math.round(dlPct * 100)}%</Text>
             )}
             {!downloading && hasProgress && !completed && (
-              <Text style={styles.progressText}>{pct}% · {formatRemainingMin(saved!.positionMs, saved!.durationMs)}</Text>
+              <Text style={styles.progressText}>{formatRemainingMin(saved!.positionMs, saved!.durationMs)}</Text>
             )}
             {!downloading && completed && <Text style={styles.completedText}>Completed</Text>}
           </View>

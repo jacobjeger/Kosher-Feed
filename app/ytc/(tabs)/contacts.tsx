@@ -133,7 +133,9 @@ export default function ContactsScreen() {
             <View style={styles.rebbeCard}>
               {rebbe.photoUrl
                 ? <Image source={{ uri: rebbe.photoUrl }} style={styles.rebbePhoto} contentFit="cover" cachePolicy="memory-disk" recyclingKey={rebbe.id} transition={150} />
-                : <View style={styles.rebbePhotoPlaceholder}><Text style={styles.rebbeInitial}>{rebbe.name[0]}</Text></View>}
+                : <View style={styles.rebbePhotoPlaceholder}>
+                    <Ionicons name="person-outline" size={28} color={Colors.gold} />
+                  </View>}
               <View style={styles.rebbeInfo}>
                 <Text style={styles.rebbeName}>{rebbe.name}</Text>
                 <Text style={styles.rebbeTitle}>{rebbe.title}</Text>
@@ -187,7 +189,7 @@ export default function ContactsScreen() {
                         <Text style={styles.alumniName}>{contact.name}</Text>
                         {isMine && <View style={styles.youBadge}><Text style={styles.youBadgeText}>You</Text></View>}
                       </View>
-                      {contact.location && <Text style={styles.alumniLocation}>📍 {contact.location}</Text>}
+                      {contact.location && <Text style={styles.alumniLocation}>{contact.location}</Text>}
                     </View>
                     <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={16} color={Colors.navyOpacity50} />
                   </View>
@@ -256,8 +258,8 @@ const styles = StyleSheet.create({
   loader: { flex: 1, justifyContent: "center", alignItems: "center" },
   listContent: { padding: 12, paddingBottom: 120 },
   searchRow: { paddingHorizontal: 12, paddingBottom: 8 },
-  searchBox: { flexDirection: "row", alignItems: "center", backgroundColor: Colors.white, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: Colors.creamDark },
-  searchInput: { flex: 1, fontSize: 15, color: Colors.navy },
+  searchBox: { flexDirection: "row", alignItems: "center", backgroundColor: Colors.white, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: Colors.creamDark },
+  searchInput: { flex: 1, fontSize: 14, color: Colors.navy, paddingVertical: 0 },
   rebbeCard: { flexDirection: "row", backgroundColor: Colors.white, borderRadius: 14, padding: 16, marginBottom: 10, gap: 14, shadowColor: Colors.black, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
   rebbePhoto: { width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.creamDark },
   rebbePhotoPlaceholder: { width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.navy, alignItems: "center", justifyContent: "center" },
