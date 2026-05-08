@@ -57,6 +57,51 @@ async function getMessaging() {
   }
 }
 
+// react-native-firebase v22 migrated from the namespaced
+// `messaging().subscribeToTopic(t)` to the Firebase Web modular API
+// `subscribeToTopic(getMessaging(), t)`. The old form still works but
+// logs a deprecation warning every call. This helper resolves the
+// modular bag once per call (cheap — just property reads), and falls
+// back to the namespaced shim if the package version doesn't yet
+// export the modular helpers.
+async function getModular() {
+  const mod = await getMessaging();
+  if (!mod) return null;
+  const m: any = mod;
+  const def: any = m.default ?? m;
+  // Modular exports — present on v22+.
+  const getMessagingFn = m.getMessaging ?? def.getMessaging;
+  const subscribeToTopic = m.subscribeToTopic ?? def.subscribeToTopic;
+  const unsubscribeFromTopic = m.unsubscribeFromTopic ?? def.unsubscribeFromTopic;
+  const requestPermission = m.requestPermission ?? def.requestPermission;
+  // Namespaced fallback — call as `def()` to get the messaging instance
+  // and use its methods. Used when modular helpers aren't found.
+  if (getMessagingFn && subscribeToTopic && unsubscribeFromTopic && requestPermission) {
+    let instance: any = null;
+    try { instance = getMessagingFn(); } catch {}
+    return {
+      modular: true as const,
+      instance,
+      subscribeToTopic,
+      unsubscribeFromTopic,
+      requestPermission,
+      // App reference used by isYtcPushConfigured to read projectId.
+      app: instance?.app ?? null,
+    };
+  }
+  // Last-resort namespaced API.
+  let instance: any = null;
+  try { instance = def(); } catch {}
+  return {
+    modular: false as const,
+    instance,
+    subscribeToTopic: (_inst: any, t: string) => instance.subscribeToTopic(t),
+    unsubscribeFromTopic: (_inst: any, t: string) => instance.unsubscribeFromTopic(t),
+    requestPermission: (_inst: any) => instance.requestPermission(),
+    app: instance?.app ?? null,
+  };
+}
+
 const YTC_PROJECT_ID = "toras-chaim-shiurim";
 
 // Master kill-switch — true ONLY for builds where we know
@@ -106,14 +151,10 @@ export function rebbeTopic(name: string): string {
 export async function isYtcPushConfigured(): Promise<boolean> {
   if (!YTC_PUSH_FEATURE_ENABLED) return false;
   if (Platform.OS !== "android") return false;
-  const mod = await getMessaging();
-  if (!mod) return false;
+  const m = await getModular();
+  if (!m) return false;
   try {
-    const messaging = mod.default ?? (mod as any).messaging ?? mod;
-    // RN Firebase exposes app config via firebase.app().options.projectId.
-    // We try the messaging instance's app first (simpler), then fall back.
-    const app = (messaging as any)().app;
-    const projectId = app?.options?.projectId;
+    const projectId = m.app?.options?.projectId;
     return projectId === YTC_PROJECT_ID;
   } catch (e: any) {
     addLog("warn", `isYtcPushConfigured check failed: ${e?.message || e}`, undefined, "ytc-push");
@@ -135,18 +176,16 @@ async function withRetry<T>(fn: () => Promise<T>, max = 3): Promise<T> {
 }
 
 async function rawSubscribe(topic: string): Promise<void> {
-  const mod = await getMessaging();
-  if (!mod) return;
-  const messaging = mod.default ?? (mod as any).messaging ?? mod;
-  await withRetry(() => (messaging as any)().subscribeToTopic(topic));
+  const m = await getModular();
+  if (!m) return;
+  await withRetry(() => m.subscribeToTopic(m.instance, topic));
   addLog("info", `YTC push: subscribed to ${topic}`, undefined, "ytc-push");
 }
 
 async function rawUnsubscribe(topic: string): Promise<void> {
-  const mod = await getMessaging();
-  if (!mod) return;
-  const messaging = mod.default ?? (mod as any).messaging ?? mod;
-  await withRetry(() => (messaging as any)().unsubscribeFromTopic(topic));
+  const m = await getModular();
+  if (!m) return;
+  await withRetry(() => m.unsubscribeFromTopic(m.instance, topic));
   addLog("info", `YTC push: unsubscribed from ${topic}`, undefined, "ytc-push");
 }
 
@@ -268,11 +307,10 @@ export async function teardownYtcPush(): Promise<void> {
 
 export async function requestNotificationPermission(): Promise<"granted" | "denied" | "unknown"> {
   if (Platform.OS !== "android") return "unknown";
-  const mod = await getMessaging();
-  if (!mod) return "unknown";
+  const m = await getModular();
+  if (!m) return "unknown";
   try {
-    const messaging = mod.default ?? (mod as any).messaging ?? mod;
-    const status = await (messaging as any)().requestPermission();
+    const status = await m.requestPermission(m.instance);
     if (status === 1 /* AUTHORIZED */ || status === 2 /* PROVISIONAL */) return "granted";
     return "denied";
   } catch { return "unknown"; }

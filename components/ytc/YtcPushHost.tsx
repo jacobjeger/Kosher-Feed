@@ -55,29 +55,50 @@ export function YtcPushHost() {
 
       // Lazy import — module load shouldn't block YTC mount, and we
       // tolerate the package being unavailable.
-      let messaging: any;
+      //
+      // v22 migration: react-native-firebase deprecated the namespaced
+      // `messaging().onMessage(...)` style in favor of the Firebase Web
+      // modular API: `onMessage(getMessaging(), handler)`. The old
+      // signature still works but logs a warning per call. Pull the
+      // modular helpers off the module exports.
+      let mod: any;
       try {
-        const mod = require("@react-native-firebase/messaging");
-        messaging = mod.default ?? mod.messaging ?? mod;
+        mod = require("@react-native-firebase/messaging");
       } catch (e: any) {
         addLog("warn", `RN Firebase messaging unavailable: ${e?.message || e}`, undefined, "ytc-push");
         return;
       }
+      const getMessaging = mod.getMessaging ?? mod.default?.getMessaging;
+      const onMessage = mod.onMessage ?? mod.default?.onMessage;
+      const onNotificationOpenedApp = mod.onNotificationOpenedApp ?? mod.default?.onNotificationOpenedApp;
+      const getInitialNotification = mod.getInitialNotification ?? mod.default?.getInitialNotification;
+      // Fall back to the old namespaced API if this APK ships an older
+      // native package that doesn't yet export the modular helpers.
+      // Don't crash either way.
+      const messagingInstance = (() => {
+        try { return getMessaging ? getMessaging() : null; } catch { return null; }
+      })();
 
       // Cold-start tap: read once.
       if (!consumedInitialRef.current) {
         consumedInitialRef.current = true;
         try {
-          const initial = await messaging().getInitialNotification();
+          const initial = messagingInstance && getInitialNotification
+            ? await getInitialNotification(messagingInstance)
+            : await (mod.default ?? mod)().getInitialNotification();
           if (initial?.data) consumeYtcNotification(initial.data).catch(() => {});
         } catch {}
       }
 
       // Warm taps.
       try {
-        const off = messaging().onNotificationOpenedApp((m: any) => {
-          if (m?.data) consumeYtcNotification(m.data).catch(() => {});
-        });
+        const off = messagingInstance && onNotificationOpenedApp
+          ? onNotificationOpenedApp(messagingInstance, (m: any) => {
+              if (m?.data) consumeYtcNotification(m.data).catch(() => {});
+            })
+          : (mod.default ?? mod)().onNotificationOpenedApp((m: any) => {
+              if (m?.data) consumeYtcNotification(m.data).catch(() => {});
+            });
         cleanup.push(() => off?.());
       } catch {}
 
@@ -85,7 +106,7 @@ export function YtcPushHost() {
       // the user actually sees them while in-app. expo-notifications
       // handles the channel routing.
       try {
-        const off = messaging().onMessage(async (m: any) => {
+        const handler = async (m: any) => {
           try {
             const title = m?.notification?.title ?? "YTC";
             const body = m?.notification?.body ?? "";
@@ -97,7 +118,10 @@ export function YtcPushHost() {
               trigger: { channelId: CHANNEL_ID } as any,
             });
           } catch {}
-        });
+        };
+        const off = messagingInstance && onMessage
+          ? onMessage(messagingInstance, handler)
+          : (mod.default ?? mod)().onMessage(handler);
         cleanup.push(() => off?.());
       } catch {}
     })();
