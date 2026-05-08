@@ -78,6 +78,10 @@ function RootLayoutNav({ initialRoute }: { initialRoute: string }) {
            to — expo-router does not import their components at app
            start, so non-YTC users pay zero runtime cost. */}
       <Stack.Screen name="ytc-unlock" options={{ headerShown: false, presentation: "modal", animation: "slide_from_bottom" }} />
+      {/* contentStyle bg stays cream — the YtcThemeProvider's
+           <YtcRootBg> wrapper inside paints the actual surface based
+           on theme. This is just a fallback during the modal slide
+           before the inner provider mounts. */}
       <Stack.Screen name="ytc" options={{ headerShown: false, presentation: "fullScreenModal", animation: "slide_from_bottom", contentStyle: { backgroundColor: "#faf8f3" } }} />
       <Stack.Screen
         name="podcast/[id]"

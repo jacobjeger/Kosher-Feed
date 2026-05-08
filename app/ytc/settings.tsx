@@ -19,7 +19,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { ytcColors as Colors } from "@/constants/ytcColors";
+import { ytcColors as StaticColors } from "@/constants/ytcColors";
+import { useYtcColors, makeYtcStyles } from "@/contexts/YtcThemeContext";
 import {
   getYtcDownloadSettings, setYtcDownloadSettings, listAllRebbeim,
   runYtcAutoDownload, getYtcDownloads, deleteAllYtcDownloads,
@@ -33,6 +34,7 @@ import {
   YTC_PUSH_FEATURE_ENABLED,
   type DefaultTopic,
 } from "@/lib/ytc/push";
+import { useYtcTheme, type YtcThemeMode } from "@/contexts/YtcThemeContext";
 
 const MAX_ITEM_OPTIONS: { label: string; value: number }[] = [
   { label: "50",        value: 50 },
@@ -53,6 +55,12 @@ const AUTO_DELETE_OPTIONS: { label: string; value: number }[] = [
 
 export default function YtcSettingsScreen() {
   const downloadsCtx = useDownloads();
+  const { mode: themeMode, setMode: setThemeMode } = useYtcTheme();
+  // Theme-aware palette for backgrounds + body text. Static `StaticColors`
+  // is still used for icon tints / brand-color references that shouldn't
+  // change with theme.
+  const Colors = useYtcColors();
+  const styles = useStyles();
   const [settings, setSettings] = useState<YtcDownloadSettings | null>(null);
   const [rebbeim, setRebbeim] = useState<string[]>([]);
   const [rebbeimLoading, setRebbeimLoading] = useState(true);
@@ -173,6 +181,31 @@ export default function YtcSettingsScreen() {
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 80 }}>
+
+        <Text style={styles.sectionTitle}>Appearance</Text>
+        <View style={styles.card}>
+          <View style={styles.rowChips}>
+            {([
+              ["light", "Light"],
+              ["dark", "Dark"],
+              ["system", "System"],
+            ] as Array<[YtcThemeMode, string]>).map(([m, label]) => {
+              const active = themeMode === m;
+              return (
+                <TouchableOpacity
+                  key={m}
+                  style={[styles.chip, active && styles.chipActive]}
+                  onPress={() => setThemeMode(m)}
+                >
+                  <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={styles.rowSubtitle}>
+            Light keeps the cream + navy palette. Dark switches to a navy background with cream text. System follows your phone's setting.
+          </Text>
+        </View>
 
         {YTC_PUSH_FEATURE_ENABLED && (
           <>
@@ -396,55 +429,57 @@ export default function YtcSettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.cream },
+// Theme-parameterized styles — flip cleanly between light + dark.
+// `C` is the active palette (light or dark variant of ytcColors).
+const useStyles = makeYtcStyles((C) => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: C.bg },
   loader: { flex: 1, alignItems: "center", justifyContent: "center" },
   header: {
-    backgroundColor: Colors.navy, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10,
+    backgroundColor: C.navy, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10,
     alignItems: "center",
   },
-  headerTitle: { color: Colors.cream, fontSize: 16, fontWeight: "600", fontFamily: Platform.OS === "ios" ? "Georgia" : "serif" },
+  headerTitle: { color: C.cream, fontSize: 16, fontWeight: "600", fontFamily: Platform.OS === "ios" ? "Georgia" : "serif" },
   scroll: { flex: 1 },
   sectionTitle: {
-    fontSize: 12, fontWeight: "600", color: Colors.navyOpacity70, textTransform: "uppercase",
+    fontSize: 12, fontWeight: "600", color: C.textMuted, textTransform: "uppercase",
     letterSpacing: 0.8, paddingHorizontal: 16, paddingTop: 18, paddingBottom: 6,
   },
   card: {
-    backgroundColor: Colors.white, marginHorizontal: 12, borderRadius: 12, overflow: "hidden",
-    shadowColor: Colors.black, shadowOffset: { width: 0, height: 1 },
+    backgroundColor: C.surface, marginHorizontal: 12, borderRadius: 12, overflow: "hidden",
+    shadowColor: StaticColors.black, shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04, shadowRadius: 3, elevation: 1,
   },
   row: {
     flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.creamDark, gap: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border, gap: 10,
   },
-  rowTitle: { fontSize: 14, color: Colors.navy, fontWeight: "500" },
-  rowSubtitle: { fontSize: 12, color: Colors.navyOpacity70, marginTop: 2, paddingHorizontal: 14, paddingBottom: 10 },
-  rowSubtitleInline: { fontSize: 12, color: Colors.navyOpacity70, marginTop: 2 },
+  rowTitle: { fontSize: 14, color: C.text, fontWeight: "500" },
+  rowSubtitle: { fontSize: 12, color: C.textMuted, marginTop: 2, paddingHorizontal: 14, paddingBottom: 10 },
+  rowSubtitleInline: { fontSize: 12, color: C.textMuted, marginTop: 2 },
   warnCard: {
     flexDirection: "row", gap: 8, alignItems: "flex-start",
     marginHorizontal: 12, padding: 12, borderRadius: 10,
     backgroundColor: "rgba(220, 38, 38, 0.08)",
     borderWidth: 1, borderColor: "rgba(220, 38, 38, 0.2)",
   },
-  warnText: { flex: 1, fontSize: 12, color: Colors.navy, lineHeight: 17 },
-  rowValue: { fontSize: 14, color: Colors.navy, fontWeight: "600" },
+  warnText: { flex: 1, fontSize: 12, color: C.text, lineHeight: 17 },
+  rowValue: { fontSize: 14, color: C.text, fontWeight: "600" },
   rowChips: { flexDirection: "row", gap: 8, padding: 12, flexWrap: "wrap" },
-  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: Colors.creamDark },
-  chipActive: { backgroundColor: Colors.navy },
-  chipText: { fontSize: 13, color: Colors.navy, fontWeight: "500" },
-  chipTextActive: { color: Colors.cream },
+  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: C.surfaceAlt },
+  chipActive: { backgroundColor: C.navy },
+  chipText: { fontSize: 13, color: C.text, fontWeight: "500" },
+  chipTextActive: { color: C.cream },
   runBtn: {
-    margin: 12, paddingVertical: 12, borderRadius: 10, backgroundColor: Colors.navy,
+    margin: 12, paddingVertical: 12, borderRadius: 10, backgroundColor: C.navy,
     alignItems: "center", justifyContent: "center",
   },
   runBtnDisabled: { opacity: 0.5 },
-  runBtnText: { color: Colors.cream, fontSize: 14, fontWeight: "600" },
+  runBtnText: { color: C.cream, fontSize: 14, fontWeight: "600" },
   deleteAllBtn: {
     marginHorizontal: 12, marginBottom: 12, paddingVertical: 12, borderRadius: 10,
-    backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.error,
+    backgroundColor: C.surface, borderWidth: 1, borderColor: C.error,
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
   },
-  deleteAllBtnText: { color: Colors.error, fontSize: 14, fontWeight: "600" },
-  emptyText: { fontSize: 13, color: Colors.navyOpacity70, padding: 16 },
-});
+  deleteAllBtnText: { color: C.error, fontSize: 14, fontWeight: "600" },
+  emptyText: { fontSize: 13, color: C.textMuted, padding: 16 },
+}));

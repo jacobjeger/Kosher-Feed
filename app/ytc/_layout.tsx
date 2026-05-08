@@ -19,6 +19,7 @@ import { View, ActivityIndicator, Pressable, Platform, Text } from "react-native
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { YtcAuthProvider, useYtcAuth } from "@/contexts/YtcAuthContext";
+import { YtcThemeProvider, useYtcColors } from "@/contexts/YtcThemeContext";
 import { ytcColors } from "@/constants/ytcColors";
 import { lightHaptic } from "@/lib/haptics";
 import { YtcAnalyticsObserver } from "@/components/YtcAnalyticsObserver";
@@ -123,14 +124,23 @@ function YtcGate() {
   );
 }
 
+function YtcRootBg({ children }: { children: React.ReactNode }) {
+  // Reads the active palette so the root background swaps with the
+  // user's theme choice. Must be inside YtcThemeProvider.
+  const colors = useYtcColors();
+  return <View style={{ flex: 1, backgroundColor: colors.bg }}>{children}</View>;
+}
+
 export default function YtcRootLayout() {
   return (
-    <View style={{ flex: 1, backgroundColor: ytcColors.cream }}>
-      <YtcErrorBoundary>
-        <YtcAuthProvider>
-          <YtcGate />
-        </YtcAuthProvider>
-      </YtcErrorBoundary>
-    </View>
+    <YtcThemeProvider>
+      <YtcRootBg>
+        <YtcErrorBoundary>
+          <YtcAuthProvider>
+            <YtcGate />
+          </YtcAuthProvider>
+        </YtcErrorBoundary>
+      </YtcRootBg>
+    </YtcThemeProvider>
   );
 }

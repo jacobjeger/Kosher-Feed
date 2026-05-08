@@ -9,23 +9,29 @@
 // muted variants; tabs aren't disabled.
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { ytcColors as Colors } from "@/constants/ytcColors";
+import { useYtcColors, useYtcTheme } from "@/contexts/YtcThemeContext";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { isYtcEpisodeId } from "@/lib/ytc/audio-adapter";
 
 export default function TabLayout() {
   const { currentEpisode, playback } = useAudioPlayer();
+  const Colors = useYtcColors();
+  const { resolved } = useYtcTheme();
+  const isDark = resolved === "dark";
   const ytcAudioActive =
     !!currentEpisode && isYtcEpisodeId(currentEpisode.id) && !!playback.isPlaying;
+  // Tab bar surface colors flip with theme + further dim when audio is playing.
+  const baseBg = isDark ? Colors.surface : "#FFFFFF";
+  const playingBg = Colors.surfaceAlt;
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: ytcAudioActive ? Colors.goldOpacity30 : Colors.gold,
-        tabBarInactiveTintColor: ytcAudioActive ? Colors.navyOpacity30 : Colors.navyOpacity50,
+        tabBarInactiveTintColor: ytcAudioActive ? Colors.navyOpacity30 : (isDark ? Colors.textFaint : Colors.navyOpacity50),
         tabBarStyle: {
-          backgroundColor: ytcAudioActive ? Colors.creamDark : Colors.white,
-          borderTopColor: Colors.creamDark,
+          backgroundColor: ytcAudioActive ? playingBg : baseBg,
+          borderTopColor: Colors.border,
           borderTopWidth: 1,
           height: 56,
           paddingBottom: 6,
