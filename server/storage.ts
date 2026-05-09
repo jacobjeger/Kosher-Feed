@@ -3383,12 +3383,20 @@ export async function getYtcUnlockStats(): Promise<YtcUnlockStats> {
   // older is an existing user.
   const NEW_USER_WINDOW_MS = 60 * 60 * 1000;
 
+  // node-postgres' db.execute(sql`...`) returns a QueryResult
+  // ({ rows, rowCount, ... }) — NOT a row array. So we can't
+  // array-destructure it like the structured-builder results. Each
+  // execute() result is captured as a single variable below and we
+  // pull `.rows` off of it before mapping. Mixing the two destructure
+  // styles (a previous version did `[newCounts] = ...`) was the cause
+  // of the "Something went wrong" admin error — `newCounts` was the
+  // QueryResult object's first key (`command`), not a data row.
   const [
     [total], [r24], [r7], [r30], [uDev30],
     dailyRows,
     deviceModels, platforms, osVersions, appVersions, countries, cities,
     recentRows,
-    [newCounts],
+    newCountsResult,
   ] = await Promise.all([
     db.select({ count: count() }).from(ytcUnlocks),
     db.select({ count: count() }).from(ytcUnlocks).where(sql`${ytcUnlocks.createdAt} > ${h24}`),
@@ -3409,50 +3417,55 @@ export async function getYtcUnlockStats(): Promise<YtcUnlockStats> {
     // Device-profile breakdowns. Each row is one DEVICE (DISTINCT
     // deviceId) that's unlocked YTC at least once, joined to its
     // profile row to get the human-readable attribute.
+    // Raw table names (NOT ${ytcUnlocks}/${deviceProfiles} interpolation)
+    // — Drizzle's sql template handles bare identifiers cleanly when
+    // the column references include the table aliases. Mixing the
+    // ${tableSchema} interpolation form caused the queries to throw
+    // server-side, surfacing as the generic admin "Something went wrong".
     db.execute(sql`
       SELECT COALESCE(dp.device_model, 'Unknown') AS model, COUNT(DISTINCT u.device_id)::int AS count
-      FROM ${ytcUnlocks} u
-      LEFT JOIN ${deviceProfiles} dp ON dp.device_id = u.device_id
+      FROM ytc_unlocks u
+      LEFT JOIN device_profiles dp ON dp.device_id = u.device_id
       WHERE u.device_id IS NOT NULL
       GROUP BY COALESCE(dp.device_model, 'Unknown')
       ORDER BY count DESC LIMIT 12
     `),
     db.execute(sql`
       SELECT COALESCE(NULLIF(u.platform, ''), dp.platform, 'Unknown') AS platform, COUNT(DISTINCT u.device_id)::int AS count
-      FROM ${ytcUnlocks} u
-      LEFT JOIN ${deviceProfiles} dp ON dp.device_id = u.device_id
+      FROM ytc_unlocks u
+      LEFT JOIN device_profiles dp ON dp.device_id = u.device_id
       WHERE u.device_id IS NOT NULL
       GROUP BY COALESCE(NULLIF(u.platform, ''), dp.platform, 'Unknown')
       ORDER BY count DESC
     `),
     db.execute(sql`
       SELECT COALESCE(dp.os_version, 'Unknown') AS "osVersion", COUNT(DISTINCT u.device_id)::int AS count
-      FROM ${ytcUnlocks} u
-      LEFT JOIN ${deviceProfiles} dp ON dp.device_id = u.device_id
+      FROM ytc_unlocks u
+      LEFT JOIN device_profiles dp ON dp.device_id = u.device_id
       WHERE u.device_id IS NOT NULL
       GROUP BY COALESCE(dp.os_version, 'Unknown')
       ORDER BY count DESC LIMIT 10
     `),
     db.execute(sql`
       SELECT COALESCE(NULLIF(u.app_version, ''), dp.app_version, 'Unknown') AS "appVersion", COUNT(DISTINCT u.device_id)::int AS count
-      FROM ${ytcUnlocks} u
-      LEFT JOIN ${deviceProfiles} dp ON dp.device_id = u.device_id
+      FROM ytc_unlocks u
+      LEFT JOIN device_profiles dp ON dp.device_id = u.device_id
       WHERE u.device_id IS NOT NULL
       GROUP BY COALESCE(NULLIF(u.app_version, ''), dp.app_version, 'Unknown')
       ORDER BY count DESC LIMIT 10
     `),
     db.execute(sql`
       SELECT COALESCE(dp.country, 'Unknown') AS country, COUNT(DISTINCT u.device_id)::int AS count
-      FROM ${ytcUnlocks} u
-      LEFT JOIN ${deviceProfiles} dp ON dp.device_id = u.device_id
+      FROM ytc_unlocks u
+      LEFT JOIN device_profiles dp ON dp.device_id = u.device_id
       WHERE u.device_id IS NOT NULL
       GROUP BY COALESCE(dp.country, 'Unknown')
       ORDER BY count DESC LIMIT 10
     `),
     db.execute(sql`
       SELECT COALESCE(dp.city, 'Unknown') AS city, COUNT(DISTINCT u.device_id)::int AS count
-      FROM ${ytcUnlocks} u
-      LEFT JOIN ${deviceProfiles} dp ON dp.device_id = u.device_id
+      FROM ytc_unlocks u
+      LEFT JOIN device_profiles dp ON dp.device_id = u.device_id
       WHERE u.device_id IS NOT NULL
       GROUP BY COALESCE(dp.city, 'Unknown')
       ORDER BY count DESC LIMIT 10
@@ -3478,8 +3491,8 @@ export async function getYtcUnlockStats(): Promise<YtcUnlockStats> {
           WHEN u.created_at - dp.created_at < INTERVAL '1 hour' THEN 'new'
           ELSE 'existing'
         END AS "userKind"
-      FROM ${ytcUnlocks} u
-      LEFT JOIN ${deviceProfiles} dp ON dp.device_id = u.device_id
+      FROM ytc_unlocks u
+      LEFT JOIN device_profiles dp ON dp.device_id = u.device_id
       ORDER BY u.created_at DESC
       LIMIT 30
     `),
@@ -3491,7 +3504,7 @@ export async function getYtcUnlockStats(): Promise<YtcUnlockStats> {
     db.execute(sql`
       WITH first_unlock AS (
         SELECT u.device_id, MIN(u.created_at) AS first_at
-        FROM ${ytcUnlocks} u
+        FROM ytc_unlocks u
         WHERE u.device_id IS NOT NULL
         GROUP BY u.device_id
       )
@@ -3500,7 +3513,7 @@ export async function getYtcUnlockStats(): Promise<YtcUnlockStats> {
         COUNT(*) FILTER (WHERE dp.created_at IS NOT NULL AND fu.first_at - dp.created_at >= INTERVAL '1 hour')::int AS "existingUsers",
         COUNT(*) FILTER (WHERE dp.created_at IS NULL)::int AS unknown
       FROM first_unlock fu
-      LEFT JOIN ${deviceProfiles} dp ON dp.device_id = fu.device_id
+      LEFT JOIN device_profiles dp ON dp.device_id = fu.device_id
     `),
   ]);
 
@@ -3519,9 +3532,10 @@ export async function getYtcUnlockStats(): Promise<YtcUnlockStats> {
     userKind: (r.userKind ?? "unknown") as "new" | "existing" | "unknown",
   }));
 
-  // Drizzle's db.execute returns either { rows: [...] } or the array
-  // directly depending on the driver — handle both.
-  const nc: any = (newCounts as any)?.rows?.[0] ?? (newCounts as any) ?? {};
+  // node-postgres specifically returns a QueryResult — pull the first
+  // row out. Defensively fall back to treating the result as an array
+  // for portability if a future driver swap returns one.
+  const nc: any = (newCountsResult as any)?.rows?.[0] ?? (Array.isArray(newCountsResult) ? newCountsResult[0] : null) ?? {};
 
   return {
     totalUnlocks: Number(total.count),
