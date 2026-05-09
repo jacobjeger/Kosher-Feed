@@ -174,20 +174,10 @@ export default function EventsScreen() {
                   <Text style={styles.emptyText}>No upcoming simchos</Text>
                 </View>
               )}
-              {past.length > 0 && (
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Past Simchos</Text>
-                  <FlatList
-                    data={past.slice(0, PAST_GRID_CAP)}
-                    keyExtractor={(item) => item.id}
-                    renderItem={renderPastTile}
-                    numColumns={2}
-                    columnWrapperStyle={{ gap: PAST_GRID_GUTTER }}
-                    contentContainerStyle={{ gap: PAST_GRID_GUTTER }}
-                    scrollEnabled={false}
-                  />
-                </View>
-              )}
+              {/* Past Simchos section removed per user feedback —
+                   the page now scrolls upcoming directly into the
+                   "Share Your Simcha" form, with no historical list
+                   in between. */}
 
               {/* Inline "Share Your Simcha" form — replaces the old +
                    button modal. Matches the website's events page where

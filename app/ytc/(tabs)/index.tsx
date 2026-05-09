@@ -283,14 +283,24 @@ export default function HomeScreen() {
               <Text style={styles.sectionTitle}>Mazel Tovs & Announcements</Text>
               {(showAllAnnouncements ? announcements : announcements.slice(0, ANNOUNCEMENT_PREVIEW)).map((ann) => {
                 const isMazelTov = ann.type === "mazel_tov";
-                // Strip a redundant "Mazel Tov" prefix from the title
-                // when rendering — many announcements arrive with the
-                // title already worded "Mazel Tov to the Smith family".
-                // Without this we'd render the bold MAZEL TOV label
-                // AND the same words again in the title row.
-                const titleText = isMazelTov
-                  ? ann.title.replace(/^\s*mazel\s*tov\s*[:\-—–]?\s*(to\s+)?/i, "").trim() || ann.title
-                  : ann.title;
+                // Strip a redundant "Mazel Tov" prefix (incl. trailing
+                // "!" / ":" / "—") from the title — many entries are
+                // worded "Mazel Tov!" or "Mazel Tov to the Smith
+                // family" and we don't want to show that twice once
+                // the bold MAZEL TOV label is already on the card.
+                // If stripping leaves only punctuation/whitespace
+                // (e.g. the original title was just "Mazel Tov!"),
+                // we render the label alone with NO title row, instead
+                // of a stray "!" sitting under MAZEL TOV.
+                let titleText: string | null = ann.title;
+                if (isMazelTov) {
+                  const stripped = ann.title
+                    .replace(/^\s*mazel\s*tov\s*[!:\-—–]*\s*(to\s+)?/i, "")
+                    .replace(/^[!:.\-—–\s]+/, "")
+                    .trim();
+                  // Empty / punctuation-only after strip → don't show.
+                  titleText = stripped.length > 0 ? stripped : null;
+                }
                 return (
                   // Slim card — top gold/navy accent strip removed per
                   // user feedback ("make mazel tovs even thinner"). The
@@ -312,7 +322,9 @@ export default function HomeScreen() {
                           {isMazelTov && (
                             <Text style={styles.mazelTovLabel}>Mazel Tov</Text>
                           )}
-                          <Text style={styles.announcementTitle}>{titleText}</Text>
+                          {titleText && (
+                            <Text style={styles.announcementTitle}>{titleText}</Text>
+                          )}
                         </View>
                       </View>
                       <Text style={styles.announcementContent}>{ann.content}</Text>

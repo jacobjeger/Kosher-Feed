@@ -16,6 +16,7 @@
 import React, { useEffect } from "react";
 import { Stack, router } from "expo-router";
 import { View, ActivityIndicator, Pressable, Platform, Text } from "react-native";
+import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { YtcAuthProvider, useYtcAuth } from "@/contexts/YtcAuthContext";
@@ -101,9 +102,38 @@ function YtcGate() {
   }, [user, isApproved, isLoading]);
 
   if (isLoading) {
+    // Branded loading screen — navy backdrop, YTC logo centered with
+    // gold accent rules, gold spinner. Matches the home-screen hero
+    // visual language so the user lands on familiar branding while
+    // Firebase initializes (the cold-start path can take 1-2 seconds
+    // on slow networks).
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: ytcColors.cream }}>
-        <ActivityIndicator size="large" color={ytcColors.gold} />
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: ytcColors.navy, paddingHorizontal: 32 }}>
+        <Image
+          source={require("@/assets/images/ytc-logo.png")}
+          style={{ width: 140, height: 140, marginBottom: 24 }}
+          contentFit="contain"
+        />
+        <Text style={{
+          color: ytcColors.cream,
+          fontSize: 22,
+          fontWeight: "700",
+          textAlign: "center",
+          fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+        }}>
+          Yeshiva Toras Chaim
+        </Text>
+        <View style={{ width: 70, height: 2, backgroundColor: ytcColors.gold, marginVertical: 10, opacity: 0.85 }} />
+        <Text style={{
+          color: ytcColors.gold,
+          fontSize: 12,
+          fontWeight: "700",
+          letterSpacing: 4,
+          textAlign: "center",
+        }}>
+          ALUMNI NETWORK
+        </Text>
+        <ActivityIndicator size="large" color={ytcColors.gold} style={{ marginTop: 28 }} />
         <CloseButton />
       </View>
     );

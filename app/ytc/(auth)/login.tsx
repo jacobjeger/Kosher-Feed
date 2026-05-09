@@ -20,6 +20,7 @@ import {
   Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 import { signInEmailPassword, handleYtcSignup } from "@/lib/ytc/firebase";
 import { ytcColors as Colors } from "@/constants/ytcColors";
 import { YtcFocusable } from "@/components/ytc/YtcFocusable";
@@ -145,8 +146,12 @@ export default function LoginScreen() {
               <Text style={styles.label}>Password <Text style={styles.required}>*</Text></Text>
               <View style={styles.passwordRow}>
                 <TextInput style={[styles.input, { flex: 1 }]} placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry={!showPassword} autoComplete={isSignUp ? "new-password" : "password"} />
-                <TouchableOpacity onPress={() => setShowPassword((v) => !v)} style={styles.eyeBtn}>
-                  <Text style={styles.eyeIcon}>{showPassword ? "🙈" : "👁"}</Text>
+                <TouchableOpacity onPress={() => setShowPassword((v) => !v)} style={styles.eyeBtn} hitSlop={8}>
+                  <Ionicons
+                    name={showPassword ? "eye-off-outline" : "eye-outline"}
+                    size={20}
+                    color={Colors.navyOpacity50}
+                  />
                 </TouchableOpacity>
               </View>
             </View>
@@ -156,8 +161,12 @@ export default function LoginScreen() {
                 <Text style={styles.label}>Confirm Password <Text style={styles.required}>*</Text></Text>
                 <View style={styles.passwordRow}>
                   <TextInput style={[styles.input, { flex: 1 }]} placeholder="Confirm Password" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry={!showConfirmPassword} autoComplete="new-password" />
-                  <TouchableOpacity onPress={() => setShowConfirmPassword((v) => !v)} style={styles.eyeBtn}>
-                    <Text style={styles.eyeIcon}>{showConfirmPassword ? "🙈" : "👁"}</Text>
+                  <TouchableOpacity onPress={() => setShowConfirmPassword((v) => !v)} style={styles.eyeBtn} hitSlop={8}>
+                    <Ionicons
+                      name={showConfirmPassword ? "eye-off-outline" : "eye-outline"}
+                      size={20}
+                      color={Colors.navyOpacity50}
+                    />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -194,8 +203,12 @@ const styles = StyleSheet.create({
   required: { color: Colors.error },
   input: { backgroundColor: Colors.white, borderRadius: 10, borderWidth: 1, borderColor: Colors.goldOpacity30, padding: 14, fontSize: 15, color: Colors.navy },
   passwordRow: { flexDirection: "row", alignItems: "center" },
-  eyeBtn: { padding: 12, marginLeft: -44 },
-  eyeIcon: { fontSize: 18 },
+  // Eye icon overlays the right edge of the password input (negative
+  // marginLeft pulls it back over the input). 44px wide tap target +
+  // 12px padding centers a 20px Ionicon inside the input's vertical
+  // range. Replaces the previous emoji-based 🙈 / 👁 which rendered
+  // inconsistently across Android system fonts.
+  eyeBtn: { padding: 12, marginLeft: -44, alignItems: "center", justifyContent: "center" },
   primaryBtn: { backgroundColor: Colors.navy, borderRadius: 12, paddingVertical: 16, alignItems: "center", marginBottom: 16 },
   primaryBtnDisabled: { opacity: 0.5 },
   primaryBtnText: { color: Colors.cream, fontSize: 16, fontWeight: "600" },
