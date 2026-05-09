@@ -250,10 +250,16 @@ export default function HomeScreen() {
             </YtcFocusable>
           </View>
 
-          {/* Title + subtitle at the bottom, left-aligned. */}
+          {/* Title + subtitle, centered with gold accent rules
+               flanking the subtitle. Matches the user-supplied
+               screenshot: white serif title above, short gold line,
+               uppercase gold "ALUMNI NETWORK" caption with tracking,
+               another short gold line. */}
           <View pointerEvents="none" style={styles.heroContent}>
             <Text style={styles.heroTitle}>Yeshiva Toras Chaim</Text>
-            <Text style={styles.heroSubtitle}>Alumni Network</Text>
+            <View style={styles.heroAccent} />
+            <Text style={styles.heroSubtitle}>ALUMNI NETWORK</Text>
+            <View style={styles.heroAccent} />
           </View>
 
           {/* Page-indicator dots — shown only when there's more than one
@@ -277,6 +283,14 @@ export default function HomeScreen() {
               <Text style={styles.sectionTitle}>Mazel Tovs & Announcements</Text>
               {(showAllAnnouncements ? announcements : announcements.slice(0, ANNOUNCEMENT_PREVIEW)).map((ann) => {
                 const isMazelTov = ann.type === "mazel_tov";
+                // Strip a redundant "Mazel Tov" prefix from the title
+                // when rendering — many announcements arrive with the
+                // title already worded "Mazel Tov to the Smith family".
+                // Without this we'd render the bold MAZEL TOV label
+                // AND the same words again in the title row.
+                const titleText = isMazelTov
+                  ? ann.title.replace(/^\s*mazel\s*tov\s*[:\-—–]?\s*(to\s+)?/i, "").trim() || ann.title
+                  : ann.title;
                 return (
                   // Slim card — top gold/navy accent strip removed per
                   // user feedback ("make mazel tovs even thinner"). The
@@ -298,7 +312,7 @@ export default function HomeScreen() {
                           {isMazelTov && (
                             <Text style={styles.mazelTovLabel}>Mazel Tov</Text>
                           )}
-                          <Text style={styles.announcementTitle}>{ann.title}</Text>
+                          <Text style={styles.announcementTitle}>{titleText}</Text>
                         </View>
                       </View>
                       <Text style={styles.announcementContent}>{ann.content}</Text>
@@ -580,14 +594,24 @@ const styles = StyleSheet.create({
   hero: { width: "100%", height: 280, position: "relative", overflow: "hidden" },
   heroLogoWatermark: { position: "absolute", top: 40, left: 16, width: 70, height: 70, opacity: 0.55 },
   heroProfileWrap: { position: "absolute", top: 46, right: 16 },
-  heroContent: { position: "absolute", left: 20, right: 20, bottom: 24 },
+  // Hero title + caption are now CENTERED and stacked. The two
+  // .heroAccent rules flank the gold caption.
+  heroContent: {
+    position: "absolute", left: 20, right: 20, bottom: 24,
+    alignItems: "center",
+  },
   heroTitle: {
     color: Colors.cream, fontSize: 30, fontWeight: "700", lineHeight: 36,
+    textAlign: "center",
     fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
   },
+  heroAccent: {
+    width: 80, height: 2, backgroundColor: Colors.gold,
+    marginVertical: 8, opacity: 0.85,
+  },
   heroSubtitle: {
-    color: Colors.gold, fontSize: 18, fontWeight: "600", marginTop: 2,
-    fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
+    color: Colors.gold, fontSize: 13, fontWeight: "700",
+    letterSpacing: 4, textAlign: "center",
   },
   // Page-indicator dots for the swipeable hero. Sit centered along
   // the bottom edge above the system gesture area.

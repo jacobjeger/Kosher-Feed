@@ -605,7 +605,11 @@ const ShiurCard = React.memo(function ShiurCardImpl(p: ShiurCardProps) {
           />
         </View>
         <View style={styles.shiurInfo}>
-          <Text style={styles.shiurTitle} numberOfLines={2}>{item.title}</Text>
+          {/* numberOfLines bumped 2 → 3 + lineHeight tightened so
+               longer shiur names ("How To Address Tayvah In A Modern
+               Era For The Yungerman" etc) wrap fully instead of
+               getting cut off with an ellipsis. */}
+          <Text style={styles.shiurTitle} numberOfLines={3}>{item.title}</Text>
           {item.rebbe ? <Text style={styles.shiurRebbe}>{item.rebbe}</Text> : null}
           <View style={styles.shiurDateRow}>
             <Text style={styles.shiurDate}>{formatDate(item.date)}</Text>
@@ -796,8 +800,8 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
   },
   shiurRebbe: {
+    // Italic dropped per user feedback — read better in plain weight.
     fontSize: 12, color: Colors.gold, fontWeight: "600",
-    fontStyle: "italic",
   },
   shiurDateRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 },
   shiurDate: { fontSize: 11, color: Colors.navyOpacity50 },
