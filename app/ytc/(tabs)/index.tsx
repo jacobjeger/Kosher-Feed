@@ -289,7 +289,17 @@ export default function HomeScreen() {
                             ? <PartyPopper size={18} color={Colors.gold} />
                             : <Megaphone size={18} color={Colors.navy} />}
                         </View>
-                        <Text style={styles.announcementTitle}>{ann.title}</Text>
+                        {/* Bold "Mazel Tov" label above the announcement
+                             title for the celebratory variant. The
+                             label is the user-facing category — the
+                             title field beneath holds the family /
+                             event name. */}
+                        <View style={{ flex: 1 }}>
+                          {isMazelTov && (
+                            <Text style={styles.mazelTovLabel}>Mazel Tov</Text>
+                          )}
+                          <Text style={styles.announcementTitle}>{ann.title}</Text>
+                        </View>
                       </View>
                       <Text style={styles.announcementContent}>{ann.content}</Text>
                     </View>
@@ -654,8 +664,16 @@ const styles = StyleSheet.create({
     width: 30, height: 30, borderRadius: 6,
     alignItems: "center", justifyContent: "center",
   },
+  // "Mazel Tov" celebration label that sits above the announcement
+  // title on mazel_tov-type entries. Bold + gold to draw the eye and
+  // clearly signal the card is a celebration rather than a generic
+  // notice (matches the website's mazel-tov treatment).
+  mazelTovLabel: {
+    fontSize: 12, fontWeight: "800", color: Colors.gold,
+    letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 2,
+  },
   announcementTitle: {
-    flex: 1, fontSize: 15, fontWeight: "600", color: Colors.navy,
+    fontSize: 15, fontWeight: "600", color: Colors.navy,
     fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
   },
   announcementContent: { fontSize: 13, color: Colors.navyOpacity70, lineHeight: 18 },

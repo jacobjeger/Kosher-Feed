@@ -355,7 +355,9 @@ export default function ShiurimScreen() {
         )}
       </View>
 
-      {!isLoading && <Text style={styles.countText}>{filtered.length} shiur{filtered.length !== 1 ? "im" : ""}</Text>}
+      {/* "X shiurim" count line removed per user feedback —
+           the chip row above already gives the user filter context,
+           the count was just visual noise above the list. */}
 
       {isLoading ? (
         <View style={styles.loader}><ActivityIndicator size="large" color={Colors.navy} /></View>
@@ -706,7 +708,12 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   headerTitle: {
-    color: Colors.cream, fontSize: 28, fontWeight: "700", letterSpacing: 0.2,
+    // 24pt matches the Swift original (.font(.system(size: 24,
+    // weight: .bold, design: .serif))). On Android, fontFamily="serif"
+    // is Noto Serif which renders awkwardly at larger sizes — letter-
+    // spacing dropped, weight bumped to "800" so the header still
+    // reads strong without the extra tracking.
+    color: Colors.cream, fontSize: 24, fontWeight: "800",
     fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
   },
 

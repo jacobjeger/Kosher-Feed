@@ -19,14 +19,20 @@ import { useYtcColors, useYtcTheme } from "@/contexts/YtcThemeContext";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
 import { isYtcEpisodeId } from "@/lib/ytc/audio-adapter";
 
-// Pill that wraps the active tab's icon. Gold rounded-rect that
-// matches the screenshot — only the active tab's icon gets it.
-function TabIcon({ name, color, size, focused }: { name: any; color: string; size: number; focused: boolean }) {
+// Pill that wraps the active tab's icon. Fixed dimensions so the
+// React Navigation icon container doesn't clip it (the previous
+// attempt used variable padding which expanded the wrap past the
+// icon area's natural width and the icon disappeared on some phones).
+//
+// The wrap is the same width regardless of `focused` — only the
+// background fill changes — so layout doesn't shift when switching
+// tabs. Icon size is locked at 20 for predictability.
+function TabIcon({ name, color, focused }: { name: any; color: string; focused: boolean }) {
   return (
     <View style={[pillStyles.iconWrap, focused && pillStyles.iconWrapActive]}>
       <Ionicons
         name={name}
-        size={size - 2}
+        size={20}
         color={focused ? StaticColors.navy : color}
       />
     </View>
@@ -35,9 +41,9 @@ function TabIcon({ name, color, size, focused }: { name: any; color: string; siz
 
 const pillStyles = StyleSheet.create({
   iconWrap: {
-    paddingHorizontal: 18,
-    paddingVertical: 4,
-    borderRadius: 16,
+    width: 52,
+    height: 28,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -93,8 +99,8 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "Home",
-          tabBarIcon: ({ color, size, focused }) => (
-            <TabIcon name="home" color={color} size={size} focused={focused} />
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon name="home" color={color} focused={focused} />
           ),
         }}
       />
@@ -102,8 +108,8 @@ export default function TabLayout() {
         name="shiurim"
         options={{
           title: "Shiurim",
-          tabBarIcon: ({ color, size, focused }) => (
-            <TabIcon name="headset" color={color} size={size} focused={focused} />
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon name="headset" color={color} focused={focused} />
           ),
         }}
       />
@@ -111,8 +117,8 @@ export default function TabLayout() {
         name="events"
         options={{
           title: "Events",
-          tabBarIcon: ({ color, size, focused }) => (
-            <TabIcon name="calendar" color={color} size={size} focused={focused} />
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon name="calendar" color={color} focused={focused} />
           ),
         }}
       />
@@ -120,8 +126,8 @@ export default function TabLayout() {
         name="contacts"
         options={{
           title: "Contacts",
-          tabBarIcon: ({ color, size, focused }) => (
-            <TabIcon name="people" color={color} size={size} focused={focused} />
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon name="people" color={color} focused={focused} />
           ),
         }}
       />
