@@ -302,14 +302,35 @@
 
       <!-- YTC Alumni: how many ShiurPod users have unlocked the YTC
            section. Populated by /api/admin/analytics/ytc-unlocks which
-           reads from the ytc_unlocks table written by the mobile
-           client's lib/ytc/unlock.ts on every successful tryUnlock(). -->
+           joins the ytc_unlocks table to device_profiles for rich
+           per-device context (model, OS version, country, city,
+           app version, new vs existing ShiurPod user). -->
       <div class="card" style="margin-top:16px;">
         <div class="card-header"><h2>YTC Alumni Unlocks</h2></div>
         <div id="ytcUnlockStats" class="stats" style="margin-bottom:16px;"></div>
+
         <div class="card">
           <div class="card-header"><h2>Daily Unlocks (Last 30 Days)</h2></div>
           <div id="ytcUnlockChart" class="chart-container"></div>
+        </div>
+
+        <!-- Per-device breakdowns — one row per DISTINCT device that's
+             unlocked YTC at least once, joined to device_profiles. -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;">
+          <div id="ytcDeviceModels" style="background:#0f172a;border-radius:10px;padding:14px;"></div>
+          <div id="ytcPlatforms" style="background:#0f172a;border-radius:10px;padding:14px;"></div>
+          <div id="ytcOsVersions" style="background:#0f172a;border-radius:10px;padding:14px;"></div>
+          <div id="ytcAppVersions" style="background:#0f172a;border-radius:10px;padding:14px;"></div>
+          <div id="ytcCountries" style="background:#0f172a;border-radius:10px;padding:14px;"></div>
+          <div id="ytcCities" style="background:#0f172a;border-radius:10px;padding:14px;"></div>
+        </div>
+
+        <!-- Most recent 30 unlocks with full per-device context.
+             Quick spot-check view: who just turned YTC on, on what
+             device, are they new to ShiurPod, etc. -->
+        <div class="card" style="margin-top:16px;">
+          <div class="card-header"><h2>Recent Unlocks</h2></div>
+          <div id="ytcRecentUnlocks" style="overflow-x:auto;"></div>
         </div>
       </div>
     </div>
@@ -4974,31 +4995,98 @@ async function loadWebsiteAnalytics() {
 }
 
 // YTC Alumni Unlocks — answers "how many users have unlocked the YTC
-// section?". Each successful tryUnlock() in the mobile client POSTs to
-// /api/track/ytc-unlock which inserts into the ytc_unlocks table; this
-// reads the aggregated stats off /api/admin/analytics/ytc-unlocks.
+// section, who are they, what devices?". Backend joins ytc_unlocks to
+// device_profiles for the rich per-device context.
 async function loadYtcUnlockStats() {
   try {
     const data = await api('/api/admin/analytics/ytc-unlocks');
+
+    // Headline stat cards — adds new vs existing ShiurPod-user split
+    // (a brand-new install that immediately unlocks YTC vs an
+    // existing user who tried YTC).
+    const nve = data.newVsExisting || { newUsers: 0, existingUsers: 0, unknown: 0 };
     document.getElementById('ytcUnlockStats').innerHTML = `
       <div class="stat-card"><div class="stat-value">${data.totalUnlocks.toLocaleString()}</div><div class="stat-label">Total Unlocks</div></div>
       <div class="stat-card"><div class="stat-value">${data.uniqueDevices30d.toLocaleString()}</div><div class="stat-label">Unique Devices (30d)</div></div>
+      <div class="stat-card"><div class="stat-value" style="color:#d4af37;">${nve.existingUsers.toLocaleString()}</div><div class="stat-label">Existing ShiurPod Users</div></div>
+      <div class="stat-card"><div class="stat-value" style="color:#22c55e;">${nve.newUsers.toLocaleString()}</div><div class="stat-label">New ShiurPod Users</div></div>
       <div class="stat-card"><div class="stat-value">${data.unlocks24h.toLocaleString()}</div><div class="stat-label">Unlocks (24h)</div></div>
       <div class="stat-card"><div class="stat-value">${data.unlocks7d.toLocaleString()}</div><div class="stat-label">Unlocks (7d)</div></div>
       <div class="stat-card"><div class="stat-value">${data.unlocks30d.toLocaleString()}</div><div class="stat-label">Unlocks (30d)</div></div>
     `;
+
+    // Daily-unlock bar chart (gold, brand-matching).
     const chart = document.getElementById('ytcUnlockChart');
     if (data.dailyUnlocks && data.dailyUnlocks.length > 0) {
       const maxCount = Math.max(...data.dailyUnlocks.map(d => d.count), 1);
       const bars = data.dailyUnlocks.map(d => {
         const height = Math.max((d.count / maxCount) * 100, 2);
         const label = new Date(d.day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        // Gold bars to mirror the YTC brand color in the mobile UI.
         return '<div class="chart-bar" style="height:' + height + '%;background:#d4af37;" data-tooltip="' + d.count + ' unlocks on ' + label + '"></div>';
       }).join('');
       chart.innerHTML = '<div class="chart-bar-container">' + bars + '</div>';
     } else {
       chart.innerHTML = '<p style="color:#64748b;text-align:center;padding:40px;">No YTC unlocks yet</p>';
+    }
+
+    // Per-device breakdowns — each row is one DISTINCT deviceId that's
+    // unlocked YTC, joined to device_profiles for the human-readable
+    // attribute. Devices without a matching profile row roll up under
+    // "Unknown" so they don't disappear.
+    function renderYtcBreakdown(containerId, title, items, keyField) {
+      const el = document.getElementById(containerId);
+      if (!items || items.length === 0) {
+        el.innerHTML = '<div style="font-size:14px;font-weight:600;color:#f8fafc;margin-bottom:10px;">' + esc(title) + '</div><p style="color:#64748b;font-size:12px;">No data yet</p>';
+        return;
+      }
+      el.innerHTML = '<div style="font-size:14px;font-weight:600;color:#f8fafc;margin-bottom:10px;">' + esc(title) + '</div>' +
+        items.map(item =>
+          '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;"><span style="color:#94a3b8;">' + esc(String(item[keyField])) + '</span><strong style="color:#e2e8f0;">' + item.count.toLocaleString() + '</strong></div>'
+        ).join('');
+    }
+    renderYtcBreakdown('ytcDeviceModels', 'Device Models', data.byDeviceModel, 'model');
+    renderYtcBreakdown('ytcPlatforms', 'Platforms', data.byPlatform, 'platform');
+    renderYtcBreakdown('ytcOsVersions', 'OS Versions', data.byOsVersion, 'osVersion');
+    renderYtcBreakdown('ytcAppVersions', 'App Versions', data.byAppVersion, 'appVersion');
+    renderYtcBreakdown('ytcCountries', 'Countries', data.byCountry, 'country');
+    renderYtcBreakdown('ytcCities', 'Cities', data.byCity, 'city');
+
+    // Recent unlocks table — shows the per-event detail with one row
+    // per unlock event. user-kind badge is colored: gold = existing
+    // ShiurPod user, green = brand new, gray = unknown (device id
+    // missing or no matching device_profiles row yet).
+    const recentEl = document.getElementById('ytcRecentUnlocks');
+    if (!data.recent || data.recent.length === 0) {
+      recentEl.innerHTML = '<p style="color:#64748b;text-align:center;padding:40px;">No unlocks yet</p>';
+    } else {
+      recentEl.innerHTML = '<table class="feed-table" style="margin-bottom:0;"><thead><tr>' +
+        '<th>When</th>' +
+        '<th>User</th>' +
+        '<th>Device</th>' +
+        '<th>OS</th>' +
+        '<th>App</th>' +
+        '<th>Location</th>' +
+        '<th style="text-align:right;">SP Listens</th>' +
+        '</tr></thead><tbody>' +
+        data.recent.map(r => {
+          const when = new Date(r.unlockedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+          const kindColor = r.userKind === 'new' ? '#22c55e' : (r.userKind === 'existing' ? '#d4af37' : '#64748b');
+          const kindLabel = r.userKind === 'new' ? 'NEW' : (r.userKind === 'existing' ? 'EXISTING' : 'UNKNOWN');
+          const device = [r.deviceModel, r.platform].filter(Boolean).join(' · ') || '—';
+          const os = r.osVersion || '—';
+          const app = r.appVersion || '—';
+          const location = [r.city, r.country].filter(Boolean).join(', ') || (r.ipAddress ? r.ipAddress : '—');
+          return '<tr>' +
+            '<td style="white-space:nowrap;font-size:11px;color:#94a3b8;">' + esc(when) + '</td>' +
+            '<td><span style="background:' + kindColor + ';color:#0f172a;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px;letter-spacing:0.5px;">' + kindLabel + '</span></td>' +
+            '<td style="font-size:12px;color:#e2e8f0;">' + esc(device) + '</td>' +
+            '<td style="font-size:11px;color:#94a3b8;">' + esc(os) + '</td>' +
+            '<td style="font-size:11px;color:#94a3b8;">' + esc(app) + '</td>' +
+            '<td style="font-size:11px;color:#94a3b8;">' + esc(location) + '</td>' +
+            '<td style="text-align:right;font-size:12px;color:#e2e8f0;">' + r.shiurpodListens.toLocaleString() + '</td>' +
+            '</tr>';
+        }).join('') +
+        '</tbody></table>';
     }
   } catch(e) {
     console.error('YTC unlock stats load failed:', e);

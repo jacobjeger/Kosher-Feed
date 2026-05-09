@@ -3334,6 +3334,41 @@ export interface YtcUnlockStats {
   uniqueDevices30d: number;
   /** Per-day unlocks for the last 30 days — admin can render a sparkline. */
   dailyUnlocks: { day: string; count: number }[];
+  /** New ShiurPod user = first unlock fired on a device whose
+   *  device_profiles row was created within 1 hour of the unlock
+   *  event. Existing user = device was using ShiurPod for >1 hour
+   *  before unlocking YTC. Computed PER-DEVICE (so a user who
+   *  unlocks multiple times only counts once on whichever side they
+   *  fall). */
+  newVsExisting: { newUsers: number; existingUsers: number; unknown: number };
+  /** Top device models, platforms, OS versions, app versions,
+   *  countries, cities — joined to device_profiles via deviceId.
+   *  Each row is one DEVICE that has unlocked YTC at least once. */
+  byDeviceModel: { model: string; count: number }[];
+  byPlatform: { platform: string; count: number }[];
+  byOsVersion: { osVersion: string; count: number }[];
+  byAppVersion: { appVersion: string; count: number }[];
+  byCountry: { country: string; count: number }[];
+  byCity: { city: string; count: number }[];
+  /** Most-recent 30 unlocks with the device row joined in. Powers a
+   *  recent-activity table on the admin page so I can spot-check
+   *  who's been turning the feature on. */
+  recent: Array<{
+    unlockedAt: string;
+    deviceId: string | null;
+    platform: string | null;
+    deviceModel: string | null;
+    osVersion: string | null;
+    appVersion: string | null;
+    country: string | null;
+    city: string | null;
+    ipAddress: string | null;
+    /** Total ShiurPod listens this device has logged across all time
+     *  — quick way to gauge engagement before they tried YTC. */
+    shiurpodListens: number;
+    /** "new" | "existing" | "unknown" — see newVsExisting above. */
+    userKind: "new" | "existing" | "unknown";
+  }>;
 }
 
 export async function getYtcUnlockStats(): Promise<YtcUnlockStats> {
@@ -3342,16 +3377,27 @@ export async function getYtcUnlockStats(): Promise<YtcUnlockStats> {
   const d7 = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const d30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-  const [[total], [r24], [r7], [r30], [uDev30], dailyRows] = await Promise.all([
+  // The "new vs existing" cutoff — a device whose profile row was
+  // created within 1h of its first YTC unlock is treated as a brand-
+  // new ShiurPod install that immediately unlocked YTC. Anything
+  // older is an existing user.
+  const NEW_USER_WINDOW_MS = 60 * 60 * 1000;
+
+  const [
+    [total], [r24], [r7], [r30], [uDev30],
+    dailyRows,
+    deviceModels, platforms, osVersions, appVersions, countries, cities,
+    recentRows,
+    [newCounts],
+  ] = await Promise.all([
     db.select({ count: count() }).from(ytcUnlocks),
     db.select({ count: count() }).from(ytcUnlocks).where(sql`${ytcUnlocks.createdAt} > ${h24}`),
     db.select({ count: count() }).from(ytcUnlocks).where(sql`${ytcUnlocks.createdAt} > ${d7}`),
     db.select({ count: count() }).from(ytcUnlocks).where(sql`${ytcUnlocks.createdAt} > ${d30}`),
-    // Count distinct deviceId; rows without a deviceId fall back to ipAddress
-    // so anonymous clients still contribute to the unique-device estimate.
     db.select({
       count: sql<number>`COUNT(DISTINCT COALESCE(${ytcUnlocks.deviceId}, ${ytcUnlocks.ipAddress}))`,
     }).from(ytcUnlocks).where(sql`${ytcUnlocks.createdAt} > ${d30}`),
+
     db.select({
       day: sql<string>`DATE(${ytcUnlocks.createdAt})`,
       count: count(),
@@ -3359,7 +3405,123 @@ export async function getYtcUnlockStats(): Promise<YtcUnlockStats> {
       .where(sql`${ytcUnlocks.createdAt} > ${d30}`)
       .groupBy(sql`DATE(${ytcUnlocks.createdAt})`)
       .orderBy(sql`DATE(${ytcUnlocks.createdAt})`),
+
+    // Device-profile breakdowns. Each row is one DEVICE (DISTINCT
+    // deviceId) that's unlocked YTC at least once, joined to its
+    // profile row to get the human-readable attribute.
+    db.execute(sql`
+      SELECT COALESCE(dp.device_model, 'Unknown') AS model, COUNT(DISTINCT u.device_id)::int AS count
+      FROM ${ytcUnlocks} u
+      LEFT JOIN ${deviceProfiles} dp ON dp.device_id = u.device_id
+      WHERE u.device_id IS NOT NULL
+      GROUP BY COALESCE(dp.device_model, 'Unknown')
+      ORDER BY count DESC LIMIT 12
+    `),
+    db.execute(sql`
+      SELECT COALESCE(NULLIF(u.platform, ''), dp.platform, 'Unknown') AS platform, COUNT(DISTINCT u.device_id)::int AS count
+      FROM ${ytcUnlocks} u
+      LEFT JOIN ${deviceProfiles} dp ON dp.device_id = u.device_id
+      WHERE u.device_id IS NOT NULL
+      GROUP BY COALESCE(NULLIF(u.platform, ''), dp.platform, 'Unknown')
+      ORDER BY count DESC
+    `),
+    db.execute(sql`
+      SELECT COALESCE(dp.os_version, 'Unknown') AS "osVersion", COUNT(DISTINCT u.device_id)::int AS count
+      FROM ${ytcUnlocks} u
+      LEFT JOIN ${deviceProfiles} dp ON dp.device_id = u.device_id
+      WHERE u.device_id IS NOT NULL
+      GROUP BY COALESCE(dp.os_version, 'Unknown')
+      ORDER BY count DESC LIMIT 10
+    `),
+    db.execute(sql`
+      SELECT COALESCE(NULLIF(u.app_version, ''), dp.app_version, 'Unknown') AS "appVersion", COUNT(DISTINCT u.device_id)::int AS count
+      FROM ${ytcUnlocks} u
+      LEFT JOIN ${deviceProfiles} dp ON dp.device_id = u.device_id
+      WHERE u.device_id IS NOT NULL
+      GROUP BY COALESCE(NULLIF(u.app_version, ''), dp.app_version, 'Unknown')
+      ORDER BY count DESC LIMIT 10
+    `),
+    db.execute(sql`
+      SELECT COALESCE(dp.country, 'Unknown') AS country, COUNT(DISTINCT u.device_id)::int AS count
+      FROM ${ytcUnlocks} u
+      LEFT JOIN ${deviceProfiles} dp ON dp.device_id = u.device_id
+      WHERE u.device_id IS NOT NULL
+      GROUP BY COALESCE(dp.country, 'Unknown')
+      ORDER BY count DESC LIMIT 10
+    `),
+    db.execute(sql`
+      SELECT COALESCE(dp.city, 'Unknown') AS city, COUNT(DISTINCT u.device_id)::int AS count
+      FROM ${ytcUnlocks} u
+      LEFT JOIN ${deviceProfiles} dp ON dp.device_id = u.device_id
+      WHERE u.device_id IS NOT NULL
+      GROUP BY COALESCE(dp.city, 'Unknown')
+      ORDER BY count DESC LIMIT 10
+    `),
+
+    // Recent 30 unlocks joined to device profile + an aggregated
+    // listen count so the admin can quickly see who's been turning
+    // YTC on. Returned newest-first.
+    db.execute(sql`
+      SELECT
+        u.created_at AS "unlockedAt",
+        u.device_id AS "deviceId",
+        COALESCE(NULLIF(u.platform, ''), dp.platform) AS platform,
+        dp.device_model AS "deviceModel",
+        dp.os_version AS "osVersion",
+        COALESCE(NULLIF(u.app_version, ''), dp.app_version) AS "appVersion",
+        dp.country AS country,
+        dp.city AS city,
+        u.ip_address AS "ipAddress",
+        COALESCE((SELECT COUNT(*)::int FROM episode_listens el WHERE el.device_id = u.device_id), 0) AS "shiurpodListens",
+        CASE
+          WHEN dp.created_at IS NULL THEN 'unknown'
+          WHEN u.created_at - dp.created_at < INTERVAL '1 hour' THEN 'new'
+          ELSE 'existing'
+        END AS "userKind"
+      FROM ${ytcUnlocks} u
+      LEFT JOIN ${deviceProfiles} dp ON dp.device_id = u.device_id
+      ORDER BY u.created_at DESC
+      LIMIT 30
+    `),
+
+    // New vs existing — count DISTINCT devices, not unlocks (a
+    // device that re-unlocks shouldn't double-count). The CTE picks
+    // the device's FIRST unlock, then bucketizes against the
+    // device_profiles.created_at cutoff.
+    db.execute(sql`
+      WITH first_unlock AS (
+        SELECT u.device_id, MIN(u.created_at) AS first_at
+        FROM ${ytcUnlocks} u
+        WHERE u.device_id IS NOT NULL
+        GROUP BY u.device_id
+      )
+      SELECT
+        COUNT(*) FILTER (WHERE dp.created_at IS NOT NULL AND fu.first_at - dp.created_at < INTERVAL '1 hour')::int AS "newUsers",
+        COUNT(*) FILTER (WHERE dp.created_at IS NOT NULL AND fu.first_at - dp.created_at >= INTERVAL '1 hour')::int AS "existingUsers",
+        COUNT(*) FILTER (WHERE dp.created_at IS NULL)::int AS unknown
+      FROM first_unlock fu
+      LEFT JOIN ${deviceProfiles} dp ON dp.device_id = fu.device_id
+    `),
   ]);
+
+  const rows = (q: any) => (q?.rows ?? q ?? []) as any[];
+  const recent = rows(recentRows).map((r) => ({
+    unlockedAt: r.unlockedAt instanceof Date ? r.unlockedAt.toISOString() : String(r.unlockedAt),
+    deviceId: r.deviceId ?? null,
+    platform: r.platform ?? null,
+    deviceModel: r.deviceModel ?? null,
+    osVersion: r.osVersion ?? null,
+    appVersion: r.appVersion ?? null,
+    country: r.country ?? null,
+    city: r.city ?? null,
+    ipAddress: r.ipAddress ?? null,
+    shiurpodListens: Number(r.shiurpodListens ?? 0),
+    userKind: (r.userKind ?? "unknown") as "new" | "existing" | "unknown",
+  }));
+
+  // Drizzle's db.execute returns either { rows: [...] } or the array
+  // directly depending on the driver — handle both.
+  const nc: any = (newCounts as any)?.rows?.[0] ?? (newCounts as any) ?? {};
 
   return {
     totalUnlocks: Number(total.count),
@@ -3368,5 +3530,17 @@ export async function getYtcUnlockStats(): Promise<YtcUnlockStats> {
     unlocks30d: Number(r30.count),
     uniqueDevices30d: Number(uDev30.count),
     dailyUnlocks: dailyRows.map((d) => ({ day: d.day, count: Number(d.count) })),
+    newVsExisting: {
+      newUsers: Number(nc.newUsers ?? 0),
+      existingUsers: Number(nc.existingUsers ?? 0),
+      unknown: Number(nc.unknown ?? 0),
+    },
+    byDeviceModel: rows(deviceModels).map((d: any) => ({ model: d.model, count: Number(d.count) })),
+    byPlatform: rows(platforms).map((d: any) => ({ platform: d.platform, count: Number(d.count) })),
+    byOsVersion: rows(osVersions).map((d: any) => ({ osVersion: d.osVersion, count: Number(d.count) })),
+    byAppVersion: rows(appVersions).map((d: any) => ({ appVersion: d.appVersion, count: Number(d.count) })),
+    byCountry: rows(countries).map((d: any) => ({ country: d.country, count: Number(d.count) })),
+    byCity: rows(cities).map((d: any) => ({ city: d.city, count: Number(d.count) })),
+    recent,
   };
 }

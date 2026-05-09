@@ -16,6 +16,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import Constants from "expo-constants";
 import { useEffect, useState } from "react";
+import { getDeviceId } from "@/lib/device-id";
 
 const UNLOCK_KEY = "@shiurpod_ytc_unlocked";
 
@@ -31,18 +32,21 @@ const APP_VERSION =
   "unknown";
 
 /** POST a one-shot YTC-unlock event to ShiurPod's backend. Fire-and-
- *  forget — never await; the unlock UX never blocks on this. */
+ *  forget — never await; the unlock UX never blocks on this.
+ *
+ *  IMPORTANT: uses the canonical ShiurPod deviceId
+ *  (lib/device-id.getDeviceId — AsyncStorage key
+ *  `@kosher_podcast_device_id`, hardware-stable on Android via
+ *  Application.androidId hash, Keychain-backed on iOS). That's the
+ *  same id every other ShiurPod analytics path writes (device_profiles,
+ *  episode_listens, subscriptions, etc), so the admin dashboard can
+ *  JOIN ytc_unlocks → device_profiles to render device model, OS
+ *  version, locale, country, etc — and tell whether the device was
+ *  a brand-new ShiurPod install or an existing user. */
 function reportUnlockToShiurpod(): void {
   (async () => {
     try {
-      // Use a stable per-install device id from AsyncStorage so the
-      // admin's "unique devices" stat doesn't double-count one device
-      // that re-locks/re-unlocks. We seed it lazily.
-      let deviceId = await AsyncStorage.getItem("@shiurpod_device_id");
-      if (!deviceId) {
-        deviceId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-        await AsyncStorage.setItem("@shiurpod_device_id", deviceId);
-      }
+      const deviceId = await getDeviceId();
       await fetch(`${SHIURPOD_BASE}/api/track/ytc-unlock`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
