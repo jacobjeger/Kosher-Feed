@@ -134,18 +134,23 @@ export default function ShiurimScreen() {
       default: result.sort((a, b) => b.date.localeCompare(a.date));
     }
     return result;
-  }, [shiurim, search, selectedRebbeim, selectedTags, selectedSeries, showSavedOnly, showInProgressOnly, isSaved, getPosition, sortOrder]);
+  // Filter dep list — `showDownloadedOnly` + `isDownloaded` were
+  // missing in a previous version, which is why toggling the
+  // Downloaded chip didn't actually re-filter. Both must be deps so
+  // the useMemo re-runs when the user taps the chip OR when a
+  // download finishes (isDownloaded ref changes).
+  }, [shiurim, search, selectedRebbeim, selectedTags, selectedSeries, showSavedOnly, showInProgressOnly, showDownloadedOnly, isSaved, getPosition, isDownloaded, sortOrder]);
 
   // Reset pagination whenever the active filter window changes so the
   // first render shows the most relevant top-of-list slice fast.
-  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [search, selectedRebbeim, selectedTags, selectedSeries, showSavedOnly, showInProgressOnly, sortOrder]);
+  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [search, selectedRebbeim, selectedTags, selectedSeries, showSavedOnly, showInProgressOnly, showDownloadedOnly, sortOrder]);
 
   const visibleShiurim = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
   const hasMoreShiurim = filtered.length > visibleCount;
 
   const hasFilters =
     selectedRebbeim.size > 0 || selectedTags.size > 0 || selectedSeries.size > 0 ||
-    showSavedOnly || showInProgressOnly;
+    showSavedOnly || showInProgressOnly || showDownloadedOnly;
 
   // Toggle helpers for multi-select. Returning a *new* Set on every
   // toggle is what triggers the dependent useEffect / useMemo recalcs.
@@ -600,7 +605,7 @@ const ShiurCard = React.memo(function ShiurCardImpl(p: ShiurCardProps) {
         <View style={[styles.avatar, isActive && styles.avatarActive]}>
           <Ionicons
             name={isActive && isPlaying ? "musical-notes" : "headset"}
-            size={20}
+            size={17}
             color={isActive ? Colors.navy : Colors.navyOpacity50}
           />
         </View>
@@ -622,7 +627,7 @@ const ShiurCard = React.memo(function ShiurCardImpl(p: ShiurCardProps) {
           </View>
         </View>
         <YtcFocusable onPress={() => onSave(item.id)} hitSlop={8} style={styles.bookmarkBtn} focusRadius={14}>
-          <Ionicons name={isSaved ? "bookmark" : "bookmark-outline"} size={20} color={isSaved ? Colors.gold : Colors.navyOpacity30} />
+          <Ionicons name={isSaved ? "bookmark" : "bookmark-outline"} size={17} color={isSaved ? Colors.gold : Colors.navyOpacity30} />
         </YtcFocusable>
       </View>
 
@@ -712,12 +717,14 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   headerTitle: {
-    // 24pt matches the Swift original (.font(.system(size: 24,
-    // weight: .bold, design: .serif))). On Android, fontFamily="serif"
-    // is Noto Serif which renders awkwardly at larger sizes — letter-
-    // spacing dropped, weight bumped to "800" so the header still
-    // reads strong without the extra tracking.
+    // Centered serif title — matches the home page hero treatment
+    // and the user's "header text by shiurim should be centered"
+    // ask. Width:100% so textAlign:center actually centers within
+    // the navy header instead of just centering the rendered glyph
+    // box.
     color: Colors.cream, fontSize: 24, fontWeight: "800",
+    textAlign: "center",
+    width: "100%",
     fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
   },
 
@@ -778,62 +785,64 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 15, color: Colors.navyOpacity50 },
 
   // Card — matches Swift ShiurRowView (16px radius, soft shadow).
+  // Text scaled down a step across the card per user feedback —
+  // shiurim list reads as a more compact list now, fits ~5 cards on
+  // a typical viewport instead of ~3.5.
   shiurCard: {
-    backgroundColor: Colors.white, borderRadius: 16, marginBottom: 12,
-    padding: 16, gap: 12,
+    backgroundColor: Colors.white, borderRadius: 16, marginBottom: 10,
+    padding: 14, gap: 10,
     shadowColor: Colors.black, shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
   },
   shiurCardActive: { borderWidth: 1, borderColor: Colors.gold },
 
   // Top row — avatar circle + title/rebbe/date stack + bookmark.
-  shiurTopRow: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+  shiurTopRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
   avatar: {
-    width: 44, height: 44, borderRadius: 22,
+    width: 38, height: 38, borderRadius: 19,
     backgroundColor: Colors.navyOpacity10,
     alignItems: "center", justifyContent: "center",
   },
   avatarActive: { backgroundColor: Colors.gold },
-  shiurInfo: { flex: 1, gap: 4 },
+  shiurInfo: { flex: 1, gap: 3 },
   shiurTitle: {
-    fontSize: 16, fontWeight: "700", color: Colors.navy, lineHeight: 21,
+    fontSize: 14, fontWeight: "700", color: Colors.navy, lineHeight: 18,
     fontFamily: Platform.OS === "ios" ? "Georgia" : "serif",
   },
   shiurRebbe: {
-    // Italic dropped per user feedback — read better in plain weight.
-    fontSize: 12, color: Colors.gold, fontWeight: "600",
+    fontSize: 11, color: Colors.gold, fontWeight: "600",
   },
-  shiurDateRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 },
-  shiurDate: { fontSize: 11, color: Colors.navyOpacity50 },
-  shiurDot: { fontSize: 11, color: Colors.navyOpacity30 },
-  shiurSeries: { flex: 1, fontSize: 11, color: Colors.gold, fontWeight: "500" },
-  bookmarkBtn: { width: 28, height: 28, alignItems: "center", justifyContent: "center" },
+  shiurDateRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 1 },
+  shiurDate: { fontSize: 10, color: Colors.navyOpacity50 },
+  shiurDot: { fontSize: 10, color: Colors.navyOpacity30 },
+  shiurSeries: { flex: 1, fontSize: 10, color: Colors.gold, fontWeight: "500" },
+  bookmarkBtn: { width: 26, height: 26, alignItems: "center", justifyContent: "center" },
 
   // Tag chips — horizontal scroll matches the Swift design exactly.
-  tagsScroll: { marginHorizontal: -16 },
-  tagsScrollContent: { paddingHorizontal: 16, gap: 6 },
+  tagsScroll: { marginHorizontal: -14 },
+  tagsScrollContent: { paddingHorizontal: 14, gap: 5 },
   tag: {
     flexDirection: "row", alignItems: "center",
     backgroundColor: Colors.navyOpacity05,
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 4,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4,
   },
-  tagText: { fontSize: 11, color: Colors.navyOpacity70, fontWeight: "500" },
+  tagText: { fontSize: 10, color: Colors.navyOpacity70, fontWeight: "500" },
 
   // Resume / Completed / Downloading status line.
   statusLine: { flexDirection: "row", alignItems: "center", gap: 6 },
-  statusText: { fontSize: 11, color: Colors.gold, fontWeight: "500" },
+  statusText: { fontSize: 10, color: Colors.gold, fontWeight: "500" },
 
   // Action row.
   shiurActionsRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   playButton: {
     flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-    backgroundColor: Colors.navy, paddingVertical: 11, borderRadius: 10,
+    backgroundColor: Colors.navy, paddingVertical: 9, borderRadius: 10,
   },
   playButtonActive: { backgroundColor: Colors.gold },
-  playButtonText: { color: Colors.cream, fontSize: 13, fontWeight: "600" },
+  playButtonText: { color: Colors.cream, fontSize: 12, fontWeight: "600" },
   playButtonTextActive: { color: Colors.navy },
   downloadIconBtn: {
-    width: 42, height: 42, alignItems: "center", justifyContent: "center",
+    width: 38, height: 38, alignItems: "center", justifyContent: "center",
     borderWidth: 1, borderColor: Colors.goldOpacity30, borderRadius: 10,
   },
   progressTrack: { height: 3, backgroundColor: Colors.creamDark, borderRadius: 1.5, marginHorizontal: -16, marginBottom: -16 },

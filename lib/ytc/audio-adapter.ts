@@ -12,6 +12,7 @@
 import type { Episode, Feed } from "@/lib/types";
 import type { Shiur } from "@/types/ytc";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
+import { useDownloads } from "@/contexts/DownloadsContext";
 import { trackShiurPlay } from "@/lib/ytc/analytics";
 
 export const YTC_FEED_PREFIX = "ytc:feed:";
@@ -95,11 +96,19 @@ export function ytcShiurToEpisodeAndFeed(shiur: Shiur): { episode: Episode; feed
  */
 export function useYtcPlay() {
   const { playEpisode } = useAudioPlayer();
+  const { getLocalUri } = useDownloads();
   return async (shiur: Shiur) => {
     if (!shiur.audioUrl) return;
     const feed = ytcRebbeToFeed(shiur.rebbe || "YTC");
     const episode = ytcShiurToEpisode(shiur, feed);
-    await playEpisode(episode, feed);
+    // Offline-aware: if this shiur was downloaded earlier, swap the
+    // remote URL for the file:// URI so playback works without a
+    // connection. expo-av's Audio.createAsync accepts file:// natively
+    // and resolveAudioUrl in AudioPlayerContext is a pass-through for
+    // anything that doesn't match a proxy rule.
+    const localUri = getLocalUri(episode.id);
+    const epToPlay = localUri ? { ...episode, audioUrl: localUri } : episode;
+    await playEpisode(epToPlay, feed);
     // /api/track/play increments playCount AND writes the shiurPlays
     // analytics doc atomically. Supersedes the old direct-Firestore
     // incrementPlayCount call.
@@ -119,6 +128,7 @@ export function useYtcPlay() {
  */
 export function useYtcPlayer() {
   const { currentEpisode, playback, playEpisode, pause, resume } = useAudioPlayer();
+  const { getLocalUri } = useDownloads();
   const currentShiurId = currentEpisode && isYtcEpisodeId(currentEpisode.id)
     ? currentEpisode.id.slice(YTC_EPISODE_PREFIX.length)
     : null;
@@ -130,7 +140,10 @@ export function useYtcPlayer() {
       if (!shiur.audioUrl) return;
       const feed = ytcRebbeToFeed(shiur.rebbe || "YTC");
       const episode = ytcShiurToEpisode(shiur, feed);
-      await playEpisode(episode, feed);
+      // Offline-aware: see useYtcPlay header comment.
+      const localUri = getLocalUri(episode.id);
+      const epToPlay = localUri ? { ...episode, audioUrl: localUri } : episode;
+      await playEpisode(epToPlay, feed);
       // /api/track/play increments playCount AND writes the shiurPlays
     // analytics doc atomically. Supersedes the old direct-Firestore
     // incrementPlayCount call.
