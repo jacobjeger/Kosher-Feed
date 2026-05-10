@@ -33,7 +33,7 @@ import {
 export default function YtcEmailUpdatesScreen() {
   const { user } = useYtcAuth();
   const [subs, setLocal] = useState<ShiurEmailSubs | null>(null);
-  const [options, setOptions] = useState<ShiurOptions>({ rebbeim: [], tags: [] });
+  const [options, setOptions] = useState<ShiurOptions>({ rebbeim: [], tags: [], series: [] });
   const [loadingOptions, setLoadingOptions] = useState(true);
   const [tagFilter, setTagFilter] = useState("");
   const [openSection, setOpenSection] = useState<"rebbeim" | "tags" | null>(null);

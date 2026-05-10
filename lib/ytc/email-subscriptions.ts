@@ -63,6 +63,9 @@ const DEFAULT_SUBS: ShiurEmailSubs = {
 export interface ShiurOptions {
   rebbeim: string[];
   tags: string[];
+  // Older settings/shiurOptions docs may not have this field — readers
+  // default to []. Used by the upload screen's series picker.
+  series: string[];
 }
 
 let _cached: ShiurEmailSubs | null = null;
@@ -200,14 +203,15 @@ export async function getShiurOptions(): Promise<ShiurOptions> {
     const { db } = await getYtcFirebase();
     const { doc, getDoc } = await import("firebase/firestore");
     const snap = await getDoc(doc(db, "settings", "shiurOptions"));
-    if (!snap.exists()) return { rebbeim: [], tags: [] };
+    if (!snap.exists()) return { rebbeim: [], tags: [], series: [] };
     const data = snap.data() as Partial<ShiurOptions>;
     return {
       rebbeim: Array.isArray(data.rebbeim) ? data.rebbeim : [],
       tags: Array.isArray(data.tags) ? data.tags : [],
+      series: Array.isArray(data.series) ? data.series : [],
     };
   } catch (e: any) {
     addLog("warn", `YTC shiurOptions fetch failed: ${e?.message || e}`, undefined, "ytc-email-subs");
-    return { rebbeim: [], tags: [] };
+    return { rebbeim: [], tags: [], series: [] };
   }
 }

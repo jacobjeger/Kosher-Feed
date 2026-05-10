@@ -121,6 +121,14 @@ export async function createUserEmailPassword(email: string, password: string): 
  * firebase.ts). Returns approved=true if the email is in alumniDatabase
  * (primary) OR approvedEmails (by doc id OR by 'email' field).
  * admin=true if the email is in the admins collection.
+ *
+ * Throws on Firestore network errors. The previous version swallowed them
+ * and returned {approved:false, admin:false}, which caused the offline
+ * cold-start bug where already-verified users were sent to /pending. Callers
+ * that need offline tolerance (YtcAuthContext) catch the throw and fall back
+ * to the cached result. Callers that are inherently online (handleYtcSignup,
+ * which just succeeded at createUserWithEmailAndPassword) wrap with a
+ * default.
  */
 export async function checkUserApproval(email: string): Promise<{ approved: boolean; admin: boolean }> {
   const normalizedEmail = email.toLowerCase();
@@ -129,26 +137,44 @@ export async function checkUserApproval(email: string): Promise<{ approved: bool
 
   let approved = false;
   let admin = false;
-  try {
-    const alumniDoc = await getDoc(doc(db, "alumniDatabase", normalizedEmail));
-    if (alumniDoc.exists()) approved = true;
-    if (!approved) {
-      const approvedDoc = await getDoc(doc(db, "approvedEmails", normalizedEmail));
-      if (approvedDoc.exists()) approved = true;
-    }
-    if (!approved) {
-      const q = query(collection(db, "approvedEmails"), where("email", "==", normalizedEmail));
-      const snap = await getDocs(q);
-      if (!snap.empty) approved = true;
-    }
-    const adminDoc = await getDoc(doc(db, "admins", normalizedEmail));
-    if (adminDoc.exists()) admin = true;
-  } catch (e) {
-    // Approval failures should not crash the app; YtcAuthContext will
-    // route the user to /pending if approved stays false.
-    console.warn("YTC approval check error:", e);
+  const alumniDoc = await getDoc(doc(db, "alumniDatabase", normalizedEmail));
+  if (alumniDoc.exists()) approved = true;
+  if (!approved) {
+    const approvedDoc = await getDoc(doc(db, "approvedEmails", normalizedEmail));
+    if (approvedDoc.exists()) approved = true;
   }
+  if (!approved) {
+    const q = query(collection(db, "approvedEmails"), where("email", "==", normalizedEmail));
+    const snap = await getDocs(q);
+    if (!snap.empty) approved = true;
+  }
+  const adminDoc = await getDoc(doc(db, "admins", normalizedEmail));
+  if (adminDoc.exists()) admin = true;
   return { approved, admin };
+}
+
+/**
+ * Real-time listener on shiurUploaders/{emailLower}. Doc presence is the
+ * permission — fields are informational. Returns the unsubscribe.
+ *
+ * The caller (YtcAuthContext) ORs this with isAdmin to derive canUpload.
+ * Snapshot errors keep the last-known value (the listener will retry on
+ * its own when the network returns).
+ */
+export async function subscribeShiurUploader(
+  emailLower: string,
+  cb: (exists: boolean) => void,
+): Promise<() => void> {
+  const { db } = await getYtcFirebase();
+  const { doc, onSnapshot } = await import("firebase/firestore");
+  const ref = doc(db, "shiurUploaders", emailLower);
+  return onSnapshot(
+    ref,
+    (snap) => cb(snap.exists()),
+    (err) => {
+      console.warn("YTC shiurUploader listener error:", err);
+    },
+  );
 }
 
 export async function submitAccessRequest(email: string, name: string): Promise<void> {
@@ -203,7 +229,17 @@ export async function handleYtcSignup(input: {
   await createUserEmailPassword(trimmedEmail, input.password);
 
   // 2. Determine approval state via the same checks the website runs.
-  const { approved, admin } = await checkUserApproval(trimmedEmail);
+  //    checkUserApproval now throws on network errors (so YtcAuthContext can
+  //    fall back to its cache); but signup just succeeded at create-user, so
+  //    the network is up — and even if Firestore probing fails, we'd rather
+  //    proceed with manual-review defaults than block the signup flow.
+  let approved = false;
+  let admin = false;
+  try {
+    ({ approved, admin } = await checkUserApproval(trimmedEmail));
+  } catch (e) {
+    console.warn("[ytc-signup] approval probe failed, defaulting to manual-review:", e);
+  }
   const approvalSource = approved
     ? (admin ? "admin" : "alumni-database")
     : "manual-review";

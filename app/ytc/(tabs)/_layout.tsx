@@ -17,6 +17,7 @@ import { View, StyleSheet, Platform } from "react-native";
 import { ytcColors as StaticColors } from "@/constants/ytcColors";
 import { useYtcColors, useYtcTheme } from "@/contexts/YtcThemeContext";
 import { useAudioPlayer } from "@/contexts/AudioPlayerContext";
+import { useYtcAuth } from "@/contexts/YtcAuthContext";
 import { isYtcEpisodeId } from "@/lib/ytc/audio-adapter";
 
 // Pill that wraps the active tab's icon. Fixed dimensions so the
@@ -57,6 +58,11 @@ export default function TabLayout() {
   const Colors = useYtcColors();
   const { resolved } = useYtcTheme();
   const isDark = resolved === "dark";
+  // Upload tab visibility — admins always see it; other users see it
+  // when they have a doc in shiurUploaders/{lowercaseEmail}. The
+  // YtcAuthContext keeps canUpload current via a real-time onSnapshot,
+  // so toggling permission on the website propagates here within ~2s.
+  const { canUpload } = useYtcAuth();
   const ytcAudioActive =
     !!currentEpisode && isYtcEpisodeId(currentEpisode.id) && !!playback.isPlaying;
   // Tab bar surface colors flip with theme + further dim when audio is playing.
@@ -128,6 +134,21 @@ export default function TabLayout() {
           title: "Contacts",
           tabBarIcon: ({ color, focused }) => (
             <TabIcon name="people" color={color} focused={focused} />
+          ),
+        }}
+      />
+      {/* Upload — gated. href:null when !canUpload removes the route from
+          the tab bar AND prevents deep-linking to it, so a revoked user
+          can't reach it via either tap or a stale URL. The route file
+          itself stays mounted in the manifest so navigation matching
+          doesn't break for users who DO have permission. */}
+      <Tabs.Screen
+        name="upload"
+        options={{
+          title: "Upload",
+          href: canUpload ? undefined : null,
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon name="cloud-upload" color={color} focused={focused} />
           ),
         }}
       />
