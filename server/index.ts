@@ -19,7 +19,7 @@ import { isMergedFeed, filterCrossSourceDuplicates, dedupWithinBatch } from "./e
 import { refreshTorahDownloadsFeedEpisodes, syncTorahDownloadsSpeakers } from "./torahdownloads";
 import { autoCategorizeFeeds } from "./auto-categorize";
 import { extractKhRavId, extractTatSpeakerId, extractTorahDownloadsSpeakerId } from "./feed-utils";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { sendDailyErrorDigest } from "./error-alerts";
 import * as fs from "fs";
 import * as path from "path";
@@ -1299,12 +1299,20 @@ function startAutoRefresh() {
   app.use(compression());
 
   // Rate limiting — general (200 req/min per IP) and strict for write endpoints (30 req/min)
+  //
+  // ipKeyGenerator wrapping is required by express-rate-limit v7+ when the
+  // custom keyGenerator returns an IP — for IPv6 it groups by /64 prefix so
+  // a client can't bypass the limit by walking through the low 64 bits.
+  // Without it, the library logs ERR_ERL_KEY_GEN_IPV6 on every startup and
+  // (more importantly) IPv6 clients can effectively bypass the cap.
+  const clientIp = (req: any): string =>
+    (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "unknown";
   const generalLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 200,
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req) => (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "unknown",
+    keyGenerator: (req) => ipKeyGenerator(clientIp(req)),
     skip: (req) => req.path.startsWith("/api/admin"), // admin has its own auth
   });
   const writeLimiter = rateLimit({
@@ -1312,7 +1320,7 @@ function startAutoRefresh() {
     max: 30,
     standardHeaders: true,
     legacyHeaders: false,
-    keyGenerator: (req) => (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "unknown",
+    keyGenerator: (req) => ipKeyGenerator(clientIp(req)),
     message: { error: "Too many requests, please try again later" },
   });
   app.use("/api/", generalLimiter);

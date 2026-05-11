@@ -2584,15 +2584,29 @@ export async function saveQueue(deviceId: string, items: { episodeId: string; fe
   const feedSet = new Set(okFeeds.map(r => r.id));
   const valid = items.filter(i => epSet.has(i.episodeId) && feedSet.has(i.feedId));
 
-  if (valid.length > 0) {
+  // Dedupe by episodeId. The unique index queue_items_device_episode_idx
+  // throws on duplicates and previously surfaced as 500 errors when the
+  // client's local queue had the same episode twice (seen in Railway
+  // logs: 6 occurrences over 2 days). Keep the first occurrence so the
+  // user's original ordering wins; onConflictDoNothing is a safety net
+  // in case a concurrent saveQueue/addToQueue race re-inserts the same
+  // (deviceId, episodeId) pair between the DELETE above and this INSERT.
+  const seen = new Set<string>();
+  const deduped = valid.filter((i) => {
+    if (seen.has(i.episodeId)) return false;
+    seen.add(i.episodeId);
+    return true;
+  });
+
+  if (deduped.length > 0) {
     await db.insert(queueItems).values(
-      valid.map(item => ({
+      deduped.map(item => ({
         deviceId,
         episodeId: item.episodeId,
         feedId: item.feedId,
         position: item.position,
       }))
-    );
+    ).onConflictDoNothing();
   }
 }
 
