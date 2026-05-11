@@ -32,6 +32,12 @@ import {
   fetchCarouselImages, fetchAnnouncements, fetchUpcomingEvents,
   fetchMostRecentShiur, fetchFeaturedShiur, fetchActiveCollections,
   fetchAlumniPhotos, fetchRebbeim, fetchApprovedAlumni,
+  // Full lists for the Shiurim + Events tabs. The Megalife runs Android
+  // on a low-end CPU + slow eMMC, so the AsyncStorage hydrate of the
+  // full shiurim payload (~MB of JSON) is noticeable. Pre-warming here
+  // hides that work behind the auth-check + nav transition, so by the
+  // time the user actually taps Shiurim or Events the cache is hot.
+  fetchShiurim, fetchEvents,
 } from "@/lib/ytc/firebase";
 
 interface AuthState {
@@ -204,6 +210,8 @@ export function YtcAuthProvider({ children }: { children: React.ReactNode }) {
         fetchAlumniPhotos(),
         fetchRebbeim(),
         fetchApprovedAlumni(),
+        fetchShiurim(),
+        fetchEvents(),
       ]).catch(() => {});
     }
 

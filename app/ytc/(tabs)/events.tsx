@@ -1,12 +1,13 @@
 // YTC: events list. Verbatim port from
 // /tmp/ytc-source/expo-app/app/(tabs)/events.tsx with imports remapped.
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, FlatList, StyleSheet, ActivityIndicator, Platform, RefreshControl, TouchableOpacity, Modal, Pressable, Dimensions, StatusBar } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "expo-router";
 import { ytcColors as Colors } from "@/constants/ytcColors";
-import { fetchEvents, invalidateYtcCache } from "@/lib/ytc/firebase";
+import { fetchEvents, fetchNewEventsSince, invalidateYtcCache, peekYtcCacheMem } from "@/lib/ytc/firebase";
 import { useYtcAuth } from "@/contexts/YtcAuthContext";
 import { SubmitSimchaForm } from "@/components/ytc/SubmitSimchaForm";
 import { YtcFocusable } from "@/components/ytc/YtcFocusable";
@@ -21,8 +22,11 @@ const PAST_GRID_CAP = 8;
 export default function EventsScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useYtcAuth();
-  const [events, setEvents] = useState<YtcEvent[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Seed initial render from in-memory cache (populated by the YTC
+  // post-approval pre-warm) so the first paint shows data, no spinner.
+  const cachedInitial = useMemo(() => peekYtcCacheMem<YtcEvent[]>("events") ?? [], []);
+  const [events, setEvents] = useState<YtcEvent[]>(cachedInitial);
+  const [isLoading, setIsLoading] = useState(cachedInitial.length === 0);
   const [refreshing, setRefreshing] = useState(false);
   const [zoomImage, setZoomImage] = useState<string | null>(null);
 
@@ -38,7 +42,27 @@ export default function EventsScreen() {
     }
   };
 
-  useEffect(() => { loadEvents(); }, []);
+  // On focus: if nothing cached, full fetch; otherwise just look for new
+  // events (the last 14 days + future) and merge them in. Cheap on the wire.
+  useFocusEffect(useCallback(() => {
+    let cancelled = false;
+    (async () => {
+      if (events.length === 0) {
+        await loadEvents();
+        return;
+      }
+      try {
+        const res = await fetchNewEventsSince();
+        if (cancelled || !res || res.added === 0) return;
+        setEvents(res.merged as YtcEvent[]);
+      } catch (e) {
+        console.warn("YTC incremental events refresh failed:", e);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []));
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await invalidateYtcCache("events");

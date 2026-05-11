@@ -521,6 +521,21 @@ async function fetchAndStore<T>(key: string, fn: () => Promise<T>): Promise<T> {
 }
 
 /**
+ * Synchronous read of the in-memory cache. Returns null if the entry
+ * doesn't exist or isn't hydrated into memory yet. Use this to seed
+ * initial useState in a screen so it can render with data on first
+ * paint without a spinner flash, when an earlier load (or pre-warm)
+ * has populated the cache.
+ *
+ * Does NOT touch disk and does NOT check TTL — callers should still
+ * call the regular fetcher afterwards to validate freshness.
+ */
+export function peekYtcCacheMem<T>(key: string): T | null {
+  const hit = _mem.get(key);
+  return hit ? (hit.data as T) : null;
+}
+
+/**
  * Force-invalidate cached data so the next call hits the network.
  * Pull-to-refresh handlers in /ytc screens call this before re-fetching.
  * Pass no argument to clear EVERYTHING (used on sign-out).
@@ -594,13 +609,58 @@ function docToEvent(d: DocumentSnapshot) {
 // see a cold-cache hit on app update; if you need to bust, change the
 // STORAGE_PREFIX version number above.
 
+async function _fetchShiurimFromFirestore() {
+  const { db } = await getYtcFirebase();
+  const { collection, query, orderBy, getDocs } = await import("firebase/firestore");
+  const snap = await getDocs(query(collection(db, "shiurim"), orderBy("date", "desc")));
+  return snap.docs.map(docToShiur).filter(Boolean);
+}
+
 export async function fetchShiurim() {
-  return cached("shiurim", TTL_LIST, async () => {
-    const { db } = await getYtcFirebase();
-    const { collection, query, orderBy, getDocs } = await import("firebase/firestore");
-    const snap = await getDocs(query(collection(db, "shiurim"), orderBy("date", "desc")));
-    return snap.docs.map(docToShiur).filter(Boolean);
-  });
+  return cached("shiurim", TTL_LIST, _fetchShiurimFromFirestore);
+}
+
+/**
+ * Incremental refresh — fetches ONLY shiurim with date >= maxCachedDate,
+ * merges them into the existing cache by doc id (dedupe), and returns
+ * the merged list. Cheap on the wire: a YTC weekday typically yields
+ * 0–3 new docs, so this replaces a full ~800-doc query with a tiny one
+ * on every tab focus.
+ *
+ * Uses `>=` instead of `>` so it doesn't miss a new doc that shares its
+ * date with an already-cached one — the merge step dedupes by id.
+ *
+ * NOT designed to catch edits/deletes/backfills of older shiurim;
+ * pull-to-refresh still does a full re-fetch for that case.
+ *
+ * Returns null if no cache to merge into (caller should fall back to
+ * fetchShiurim()).
+ */
+export async function fetchNewShiurimSince(maxCachedDate: string) {
+  if (!maxCachedDate) return null;
+  const { db } = await getYtcFirebase();
+  const { collection, query, where, orderBy, getDocs } = await import("firebase/firestore");
+  const snap = await getDocs(query(
+    collection(db, "shiurim"),
+    where("date", ">=", maxCachedDate),
+    orderBy("date", "desc"),
+  ));
+  const incoming = snap.docs.map(docToShiur).filter(Boolean) as Array<{ id: string; date: string }>;
+  const cached = (peekYtcCacheMem<any[]>("shiurim") ?? []);
+  const byId = new Map<string, any>(cached.map((s) => [s.id, s]));
+  let added = 0;
+  for (const s of incoming) {
+    if (!byId.has(s.id)) {
+      byId.set(s.id, s);
+      added++;
+    }
+  }
+  if (added === 0) return { merged: cached, added: 0 };
+  const merged = Array.from(byId.values()).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const entry = { data: merged, ts: Date.now() };
+  _mem.set("shiurim", entry);
+  writeDisk("shiurim", entry);
+  return { merged, added };
 }
 
 export async function fetchMostRecentShiur() {
@@ -638,13 +698,56 @@ export async function incrementPlayCount(shiurId: string) {
 
 // ─── Events ─────────────────────────────────────────────────────────────────
 
+async function _fetchEventsFromFirestore() {
+  const { db } = await getYtcFirebase();
+  const { collection, query, orderBy, getDocs } = await import("firebase/firestore");
+  const snap = await getDocs(query(collection(db, "events"), orderBy("date", "asc")));
+  return snap.docs.map(docToEvent).filter(Boolean);
+}
+
 export async function fetchEvents() {
-  return cached("events", TTL_LIST, async () => {
-    const { db } = await getYtcFirebase();
-    const { collection, query, orderBy, getDocs } = await import("firebase/firestore");
-    const snap = await getDocs(query(collection(db, "events"), orderBy("date", "asc")));
-    return snap.docs.map(docToEvent).filter(Boolean);
-  });
+  return cached("events", TTL_LIST, _fetchEventsFromFirestore);
+}
+
+/**
+ * Incremental refresh for events. Events are sorted ASC by date, but
+ * "new" simchas are typically future-dated — and admins might add a
+ * just-happened one yesterday too. We query for any event with
+ * date >= today minus a small overlap window so a recent past event
+ * added today still gets caught.
+ *
+ * Like fetchNewShiurimSince, this merges by id into the cache and does
+ * NOT catch edits/deletes of older events; pull-to-refresh handles that.
+ */
+export async function fetchNewEventsSince() {
+  const { db } = await getYtcFirebase();
+  const { collection, query, where, orderBy, getDocs } = await import("firebase/firestore");
+  // 14-day overlap so a simcha added retroactively (e.g., an l'chaim
+  // from last week) still gets picked up.
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - 14);
+  const cutoffIso = cutoffDate.toISOString().split("T")[0];
+  const snap = await getDocs(query(
+    collection(db, "events"),
+    where("date", ">=", cutoffIso),
+    orderBy("date", "asc"),
+  ));
+  const incoming = snap.docs.map(docToEvent).filter(Boolean) as Array<{ id: string; date: string }>;
+  const cached = (peekYtcCacheMem<any[]>("events") ?? []);
+  const byId = new Map<string, any>(cached.map((e) => [e.id, e]));
+  let added = 0;
+  for (const e of incoming) {
+    if (!byId.has(e.id)) {
+      byId.set(e.id, e);
+      added++;
+    }
+  }
+  if (added === 0) return { merged: cached, added: 0 };
+  const merged = Array.from(byId.values()).sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  const entry = { data: merged, ts: Date.now() };
+  _mem.set("events", entry);
+  writeDisk("events", entry);
+  return { merged, added };
 }
 
 export async function fetchUpcomingEvents(eventLimit = 3) {

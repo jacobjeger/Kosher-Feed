@@ -9,8 +9,9 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "expo-router";
 import { ytcColors as Colors } from "@/constants/ytcColors";
-import { fetchShiurim, invalidateYtcCache } from "@/lib/ytc/firebase";
+import { fetchShiurim, fetchNewShiurimSince, invalidateYtcCache, peekYtcCacheMem } from "@/lib/ytc/firebase";
 import type { Shiur } from "@/types/ytc";
 import { useYtcPlayer, YTC_EPISODE_PREFIX, ytcShiurToEpisodeAndFeed } from "@/lib/ytc/audio-adapter";
 import { usePositions } from "@/contexts/PositionsContext";
@@ -46,8 +47,12 @@ export default function ShiurimScreen() {
   const { downloadEpisode, removeDownload, isDownloaded, isDownloading, downloadProgress } = useDownloads();
   const { isSaved, toggleSaved } = useSavedShiurim();
 
-  const [shiurim, setShiurim] = useState<Shiur[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Seed from the in-memory cache so a focus after the YTC pre-warm
+  // (YtcAuthContext) paints with data on the very first render — no
+  // spinner flash on the Megalife's slower JS thread.
+  const cachedInitial = useMemo(() => peekYtcCacheMem<Shiur[]>("shiurim") ?? [], []);
+  const [shiurim, setShiurim] = useState<Shiur[]>(cachedInitial);
+  const [isLoading, setIsLoading] = useState(cachedInitial.length === 0);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
   const [sortOrder, setSortOrder] = useState<SortOrder>("dateDesc");
@@ -83,7 +88,33 @@ export default function ShiurimScreen() {
     }
   };
 
-  useEffect(() => { loadShiurim(); }, []);
+  // On every focus: if we have nothing cached, do a full fetch. If we do,
+  // ask Firestore only for shiurim newer than what we have and merge them
+  // in. Avoids re-downloading the full ~800-doc list every time the user
+  // taps Shiurim — the Megalife's slow eMMC + JSON.parse make that very
+  // visible.
+  useFocusEffect(useCallback(() => {
+    let cancelled = false;
+    (async () => {
+      if (shiurim.length === 0) {
+        // Cold cache for this session — full fetch via SWR cache.
+        await loadShiurim();
+        return;
+      }
+      const maxDate = shiurim.reduce((m, s) => (s.date > m ? s.date : m), "");
+      if (!maxDate) return;
+      try {
+        const res = await fetchNewShiurimSince(maxDate);
+        if (cancelled || !res || res.added === 0) return;
+        setShiurim(res.merged as Shiur[]);
+      } catch (e) {
+        console.warn("YTC incremental shiurim refresh failed:", e);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []));
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await invalidateYtcCache("shiurim");
