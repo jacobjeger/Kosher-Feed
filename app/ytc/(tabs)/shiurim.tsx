@@ -1,7 +1,7 @@
 // YTC: shiurim list with search/filter/sort. Verbatim port from
 // /tmp/ytc-source/expo-app/app/(tabs)/shiurim.tsx with imports remapped
 // and useAudio() → useYtcPlayer() (richer audio adapter hook).
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput,
   ActivityIndicator, Modal, ScrollView, Platform, RefreshControl, Alert,
@@ -128,17 +128,43 @@ export default function ShiurimScreen() {
     [shiurim],
   );
 
+  // Pre-computed lowercase index — built once per shiurim change so the
+  // search filter doesn't do 4 * 800 = ~3200 toLowerCase() allocations
+  // per keystroke. On the Megalife's slow JS thread that was the typing
+  // lag people felt in the search field.
+  const searchIndex = useMemo(() => {
+    const m = new Map<string, { titleLower: string; rebbeLower: string; tagsLower: string[]; seriesLower: string }>();
+    for (const s of shiurim) {
+      m.set(s.id, {
+        titleLower: s.title.toLowerCase(),
+        rebbeLower: s.rebbe.toLowerCase(),
+        tagsLower: s.tags.map((t) => t.toLowerCase()),
+        seriesLower: s.series?.toLowerCase() ?? "",
+      });
+    }
+    return m;
+  }, [shiurim]);
+
+  // Deferred search keeps the TextInput itself responsive — React lets
+  // typing land at high priority and re-runs the filter at idle. On a
+  // fast device this is invisible; on the Megalife it's the difference
+  // between smooth typing and visible per-keystroke lag.
+  const deferredSearch = useDeferredValue(search);
+
   const filtered = useMemo(() => {
-    let result = [...shiurim];
-    if (search) {
-      const q = search.toLowerCase();
-      result = result.filter(
-        (s) =>
-          s.title.toLowerCase().includes(q) ||
-          s.rebbe.toLowerCase().includes(q) ||
-          s.tags.some((t) => t.toLowerCase().includes(q)) ||
-          (s.series?.toLowerCase().includes(q) ?? false),
-      );
+    let result: typeof shiurim = shiurim;
+    if (deferredSearch) {
+      const q = deferredSearch.toLowerCase();
+      result = result.filter((s) => {
+        const idx = searchIndex.get(s.id);
+        if (!idx) return false;
+        return (
+          idx.titleLower.includes(q) ||
+          idx.rebbeLower.includes(q) ||
+          idx.tagsLower.some((t) => t.includes(q)) ||
+          idx.seriesLower.includes(q)
+        );
+      });
     }
     // Multi-select: a shiur passes if it matches ANY selected value
     // within a category (OR), and matches ALL active categories (AND).
@@ -158,6 +184,9 @@ export default function ShiurimScreen() {
       });
     }
 
+    // Copy before sort so we don't mutate the upstream `shiurim` array
+    // when no filters narrow the result.
+    result = result.slice();
     switch (sortOrder) {
       case "dateAsc": result.sort((a, b) => a.date.localeCompare(b.date)); break;
       case "titleAZ": result.sort((a, b) => a.title.localeCompare(b.title)); break;
@@ -170,7 +199,7 @@ export default function ShiurimScreen() {
   // Downloaded chip didn't actually re-filter. Both must be deps so
   // the useMemo re-runs when the user taps the chip OR when a
   // download finishes (isDownloaded ref changes).
-  }, [shiurim, search, selectedRebbeim, selectedTags, selectedSeries, showSavedOnly, showInProgressOnly, showDownloadedOnly, isSaved, getPosition, isDownloaded, sortOrder]);
+  }, [shiurim, deferredSearch, searchIndex, selectedRebbeim, selectedTags, selectedSeries, showSavedOnly, showInProgressOnly, showDownloadedOnly, isSaved, getPosition, isDownloaded, sortOrder]);
 
   // Reset pagination whenever the active filter window changes so the
   // first render shows the most relevant top-of-list slice fast.

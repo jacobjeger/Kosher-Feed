@@ -18,9 +18,50 @@ function formatTime(ms: number): string {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
-export default function MiniPlayer() {
-  const { currentEpisode, currentFeed, playback, pause, resume, seekTo, retryPlayback } = useAudioPlayer();
+/**
+ * Progress bar — extracted so the position subscription only re-renders
+ * this thin component, not the entire MiniPlayer. Position updates fire
+ * every ~1s during playback; we want artwork/title/buttons to stay
+ * static across those ticks (matters most on the Megalife's slow JS
+ * thread, where a full MiniPlayer re-render + LinearGradient relayout
+ * every second was visible as audio jitter).
+ */
+function ProgressBar({ gradientStart, gradientEnd }: { gradientStart: string; gradientEnd: string }) {
   const position = usePlaybackPosition();
+  const isWeb = Platform.OS === "web";
+  const rawProgress = position.durationMs > 0 ? position.positionMs / position.durationMs : 0;
+  const progress = isNaN(rawProgress) ? 0 : Math.min(rawProgress, 1);
+  return (
+    <View style={[styles.progressBar, { backgroundColor: "rgba(255,255,255,0.08)" }]}>
+      <LinearGradient
+        colors={[gradientStart, gradientEnd]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={[styles.progressFill, { width: `${progress * 100}%` }, isWeb ? { transition: 'width 0.3s ease' } as any : undefined]}
+      />
+    </View>
+  );
+}
+
+/**
+ * Web-only running-time readout. Same isolation rationale as ProgressBar:
+ * the position tick shouldn't re-render the title/artist row above it.
+ */
+function TimeReadoutWeb() {
+  const position = usePlaybackPosition();
+  if (position.durationMs <= 0) return null;
+  return (
+    <Text style={{ color: "rgba(255,255,255,0.35)", fontSize: 11 }}>
+      {formatTime(position.positionMs)} / {formatTime(position.durationMs)}
+    </Text>
+  );
+}
+
+function MiniPlayer() {
+  const {
+    currentEpisode, currentFeed, playback, pause, resume, seekTo, retryPlayback,
+    getPositionSnapshot,
+  } = useAudioPlayer();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
@@ -34,9 +75,6 @@ export default function MiniPlayer() {
 
   if (!currentEpisode) return null;
 
-  const rawProgress = position.durationMs > 0 ? position.positionMs / position.durationMs : 0;
-  const progress = isNaN(rawProgress) ? 0 : Math.min(rawProgress, 1);
-
   const enteringAnimation = !isWeb ? FadeInDown.duration(300).springify() : undefined;
   const exitingAnimation = !isWeb ? FadeOutDown.duration(200) : undefined;
 
@@ -49,19 +87,7 @@ export default function MiniPlayer() {
         onPressIn={() => { pressScale.value = withSpring(0.98, { damping: 15 }); }}
         onPressOut={() => { pressScale.value = withSpring(1, { damping: 15 }); }}
       >
-        {/* Progress bar — slimmer + dot-less per "make footer cleaner".
-             A 2px gradient line at the top of the player reads as a
-             progress indicator without the visual noise of a draggable
-             dot (the user taps the player to open the full screen
-             where they can scrub). */}
-        <View style={[styles.progressBar, { backgroundColor: "rgba(255,255,255,0.08)" }]}>
-          <LinearGradient
-            colors={[colors.gradientStart, colors.gradientEnd]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={[styles.progressFill, { width: `${progress * 100}%` }, isWeb ? { transition: 'width 0.3s ease' } as any : undefined]}
-          />
-        </View>
+        <ProgressBar gradientStart={colors.gradientStart} gradientEnd={colors.gradientEnd} />
 
         <View style={styles.content}>
           {currentFeed?.imageUrl ? (
@@ -89,13 +115,6 @@ export default function MiniPlayer() {
                   {playback.playbackError} Tap to retry.
                 </Text>
               ) : currentEpisode.id.startsWith("ytc:") ? (
-                // YTC shiur — surface the source on the mini-player so
-                // the user knows playback is from the YTC alumni
-                // library, AND make it tappable to jump back into
-                // /ytc. Without this branch the player was effectively
-                // a dead end once the user navigated out of YTC: tap
-                // the title or feed name and they'd land on
-                // /podcast/{ytc:rebbe} which doesn't exist.
                 <Pressable onPress={(e) => { e.stopPropagation(); router.push("/ytc" as any); }} hitSlop={4}>
                   <Text style={[styles.subtitle, { color: "rgba(212, 175, 55, 0.85)" }]} numberOfLines={1}>
                     From YTC Alumni · {currentFeed?.title}
@@ -108,17 +127,21 @@ export default function MiniPlayer() {
                   </Text>
                 </Pressable>
               )}
-              {isWeb && position.durationMs > 0 && (
-                <Text style={{ color: "rgba(255,255,255,0.35)", fontSize: 11 }}>
-                  {formatTime(position.positionMs)} / {formatTime(position.durationMs)}
-                </Text>
-              )}
+              {isWeb && <TimeReadoutWeb />}
             </View>
           </View>
 
+          {/* Skip buttons read the *current* position at press time via
+              getPositionSnapshot() — that way MiniPlayer doesn't need to
+              subscribe to the position store just to keep these closures
+              up to date. Saves a ~1Hz re-render of the whole row. */}
           <FocusableView
             focusRadius={14}
-            onPress={(e) => { e.stopPropagation(); seekTo(Math.max(0, position.positionMs - 15000)); }}
+            onPress={(e) => {
+              e.stopPropagation();
+              const p = getPositionSnapshot();
+              seekTo(Math.max(0, p.positionMs - 15000));
+            }}
             hitSlop={8}
             style={styles.skipBtn}
           >
@@ -154,7 +177,11 @@ export default function MiniPlayer() {
 
           <FocusableView
             focusRadius={14}
-            onPress={(e) => { e.stopPropagation(); seekTo(Math.min(position.durationMs, position.positionMs + 30000)); }}
+            onPress={(e) => {
+              e.stopPropagation();
+              const p = getPositionSnapshot();
+              seekTo(Math.min(p.durationMs, p.positionMs + 30000));
+            }}
             hitSlop={8}
             style={styles.skipBtn}
           >
@@ -165,6 +192,12 @@ export default function MiniPlayer() {
     </Animated.View>
   );
 }
+
+// React.memo so MiniPlayer doesn't re-render when its parent re-renders
+// (e.g., when MiniPlayerHost re-renders for an unrelated reason). The
+// player itself only needs to update when context-level fields it reads
+// (episode/feed/play-state) actually change.
+export default React.memo(MiniPlayer);
 
 const styles = StyleSheet.create({
   container: {
