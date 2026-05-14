@@ -364,13 +364,28 @@ function HomeScreenInner() {
     })();
   }, [inProgressPositions]);
 
+  // Below-the-fold query gate. Tier 1 (categories/feeds/latest) feeds
+  // the hero + first carousel, so they fire on mount. Tier 2 (trending,
+  // popular, featured, maggid) feeds sections users only see after
+  // scrolling, so we hold them back ~500ms to keep the JS thread free
+  // for taps during the cold-start render storm.
+  // The DeferredMount wrapper around those sections already delays the
+  // PAINT, but the useQuery hooks live at the parent level and fire
+  // unconditionally — gating with `enabled` is the only way to keep
+  // their setState chains off the critical path.
+  const [belowFoldReady, setBelowFoldReady] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setBelowFoldReady(true), 500);
+    return () => clearTimeout(t);
+  }, []);
+
   const categoriesQuery = useQuery<Category[]>({ queryKey: ["/api/categories"], staleTime: 60 * 60 * 1000 });
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
   const latestQuery = useQuery<Episode[]>({ queryKey: ["/api/episodes/latest"] });
-  const trendingQuery = useQuery<TrendingEpisode[]>({ queryKey: ["/api/episodes/trending"], staleTime: 15 * 60 * 1000 });
-  const popularQuery = useQuery<TrendingEpisode[]>({ queryKey: ["/api/episodes/popular?limit=60"], staleTime: 30 * 60 * 1000 });
-  const featuredQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds/featured"], staleTime: 30 * 60 * 1000 });
-  const maggidQuery = useQuery<{ author: string; feeds: Feed[] }[]>({ queryKey: ["/api/feeds/maggid-shiur"], staleTime: 30 * 60 * 1000 });
+  const trendingQuery = useQuery<TrendingEpisode[]>({ queryKey: ["/api/episodes/trending"], staleTime: 15 * 60 * 1000, enabled: belowFoldReady });
+  const popularQuery = useQuery<TrendingEpisode[]>({ queryKey: ["/api/episodes/popular?limit=60"], staleTime: 30 * 60 * 1000, enabled: belowFoldReady });
+  const featuredQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds/featured"], staleTime: 30 * 60 * 1000, enabled: belowFoldReady });
+  const maggidQuery = useQuery<{ author: string; feeds: Feed[] }[]>({ queryKey: ["/api/feeds/maggid-shiur"], staleTime: 30 * 60 * 1000, enabled: belowFoldReady });
   // Recommended section removed from home — disable the query so we don't
   // burn JS thread time + network on data we never render.
   const recommendationsQuery = useQuery<Feed[]>({
