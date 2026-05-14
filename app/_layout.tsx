@@ -208,7 +208,18 @@ export default function RootLayout() {
       notificationResponseListener.current?.remove();
       pushAppStateSub?.remove();
     };
-  }, [fontsLoaded, onboardingChecked]);
+    // Deps used to include `fontsLoaded`, but this effect doesn't read
+    // it — including it caused the effect to run twice on cold start
+    // (once when onboardingChecked flipped true, again ~300ms later
+    // when fontsLoaded flipped true). That doubled every startup task
+    // — two parallel checkForUpdate() calls (each a 6.7s round-trip
+    // to u.expo.dev), two registerPushToken() calls, two
+    // setupNotificationChannel + syncDeviceProfile + notification
+    // listener subscribe/unsubscribe pairs. Visible on the Megalife
+    // as ~9 seconds of "clicks not working" after the splash hides.
+    // Confirmed via logcat (2026-05-14) — both [Updates] check lines
+    // fired 324ms apart, with 6.7s parallel responses.
+  }, [onboardingChecked]);
 
   // Announcements
   const [currentAnnouncement, setCurrentAnnouncement] = useState<any>(null);
