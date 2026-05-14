@@ -4,7 +4,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
 import { Ionicons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
-import { AppState, Platform } from "react-native";
+import { AppState, InteractionManager, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import * as Notifications from "expo-notifications";
@@ -170,33 +170,16 @@ export default function RootLayout() {
     if (!onboardingChecked) return;
     SplashScreen.hideAsync().catch(() => {});
     setupNotificationChannel();
-    checkForUpdate();
 
-    // Sync device profile (model, OS, screen size, locale)
-    import("@/lib/device-profile").then(m => m.syncDeviceProfile()).catch(() => {});
-
-    // Auto-register push token on startup + retry on foreground.
-    // The internal dedupe + denial cooldown + background retry schedule in
-    // push-notifications.ts handle race conditions and transient FCM failures.
-    // Throttle the foreground retry to once per 2 minutes so AppState flips
-    // don't cause a log spam loop.
+    // Notification-tap handlers stay synchronous — they must be registered
+    // before any cold-launch from a notification tap can deliver its
+    // payload, and getLastNotificationResponseAsync is what catches the
+    // launch-from-tap case. Cheap setup, fires immediately.
     let pushAppStateSub: { remove: () => void } | null = null;
     let lastForegroundRegister = 0;
     if (Platform.OS !== "web") {
-      registerPushToken().catch(() => {});
-      pushAppStateSub = AppState.addEventListener("change", (state) => {
-        if (state !== "active") return;
-        const now = Date.now();
-        if (now - lastForegroundRegister < 2 * 60 * 1000) return;
-        lastForegroundRegister = now;
-        registerPushToken().catch(() => {});
-      });
-    }
-
-    if (Platform.OS !== "web") {
       notificationResponseListener.current =
         Notifications.addNotificationResponseReceivedListener(handleNotificationResponse);
-
       Notifications.getLastNotificationResponseAsync().then((response) => {
         if (response) {
           handleNotificationResponse(response);
@@ -204,7 +187,30 @@ export default function RootLayout() {
       });
     }
 
+    // Defer the expensive startup work (push token round-trip, OTA check,
+    // device-profile sync) past the first interaction window. On the
+    // Megalife these used to pin the JS thread for ~10s post-splash —
+    // long enough that taps felt dead. None of them gate user-facing
+    // functionality: the OTA applies on next restart anyway, push works
+    // off the token cached from the previous session, device-profile is
+    // analytics-only.
+    const deferredHandle = InteractionManager.runAfterInteractions(() => {
+      checkForUpdate();
+      import("@/lib/device-profile").then(m => m.syncDeviceProfile()).catch(() => {});
+      if (Platform.OS !== "web") {
+        registerPushToken().catch(() => {});
+        pushAppStateSub = AppState.addEventListener("change", (state) => {
+          if (state !== "active") return;
+          const now = Date.now();
+          if (now - lastForegroundRegister < 2 * 60 * 1000) return;
+          lastForegroundRegister = now;
+          registerPushToken().catch(() => {});
+        });
+      }
+    });
+
     return () => {
+      deferredHandle?.cancel?.();
       notificationResponseListener.current?.remove();
       pushAppStateSub?.remove();
     };
