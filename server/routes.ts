@@ -1986,11 +1986,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Reject push-registration breadcrumbs at the server boundary so
+  // stale APKs (running pre-May-5 JS bundles that lack the client-side
+  // isPushNoise filter) can't keep polluting the admin error feed.
+  // Real push ERRORS still get through — they don't match this regex
+  // because they don't carry the "[push]" prefix the registration
+  // breadcrumbs use.
+  const PUSH_NOISE_RE = /\[push\]|\[fcm\]|\[expo-push\]|expo push token|fcm token|push token|notification permissions|push registration|FCM token fetch|Permission granted, trying FCM|Push token unchanged/i;
+  function isPushNoiseReport(r: { level?: string; source?: string; message?: string }): boolean {
+    if ((r.level || "error") === "error") return false; // never drop real errors
+    if (r.source === "push" || r.source === "notifications") return true;
+    return !!r.message && PUSH_NOISE_RE.test(r.message);
+  }
+
   // Error Reports - public endpoint (no auth needed, devices send errors here)
   app.post("/api/error-reports", async (req: Request, res: Response) => {
     try {
       const { deviceId, level, message, stack, source, platform, appVersion, metadata } = req.body;
       if (!message) return res.status(400).json({ error: "message required" });
+      if (isPushNoiseReport({ level, source, message })) {
+        return res.json({ ok: true, filtered: true });
+      }
       const report = await storage.createErrorReport({
         deviceId: deviceId || null,
         level: level || "error",
@@ -2015,8 +2031,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!Array.isArray(reports)) return res.status(400).json({ error: "reports array required" });
       const limited = reports.slice(0, 20);
       const results = [];
+      let filtered = 0;
       for (const r of limited) {
         if (!r.message) continue;
+        if (isPushNoiseReport(r)) { filtered++; continue; }
         const report = await storage.createErrorReport({
           deviceId: r.deviceId || null,
           level: r.level || "error",
@@ -2030,7 +2048,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         trackErrorForAlert({ level: r.level || "error", message: r.message, source: r.source, platform: r.platform, appVersion: r.appVersion });
         results.push(report.id);
       }
-      res.json({ ok: true, count: results.length });
+      res.json({ ok: true, count: results.length, filtered });
     } catch (e: any) {
       publicError(res, e);
     }

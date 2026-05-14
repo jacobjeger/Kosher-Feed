@@ -152,7 +152,12 @@ function queueForServerReport(entry: LogEntry) {
 async function getDeviceIdForReport(): Promise<string | null> {
   if (deviceIdCache) return deviceIdCache;
   try {
-    const raw = await AsyncStorage.getItem("@shiurpod_device_id");
+    // The canonical key is set by lib/device-id.ts and is what every
+    // server endpoint expects. The old key "@shiurpod_device_id" never
+    // actually existed in AsyncStorage — only iOS Keychain — so reads
+    // returned null for every report and the admin dashboard showed
+    // "0 device(s)" on every group regardless of how many phones hit it.
+    const raw = await AsyncStorage.getItem("@kosher_podcast_device_id");
     deviceIdCache = raw;
     return raw;
   } catch {
