@@ -2380,7 +2380,7 @@ function formatDate(dateStr) {
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 // Escape for use inside JS string literals in onclick attributes
-function escJs(s) { return (s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/</g, '\\x3c'); }
+function escJs(s) { return (s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029').replace(/</g, '\\x3c'); }
 
 let errorReportsPage = 1;
 let _errorSourcesPopulated = false;
@@ -2802,10 +2802,44 @@ async function updateFeedbackStatus(id, status) {
 }
 
 
-async function openThread(feedbackId, type, subject, message, deviceId, dateStr) {
-  // Fast lookup by feedbackId instead of loading all conversations
-  let convId = null;
+let _currentThreadFeedbackId = null;
+let _currentThreadConvId = null;
+
+function _renderRepliesHtml(replies, originalMessage) {
+  if (!replies || replies.length === 0) {
+    return '<div id="threadRepliesArea" style="text-align:center;padding:20px;color:#64748b;font-size:13px;">No replies yet. Send the first reply below.</div>';
+  }
+  let html = '<div id="threadRepliesArea">';
+  for (const r of replies) {
+    if (originalMessage && r.sender === 'user' && r.message === originalMessage) continue;
+    const isAdmin = r.sender === 'admin';
+    const time = new Date(r.createdAt).toLocaleString();
+    let readReceipt = '';
+    if (isAdmin) {
+      if (r.readAt) {
+        const readTime = new Date(r.readAt).toLocaleString();
+        readReceipt = `<div style="font-size:10px;color:#10b981;margin-top:4px;">✓✓ Read ${esc(readTime)}</div>`;
+      } else {
+        readReceipt = `<div style="font-size:10px;color:#64748b;margin-top:4px;">✓ Sent · not yet opened</div>`;
+      }
+    }
+    html += `
+      <div style="background:${isAdmin ? '#1e3a5f' : '#0f172a'};border-radius:10px;padding:12px;margin-bottom:6px;${isAdmin ? 'margin-left:24px;border-left:3px solid #3b82f6;' : 'margin-right:24px;'}">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+          <span style="font-size:11px;font-weight:600;color:${isAdmin ? '#60a5fa' : '#94a3b8'};">${isAdmin ? 'Admin' : 'User'}</span>
+          <span style="font-size:10px;color:#64748b;">${time}</span>
+        </div>
+        <div style="font-size:13px;color:#e2e8f0;">${esc(r.message)}</div>
+        ${readReceipt}
+      </div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+async function _loadThreadRepliesByFeedback(feedbackId, originalMessage) {
   let replies = [];
+  let convId = null;
   try {
     const existing = await api('/api/admin/conversations/by-feedback/' + feedbackId);
     if (existing) {
@@ -2813,10 +2847,18 @@ async function openThread(feedbackId, type, subject, message, deviceId, dateStr)
       replies = await api('/api/admin/conversations/' + convId + '/messages');
     }
   } catch {}
+  if (_currentThreadFeedbackId !== feedbackId) return;
+  _currentThreadConvId = convId;
+  const area = document.getElementById('threadRepliesArea');
+  if (area) area.outerHTML = _renderRepliesHtml(replies, originalMessage);
+}
 
+function openThread(feedbackId, type, subject, message, deviceId, dateStr) {
   const typeLabel = type === 'shiur_request' ? 'Shiur Request' : 'Technical Issue';
 
-  let threadHtml = `
+  // Render the modal synchronously so it opens immediately on click.
+  // Replies load in the background and slot into #threadRepliesArea.
+  const threadHtml = `
     <h2 style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
       Conversation Thread
     </h2>
@@ -2829,82 +2871,54 @@ async function openThread(feedbackId, type, subject, message, deviceId, dateStr)
         <div style="font-weight:600;font-size:14px;color:#f8fafc;margin-bottom:4px;">${esc(subject)}</div>
         <div style="font-size:13px;color:#94a3b8;">${esc(message)}</div>
         <div style="font-size:10px;color:#475569;margin-top:6px;">Device: ${esc(deviceId)}</div>
-      </div>`;
-
-  if (replies.length > 0) {
-    for (const r of replies) {
-      if (r.sender === 'user' && r.message === message) continue; // skip original
-      const isAdmin = r.sender === 'admin';
-      const time = new Date(r.createdAt).toLocaleString();
-      // Read receipt (admin-only display): user sees nothing in their app.
-      let readReceipt = '';
-      if (isAdmin) {
-        if (r.readAt) {
-          const readTime = new Date(r.readAt).toLocaleString();
-          readReceipt = `<div style="font-size:10px;color:#10b981;margin-top:4px;">✓✓ Read ${esc(readTime)}</div>`;
-        } else {
-          readReceipt = `<div style="font-size:10px;color:#64748b;margin-top:4px;">✓ Sent · not yet opened</div>`;
-        }
-      }
-      threadHtml += `
-        <div style="background:${isAdmin ? '#1e3a5f' : '#0f172a'};border-radius:10px;padding:12px;margin-bottom:6px;${isAdmin ? 'margin-left:24px;border-left:3px solid #3b82f6;' : 'margin-right:24px;'}">
-          <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-            <span style="font-size:11px;font-weight:600;color:${isAdmin ? '#60a5fa' : '#94a3b8'};">${isAdmin ? 'Admin' : 'User'}</span>
-            <span style="font-size:10px;color:#64748b;">${time}</span>
-          </div>
-          <div style="font-size:13px;color:#e2e8f0;">${esc(r.message)}</div>
-          ${readReceipt}
-        </div>`;
-    }
-  } else {
-    threadHtml += '<div style="text-align:center;padding:20px;color:#64748b;font-size:13px;">No replies yet. Send the first reply below.</div>';
-  }
-
-  threadHtml += `
+      </div>
+      <div id="threadRepliesArea" style="text-align:center;padding:12px;color:#64748b;font-size:12px;">Loading replies…</div>
     </div>
     <div style="display:flex;gap:8px;">
       <textarea id="threadReplyInput" rows="3" placeholder="Type your reply..." style="flex:1;resize:vertical;min-height:60px;"></textarea>
-      <button class="btn btn-primary" style="align-self:flex-end;padding:10px 20px;" onclick="sendThreadReply('${feedbackId}','${escJs(subject)}','${escJs(deviceId)}')">Send</button>
+      <button class="btn btn-primary" id="threadSendBtn" style="align-self:flex-end;padding:10px 20px;" onclick="sendThreadReply('${feedbackId}','${escJs(subject)}','${escJs(deviceId)}',this)">Send</button>
     </div>
   `;
 
   document.getElementById('modalContent').innerHTML = threadHtml;
   document.getElementById('modalOverlay').classList.remove('hidden');
   document.getElementById('threadReplyInput').focus();
+
+  _currentThreadFeedbackId = feedbackId;
+  _currentThreadConvId = null;
+  _loadThreadRepliesByFeedback(feedbackId, message);
 }
 
-async function sendThreadReply(feedbackId, subject, deviceId) {
+async function sendThreadReply(feedbackId, subject, deviceId, btn) {
   const input = document.getElementById('threadReplyInput');
   const message = input.value.trim();
   if (!message) return;
 
-  const btn = event.target;
-  btn.disabled = true;
-  btn.textContent = 'Sending...';
+  if (!btn) btn = document.getElementById('threadSendBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
 
   try {
-    // Find or create conversation for this feedback
-    let convId = null;
-    const existing = await api('/api/admin/conversations/by-feedback/' + feedbackId);
-
-    if (existing) {
-      convId = existing.id;
-    } else {
-      // Create conversation
-      const newConv = await api('/api/conversations', {
-        method: 'POST',
-        body: JSON.stringify({ deviceId, subject: subject || 'Feedback', message: 'User submitted feedback', feedbackId })
-      });
-      convId = newConv.id;
+    // Reuse the conv id loaded by openThread when available; otherwise look it up.
+    let convId = _currentThreadFeedbackId === feedbackId ? _currentThreadConvId : null;
+    if (!convId) {
+      const existing = await api('/api/admin/conversations/by-feedback/' + feedbackId);
+      if (existing) {
+        convId = existing.id;
+      } else {
+        const newConv = await api('/api/conversations', {
+          method: 'POST',
+          body: JSON.stringify({ deviceId, subject: subject || 'Feedback', message: 'User submitted feedback', feedbackId })
+        });
+        convId = newConv.id;
+      }
+      _currentThreadConvId = convId;
     }
 
-    // Send admin reply
     await api('/api/admin/conversations/' + convId + '/reply', {
       method: 'POST',
       body: JSON.stringify({ message })
     });
 
-    // Also send push notification so the user sees it immediately
     if (deviceId) {
       api('/api/admin/send-push', { method: 'POST', body: JSON.stringify({
         title: 'ShiurPod Team',
@@ -2915,22 +2929,30 @@ async function sendThreadReply(feedbackId, subject, deviceId) {
     }
 
     showAlert('Reply sent!', 'success');
-    // Refresh the thread
-    openThread(feedbackId, '', subject, '', deviceId, '');
+    input.value = '';
+    // Refresh just the replies area, not the whole modal.
+    if (_currentThreadFeedbackId === feedbackId) {
+      _loadThreadRepliesByFeedback(feedbackId, null);
+    }
   } catch (e) {
     showAlert('Failed to send: ' + (e.message || e), 'error');
-    btn.disabled = false;
-    btn.textContent = 'Send';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Send'; }
   }
 }
 
-async function openThreadByConvId(convId, subject, deviceId) {
+async function _loadThreadRepliesByConvId(convId) {
   let replies = [];
   try {
     replies = await api('/api/admin/conversations/' + convId + '/messages');
   } catch {}
+  if (_currentThreadConvId !== convId) return;
+  const area = document.getElementById('threadRepliesArea');
+  if (area) area.outerHTML = _renderRepliesHtml(replies, null);
+}
 
-  let threadHtml = `
+function openThreadByConvId(convId, subject, deviceId) {
+  const threadHtml = `
     <h2 style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
       Conversation Thread
     </h2>
@@ -2938,56 +2960,31 @@ async function openThreadByConvId(convId, subject, deviceId) {
       <div style="font-weight:600;font-size:14px;color:#f8fafc;margin-bottom:4px;">${esc(subject || 'Conversation')}</div>
       <div style="font-size:10px;color:#475569;">Device: ${esc(deviceId || '')}</div>
     </div>
-    <div style="max-height:400px;overflow-y:auto;margin-bottom:16px;" id="threadMessages">`;
-
-  if (replies.length === 0) {
-    threadHtml += '<div style="text-align:center;padding:20px;color:#64748b;font-size:13px;">No messages yet. Send the first reply below.</div>';
-  } else {
-    for (const r of replies) {
-      const isAdmin = r.sender === 'admin';
-      const time = new Date(r.createdAt).toLocaleString();
-      let readReceipt = '';
-      if (isAdmin) {
-        if (r.readAt) {
-          const readTime = new Date(r.readAt).toLocaleString();
-          readReceipt = `<div style="font-size:10px;color:#10b981;margin-top:4px;">✓✓ Read ${esc(readTime)}</div>`;
-        } else {
-          readReceipt = `<div style="font-size:10px;color:#64748b;margin-top:4px;">✓ Sent · not yet opened</div>`;
-        }
-      }
-      threadHtml += `
-        <div style="background:${isAdmin ? '#1e3a5f' : '#0f172a'};border-radius:10px;padding:12px;margin-bottom:6px;${isAdmin ? 'margin-left:24px;border-left:3px solid #3b82f6;' : 'margin-right:24px;'}">
-          <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-            <span style="font-size:11px;font-weight:600;color:${isAdmin ? '#60a5fa' : '#94a3b8'};">${isAdmin ? 'Admin' : 'User'}</span>
-            <span style="font-size:10px;color:#64748b;">${time}</span>
-          </div>
-          <div style="font-size:13px;color:#e2e8f0;">${esc(r.message)}</div>
-          ${readReceipt}
-        </div>`;
-    }
-  }
-
-  threadHtml += `
+    <div style="max-height:400px;overflow-y:auto;margin-bottom:16px;" id="threadMessages">
+      <div id="threadRepliesArea" style="text-align:center;padding:12px;color:#64748b;font-size:12px;">Loading messages…</div>
     </div>
     <div style="display:flex;gap:8px;">
       <textarea id="threadReplyInput" rows="3" placeholder="Type your reply..." style="flex:1;resize:vertical;min-height:60px;"></textarea>
-      <button class="btn btn-primary" style="align-self:flex-end;padding:10px 20px;" onclick="sendThreadReplyByConvId('${escJs(convId)}','${escJs(subject)}','${escJs(deviceId)}')">Send</button>
+      <button class="btn btn-primary" id="threadSendBtn" style="align-self:flex-end;padding:10px 20px;" onclick="sendThreadReplyByConvId('${escJs(convId)}','${escJs(subject)}','${escJs(deviceId)}',this)">Send</button>
     </div>
   `;
 
   document.getElementById('modalContent').innerHTML = threadHtml;
   document.getElementById('modalOverlay').classList.remove('hidden');
   document.getElementById('threadReplyInput').focus();
+
+  _currentThreadFeedbackId = null;
+  _currentThreadConvId = convId;
+  _loadThreadRepliesByConvId(convId);
 }
 
-async function sendThreadReplyByConvId(convId, subject, deviceId) {
+async function sendThreadReplyByConvId(convId, subject, deviceId, btn) {
   const input = document.getElementById('threadReplyInput');
   const message = input.value.trim();
   if (!message) return;
 
-  const btn = event.target;
-  btn.disabled = true;
-  btn.textContent = 'Sending...';
+  if (!btn) btn = document.getElementById('threadSendBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
 
   try {
     await api('/api/admin/conversations/' + convId + '/reply', {
@@ -3005,11 +3002,12 @@ async function sendThreadReplyByConvId(convId, subject, deviceId) {
     }
 
     showAlert('Reply sent!', 'success');
-    openThreadByConvId(convId, subject, deviceId);
+    input.value = '';
+    if (_currentThreadConvId === convId) _loadThreadRepliesByConvId(convId);
   } catch (e) {
     showAlert('Failed to send: ' + (e.message || e), 'error');
-    btn.disabled = false;
-    btn.textContent = 'Send';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Send'; }
   }
 }
 
