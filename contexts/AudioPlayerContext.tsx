@@ -785,9 +785,12 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         // session — important on devices where the audio HAL is unstable.
         const tryAttempt = async (attempt: number, maxAttempts: number, confirmTimeoutMs: number): Promise<boolean> => {
           teardown();
-          const player = createAudioPlayerFn(resolveAudioUrl(episode.audioUrl), {
-            updateInterval: 500,
-          });
+          // Buzzsprout (and other hosts) 403 the default OkHttp UA; pass any
+          // non-default UA so their CDN serves the file.
+          const player = createAudioPlayerFn(
+            { uri: resolveAudioUrl(episode.audioUrl), headers: { "User-Agent": "ShiurPod/1.0" } },
+            { updateInterval: 500 },
+          );
           nativePlayerRef.current = player;
           nativePlayerInstance = player;
 
