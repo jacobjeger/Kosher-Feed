@@ -1,7 +1,7 @@
 import { Tabs, usePathname } from "expo-router";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
-import { Platform, StyleSheet, View, Text, Pressable, Dimensions, Image } from "react-native";
+import { Platform, StyleSheet, View, Text, Pressable, Dimensions, Image, InteractionManager } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useState, useEffect, useCallback } from "react";
@@ -182,12 +182,27 @@ export default function TabLayout() {
   const showYtcTab = !isWeb && ytcEnabled && ytcUnlocked;
 
   // App-boot pre-warm: if the user was unlocked from a previous
-  // session, fan out YTC's public Firestore reads in the background
-  // the moment we know the YTC tab will appear. By the time they
-  // tap into /ytc the cache layer (lib/ytc/firebase.ts cached())
-  // returns instantly. Idempotent — ran behind in-flight dedupe.
+  // session, fan out YTC's public Firestore reads so the cache layer
+  // (lib/ytc/firebase.ts cached()) returns instantly when they tap /ytc.
+  //
+  // CRITICAL: defer this past first paint/interactions. Running it
+  // immediately on a cold start blocks the single JS thread — the
+  // Firebase SDK lazy-import + the 800-doc shiurim fetch + its multi-MB
+  // JSON.stringify/AsyncStorage write are all synchronous CPU work, which
+  // made the whole app unresponsive for ~the first minute on slow devices
+  // when YTC was unlocked. InteractionManager + a short timer push it off
+  // the critical window; the cache is still warm well before the user
+  // navigates into /ytc. Idempotent — guarded by in-flight dedupe.
   useEffect(() => {
-    if (showYtcTab) prewarmYtcDataIfPossible();
+    if (!showYtcTab) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const task = InteractionManager.runAfterInteractions(() => {
+      timer = setTimeout(() => prewarmYtcDataIfPossible(), 2000);
+    });
+    return () => {
+      task.cancel();
+      if (timer) clearTimeout(timer);
+    };
   }, [showYtcTab]);
 
   useKeyboardShortcuts();

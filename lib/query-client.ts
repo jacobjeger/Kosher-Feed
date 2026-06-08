@@ -1,6 +1,38 @@
-import { Platform } from "react-native";
+import { Platform, AppState } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { QueryClient, QueryFunction, keepPreviousData } from "@tanstack/react-query";
+import { QueryClient, QueryFunction, keepPreviousData, focusManager, onlineManager } from "@tanstack/react-query";
+
+// React Native integration for TanStack Query. Without this, focusManager
+// assumes the app is *permanently focused* (there's no `document` on native),
+// so every `refetchInterval` keeps firing even when the app is backgrounded —
+// the root cause of the app burning mobile data in the background (e.g.
+// BackgroundSync's 30-min feed/latest-episode polls). Wiring focus to AppState
+// pauses interval refetches while backgrounded (refetchIntervalInBackground is
+// false by default). New-episode notifications are unaffected: they arrive via
+// server FCM push, and BackgroundSync still re-checks on AppState → active.
+if (Platform.OS !== "web") {
+  focusManager.setEventListener((handleFocus) => {
+    const sub = AppState.addEventListener("change", (status) => {
+      handleFocus(status === "active");
+    });
+    return () => sub.remove();
+  });
+
+  // onlineManager: stop firing fetches while the device is offline. Falls back
+  // to "assume online" if expo-network isn't available so we never wedge.
+  onlineManager.setEventListener((setOnline) => {
+    try {
+      const Network = require("expo-network");
+      const sub = Network.addNetworkStateListener((state: any) => {
+        setOnline(!!state.isConnected && state.isInternetReachable !== false);
+      });
+      return () => { try { sub?.remove?.(); } catch {} };
+    } catch {
+      setOnline(true);
+      return () => {};
+    }
+  });
+}
 
 const apiFetch: typeof globalThis.fetch =
   Platform.OS === "web"

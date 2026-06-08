@@ -738,7 +738,7 @@ export async function getEpisodesByFeed(feedId: string): Promise<Episode[]> {
   return db.select().from(episodes).where(eq(episodes.feedId, feedId)).orderBy(desc(episodes.publishedAt));
 }
 
-export async function getEpisodesByFeedPaginated(feedId: string, page: number = 1, pageLimit: number = 50, sort: string = 'newest'): Promise<Episode[]> {
+export async function getEpisodesByFeedPaginated(feedId: string, page: number = 1, pageLimit: number = 50, sort: string = 'newest', search?: string): Promise<Episode[]> {
   const offset = (page - 1) * pageLimit;
   // Deterministic order: real publish date first; fall back to ingestion time
   // and finally a stable id tiebreaker so Postgres can't reshuffle ties between
@@ -747,11 +747,19 @@ export async function getEpisodesByFeedPaginated(feedId: string, page: number = 
   const orderClauses = ascSort
     ? [sql`${episodes.publishedAt} ASC NULLS LAST`, asc(episodes.createdAt), asc(episodes.id)]
     : [sql`${episodes.publishedAt} DESC NULLS LAST`, desc(episodes.createdAt), desc(episodes.id)];
-  return db.select().from(episodes).where(eq(episodes.feedId, feedId)).orderBy(...orderClauses).limit(pageLimit).offset(offset);
+  const q = search?.trim();
+  const where = q
+    ? and(eq(episodes.feedId, feedId), ilike(episodes.title, `%${q}%`))
+    : eq(episodes.feedId, feedId);
+  return db.select().from(episodes).where(where).orderBy(...orderClauses).limit(pageLimit).offset(offset);
 }
 
-export async function getEpisodeCountByFeed(feedId: string): Promise<number> {
-  const result = await db.select({ value: count() }).from(episodes).where(eq(episodes.feedId, feedId));
+export async function getEpisodeCountByFeed(feedId: string, search?: string): Promise<number> {
+  const q = search?.trim();
+  const where = q
+    ? and(eq(episodes.feedId, feedId), ilike(episodes.title, `%${q}%`))
+    : eq(episodes.feedId, feedId);
+  const result = await db.select({ value: count() }).from(episodes).where(where);
   return result[0]?.value || 0;
 }
 

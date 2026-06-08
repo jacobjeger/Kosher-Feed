@@ -65,6 +65,10 @@ function PodcastDetailScreenInner() {
   batchDownloadRef.current = batchDownload;
   const [showFullDescription, setShowFullDescription] = useState<boolean>(false);
   const [episodeSearch, setEpisodeSearch] = useState("");
+  // Debounced value drives the server query so we don't fire a request per
+  // keystroke. The search runs server-side (against ALL episodes for this
+  // feed), not just the pages already loaded.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [isEpisodeSearchFocused, setIsEpisodeSearchFocused] = useState(false);
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [showPreferences, setShowPreferences] = useState(false);
@@ -89,8 +93,13 @@ function PodcastDetailScreenInner() {
 
   const feed = feedFromList || singleFeedQuery.data;
 
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(episodeSearch.trim()), 300);
+    return () => clearTimeout(t);
+  }, [episodeSearch]);
+
   const episodesInfiniteQuery = useInfiniteQuery<PaginatedResponse>({
-    queryKey: [`/api/feeds/${id}/episodes`, "paginated", sortOrder],
+    queryKey: [`/api/feeds/${id}/episodes`, "paginated", sortOrder, debouncedSearch],
     queryFn: async ({ pageParam }) => {
       const baseUrl = getApiUrl();
       const url = new URL(`/api/feeds/${id}/episodes`, baseUrl);
@@ -98,6 +107,7 @@ function PodcastDetailScreenInner() {
       url.searchParams.set("page", String(pageParam));
       url.searchParams.set("limit", String(PAGE_SIZE));
       url.searchParams.set("sort", sortOrder);
+      if (debouncedSearch) url.searchParams.set("search", debouncedSearch);
       const res = await fetch(url.toString());
       if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
       return res.json();
@@ -115,11 +125,9 @@ function PodcastDetailScreenInner() {
   const totalCount = episodesInfiniteQuery.data?.pages[0]?.totalCount || 0;
 
   const filteredEpisodes = useMemo(() => {
+    // Title search is handled server-side (queries ALL episodes for this feed,
+    // not just loaded pages). These filters narrow the already-fetched pages.
     let eps = allEpisodes;
-    if (episodeSearch.trim()) {
-      const q = episodeSearch.toLowerCase().trim();
-      eps = eps.filter(ep => ep.title.toLowerCase().includes(q));
-    }
     switch (episodeFilter) {
       case 'unplayed':
         eps = eps.filter(ep => !isPlayed(ep.id));
@@ -132,7 +140,7 @@ function PodcastDetailScreenInner() {
         break;
     }
     return eps;
-  }, [allEpisodes, episodeSearch, episodeFilter, isPlayed, inProgressIds, isDownloaded]);
+  }, [allEpisodes, episodeFilter, isPlayed, inProgressIds, isDownloaded]);
 
   const subsQuery = useQuery<Subscription[]>({
     queryKey: ["/api/subscriptions"],
@@ -273,10 +281,10 @@ function PodcastDetailScreenInner() {
   }, [showRefreshHint]);
 
   const handleLoadMore = useCallback(() => {
-    if (episodesInfiniteQuery.hasNextPage && !episodesInfiniteQuery.isFetchingNextPage && !episodeSearch.trim()) {
+    if (episodesInfiniteQuery.hasNextPage && !episodesInfiniteQuery.isFetchingNextPage) {
       episodesInfiniteQuery.fetchNextPage();
     }
-  }, [episodesInfiniteQuery, episodeSearch]);
+  }, [episodesInfiniteQuery]);
 
   const renderEpisodeItem = useCallback(({ item }: { item: Episode }) => {
     if (!feed) return null;
@@ -529,17 +537,17 @@ function PodcastDetailScreenInner() {
         </View>
       );
     }
-    if (allEpisodes.length > 0 && !episodesInfiniteQuery.hasNextPage && !episodeSearch.trim()) {
+    if (allEpisodes.length > 0 && !episodesInfiniteQuery.hasNextPage) {
       return (
         <View style={styles.endOfList}>
           <Text style={[styles.endOfListText, { color: colors.textSecondary }]}>
-            All {totalCount} episodes loaded
+            {debouncedSearch ? `${totalCount} matching episode${totalCount === 1 ? "" : "s"}` : `All ${totalCount} episodes loaded`}
           </Text>
         </View>
       );
     }
     return null;
-  }, [episodesInfiniteQuery.isFetchingNextPage, episodesInfiniteQuery.hasNextPage, allEpisodes.length, totalCount, episodeSearch, colors]);
+  }, [episodesInfiniteQuery.isFetchingNextPage, episodesInfiniteQuery.hasNextPage, allEpisodes.length, totalCount, debouncedSearch, colors]);
 
   const emptyElement = useMemo(() => {
     if (episodesInfiniteQuery.isLoading) {

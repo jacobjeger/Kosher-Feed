@@ -451,7 +451,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const paginated = req.query.paginated === "1";
       const slim = req.query.slim === "1";
       const sort = (req.query.sort as string) || 'newest';
-      const eps = await storage.getEpisodesByFeedPaginated(feedId, page, limit, sort);
+      const search = (req.query.search as string) || undefined;
+      const eps = await storage.getEpisodesByFeedPaginated(feedId, page, limit, sort, search);
       res.setHeader("Cache-Control", "public, max-age=30");
 
       const mapEpisode = (ep: any) => slim ? ({
@@ -465,7 +466,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }) : ep;
 
       if (paginated) {
-        const totalCount = await storage.getEpisodeCountByFeed(req.params.id);
+        const totalCount = await storage.getEpisodeCountByFeed(req.params.id, search);
         const totalPages = Math.ceil(totalCount / limit);
         res.json({
           episodes: eps.map(mapEpisode),
