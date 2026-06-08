@@ -86,7 +86,7 @@ export default function HomeScreen() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<YtcEvent[]>([]);
   const [recentShiur, setRecentShiur] = useState<Shiur | null>(null);
-  const [featuredShiur, setFeaturedShiur] = useState<Shiur | null>(null);
+  const [featuredShiurim, setFeaturedShiurim] = useState<Shiur[]>([]);
   const [collections, setCollections] = useState<ShiurCollection[]>([]);
   const [alumniPhotos, setAlumniPhotos] = useState<AlumniPhoto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -108,7 +108,7 @@ export default function HomeScreen() {
       setAnnouncements(anns as Announcement[]);
       setUpcomingEvents(events as YtcEvent[]);
       setRecentShiur(shiur as Shiur | null);
-      setFeaturedShiur(featured as Shiur | null);
+      setFeaturedShiurim(featured as Shiur[]);
       setCollections(cols as ShiurCollection[]);
       setAlumniPhotos(photos as AlumniPhoto[]);
     } catch (e) {
@@ -347,20 +347,21 @@ export default function HomeScreen() {
                Rendered with a gold-accented title to differentiate from
                the most-recent slot below. Placed BEFORE upcoming simchas
                so the user lands on featured Torah content first. */}
-          {featuredShiur && (
+          {featuredShiurim.map((featured, i) => (
             <ShiurHomeCard
-              shiur={featuredShiur}
-              sectionTitle="Featured Shiur"
+              key={featured.id}
+              shiur={featured}
+              sectionTitle={i === 0 ? (featuredShiurim.length > 1 ? "Featured Shiurim" : "Featured Shiur") : undefined}
               isFeatured
               getPosition={getPosition}
               playShiur={playShiur}
               formatDate={formatDate}
             />
-          )}
+          ))}
 
-          {/* Most recent shiur — only shown when distinct from featured
+          {/* Most recent shiur — only shown when distinct from any featured
                (matches iOS behavior at HomeView.swift:71). */}
-          {recentShiur && recentShiur.id !== featuredShiur?.id && (
+          {recentShiur && !featuredShiurim.some((f) => f.id === recentShiur.id) && (
             <ShiurHomeCard
               shiur={recentShiur}
               sectionTitle="Most Recent Shiur"
@@ -542,7 +543,7 @@ function formatRemainingMin(positionMs: number, durationMs: number): string {
 
 interface ShiurHomeCardProps {
   shiur: Shiur;
-  sectionTitle: string;
+  sectionTitle?: string;
   isFeatured: boolean;
   getPosition: (id: string) => { positionMs: number; durationMs: number } | null;
   playShiur: (shiur: Shiur) => void;
@@ -564,7 +565,7 @@ const ShiurHomeCard = React.memo(function ShiurHomeCardImpl({ shiur, sectionTitl
            per user feedback. The "Featured Shiur" / "Most Recent Shiur"
            section title alone signals the role; the card itself looks
            identical to other shiur cards. */}
-      <Text style={styles.sectionTitle}>{sectionTitle}</Text>
+      {sectionTitle ? <Text style={styles.sectionTitle}>{sectionTitle}</Text> : null}
       <View style={styles.shiurCardWrap}>
         <View style={styles.shiurCard}>
           <View style={styles.shiurInfo}>

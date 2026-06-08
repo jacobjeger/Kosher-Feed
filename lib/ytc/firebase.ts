@@ -672,18 +672,27 @@ export async function fetchMostRecentShiur() {
   });
 }
 
-/** Admin-pinned "featured shiur". Returns null when disabled or unset.
- *  Schema (matches iOS): settings/featuredShiur { enabled, shiurId }. */
+/** Admin-pinned "featured shiurim". Returns [] when disabled or unset.
+ *  Schema: settings/featuredShiur { enabled, shiurIds: string[] }.
+ *  Legacy fallback: single `shiurId` (older admin builds). Order is
+ *  preserved as the admin arranged it. Matches the website's read at
+ *  app/page.tsx. */
 export async function fetchFeaturedShiur() {
   return cached("featuredShiur", TTL_RECENT, async () => {
     const { db } = await getYtcFirebase();
     const { doc, getDoc } = await import("firebase/firestore");
     const settingsSnap = await getDoc(doc(db, "settings", "featuredShiur"));
-    if (!settingsSnap.exists()) return null;
-    const data = settingsSnap.data() as { enabled?: boolean; shiurId?: string };
-    if (!data.enabled || !data.shiurId) return null;
-    const shiurSnap = await getDoc(doc(db, "shiurim", data.shiurId));
-    return docToShiur(shiurSnap);
+    if (!settingsSnap.exists()) return [];
+    const data = settingsSnap.data() as { enabled?: boolean; shiurIds?: unknown; shiurId?: string };
+    if (!data.enabled) return [];
+    const ids: string[] = Array.isArray(data.shiurIds)
+      ? data.shiurIds.filter((id): id is string => typeof id === "string" && id.length > 0)
+      : data.shiurId
+      ? [data.shiurId]
+      : [];
+    if (ids.length === 0) return [];
+    const snaps = await Promise.all(ids.map((id) => getDoc(doc(db, "shiurim", id))));
+    return snaps.map(docToShiur).filter(Boolean);
   });
 }
 
