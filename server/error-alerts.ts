@@ -1,12 +1,15 @@
 import { Resend } from "resend";
+import * as iss from "./issues-storage";
 
 const ALERT_EMAIL = "akivajeger@gmail.com";
 const ALERT_COOLDOWN_MS = 30 * 60 * 1000; // Don't send more than 1 alert per 30 min
 const SPIKE_THRESHOLD = 10; // errors in the window to trigger alert
 const SPIKE_WINDOW_MS = 5 * 60 * 1000; // 5-minute sliding window
+const REGRESSION_COOLDOWN_MS = 10 * 60 * 1000; // per-fingerprint, so a single noisy regression doesn't flood
 
 let lastAlertSentAt = 0;
 const recentErrors: number[] = []; // timestamps of recent errors
+const lastRegressionSentAt = new Map<string, number>(); // per-fingerprint
 
 export function trackErrorForAlert(error: { level: string; message: string; source?: string; platform?: string; appVersion?: string }) {
   if (error.level !== "error") return;
@@ -72,6 +75,51 @@ async function sendErrorAlert(errorCount: number, latestError: { message: string
   });
 
   console.log(`Error alert email sent: ${errorCount} errors in last 5 min`);
+}
+
+// Regression alert: fired when an issue auto-reopens because a NEWER app
+// version surfaced the same fingerprint. This is the most actionable signal
+// in the entire pipeline ("the fix you shipped didn't hold") — independent
+// 10min cooldown per fingerprint so a single regressing issue doesn't drown
+// the inbox, but unrelated regressions still get through immediately.
+export async function alertRegression(fingerprint: string) {
+  try {
+    const last = lastRegressionSentAt.get(fingerprint) || 0;
+    if (Date.now() - last < REGRESSION_COOLDOWN_MS) return;
+    lastRegressionSentAt.set(fingerprint, Date.now());
+
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) return;
+    const { issue, events } = await iss.getIssue(fingerprint, 3);
+    if (!issue) return;
+
+    const resend = new Resend(apiKey);
+    const recentEvent = events[0];
+    await resend.emails.send({
+      from: "ShiurPod Alerts <alerts@shiurpod.com>",
+      to: ALERT_EMAIL,
+      subject: `🚨 ShiurPod regression — ${(issue.title || "").substring(0, 80)}`,
+      html: `
+        <div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+          <div style="background:#ef4444;color:#fff;padding:10px 16px;border-radius:8px;margin-bottom:16px;display:inline-block;font-weight:700;">REGRESSION</div>
+          <h2 style="margin:8px 0 16px;color:#1e293b;">${escHtml((issue.title || "").substring(0, 200))}</h2>
+          <p style="color:#475569;font-size:14px;line-height:1.5;">An issue we previously resolved on <strong>v${escHtml(issue.resolvedAtVersion || "?")}</strong> ${issue.resolvedNote ? "(note: " + escHtml(issue.resolvedNote) + ") " : ""}has reappeared on a newer build.</p>
+          <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:14px;margin:16px 0;font-size:13px;">
+            <div><strong>Fingerprint:</strong> <code>${escHtml(issue.fingerprint)}</code></div>
+            <div><strong>Severity:</strong> ${escHtml(issue.severity)}</div>
+            <div><strong>Latest version seen:</strong> ${escHtml(recentEvent?.appVersion || "?")}</div>
+            <div><strong>Platform:</strong> ${escHtml(recentEvent?.platform || "?")}</div>
+            <div><strong>Total events:</strong> ${issue.count} · <strong>Devices:</strong> ${issue.uniqueDeviceCount}</div>
+          </div>
+          <a href="https://shiurpod.com/admin#errors" style="display:inline-block;background:#3b82f6;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600;">Open in admin →</a>
+          <p style="color:#94a3b8;font-size:11px;margin-top:16px;">To resolve: <code>shiurctl resolve ${escHtml(issue.fingerprint)} --version &lt;new&gt; --note "&lt;fix&gt;"</code></p>
+        </div>
+      `,
+    });
+    console.log(`Regression alert sent for ${fingerprint}`);
+  } catch (e: any) {
+    console.error("alertRegression failed:", e?.message || e);
+  }
 }
 
 export async function sendFeedbackNotification(feedback: {

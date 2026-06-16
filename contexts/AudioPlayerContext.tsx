@@ -3,6 +3,8 @@ import { Platform, InteractionManager } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Episode, Feed } from "@/lib/types";
 import { addLog } from "@/lib/error-logger";
+import { playbackMetric, addMetric } from "@/lib/telemetry/metrics";
+import { addBreadcrumb } from "@/lib/telemetry/breadcrumbs";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { getDeviceId } from "@/lib/device-id";
 import { getQueue, addToQueue as addToQueueStorage, removeFromQueue as removeFromQueueStorage, clearQueue as clearQueueStorage, initQueueFromServer, type QueueItem } from "@/lib/queue";
@@ -305,6 +307,14 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   // transient update to UI so the play button doesn't flicker to "paused"
   // and back. Cleared once status.playing === true is seen post-seek.
   const seekResumeUntilRef = useRef<number>(0);
+  // Perf telemetry refs.
+  // playStartedAtRef:  Date.now() when playEpisode kicked off — used for
+  //   playback_start_ms (delta to first confirmed playing).
+  // stallStartedAtRef: Date.now() when the player went buffering AFTER a
+  //   successful confirmPlaying. Emits playback_stall_ms + increments
+  //   playback_underrun when it un-stalls.
+  const playStartedAtRef = useRef<number>(0);
+  const stallStartedAtRef = useRef<number>(0);
 
   // Apply smart-rewind seek if enabled and in a paused→play transition.
   // Returns true if rewind was applied. Reads setting from AsyncStorage so
@@ -700,6 +710,9 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     }
     isLoadingRef.current = true;
     loadingGuardStartRef.current = Date.now();
+    playStartedAtRef.current = Date.now();
+    stallStartedAtRef.current = 0;
+    addBreadcrumb("playback", `playEpisode: ${episode.title?.substring(0, 80)}`, { feedId: feed.id, episodeId: episode.id });
     // New episode start — not resuming from pause, so no smart-rewind
     wasPausedRef.current = false;
 
@@ -844,12 +857,44 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
               try { player.setPlaybackRate(feedSpeed); } catch {}
               setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: true, playbackError: null }));
               addLog("info", `Playing confirmed (${reason}): ${episode.title} at ${feedSpeed}x (attempt ${attempt})`, undefined, "audio");
+              // playback_start_ms: time from playEpisode() call to first
+              // confirmed audible playback. Tagged with attempt so we can
+              // separate "fast first try" from "took retries to land".
+              if (playStartedAtRef.current > 0) {
+                playbackMetric("playback_start_ms", episode.id, feed.id, episode.audioUrl,
+                  Date.now() - playStartedAtRef.current, { attempt, reason });
+                playStartedAtRef.current = 0;
+              }
               setTimeout(setupLockScreen, 1500);
               if (!resolved) { resolved = true; resolve(true); }
             };
 
             statusSubRef.current = player.addListener("playbackStatusUpdate", (status: any) => {
               if (nativePlayerRef.current !== player) return;
+
+              // Stall detection: after confirmation, a buffering tick means
+              // the user is hearing audio drop out — the "choppy/glitchy"
+              // complaint. Track the start; emit duration when it un-stalls.
+              // Stall counts capped at 60s to discard the "user paused mid-
+              // stall and resumed minutes later" false reading; we also reset
+              // the timer on a clean pause (playing=false + not buffering).
+              if (hasConfirmedPlaying && status.isBuffering === true && stallStartedAtRef.current === 0
+                  && Date.now() > seekResumeUntilRef.current) {
+                stallStartedAtRef.current = Date.now();
+                addBreadcrumb("playback", "stall start", { episodeId: episode.id });
+              } else if (stallStartedAtRef.current > 0 && status.isBuffering !== true && status.playing === true) {
+                const stallMs = Date.now() - stallStartedAtRef.current;
+                stallStartedAtRef.current = 0;
+                if (stallMs > 200 && stallMs < 60_000) {
+                  playbackMetric("playback_stall_ms", episode.id, feed.id, episode.audioUrl, stallMs);
+                  playbackMetric("playback_underrun", episode.id, feed.id, episode.audioUrl, 1);
+                  addBreadcrumb("playback", `stall end (${stallMs}ms)`);
+                }
+              } else if (stallStartedAtRef.current > 0 && status.isBuffering !== true && status.playing === false) {
+                // Clean pause during a stall — drop the timer so we don't
+                // record the pause duration as a stall on resume.
+                stallStartedAtRef.current = 0;
+              }
 
               // Confirmation path 1: native listener says playing=true.
               if (status.playing === true) {
@@ -943,6 +988,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
             if (ok) { succeeded = true; break; }
             if (attempt < MAX_ATTEMPTS) {
               addLog("info", `Retrying playback (attempt ${attempt + 1}/${MAX_ATTEMPTS}) with fresh player...`, undefined, "audio");
+              playbackMetric("playback_retry", episode.id, feed.id, episode.audioUrl, attempt + 1);
               await new Promise(r => setTimeout(r, 500));
             }
           }
@@ -955,6 +1001,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         if (!succeeded) {
           teardown();
           addLog("error", `Playback failed after ${MAX_ATTEMPTS} attempts. Likely a device audio issue — try restarting the app or phone.`, undefined, "audio");
+          playbackMetric("playback_error", episode.id, feed.id, episode.audioUrl, MAX_ATTEMPTS,
+            { reason: "max_attempts_exhausted" });
           setPlayback(prev => ({
             ...prev,
             isLoading: false,

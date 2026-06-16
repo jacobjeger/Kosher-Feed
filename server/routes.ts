@@ -14,6 +14,8 @@ import { syncKHSpeakers, refreshKHFeedEpisodes, reloadKHClient, getHeaders as ge
 import { syncTorahDownloadsSpeakers, refreshTorahDownloadsFeedEpisodes, fetchShiurUploadDate, fetchShiurUploadDateDebug } from "./torahdownloads";
 import { extractKhRavId, extractTatSpeakerId, extractTorahDownloadsSpeakerId } from "./feed-utils";
 import { trackErrorForAlert, sendFeedbackNotification } from "./error-alerts";
+import { registerV1Routes } from "./routes-v1";
+import * as iss from "./issues-storage";
 import multer from "multer";
 import path from "node:path";
 import fs from "node:fs";
@@ -2019,6 +2021,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         metadata: metadata ? (metadata as string).substring(0, 2000) : null,
       });
       trackErrorForAlert({ level: level || "error", message: message as string, source, platform, appVersion });
+      // Dual-write into the new issues pipeline. Wrapped in try/catch so a
+      // bug here can't break the legacy ingest path that every device uses.
+      try {
+        let parsedMeta: any = null;
+        if (metadata) { try { parsedMeta = JSON.parse(metadata); } catch {} }
+        await iss.ingestEvent({
+          message: message as string,
+          stack: stack || null,
+          source: source || null,
+          severity: (level === "error" ? "nonfatal" : level === "warn" ? "warn" : "nonfatal"),
+          deviceId: deviceId || null,
+          platform: platform || null,
+          appVersion: appVersion || null,
+          metadata: parsedMeta,
+        });
+      } catch (dwErr: any) {
+        console.error("issues dual-write failed:", dwErr?.message || dwErr);
+      }
       res.json({ ok: true, id: report.id });
     } catch (e: any) {
       publicError(res, e);
@@ -2047,6 +2067,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           metadata: r.metadata ? (r.metadata as string).substring(0, 2000) : null,
         });
         trackErrorForAlert({ level: r.level || "error", message: r.message, source: r.source, platform: r.platform, appVersion: r.appVersion });
+        try {
+          let parsedMeta: any = null;
+          if (r.metadata) { try { parsedMeta = JSON.parse(r.metadata); } catch {} }
+          await iss.ingestEvent({
+            message: r.message,
+            stack: r.stack || null,
+            source: r.source || null,
+            severity: (r.level === "error" ? "nonfatal" : r.level === "warn" ? "warn" : "nonfatal"),
+            deviceId: r.deviceId || null,
+            platform: r.platform || null,
+            appVersion: r.appVersion || null,
+            metadata: parsedMeta,
+          });
+        } catch (dwErr: any) {
+          console.error("issues dual-write failed:", dwErr?.message || dwErr);
+        }
         results.push(report.id);
       }
       res.json({ ok: true, count: results.length, filtered });
@@ -3446,6 +3482,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ ok: true, set: value.length > 0 });
     } catch (e: any) { publicError(res, e); }
   });
+
+  registerV1Routes(app);
 
   const httpServer = createServer(app);
   return httpServer;

@@ -34,8 +34,18 @@ import { checkForUpdate } from "@/lib/updates";
 const ONBOARDING_KEY = "@shiurpod_onboarding_complete";
 
 SplashScreen.preventAutoHideAsync();
+// Capture launch time as early as possible — used for the cold_start_ms metric
+// emitted once the splash screen hides (= app reached interactive).
+const APP_LAUNCH_TS = Date.now();
 initErrorLogger();
 setupGlobalErrorHandlers();
+// Replay any native crash captured by withNativeCrashCapture on the previous
+// launch — Java/Kotlin/Obj-C crashes don't hit ErrorUtils, so we picked them
+// up via a sidecar file written by the native uncaught-exception handler.
+try {
+  const { replayNativeCrashIfAny } = require("@/lib/telemetry/native-crash-replay");
+  replayNativeCrashIfAny().catch(() => {});
+} catch {}
 setupForegroundNotificationHandler();
 setupPushNotificationChannels();
 
@@ -169,6 +179,12 @@ export default function RootLayout() {
     // multi-second white screen on cold start.
     if (!onboardingChecked) return;
     SplashScreen.hideAsync().catch(() => {});
+    // cold_start_ms: launch → splash hide. The single best leading indicator
+    // of "feels slow" complaints. Sampled at 1.0 (rare event).
+    try {
+      const { addMetric } = require("@/lib/telemetry/metrics");
+      addMetric("cold_start_ms", { valueNum: Date.now() - APP_LAUNCH_TS, forceSample: true });
+    } catch {}
     setupNotificationChannel();
 
     // Notification-tap handlers stay synchronous — they must be registered

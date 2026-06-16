@@ -447,45 +447,84 @@
       <div id="errorHealthCards" class="stats" style="margin-bottom:16px;"></div>
 
       <!-- Grouped Errors -->
+      <!-- Stats strip -->
+      <div id="issuesStatsStrip" style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;"></div>
+
+      <!-- Issues view (crashctl-style) -->
       <div class="card" style="margin-bottom:16px;">
         <div class="card-header">
-          <h2>Grouped Errors (30d)</h2>
-          <button class="btn btn-secondary btn-sm" onclick="loadGroupedErrors()">Refresh</button>
-        </div>
-        <div id="groupedErrorsList"></div>
-      </div>
-
-      <!-- Top Recurring Errors -->
-      <div class="card" id="topErrorsCard" style="display:none;margin-bottom:16px;">
-        <div class="card-header"><h2>Top Recurring Errors (7d)</h2></div>
-        <div id="topErrorsList"></div>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h2>Error Reports</h2>
+          <h2>Issues</h2>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <input type="text" id="errorSearchInput" placeholder="Search errors..." oninput="debounce('errorSearch', () => loadErrorReports(1), 400)" style="width:180px;padding:6px 10px;font-size:12px;">
-            <select id="errorLevelFilter" onchange="loadErrorReports(1)" style="width:auto;padding:6px 10px;font-size:12px;">
-              <option value="">All Levels</option>
-              <option value="error">Errors Only</option>
-              <option value="warn">Warnings Only</option>
-              <option value="info">Info Only</option>
+            <input type="text" id="issuesSearchInput" placeholder="Search title/message..." oninput="debounce('issuesSearch', () => loadIssues(), 400)" style="width:200px;padding:6px 10px;font-size:12px;">
+            <select id="issuesStatusFilter" onchange="loadIssues()" style="width:auto;padding:6px 10px;font-size:12px;">
+              <option value="active">Active + Regressed</option>
+              <option value="regressed">Regressed only</option>
+              <option value="resolved">Resolved</option>
+              <option value="archived">Archived</option>
+              <option value="all">All</option>
             </select>
-            <select id="errorSourceFilter" onchange="loadErrorReports(1)" style="width:auto;padding:6px 10px;font-size:12px;">
-              <option value="">All Sources</option>
+            <select id="issuesSeverityFilter" onchange="loadIssues()" style="width:auto;padding:6px 10px;font-size:12px;">
+              <option value="">Any severity</option>
+              <option value="fatal">Fatal</option>
+              <option value="nonfatal">Non-fatal</option>
+              <option value="warn">Warn</option>
             </select>
-            <select id="errorResolvedFilter" onchange="loadErrorReports(1)" style="width:auto;padding:6px 10px;font-size:12px;">
-              <option value="false">Unresolved</option>
-              <option value="true">Resolved</option>
-              <option value="">All</option>
+            <select id="issuesPlatformFilter" onchange="loadIssues()" style="width:auto;padding:6px 10px;font-size:12px;">
+              <option value="">Any platform</option>
+              <option value="ios">iOS</option>
+              <option value="android">Android</option>
+              <option value="web">Web</option>
             </select>
-            <button class="btn btn-danger btn-sm" onclick="deleteResolvedErrors()">Delete Resolved</button>
+            <input type="text" id="issuesVersionFilter" placeholder="Version (e.g. 1.0.0)" oninput="debounce('issuesVer', () => loadIssues(), 400)" style="width:140px;padding:6px 10px;font-size:12px;">
+            <select id="issuesSort" onchange="loadIssues()" style="width:auto;padding:6px 10px;font-size:12px;">
+              <option value="last_seen">Last seen</option>
+              <option value="count">Count</option>
+              <option value="users">Affected users</option>
+              <option value="first_seen">First seen</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" onclick="loadIssues()">Refresh</button>
           </div>
         </div>
-        <div id="errorReportsSummary" style="margin-bottom:12px;font-size:13px;color:#94a3b8;"></div>
-        <div id="errorReportsList"></div>
-        <div id="errorReportsPagination" style="display:flex;gap:8px;justify-content:center;margin-top:16px;"></div>
+        <div id="issuesSummary" style="margin-bottom:8px;font-size:12px;color:#94a3b8;"></div>
+        <div id="issuesList"></div>
+      </div>
+
+      <!-- Metrics tab — driven by /api/v1/metrics/summary -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Performance Metrics</h2>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <select id="metricsKind" onchange="loadMetrics()" style="width:auto;padding:6px 10px;font-size:12px;">
+              <option value="">Loading kinds...</option>
+            </select>
+            <select id="metricsWindow" onchange="loadMetrics()" style="width:auto;padding:6px 10px;font-size:12px;">
+              <option value="1h">1h</option>
+              <option value="24h">24h</option>
+              <option value="7d" selected>7d</option>
+              <option value="30d">30d</option>
+            </select>
+            <select id="metricsBucket" onchange="loadMetrics()" style="width:auto;padding:6px 10px;font-size:12px;">
+              <option value="">No grouping</option>
+              <option value="version">By app version</option>
+              <option value="cdn">By CDN host</option>
+              <option value="network">By network type</option>
+              <option value="platform">By platform</option>
+              <option value="episode">By episode</option>
+              <option value="feed">By feed</option>
+            </select>
+            <input type="text" id="metricsVersionFilter" placeholder="Version filter" oninput="debounce('metricsVer', () => loadMetrics(), 400)" style="width:120px;padding:6px 10px;font-size:12px;">
+            <button class="btn btn-secondary btn-sm" onclick="loadMetrics()">Refresh</button>
+          </div>
+        </div>
+        <div id="metricsOverall" style="margin-bottom:12px;font-size:13px;color:#cbd5e1;"></div>
+        <div id="metricsList"></div>
+      </div>
+
+      <!-- Issue detail modal -->
+      <div id="issueDetailModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.65);z-index:9999;overflow-y:auto;padding:40px 20px;" onclick="if(event.target===this)closeIssueDetail()">
+        <div style="max-width:880px;margin:0 auto;background:#1e293b;border-radius:12px;padding:24px;">
+          <div id="issueDetailContent"></div>
+        </div>
       </div>
     </div>
 
@@ -2309,7 +2348,7 @@ function switchTab(tab, btn) {
   if (tab === 'users') loadUsers();
   if (tab === 'duplicates') loadDuplicates();
   if (tab === 'speakers') loadSpeakers();
-  if (tab === 'errors') { loadErrorHealth(); loadGroupedErrors(); loadErrorReports(); }
+  if (tab === 'errors') { loadErrorHealth(); loadIssuesStats(); loadIssues(); loadMetricKinds(); }
   if (tab === 'feedback') loadFeedback();
   if (tab === 'messages') { loadConversationsInbox(); loadMessages(); }
   if (tab === 'apk') loadApks();
@@ -5216,6 +5255,265 @@ async function recomputeKHVisibility() {
     loadKHSpeakers();
   } catch(e) {
     showAlert(e.message, 'error');
+  }
+}
+
+// ── /api/v1 issues + metrics ─────────────────────────────────────────
+// The crashctl-style overhauled error dashboard. Replaces the old
+// loadGroupedErrors/loadErrorReports panels — those DOM nodes no longer
+// exist; the old functions are inert no-ops via the rebuild.
+
+async function loadIssuesStats() {
+  try {
+    const r = await fetch('/api/v1/stats', { headers: { 'Authorization': 'Basic ' + token } });
+    if (!r.ok) return;
+    const { data } = await r.json();
+    const strip = document.getElementById('issuesStatsStrip');
+    if (!strip) return;
+    const card = (label, value, color) =>
+      '<div class="stat-card" style="flex:1;min-width:120px;">'
+      + '<div class="stat-value"' + (color ? ' style="color:' + color + '"' : '') + '>' + value + '</div>'
+      + '<div class="stat-label">' + esc(label) + '</div></div>';
+    strip.innerHTML =
+      card('Active issues', data.activeIssues, data.regressedIssues > 0 ? '#f59e0b' : null)
+      + card('Regressed', data.regressedIssues, data.regressedIssues > 0 ? '#ef4444' : null)
+      + card('Fatal', data.fatal24h, data.fatal24h > 0 ? '#ef4444' : null)
+      + card('Events 24h', data.last24h, data.last24h > 50 ? '#ef4444' : data.last24h > 10 ? '#f59e0b' : '#059669')
+      + card('Devices 24h', data.uniqueDevices24h, null)
+      + card('Events 7d', data.last7d, null);
+  } catch (e) { console.error('loadIssuesStats:', e); }
+}
+
+async function loadIssues() {
+  const listEl = document.getElementById('issuesList');
+  const summary = document.getElementById('issuesSummary');
+  if (!listEl) return;
+  const params = new URLSearchParams();
+  const status = document.getElementById('issuesStatusFilter')?.value || 'active';
+  const severity = document.getElementById('issuesSeverityFilter')?.value || '';
+  const platform = document.getElementById('issuesPlatformFilter')?.value || '';
+  const version = document.getElementById('issuesVersionFilter')?.value || '';
+  const q = document.getElementById('issuesSearchInput')?.value || '';
+  const sort = document.getElementById('issuesSort')?.value || 'last_seen';
+  params.set('status', status);
+  if (severity) params.set('severity', severity);
+  if (platform) params.set('platform', platform);
+  if (version.trim()) params.set('version', version.trim());
+  if (q.trim()) params.set('q', q.trim());
+  params.set('sort', sort);
+  params.set('limit', '100');
+  try {
+    const r = await fetch('/api/v1/issues?' + params.toString(), { headers: { 'Authorization': 'Basic ' + token } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const { data } = await r.json();
+    if (summary) summary.textContent = data.length + ' issue(s)';
+    if (data.length === 0) {
+      listEl.innerHTML = '<p style="color:#64748b;text-align:center;padding:20px;">No issues match the current filters.</p>';
+      return;
+    }
+    listEl.innerHTML = data.map(i => {
+      const ago = (iso) => {
+        if (!iso) return '';
+        const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+        return m < 60 ? m + 'm' : m < 1440 ? Math.round(m / 60) + 'h' : Math.round(m / 1440) + 'd';
+      };
+      const sevColor = i.severity === 'fatal' ? '#ef4444' : i.severity === 'warn' ? '#f59e0b' : '#94a3b8';
+      const statusColor = i.status === 'regressed' ? '#ef4444' : i.status === 'resolved' ? '#10b981' : i.status === 'archived' ? '#64748b' : '#3b82f6';
+      const ver = (i.appVersions && i.appVersions.length) ? i.appVersions[i.appVersions.length - 1] : '-';
+      return '<div style="background:#0f172a;border-radius:10px;margin-bottom:6px;padding:12px 14px;cursor:pointer;display:flex;align-items:center;gap:12px;" onclick="openIssueDetail(\'' + escJs(i.fingerprint) + '\')">'
+        + '<div style="font-size:18px;font-weight:700;color:' + sevColor + ';min-width:60px;text-align:center;">×' + i.count + '</div>'
+        + '<div style="flex:1;min-width:0;">'
+        + '<div style="font-size:13px;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(i.title) + '</div>'
+        + '<div style="font-size:11px;color:#64748b;margin-top:2px;">'
+        + esc(i.source || 'unknown') + ' · ' + i.uniqueDeviceCount + ' device(s) · '
+        + esc((i.platforms || []).join(', ') || '-') + ' · v' + esc(ver)
+        + ' · ' + esc(i.fingerprint) + '</div></div>'
+        + '<span style="background:' + statusColor + '20;color:' + statusColor + ';font-size:10px;font-weight:600;padding:3px 8px;border-radius:6px;text-transform:uppercase;flex-shrink:0;">' + esc(i.status) + '</span>'
+        + '<span style="font-size:11px;color:#64748b;flex-shrink:0;min-width:36px;text-align:right;">' + ago(i.lastSeen) + '</span>'
+        + '</div>';
+    }).join('');
+  } catch (e) {
+    listEl.innerHTML = '<p style="color:#ef4444;">Failed to load issues: ' + esc(e.message) + '</p>';
+  }
+}
+
+async function openIssueDetail(fp) {
+  const modal = document.getElementById('issueDetailModal');
+  const content = document.getElementById('issueDetailContent');
+  if (!modal || !content) return;
+  modal.style.display = 'block';
+  content.innerHTML = '<p style="color:#94a3b8;">Loading…</p>';
+  try {
+    const r = await fetch('/api/v1/issues/' + encodeURIComponent(fp) + '?events=20', { headers: { 'Authorization': 'Basic ' + token } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const { data } = await r.json();
+    const i = data.issue;
+    const evHtml = (data.events || []).map(ev => {
+      const ts = new Date(ev.createdAt).toLocaleString();
+      let bcHtml = '';
+      if (ev.breadcrumbs && Array.isArray(ev.breadcrumbs) && ev.breadcrumbs.length > 0) {
+        bcHtml = '<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:#64748b;">breadcrumbs (' + ev.breadcrumbs.length + ')</summary>'
+          + '<pre style="font-size:10px;color:#cbd5e1;background:#0f172a;padding:8px;border-radius:6px;margin-top:6px;overflow:auto;max-height:200px;">' + esc(ev.breadcrumbs.map(b => '['+ (b.category||'') +'] ' + (b.message||'')).join('\n')) + '</pre></details>';
+      }
+      let stackHtml = '';
+      if (ev.stack) {
+        stackHtml = '<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:#64748b;">stack</summary>'
+          + '<pre style="font-size:10px;color:#cbd5e1;background:#0f172a;padding:8px;border-radius:6px;margin-top:6px;overflow:auto;max-height:300px;">' + esc(ev.stack) + '</pre></details>';
+      }
+      return '<div style="background:#0f172a;border-radius:8px;padding:10px 12px;margin-bottom:6px;">'
+        + '<div style="font-size:11px;color:#64748b;margin-bottom:4px;">' + ts + ' · ' + esc(ev.platform || '?') + ' · v' + esc(ev.appVersion || '?') + ' · ' + esc(ev.deviceId ? ev.deviceId.substring(0, 12) : 'no-device') + '</div>'
+        + '<div style="font-size:12px;color:#e2e8f0;font-family:monospace;">' + esc((ev.message || '').substring(0, 600)) + '</div>'
+        + stackHtml + bcHtml
+        + '</div>';
+    }).join('');
+    const sevColor = i.severity === 'fatal' ? '#ef4444' : i.severity === 'warn' ? '#f59e0b' : '#94a3b8';
+    const resolvedLine = i.resolvedAtVersion
+      ? '<div style="background:#10b98120;color:#10b981;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:12px;">Resolved on v' + esc(i.resolvedAtVersion) + (i.resolvedNote ? ' — ' + esc(i.resolvedNote) : '') + '</div>'
+      : '';
+    content.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:start;gap:12px;margin-bottom:8px;">'
+      + '<div style="flex:1;"><h2 style="margin:0 0 4px 0;font-size:18px;color:#e2e8f0;">' + esc(i.title) + '</h2>'
+      + '<div style="font-size:11px;color:#64748b;font-family:monospace;">' + esc(i.fingerprint) + ' · ' + esc(i.source || 'unknown') + '</div></div>'
+      + '<button onclick="closeIssueDetail()" style="background:transparent;border:0;color:#94a3b8;font-size:22px;cursor:pointer;">×</button>'
+      + '</div>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;font-size:12px;">'
+      + '<span style="background:' + sevColor + '20;color:' + sevColor + ';padding:4px 10px;border-radius:6px;font-weight:600;text-transform:uppercase;">' + esc(i.severity) + '</span>'
+      + '<span style="background:#3b82f620;color:#3b82f6;padding:4px 10px;border-radius:6px;font-weight:600;text-transform:uppercase;">' + esc(i.status) + '</span>'
+      + '<span style="background:#1e293b;color:#cbd5e1;padding:4px 10px;border-radius:6px;">' + i.count + ' events · ' + i.uniqueDeviceCount + ' devices</span>'
+      + '<span style="background:#1e293b;color:#cbd5e1;padding:4px 10px;border-radius:6px;">first ' + new Date(i.firstSeen).toLocaleDateString() + '</span>'
+      + '<span style="background:#1e293b;color:#cbd5e1;padding:4px 10px;border-radius:6px;">last ' + new Date(i.lastSeen).toLocaleString() + '</span>'
+      + '</div>'
+      + '<div style="font-size:12px;color:#94a3b8;margin-bottom:12px;">Platforms: ' + esc((i.platforms || []).join(', ') || '-') + '  ·  Versions: ' + esc((i.appVersions || []).join(', ') || '-') + '</div>'
+      + resolvedLine
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">'
+      + '<button class="btn btn-primary btn-sm" onclick="resolveIssueAction(\'' + escJs(i.fingerprint) + '\')">Resolve…</button>'
+      + (i.status === 'resolved' || i.status === 'archived'
+          ? '<button class="btn btn-secondary btn-sm" onclick="reopenIssueAction(\'' + escJs(i.fingerprint) + '\')">Reopen</button>'
+          : '<button class="btn btn-secondary btn-sm" onclick="archiveIssueAction(\'' + escJs(i.fingerprint) + '\')">Archive</button>')
+      + '<button class="btn btn-secondary btn-sm" onclick="mergeIssueAction(\'' + escJs(i.fingerprint) + '\')">Merge…</button>'
+      + '</div>'
+      + '<h3 style="font-size:14px;color:#cbd5e1;margin-bottom:8px;">Recent events</h3>'
+      + (evHtml || '<p style="color:#64748b;">No events.</p>');
+  } catch (e) {
+    content.innerHTML = '<p style="color:#ef4444;">Failed to load: ' + esc(e.message) + '</p>';
+  }
+}
+
+function closeIssueDetail() {
+  const m = document.getElementById('issueDetailModal');
+  if (m) m.style.display = 'none';
+}
+
+async function resolveIssueAction(fp) {
+  const version = prompt('Mark resolved on which app version? (auto-reopens on any newer version)');
+  if (!version || !version.trim()) return;
+  const note = prompt('Optional fix note (what changed?)') || '';
+  try {
+    const r = await fetch('/api/v1/issues/' + encodeURIComponent(fp) + '/resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Basic ' + token },
+      body: JSON.stringify({ version: version.trim(), note: note.trim() || null, by: 'admin' }),
+    });
+    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || 'failed'); }
+    closeIssueDetail();
+    loadIssues(); loadIssuesStats();
+    showAlert('Resolved on v' + version.trim(), 'success');
+  } catch (e) { showAlert(e.message, 'error'); }
+}
+
+async function reopenIssueAction(fp) {
+  if (!confirm('Reopen this issue?')) return;
+  try {
+    const r = await fetch('/api/v1/issues/' + encodeURIComponent(fp) + '/reopen', {
+      method: 'POST', headers: { 'Authorization': 'Basic ' + token },
+    });
+    if (!r.ok) throw new Error('failed');
+    closeIssueDetail(); loadIssues(); loadIssuesStats();
+    showAlert('Reopened', 'success');
+  } catch (e) { showAlert(e.message, 'error'); }
+}
+
+async function archiveIssueAction(fp) {
+  if (!confirm('Archive this issue? It won\'t auto-reopen on new occurrences.')) return;
+  try {
+    const r = await fetch('/api/v1/issues/' + encodeURIComponent(fp) + '/archive', {
+      method: 'POST', headers: { 'Authorization': 'Basic ' + token },
+    });
+    if (!r.ok) throw new Error('failed');
+    closeIssueDetail(); loadIssues(); loadIssuesStats();
+    showAlert('Archived', 'success');
+  } catch (e) { showAlert(e.message, 'error'); }
+}
+
+async function mergeIssueAction(fp) {
+  const into = prompt('Merge into which fingerprint? (this issue will be archived; its events move to the target)');
+  if (!into || !into.trim()) return;
+  try {
+    const r = await fetch('/api/v1/issues/' + encodeURIComponent(fp) + '/merge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Basic ' + token },
+      body: JSON.stringify({ into: into.trim() }),
+    });
+    if (!r.ok) throw new Error('failed');
+    closeIssueDetail(); loadIssues();
+    showAlert('Merged', 'success');
+  } catch (e) { showAlert(e.message, 'error'); }
+}
+
+let _metricKindsLoaded = false;
+async function loadMetricKinds() {
+  if (_metricKindsLoaded) return;
+  try {
+    const r = await fetch('/api/v1/metrics/kinds', { headers: { 'Authorization': 'Basic ' + token } });
+    if (!r.ok) return;
+    const { data } = await r.json();
+    const sel = document.getElementById('metricsKind');
+    if (!sel) return;
+    if (data.length === 0) {
+      sel.innerHTML = '<option value="">No metrics yet — devices need to OTA-update</option>';
+      return;
+    }
+    sel.innerHTML = data.map(k => '<option value="' + esc(k.kind) + '">' + esc(k.kind) + ' (' + k.count + ')</option>').join('');
+    _metricKindsLoaded = true;
+    loadMetrics();
+  } catch (e) { console.error('loadMetricKinds:', e); }
+}
+
+async function loadMetrics() {
+  const list = document.getElementById('metricsList');
+  const overall = document.getElementById('metricsOverall');
+  if (!list) return;
+  const kind = document.getElementById('metricsKind')?.value;
+  if (!kind) { list.innerHTML = ''; if (overall) overall.textContent = ''; return; }
+  const window = document.getElementById('metricsWindow')?.value || '7d';
+  const bucket = document.getElementById('metricsBucket')?.value || '';
+  const version = document.getElementById('metricsVersionFilter')?.value || '';
+  const params = new URLSearchParams({ kind, window });
+  if (bucket) params.set('bucket', bucket);
+  if (version.trim()) params.set('version', version.trim());
+  try {
+    const r = await fetch('/api/v1/metrics/summary?' + params, { headers: { 'Authorization': 'Basic ' + token } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const { data } = await r.json();
+    const fmt = v => v == null ? '-' : (Number(v) >= 1000 ? (Number(v)/1000).toFixed(2) + 's' : Math.round(Number(v)) + 'ms');
+    if (overall) overall.innerHTML =
+      'overall — <strong>' + data.overall.count + '</strong> samples · p50 <strong>' + fmt(data.overall.p50) + '</strong> · p95 <strong>' + fmt(data.overall.p95) + '</strong> · p99 <strong>' + fmt(data.overall.p99) + '</strong>';
+    if (!data.buckets || data.buckets.length === 0) {
+      list.innerHTML = bucket ? '<p style="color:#64748b;padding:12px;">No bucketed data.</p>' : '<p style="color:#64748b;padding:12px;">Pick a bucket to see breakdowns.</p>';
+      return;
+    }
+    list.innerHTML = '<table style="width:100%;font-size:12px;color:#cbd5e1;border-collapse:collapse;">'
+      + '<thead><tr style="background:#0f172a;color:#64748b;"><th style="text-align:left;padding:8px;">Bucket</th><th style="text-align:right;padding:8px;">N</th><th style="text-align:right;padding:8px;">p50</th><th style="text-align:right;padding:8px;">p95</th><th style="text-align:right;padding:8px;">p99</th><th style="text-align:right;padding:8px;">avg</th></tr></thead>'
+      + '<tbody>' + data.buckets.map(r => '<tr style="border-bottom:1px solid #1e293b;">'
+        + '<td style="padding:8px;font-family:monospace;">' + esc(r.bucket) + '</td>'
+        + '<td style="text-align:right;padding:8px;">' + r.count + '</td>'
+        + '<td style="text-align:right;padding:8px;">' + fmt(r.p50) + '</td>'
+        + '<td style="text-align:right;padding:8px;">' + fmt(r.p95) + '</td>'
+        + '<td style="text-align:right;padding:8px;">' + fmt(r.p99) + '</td>'
+        + '<td style="text-align:right;padding:8px;">' + fmt(r.avg) + '</td>'
+        + '</tr>').join('') + '</tbody></table>';
+  } catch (e) {
+    list.innerHTML = '<p style="color:#ef4444;">Failed: ' + esc(e.message) + '</p>';
   }
 }
 

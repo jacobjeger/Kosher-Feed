@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, boolean, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, boolean, uniqueIndex, index, jsonb, doublePrecision } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -426,3 +426,82 @@ export const ytcUnlocks = pgTable("ytc_unlocks", {
 ]);
 
 export type YtcUnlock = typeof ytcUnlocks.$inferSelect;
+
+// ── Telemetry overhaul (crashctl-style issues + perf metrics) ──
+//
+// `issues` is the first-class grouping. Every JS error, render crash, or
+// native crash hashes to a stable `fingerprint` (sha1 of source + normalized
+// message + top stack frame). Lifecycle:
+//
+//   active → resolve (with version+note) → regressed (auto) → active again
+//   active → archive → archived (won't auto-reopen)
+//
+// `issue_events` is the per-occurrence log. Cheap to write, capped retention.
+// `app_metrics` is the perf telemetry stream — separate so high-volume
+// playback/cold-start/screen-mount events don't pollute the error feed or
+// the spike-alert detector.
+export const issues = pgTable("issues", {
+  fingerprint: text("fingerprint").primaryKey(),
+  title: text("title").notNull(),
+  exception: text("exception"),
+  source: text("source"),
+  severity: text("severity").notNull().default("nonfatal"), // fatal | nonfatal | warn
+  status: text("status").notNull().default("active"),       // active | resolved | regressed | archived
+  firstSeen: timestamp("first_seen").defaultNow().notNull(),
+  lastSeen: timestamp("last_seen").defaultNow().notNull(),
+  count: integer("count").notNull().default(0),
+  uniqueDeviceCount: integer("unique_device_count").notNull().default(0),
+  platforms: text("platforms").array().notNull().default(sql`'{}'::text[]`),
+  appVersions: text("app_versions").array().notNull().default(sql`'{}'::text[]`),
+  topStackFrame: text("top_stack_frame"),
+  topMessage: text("top_message"),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedAtVersion: text("resolved_at_version"),
+  resolvedNote: text("resolved_note"),
+  resolvedBy: text("resolved_by"),
+  archivedAt: timestamp("archived_at"),
+}, (table) => [
+  index("issues_status_last_seen_idx").on(table.status, table.lastSeen),
+  index("issues_last_seen_idx").on(table.lastSeen),
+  index("issues_severity_idx").on(table.severity),
+]);
+
+export const issueEvents = pgTable("issue_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  fingerprint: text("fingerprint").notNull(),
+  deviceId: text("device_id"),
+  platform: text("platform"),
+  appVersion: text("app_version"),
+  message: text("message").notNull(),
+  stack: text("stack"),
+  breadcrumbs: jsonb("breadcrumbs"),
+  source: text("source"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("issue_events_fp_created_idx").on(table.fingerprint, table.createdAt),
+  index("issue_events_created_idx").on(table.createdAt),
+]);
+
+export const appMetrics = pgTable("app_metrics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  deviceId: text("device_id"),
+  platform: text("platform"),
+  appVersion: text("app_version"),
+  kind: text("kind").notNull(),
+  valueNum: doublePrecision("value_num"),
+  valueText: text("value_text"),
+  episodeId: text("episode_id"),
+  feedId: text("feed_id"),
+  networkType: text("network_type"),
+  cdnHost: text("cdn_host"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("app_metrics_kind_created_idx").on(table.kind, table.createdAt),
+  index("app_metrics_created_idx").on(table.createdAt),
+]);
+
+export type Issue = typeof issues.$inferSelect;
+export type IssueEvent = typeof issueEvents.$inferSelect;
+export type AppMetric = typeof appMetrics.$inferSelect;

@@ -17,6 +17,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { usePlayedEpisodes } from "@/contexts/PlayedEpisodesContext";
 import { HomeScreenSkeleton, FeedRowSkeleton } from "@/components/Skeleton";
 import { useNetworkStatus } from "@/components/OfflineBanner";
+import { useScreenMountMetric } from "@/lib/telemetry/metrics";
 import SearchSection from "@/components/home/SearchSection";
 import ContinueListeningSection from "@/components/home/ContinueListeningSection";
 import TrendingSection from "@/components/home/TrendingSection";
@@ -325,6 +326,7 @@ function SponsorBanner({ colors }: { colors: any }) {
 }
 
 function HomeScreenInner() {
+  useScreenMountMetric("home");
   const insets = useSafeAreaInsets();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
