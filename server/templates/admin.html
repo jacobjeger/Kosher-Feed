@@ -2438,9 +2438,10 @@ async function loadErrorHealth() {
       <div class="stat-card"><div class="stat-label" style="margin-bottom:6px;">By Platform</div>${h.byPlatform.map(p => '<div style="display:flex;justify-content:space-between;font-size:12px;color:#94a3b8;margin-bottom:2px;"><span>' + esc(p.platform) + '</span><strong style="color:#e2e8f0;">' + p.count + '</strong></div>').join('')}</div>
     `;
 
-    // Populate source filter from health data
-    if (!_errorSourcesPopulated && h.bySource.length > 0) {
-      const sel = document.getElementById('errorSourceFilter');
+    // Populate source filter from health data — guard for missing DOM since
+    // the source-filter <select> belongs to the removed legacy error list.
+    const sel = document.getElementById('errorSourceFilter');
+    if (sel && !_errorSourcesPopulated && h.bySource.length > 0) {
       h.bySource.forEach(s => {
         const opt = document.createElement('option');
         opt.value = s.source;
@@ -2450,11 +2451,13 @@ async function loadErrorHealth() {
       _errorSourcesPopulated = true;
     }
 
-    // Top recurring errors
-    if (h.topErrors && h.topErrors.length > 0) {
-      const card = document.getElementById('topErrorsCard');
-      card.style.display = '';
-      document.getElementById('topErrorsList').innerHTML = h.topErrors.slice(0, 8).map(e => {
+    // Top recurring errors — same guard. The new issues view supersedes this,
+    // but the loader can still run during transition.
+    const topCard = document.getElementById('topErrorsCard');
+    const topList = document.getElementById('topErrorsList');
+    if (topCard && topList && h.topErrors && h.topErrors.length > 0) {
+      topCard.style.display = '';
+      topList.innerHTML = h.topErrors.slice(0, 8).map(e => {
         const ago = Math.round((Date.now() - new Date(e.lastSeen).getTime()) / 60000);
         const agoStr = ago < 60 ? ago + 'm ago' : Math.round(ago / 60) + 'h ago';
         return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#0f172a;border-radius:8px;margin-bottom:4px;gap:12px;">'

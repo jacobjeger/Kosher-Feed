@@ -720,6 +720,11 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       if (isLoadingRef.current) {
         addLog("warn", "Loading guard safety timeout — resetting after 15s", undefined, "audio");
         isLoadingRef.current = false;
+        // Reset the perf timer too — otherwise the NEXT episode's confirmPlaying
+        // would emit playback_start_ms relative to this stuck attempt, polluting
+        // the metric with multi-second false readings.
+        playStartedAtRef.current = 0;
+        stallStartedAtRef.current = 0;
         setPlayback(prev => prev.isLoading ? { ...prev, isLoading: false } : prev);
       }
     }, 15000);
@@ -971,6 +976,10 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
               if (!resolved && !hasConfirmedPlaying) {
                 resolved = true;
                 addLog("warn", `Playback not confirmed after ${confirmTimeoutMs}ms (attempt ${attempt}/${maxAttempts})`, undefined, "audio");
+                // Remove the status listener now so it can't fire after the
+                // player is torn down and trick the next attempt's state.
+                try { statusSubRef.current?.remove?.(); } catch {}
+                statusSubRef.current = null;
                 resolve(false);
               }
             }, confirmTimeoutMs);
@@ -1242,6 +1251,10 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   const stop = useCallback(async () => {
     saveCurrentPosition();
     cancelSleepTimer();
+    // Reset perf timers so the next playEpisode's confirmPlaying doesn't
+    // measure relative to whatever was loading at stop() time.
+    playStartedAtRef.current = 0;
+    stallStartedAtRef.current = 0;
     const ep = currentEpisodeRef.current;
     const feed = currentFeedRef.current;
     const pb = playbackRef.current;

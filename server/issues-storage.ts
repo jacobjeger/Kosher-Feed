@@ -100,7 +100,10 @@ export interface IngestEventResult {
 }
 
 // Insert one event + upsert the parent issue. Wrapped in a single tx so
-// the issue counters never drift from issue_events row count.
+// the issue counters never drift from issue_events row count. Uses
+// INSERT ... ON CONFLICT DO NOTHING for the new-row path so two events with
+// the same fingerprint arriving concurrently can't violate the PK — whichever
+// loses the race falls through to the UPDATE branch below.
 export async function ingestEvent(input: IngestEventInput): Promise<IngestEventResult> {
   const fp = input.fingerprintOverride || computeFingerprint(input.source, input.message, input.stack);
   const exception = deriveExceptionType(input.message);
@@ -108,31 +111,46 @@ export async function ingestEvent(input: IngestEventInput): Promise<IngestEventR
   const severity: "fatal" | "nonfatal" | "warn" = input.severity || "nonfatal";
 
   return await db.transaction(async (tx) => {
-    const existing = await tx.select().from(issues).where(eq(issues.fingerprint, fp)).limit(1);
-    const isNew = existing.length === 0;
+    const title = (input.message || "(no message)").substring(0, 300);
+    const inserted = await tx.insert(issues).values({
+      fingerprint: fp,
+      title,
+      exception,
+      source: input.source || null,
+      severity,
+      status: "active",
+      firstSeen: new Date(),
+      lastSeen: new Date(),
+      count: 1,
+      uniqueDeviceCount: input.deviceId ? 1 : 0,
+      platforms: input.platform ? [input.platform] : [],
+      appVersions: input.appVersion ? [input.appVersion] : [],
+      topStackFrame: frame,
+      topMessage: title,
+    }).onConflictDoNothing({ target: issues.fingerprint }).returning({ fp: issues.fingerprint });
+
+    const isNew = inserted.length > 0;
     let isRegression = false;
     let newStatus: string = "active";
 
-    if (isNew) {
-      const title = (input.message || "(no message)").substring(0, 300);
-      await tx.insert(issues).values({
-        fingerprint: fp,
-        title,
-        exception,
-        source: input.source || null,
-        severity,
-        status: "active",
-        firstSeen: new Date(),
-        lastSeen: new Date(),
-        count: 1,
-        uniqueDeviceCount: input.deviceId ? 1 : 0,
-        platforms: input.platform ? [input.platform] : [],
-        appVersions: input.appVersion ? [input.appVersion] : [],
-        topStackFrame: frame,
-        topMessage: title,
-      });
-    } else {
-      const cur = existing[0];
+    if (!isNew) {
+      const [cur] = await tx.select().from(issues).where(eq(issues.fingerprint, fp)).limit(1);
+      if (!cur) {
+        // Vanishingly rare — row inserted then immediately deleted between
+        // our INSERT and SELECT. Bail without touching counters.
+        await tx.insert(issueEvents).values({
+          fingerprint: fp,
+          deviceId: input.deviceId || null,
+          platform: input.platform || null,
+          appVersion: input.appVersion || null,
+          message: (input.message || "").substring(0, 5000),
+          stack: input.stack ? input.stack.substring(0, 10000) : null,
+          breadcrumbs: input.breadcrumbs || null,
+          source: input.source || null,
+          metadata: input.metadata || null,
+        });
+        return { fingerprint: fp, status: "active", isNew: false, isRegression: false };
+      }
       // Auto-reopen: a resolved issue surfaces again on a newer version → regressed.
       // Same-version recurrence keeps the "resolved" mark (probably stale device).
       if (cur.status === "resolved" && isNewerVersion(input.appVersion, cur.resolvedAtVersion)) {
