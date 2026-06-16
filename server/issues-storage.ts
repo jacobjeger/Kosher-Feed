@@ -548,6 +548,67 @@ export async function summarizeMetrics(opts: {
   };
 }
 
+// OTA adoption: how many distinct devices reported the `ota_active` heartbeat
+// per update bundle in the time window. Used by the admin dashboard "OTA
+// Adoption" card and `shiurctl ota`. Latest published updateId floats to
+// the top of the list (highest "last_seen") so the dashboard can highlight
+// it as "current build".
+export async function getOtaAdoption(windowMs: number = 24 * 60 * 60 * 1000): Promise<{
+  buckets: { updateId: string; channel: string | null; runtimeVersion: string | null; deviceCount: number; eventCount: number; isEmbedded: boolean; firstSeen: string; lastSeen: string }[];
+  byChannel: { channel: string; deviceCount: number }[];
+  totalDevices: number;
+  windowMs: number;
+}> {
+  const since = new Date(Date.now() - windowMs);
+  const rows = await db.select({
+    updateId: sql<string>`COALESCE(${appMetrics.valueText}, 'embedded')`,
+    channel: sql<string>`(${appMetrics.metadata} ->> 'channel')`,
+    runtimeVersion: sql<string>`(${appMetrics.metadata} ->> 'runtimeVersion')`,
+    isEmbedded: sql<boolean>`(${appMetrics.metadata} ->> 'isEmbeddedLaunch')::boolean`,
+    deviceCount: sql<number>`COUNT(DISTINCT ${appMetrics.deviceId})`,
+    eventCount: sql<number>`COUNT(*)`,
+    firstSeen: sql<string>`MIN(${appMetrics.createdAt})`,
+    lastSeen: sql<string>`MAX(${appMetrics.createdAt})`,
+  }).from(appMetrics)
+    .where(and(eq(appMetrics.kind, "ota_active"), gte(appMetrics.createdAt, since)))
+    .groupBy(
+      sql`COALESCE(${appMetrics.valueText}, 'embedded')`,
+      sql`(${appMetrics.metadata} ->> 'channel')`,
+      sql`(${appMetrics.metadata} ->> 'runtimeVersion')`,
+      sql`(${appMetrics.metadata} ->> 'isEmbeddedLaunch')::boolean`,
+    )
+    .orderBy(desc(sql`MAX(${appMetrics.createdAt})`))
+    .limit(30);
+
+  const channelRows = await db.select({
+    channel: sql<string>`COALESCE(${appMetrics.metadata} ->> 'channel', 'unknown')`,
+    deviceCount: sql<number>`COUNT(DISTINCT ${appMetrics.deviceId})`,
+  }).from(appMetrics)
+    .where(and(eq(appMetrics.kind, "ota_active"), gte(appMetrics.createdAt, since)))
+    .groupBy(sql`COALESCE(${appMetrics.metadata} ->> 'channel', 'unknown')`)
+    .orderBy(desc(sql`COUNT(DISTINCT ${appMetrics.deviceId})`));
+
+  const [totalRow] = await db.select({
+    devices: sql<number>`COUNT(DISTINCT ${appMetrics.deviceId})`,
+  }).from(appMetrics).where(and(eq(appMetrics.kind, "ota_active"), gte(appMetrics.createdAt, since)));
+
+  return {
+    buckets: rows.map(r => ({
+      updateId: String(r.updateId || "embedded"),
+      channel: r.channel || null,
+      runtimeVersion: r.runtimeVersion || null,
+      isEmbedded: r.isEmbedded === true,
+      deviceCount: Number(r.deviceCount || 0),
+      eventCount: Number(r.eventCount || 0),
+      firstSeen: r.firstSeen,
+      lastSeen: r.lastSeen,
+    })),
+    byChannel: channelRows.map(r => ({ channel: r.channel || "unknown", deviceCount: Number(r.deviceCount || 0) })),
+    totalDevices: Number(totalRow?.devices || 0),
+    windowMs,
+  };
+}
+
 // Distinct metric kinds seen recently — used by the admin "Metrics" tab dropdown
 // and `shiurctl metrics --list-kinds`.
 export async function listMetricKinds(windowMs: number = 7 * 24 * 60 * 60 * 1000): Promise<{ kind: string; count: number }[]> {

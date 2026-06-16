@@ -181,9 +181,12 @@ export default function RootLayout() {
     SplashScreen.hideAsync().catch(() => {});
     // cold_start_ms: launch → splash hide. The single best leading indicator
     // of "feels slow" complaints. Sampled at 1.0 (rare event).
+    // ota_active: one row per launch tagged with the current EAS updateId so
+    // the admin can show OTA-adoption (how many devices are on the latest).
     try {
-      const { addMetric } = require("@/lib/telemetry/metrics");
+      const { addMetric, emitOtaHeartbeat } = require("@/lib/telemetry/metrics");
       addMetric("cold_start_ms", { valueNum: Date.now() - APP_LAUNCH_TS, forceSample: true });
+      emitOtaHeartbeat();
     } catch {}
     setupNotificationChannel();
 

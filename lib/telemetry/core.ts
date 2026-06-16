@@ -45,6 +45,24 @@ export interface MetricPayload {
 let _appVersion: string | null = null;
 let _deviceMeta: Record<string, any> | null = null;
 let _deviceId: string | null = null;
+let _otaInfo: Record<string, any> | null = null;
+
+export function getOtaInfo(): Record<string, any> {
+  if (_otaInfo) return _otaInfo;
+  // expo-updates is a no-op on web / dev — guard so this never throws.
+  _otaInfo = { updateId: null, channel: null, runtimeVersion: null, isEmbeddedLaunch: null, createdAt: null };
+  try {
+    const Updates = require("expo-updates");
+    _otaInfo = {
+      updateId: Updates.updateId || null,
+      channel: Updates.channel || null,
+      runtimeVersion: Updates.runtimeVersion || null,
+      isEmbeddedLaunch: typeof Updates.isEmbeddedLaunch === "boolean" ? Updates.isEmbeddedLaunch : null,
+      createdAt: Updates.createdAt ? new Date(Updates.createdAt).toISOString() : null,
+    };
+  } catch {}
+  return _otaInfo;
+}
 
 export function getAppVersion(): string | null {
   if (_appVersion !== null) return _appVersion;
@@ -123,13 +141,14 @@ async function flushEvents() {
     const deviceId = await getDeviceId();
     const appVersion = getAppVersion();
     const meta = getDeviceMeta() || {};
+    const ota = getOtaInfo();
     const payload = {
       events: batch.map(e => ({
         ...e,
         deviceId,
         appVersion,
         platform: Platform.OS,
-        metadata: { ...(e.metadata || {}), ...meta },
+        metadata: { ...(e.metadata || {}), ...meta, ota },
       })),
     };
     const baseUrl = getApiUrl();
@@ -170,12 +189,16 @@ async function flushMetrics() {
   try {
     const deviceId = await getDeviceId();
     const appVersion = getAppVersion();
+    const ota = getOtaInfo();
     const payload = {
       metrics: batch.map(m => ({
         ...m,
         deviceId,
         appVersion,
         platform: Platform.OS,
+        // Stamp OTA info onto every metric's metadata so the admin can answer
+        // "which OTA bundle is this device on" without a separate join.
+        metadata: { ...(m.metadata || {}), ota },
       })),
     };
     const baseUrl = getApiUrl();

@@ -261,6 +261,67 @@ export function registerV1Routes(app: Express) {
     } catch (e: any) { publicError(res, e); }
   });
 
+  app.get("/api/v1/ota-adoption", portalAuth as any, async (req: Request, res: Response) => {
+    try {
+      const window = q(req.query.window) || "24h";
+      const m = window.match(/^(\d+)(h|d)$/);
+      const windowMs = m ? Number(m[1]) * (m[2] === "h" ? 3600_000 : 86_400_000) : 86_400_000;
+      const data = await iss.getOtaAdoption(windowMs);
+      ok(res, data);
+    } catch (e: any) { publicError(res, e); }
+  });
+
+  // List recent EAS updates per branch — drives the admin OTA controls so
+  // the operator can see "what's the latest on preview" before promoting.
+  app.get("/api/v1/ota/updates", portalAuth as any, async (req: Request, res: Response) => {
+    try {
+      const branch = q(req.query.branch) || "preview";
+      if (!process.env.EAS_TOKEN) return res.status(503).json({ ok: false, error: "EAS_TOKEN not configured on server — set it on Railway to enable OTA controls." });
+      const { execFile } = await import("node:child_process");
+      const stdout = await new Promise<string>((resolve, reject) => {
+        execFile("npx", ["--yes", "eas-cli", "update:list", "--branch", branch, "--limit", "5", "--json", "--non-interactive"],
+          { cwd: process.cwd(), env: { ...process.env, EAS_NO_VCS: "1" }, maxBuffer: 4 * 1024 * 1024 },
+          (err, out) => err ? reject(err) : resolve(out));
+      });
+      let parsed: any = null;
+      try { parsed = JSON.parse(stdout); } catch { parsed = { raw: stdout.substring(0, 2000) }; }
+      ok(res, { branch, updates: parsed });
+    } catch (e: any) { publicError(res, e); }
+  });
+
+  // Promote the latest update from one branch (default: preview) to another
+  // (default: production). Uses `eas update:republish` so the bytes ship
+  // unchanged — the promoted update group ID is reused, no rebuild.
+  //
+  // Authorization wall: requires the admin's Basic auth (a Bearer-only call
+  // with PORTAL_API_KEY would let any script with the token promote builds,
+  // which is too much power for a CLI token). We check by requiring the
+  // Authorization header to start with "Basic ".
+  app.post("/api/v1/ota/promote", portalAuth as any, async (req: Request, res: Response) => {
+    try {
+      const h = req.headers.authorization || "";
+      if (!h.startsWith("Basic ")) {
+        return res.status(403).json({ ok: false, error: "OTA promote requires admin login (Basic auth), not a Bearer token." });
+      }
+      if (!process.env.EAS_TOKEN) {
+        return res.status(503).json({ ok: false, error: "EAS_TOKEN not configured on server. Add it to Railway → ShiurPod → server → Variables." });
+      }
+      const fromBranch = (req.body?.from as string) || "preview";
+      const toBranch = (req.body?.to as string) || "production";
+      const message = (req.body?.message as string) || `Promoted from ${fromBranch}`;
+      const groupId = req.body?.groupId as string | undefined;
+      const { execFile } = await import("node:child_process");
+      const args = groupId
+        ? ["--yes", "eas-cli", "update:republish", "--group", groupId, "--branch", toBranch, "--message", message, "--non-interactive"]
+        : ["--yes", "eas-cli", "update:republish", "--branch", toBranch, "--source-branch", fromBranch, "--message", message, "--non-interactive"];
+      const stdout = await new Promise<string>((resolve, reject) => {
+        execFile("npx", args, { cwd: process.cwd(), env: { ...process.env, EAS_NO_VCS: "1" }, maxBuffer: 4 * 1024 * 1024 },
+          (err, out, errOut) => err ? reject(new Error((errOut || "") + (out || "") || err.message)) : resolve(out));
+      });
+      ok(res, { from: fromBranch, to: toBranch, message, output: stdout.substring(0, 4000) });
+    } catch (e: any) { publicError(res, e); }
+  });
+
   // ── shiurctl one-line installer ───────────────────────────────────────────
   // Matches crashctl's pattern: `curl -fsSL https://shiurpod.com/shiurctl -o shiurctl`.
   app.get("/shiurctl", (_req: Request, res: Response) => {

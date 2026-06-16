@@ -520,6 +520,33 @@
         <div id="metricsList"></div>
       </div>
 
+      <!-- OTA Adoption + controls -->
+      <div class="card" style="margin-top:16px;">
+        <div class="card-header">
+          <h2>OTA Adoption</h2>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select id="otaWindow" onchange="loadOtaAdoption()" style="width:auto;padding:6px 10px;font-size:12px;">
+              <option value="1h">1h</option>
+              <option value="24h" selected>24h</option>
+              <option value="7d">7d</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" onclick="loadOtaAdoption()">Refresh</button>
+          </div>
+        </div>
+        <div id="otaChannelStrip" style="display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap;"></div>
+        <div id="otaAdoptionList"></div>
+        <div style="margin-top:16px;padding:12px;background:#0f172a;border-radius:8px;border:1px solid #1e293b;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+            <div>
+              <div style="font-size:13px;color:#e2e8f0;font-weight:600;">Push latest preview → production</div>
+              <div style="font-size:11px;color:#64748b;margin-top:2px;">Reuses the preview bundle bytes (republish) — no rebuild. Real users on the App Store / Play APK pick it up on next launch.</div>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="promoteOta()">Promote</button>
+          </div>
+          <div id="otaPromoteResult" style="margin-top:10px;font-size:12px;color:#94a3b8;"></div>
+        </div>
+      </div>
+
       <!-- Issue detail modal -->
       <div id="issueDetailModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.65);z-index:9999;overflow-y:auto;padding:40px 20px;" onclick="if(event.target===this)closeIssueDetail()">
         <div style="max-width:880px;margin:0 auto;background:#1e293b;border-radius:12px;padding:24px;">
@@ -2348,7 +2375,7 @@ function switchTab(tab, btn) {
   if (tab === 'users') loadUsers();
   if (tab === 'duplicates') loadDuplicates();
   if (tab === 'speakers') loadSpeakers();
-  if (tab === 'errors') { loadErrorHealth(); loadIssuesStats(); loadIssues(); loadMetricKinds(); }
+  if (tab === 'errors') { loadErrorHealth(); loadIssuesStats(); loadIssues(); loadMetricKinds(); loadOtaAdoption(); }
   if (tab === 'feedback') loadFeedback();
   if (tab === 'messages') { loadConversationsInbox(); loadMessages(); }
   if (tab === 'apk') loadApks();
@@ -5353,6 +5380,20 @@ async function openIssueDetail(fp) {
     const i = data.issue;
     const evHtml = (data.events || []).map(ev => {
       const ts = new Date(ev.createdAt).toLocaleString();
+      // OTA build pill — pulled from metadata.ota injected by lib/telemetry/core.
+      // Shows {channel, short-updateId} so we can tell at a glance whether the
+      // error came from a stale preview build vs the current production OTA.
+      let otaPill = '';
+      const ota = ev.metadata && ev.metadata.ota;
+      if (ota && (ota.updateId || ota.channel)) {
+        const isEmbedded = ota.isEmbeddedLaunch === true || !ota.updateId;
+        const chColor = ota.channel === 'production' ? '#10b981' : ota.channel === 'preview' ? '#f59e0b' : '#64748b';
+        const label = isEmbedded
+          ? 'embedded'
+          : (ota.updateId || '').substring(0, 8);
+        otaPill = ' · <span style="background:' + chColor + '20;color:' + chColor + ';padding:1px 6px;border-radius:4px;font-family:monospace;font-size:10px;" title="OTA bundle ID: ' + esc(ota.updateId || 'embedded') + ' · channel: ' + esc(ota.channel || 'unknown') + '">'
+          + esc((ota.channel || '?') + ':' + label) + '</span>';
+      }
       let bcHtml = '';
       if (ev.breadcrumbs && Array.isArray(ev.breadcrumbs) && ev.breadcrumbs.length > 0) {
         bcHtml = '<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11px;color:#64748b;">breadcrumbs (' + ev.breadcrumbs.length + ')</summary>'
@@ -5364,7 +5405,7 @@ async function openIssueDetail(fp) {
           + '<pre style="font-size:10px;color:#cbd5e1;background:#0f172a;padding:8px;border-radius:6px;margin-top:6px;overflow:auto;max-height:300px;">' + esc(ev.stack) + '</pre></details>';
       }
       return '<div style="background:#0f172a;border-radius:8px;padding:10px 12px;margin-bottom:6px;">'
-        + '<div style="font-size:11px;color:#64748b;margin-bottom:4px;">' + ts + ' · ' + esc(ev.platform || '?') + ' · v' + esc(ev.appVersion || '?') + ' · ' + esc(ev.deviceId ? ev.deviceId.substring(0, 12) : 'no-device') + '</div>'
+        + '<div style="font-size:11px;color:#64748b;margin-bottom:4px;">' + ts + ' · ' + esc(ev.platform || '?') + ' · v' + esc(ev.appVersion || '?') + otaPill + ' · ' + esc(ev.deviceId ? ev.deviceId.substring(0, 12) : 'no-device') + '</div>'
         + '<div style="font-size:12px;color:#e2e8f0;font-family:monospace;">' + esc((ev.message || '').substring(0, 600)) + '</div>'
         + stackHtml + bcHtml
         + '</div>';
@@ -5517,6 +5558,85 @@ async function loadMetrics() {
         + '</tr>').join('') + '</tbody></table>';
   } catch (e) {
     list.innerHTML = '<p style="color:#ef4444;">Failed: ' + esc(e.message) + '</p>';
+  }
+}
+
+async function loadOtaAdoption() {
+  const list = document.getElementById('otaAdoptionList');
+  const strip = document.getElementById('otaChannelStrip');
+  if (!list || !strip) return;
+  const window = document.getElementById('otaWindow')?.value || '24h';
+  try {
+    const r = await fetch('/api/v1/ota-adoption?window=' + window, { headers: { 'Authorization': 'Basic ' + token } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const { data } = await r.json();
+    // Channel breakdown — show side-by-side preview vs production counts.
+    strip.innerHTML = (data.byChannel || []).map(c => {
+      const color = c.channel === 'production' ? '#10b981' : c.channel === 'preview' ? '#f59e0b' : '#64748b';
+      const pct = data.totalDevices > 0 ? Math.round((c.deviceCount / data.totalDevices) * 100) : 0;
+      return '<div class="stat-card" style="flex:1;min-width:140px;border-left:3px solid ' + color + ';">'
+        + '<div class="stat-value" style="color:' + color + '">' + c.deviceCount + '</div>'
+        + '<div class="stat-label">' + esc(c.channel) + ' (' + pct + '%)</div></div>';
+    }).join('') + '<div class="stat-card" style="flex:1;min-width:140px;">'
+      + '<div class="stat-value">' + data.totalDevices + '</div><div class="stat-label">Total devices (' + window + ')</div></div>';
+    // Per-updateId table — most recent first (server orders by lastSeen desc).
+    if (!data.buckets || data.buckets.length === 0) {
+      list.innerHTML = '<p style="color:#64748b;padding:12px;">No OTA heartbeats yet — devices must update to a build that includes the telemetry overhaul first.</p>';
+      return;
+    }
+    const ago = iso => {
+      if (!iso) return '';
+      const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+      return m < 60 ? m + 'm' : m < 1440 ? Math.round(m / 60) + 'h' : Math.round(m / 1440) + 'd';
+    };
+    list.innerHTML = '<table style="width:100%;font-size:12px;color:#cbd5e1;border-collapse:collapse;">'
+      + '<thead><tr style="background:#0f172a;color:#64748b;">'
+      + '<th style="text-align:left;padding:8px;">Update ID</th>'
+      + '<th style="text-align:left;padding:8px;">Channel</th>'
+      + '<th style="text-align:left;padding:8px;">Runtime</th>'
+      + '<th style="text-align:right;padding:8px;">Devices</th>'
+      + '<th style="text-align:right;padding:8px;">Launches</th>'
+      + '<th style="text-align:right;padding:8px;">Last seen</th></tr></thead>'
+      + '<tbody>' + data.buckets.map((b, i) => {
+        const isLatest = i === 0;
+        const chColor = b.channel === 'production' ? '#10b981' : b.channel === 'preview' ? '#f59e0b' : '#64748b';
+        const tag = b.isEmbedded ? '<span style="background:#64748b20;color:#64748b;padding:2px 6px;border-radius:4px;font-size:10px;margin-left:6px;">EMBEDDED</span>' : '';
+        const star = isLatest ? '<span style="color:#10b981;margin-right:6px;">★</span>' : '';
+        return '<tr style="border-bottom:1px solid #1e293b;' + (isLatest ? 'background:#10b98108;' : '') + '">'
+          + '<td style="padding:8px;font-family:monospace;font-size:11px;">' + star + esc((b.updateId || '').substring(0, 20)) + tag + '</td>'
+          + '<td style="padding:8px;"><span style="color:' + chColor + ';font-weight:600;">' + esc(b.channel || '-') + '</span></td>'
+          + '<td style="padding:8px;">' + esc(b.runtimeVersion || '-') + '</td>'
+          + '<td style="text-align:right;padding:8px;font-weight:600;">' + b.deviceCount + '</td>'
+          + '<td style="text-align:right;padding:8px;">' + b.eventCount + '</td>'
+          + '<td style="text-align:right;padding:8px;color:#64748b;">' + ago(b.lastSeen) + ' ago</td>'
+          + '</tr>';
+      }).join('') + '</tbody></table>';
+  } catch (e) {
+    list.innerHTML = '<p style="color:#ef4444;">Failed: ' + esc(e.message) + '</p>';
+  }
+}
+
+async function promoteOta() {
+  if (!confirm('Promote the LATEST preview update to production?\n\nThis ships to every real user on the App Store / Play APK on their next app launch. Make sure preview has been verified first.')) return;
+  const resultEl = document.getElementById('otaPromoteResult');
+  if (resultEl) resultEl.innerHTML = '<span style="color:#94a3b8;">Publishing…</span>';
+  try {
+    const r = await fetch('/api/v1/ota/promote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Basic ' + token },
+      body: JSON.stringify({ from: 'preview', to: 'production', message: 'Promoted from preview via admin' }),
+    });
+    const body = await r.json();
+    if (!r.ok) throw new Error(body.error || 'Promote failed');
+    if (resultEl) {
+      resultEl.innerHTML = '<div style="color:#10b981;font-weight:600;">✓ Promoted to production.</div>'
+        + '<pre style="margin-top:8px;background:#0f172a;padding:8px;border-radius:6px;font-size:11px;color:#cbd5e1;overflow:auto;max-height:200px;">' + esc(body.data.output || '') + '</pre>';
+    }
+    showAlert('Promoted preview → production', 'success');
+    setTimeout(loadOtaAdoption, 3000);
+  } catch (e) {
+    if (resultEl) resultEl.innerHTML = '<div style="color:#ef4444;">' + esc(e.message) + '</div>';
+    showAlert(e.message, 'error');
   }
 }
 

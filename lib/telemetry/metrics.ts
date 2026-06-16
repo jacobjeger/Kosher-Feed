@@ -7,7 +7,7 @@
 
 import { useEffect, useRef } from "react";
 import { Platform, InteractionManager } from "react-native";
-import { enqueueMetric, type MetricPayload } from "./core";
+import { enqueueMetric, getOtaInfo, type MetricPayload } from "./core";
 import { addBreadcrumb } from "./breadcrumbs";
 
 const SAMPLE_RATES: Record<string, number> = {
@@ -108,6 +108,27 @@ export function addMetric(kind: string, input: AddMetricInput = {}) {
   if (kind.startsWith("playback_") || kind === "cold_start_ms") {
     addBreadcrumb("playback", `${kind}=${input.valueNum ?? input.valueText ?? ""}`);
   }
+}
+
+// One-shot per-launch heartbeat. valueText carries the OTA updateId so the
+// admin can answer "how many devices are on the latest OTA?" with a single
+// COUNT(DISTINCT device_id) GROUP BY value_text. Idempotent across the same
+// process — guards against accidental re-emit.
+let _otaEmitted = false;
+export function emitOtaHeartbeat() {
+  if (_otaEmitted) return;
+  _otaEmitted = true;
+  const ota = getOtaInfo();
+  addMetric("ota_active", {
+    valueText: ota.updateId || "embedded",
+    metadata: {
+      channel: ota.channel,
+      runtimeVersion: ota.runtimeVersion,
+      isEmbeddedLaunch: ota.isEmbeddedLaunch,
+      createdAt: ota.createdAt,
+    },
+    forceSample: true,
+  });
 }
 
 // Hook: emit screen_mount_ms = mount → "interactions complete" (the first
