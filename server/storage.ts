@@ -1197,7 +1197,17 @@ export async function adminExists(): Promise<boolean> {
 }
 
 export async function recordListen(episodeId: string, deviceId: string): Promise<void> {
-  await db.insert(episodeListens).values({ episodeId, deviceId });
+  // YTC shiurim live in Firestore — their IDs aren't in the episodes table,
+  // so the FK on episode_listens.episode_id rejects the insert with 500.
+  // The same can happen for episodes that were deleted on a feed refresh
+  // while the client still has the stale ID. Either way the listen isn't
+  // recordable in this table; swallow the FK error so the client gets 200.
+  try {
+    await db.insert(episodeListens).values({ episodeId, deviceId });
+  } catch (e: any) {
+    if (e?.code === "23503") return;     // foreign_key_violation — expected for YTC
+    throw e;
+  }
 }
 
 export async function getTrendingEpisodes(limit: number = 20): Promise<(Episode & { listenCount: number })[]> {
@@ -1795,6 +1805,8 @@ export async function recordListenWithDuration(episodeId: string, deviceId: stri
   // time — that would inflate listen counts ~10x for a typical session. Instead,
   // accumulate onto the most recent listen for this (episode, device) within a
   // 4-hour session window. Fall back to insert if no recent row exists.
+  // YTC shiur IDs aren't in the episodes table — the FK violation is expected
+  // and swallowed (same rationale as recordListen above).
   if (durationMs <= 0) return;
   const sessionStart = new Date(Date.now() - 4 * 60 * 60 * 1000);
   const [recent] = await db
@@ -1813,7 +1825,12 @@ export async function recordListenWithDuration(episodeId: string, deviceId: stri
       .set({ durationListenedMs: (recent.durationListenedMs || 0) + durationMs })
       .where(eq(episodeListens.id, recent.id));
   } else {
-    await db.insert(episodeListens).values({ episodeId, deviceId, durationListenedMs: durationMs });
+    try {
+      await db.insert(episodeListens).values({ episodeId, deviceId, durationListenedMs: durationMs });
+    } catch (e: any) {
+      if (e?.code === "23503") return;
+      throw e;
+    }
   }
 }
 

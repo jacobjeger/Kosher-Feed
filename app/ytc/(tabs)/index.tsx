@@ -104,13 +104,18 @@ export default function HomeScreen() {
         fetchActiveCollections(),
         fetchAlumniPhotos(),
       ]);
-      setCarouselImages(images as CarouselImage[]);
-      setAnnouncements(anns as Announcement[]);
-      setUpcomingEvents(events as YtcEvent[]);
-      setRecentShiur(shiur as Shiur | null);
-      setFeaturedShiurim(featured as Shiur[]);
-      setCollections(cols as ShiurCollection[]);
-      setAlumniPhotos(photos as AlumniPhoto[]);
+      // Defensive: every fetcher SHOULD return an array, but Firestore
+      // errors / cache misses can intermittently yield null and that
+      // crashed render with "Cannot read property 'map' of null" for ~10
+      // users in the dashboard. Coerce to [] before setting state so a
+      // bad fetch leaves an empty section instead of a screen-wide crash.
+      setCarouselImages(Array.isArray(images) ? (images as CarouselImage[]) : []);
+      setAnnouncements(Array.isArray(anns) ? (anns as Announcement[]) : []);
+      setUpcomingEvents(Array.isArray(events) ? (events as YtcEvent[]) : []);
+      setRecentShiur((shiur as Shiur | null) || null);
+      setFeaturedShiurim(Array.isArray(featured) ? (featured as Shiur[]) : []);
+      setCollections(Array.isArray(cols) ? (cols as ShiurCollection[]) : []);
+      setAlumniPhotos(Array.isArray(photos) ? (photos as AlumniPhoto[]) : []);
     } catch (e) {
       console.error("YTC HomeScreen load error:", e);
     } finally {
@@ -575,7 +580,7 @@ const ShiurHomeCard = React.memo(function ShiurHomeCardImpl({ shiur, sectionTitl
               <Text style={styles.progressText}>{formatRemainingMin(saved!.positionMs, saved!.durationMs)}</Text>
             )}
             {completed && <Text style={styles.completedText}>Completed</Text>}
-            {shiur.tags.length > 0 && (
+            {Array.isArray(shiur.tags) && shiur.tags.length > 0 && (
               <View style={styles.tags}>
                 {shiur.tags.slice(0, 3).map((tag) => <View key={tag} style={styles.tag}><Text style={styles.tagText}>{tag}</Text></View>)}
               </View>
