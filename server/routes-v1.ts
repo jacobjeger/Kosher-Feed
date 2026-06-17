@@ -201,12 +201,11 @@ export function registerV1Routes(app: Express) {
       // hasn't changed. Caller can pass updateId+updateCreatedAt explicitly,
       // OR we'll fetch the latest from EAS for the branch (defaults to
       // production — that's where "shipped a fix" semantically lives).
-      let resolvedOta: { updateId: string | null; createdAt: Date | null } = {
+      const resolvedOta: { updateId: string | null; createdAt: Date | null } = {
         updateId: updateId ? String(updateId) : null,
-        updateCreatedAt: null,
-      } as any;
-      if (updateCreatedAt) resolvedOta.createdAt = new Date(String(updateCreatedAt));
-      if (!resolvedOta.updateId && process.env.EXPO_TOKEN || process.env.EAS_TOKEN) {
+        createdAt: updateCreatedAt ? new Date(String(updateCreatedAt)) : null,
+      };
+      if (!resolvedOta.updateId && (process.env.EXPO_TOKEN || process.env.EAS_TOKEN)) {
         try {
           const expoToken = process.env.EXPO_TOKEN || process.env.EAS_TOKEN;
           const branch = otaBranch ? String(otaBranch) : "production";
