@@ -167,6 +167,11 @@
     .feed-item { flex-wrap: wrap; }
     .feed-actions { width: 100%; justify-content: flex-end; margin-top: 8px; }
     .stats { grid-template-columns: repeat(2, 1fr); }
+    /* Tabs row: 16 tabs on a phone wrap into a wall of text. Single-row
+       horizontal scroll with momentum keeps them tappable. */
+    .tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .card-header { flex-wrap: wrap; }
   }
 </style>
 </head>
@@ -1079,6 +1084,19 @@ let selectedSearchResult = null;
 let allAdminFeeds = [];
 let allSpeakers = [];
 let _activeTab = null;
+// Remember the last visited tab across reloads so the operator doesn't
+// land back on Analytics after every refresh. Stored in localStorage so it
+// persists per-browser; cleared on logout below.
+const ADMIN_TAB_KEY = 'admin_active_tab';
+// Per-tab freshness cache so re-entering a tab inside the TTL doesn't refire
+// every load* function. Each loader is responsible for honoring the cache
+// via tabRecentlyLoaded(tab) below.
+const TAB_CACHE_TTL_MS = 60_000;
+const _tabLoadedAt = {};
+function tabRecentlyLoaded(tab) {
+  return !!_tabLoadedAt[tab] && (Date.now() - _tabLoadedAt[tab] < TAB_CACHE_TTL_MS);
+}
+function markTabLoaded(tab) { _tabLoadedAt[tab] = Date.now(); }
 let feedPage = 1;
 const FEEDS_PER_PAGE = 50;
 
@@ -1142,6 +1160,9 @@ async function login() {
 function logout() {
   token = '';
   localStorage.removeItem('admin_token');
+  // Clear remembered tab + freshness cache so re-login starts clean.
+  try { localStorage.removeItem(ADMIN_TAB_KEY); } catch {}
+  Object.keys(_tabLoadedAt).forEach(k => delete _tabLoadedAt[k]);
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('adminPanel').style.display = 'none';
 }
@@ -1149,8 +1170,25 @@ function logout() {
 async function showAdmin() {
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('adminPanel').style.display = 'block';
-  _activeTab = 'analytics';
-  await Promise.all([loadAnalytics(), loadFeeds(), loadCategories()]);
+  // Pick last visited tab, fall back to analytics. Mark the matching tab
+  // button active so the visual state matches.
+  const stored = (() => { try { return localStorage.getItem(ADMIN_TAB_KEY); } catch { return null; } })();
+  const wanted = stored && document.getElementById(stored + 'Tab') ? stored : 'analytics';
+  const wantedBtn = Array.from(document.querySelectorAll('.tab')).find(b =>
+    (b.getAttribute('onclick') || '').includes("switchTab('" + wanted + "'"));
+  if (wanted !== 'analytics') {
+    // Hide the default analytics panel before switching so we don't flash it.
+    const aPanel = document.getElementById('analyticsTab');
+    if (aPanel) aPanel.classList.add('hidden');
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    _activeTab = null;
+    if (wantedBtn) switchTab(wanted, wantedBtn);
+    else _activeTab = 'analytics';
+  } else {
+    _activeTab = 'analytics';
+    markTabLoaded('analytics');
+    await Promise.all([loadAnalytics(), loadFeeds(), loadCategories()]);
+  }
 }
 
 function showAlert(msg, type = 'success') {
@@ -2367,11 +2405,18 @@ async function deleteSpeaker(id) {
 function switchTab(tab, btn) {
   if (_activeTab === tab) return; // already on this tab
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  btn.classList.add('active');
+  if (btn) btn.classList.add('active');
   // Hide previous tab, show new one (avoid touching all 14 tabs)
   if (_activeTab) { const prev = document.getElementById(_activeTab + 'Tab'); if (prev) prev.classList.add('hidden'); }
   const next = document.getElementById(tab + 'Tab'); if (next) next.classList.remove('hidden');
   _activeTab = tab;
+  // Persist so refresh lands on the same tab.
+  try { localStorage.setItem(ADMIN_TAB_KEY, tab); } catch {}
+  // Skip the loaders if we already pulled fresh data within the TTL —
+  // re-entering a tab to glance at it shouldn't cost 5 API roundtrips.
+  if (tabRecentlyLoaded(tab)) return;
+  markTabLoaded(tab);
+  if (tab === 'analytics') { loadAnalytics(); loadFeeds(); loadCategories(); }
   if (tab === 'users') loadUsers();
   if (tab === 'duplicates') loadDuplicates();
   if (tab === 'speakers') loadSpeakers();
@@ -5639,6 +5684,28 @@ async function promoteOta() {
     showAlert(e.message, 'error');
   }
 }
+
+// Global keyboard shortcuts. Esc closes whichever modal is currently open
+// (issue detail takes precedence since it stacks on top). Ignored when the
+// user is typing in an input — accidental Esc shouldn't drop unsaved text.
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const target = e.target;
+  if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+    // Allow Esc to blur the field — but don't kill the modal under it.
+    if (target.blur) target.blur();
+    return;
+  }
+  const issueDetail = document.getElementById('issueDetailModal');
+  if (issueDetail && issueDetail.style.display !== 'none' && typeof closeIssueDetail === 'function') {
+    closeIssueDetail();
+    return;
+  }
+  const overlay = document.getElementById('modalOverlay');
+  if (overlay && !overlay.classList.contains('hidden') && typeof closeModal === 'function') {
+    closeModal();
+  }
+});
 
 if (token) { showAdmin(); }
 </script>
