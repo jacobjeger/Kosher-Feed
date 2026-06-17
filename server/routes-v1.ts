@@ -309,16 +309,30 @@ export function registerV1Routes(app: Express) {
       const fromBranch = (req.body?.from as string) || "preview";
       const toBranch = (req.body?.to as string) || "production";
       const message = (req.body?.message as string) || `Promoted from ${fromBranch}`;
-      const groupId = req.body?.groupId as string | undefined;
+      let groupId = req.body?.groupId as string | undefined;
       const { execFile } = await import("node:child_process");
-      const args = groupId
-        ? ["--yes", "eas-cli", "update:republish", "--group", groupId, "--branch", toBranch, "--message", message, "--non-interactive"]
-        : ["--yes", "eas-cli", "update:republish", "--branch", toBranch, "--source-branch", fromBranch, "--message", message, "--non-interactive"];
-      const stdout = await new Promise<string>((resolve, reject) => {
-        execFile("npx", args, { cwd: process.cwd(), env: { ...process.env, EAS_NO_VCS: "1" }, maxBuffer: 4 * 1024 * 1024 },
-          (err, out, errOut) => err ? reject(new Error((errOut || "") + (out || "") || err.message)) : resolve(out));
-      });
-      ok(res, { from: fromBranch, to: toBranch, message, output: stdout.substring(0, 4000) });
+      const runEas = (args: string[]): Promise<string> =>
+        new Promise((resolve, reject) => {
+          execFile("npx", ["--yes", "eas-cli", ...args],
+            { cwd: process.cwd(), env: { ...process.env, EAS_NO_VCS: "1" }, maxBuffer: 4 * 1024 * 1024 },
+            (err, out, errOut) => err ? reject(new Error((errOut || "") + (out || "") || err.message)) : resolve(out));
+        });
+
+      // Resolve the latest update group on the source branch when no explicit
+      // group ID was passed — `eas update:republish` requires --group, it
+      // doesn't accept a source-branch flag.
+      if (!groupId) {
+        const listOut = await runEas(["update:list", "--branch", fromBranch, "--limit", "1", "--json", "--non-interactive"]);
+        let parsed: any = null;
+        try { parsed = JSON.parse(listOut); } catch {}
+        const latest = parsed?.currentPage?.[0];
+        if (!latest?.group) {
+          return res.status(404).json({ ok: false, error: `No updates found on branch ${fromBranch} to promote.` });
+        }
+        groupId = String(latest.group);
+      }
+      const stdout = await runEas(["update:republish", "--group", groupId, "--branch", toBranch, "--message", message, "--non-interactive"]);
+      ok(res, { from: fromBranch, to: toBranch, groupId, message, output: stdout.substring(0, 4000) });
     } catch (e: any) { publicError(res, e); }
   });
 
