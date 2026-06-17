@@ -336,8 +336,9 @@ export function registerV1Routes(app: Express) {
         });
 
       // Resolve the latest update group on the source branch when no explicit
-      // group ID was passed — `eas update:republish` requires --group, it
-      // doesn't accept a source-branch flag.
+      // group ID was passed. eas update:republish takes EITHER --group OR
+      // --branch (source) — they're mutually exclusive — and uses
+      // --destination-branch for the target.
       if (!groupId) {
         const listOut = await runEas(["update:list", "--branch", fromBranch, "--limit", "1", "--json", "--non-interactive"]);
         let parsed: any = null;
@@ -348,7 +349,7 @@ export function registerV1Routes(app: Express) {
         }
         groupId = String(latest.group);
       }
-      const stdout = await runEas(["update:republish", "--group", groupId, "--branch", toBranch, "--message", message, "--non-interactive"]);
+      const stdout = await runEas(["update:republish", "--group", groupId, "--destination-branch", toBranch, "--message", message, "--non-interactive"]);
       ok(res, { from: fromBranch, to: toBranch, groupId, message, output: stdout.substring(0, 4000) });
     } catch (e: any) { publicError(res, e); }
   });
