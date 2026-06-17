@@ -216,17 +216,25 @@ export function registerV1Routes(app: Express) {
             EAS_NO_VCS: "1",
             EAS_PROJECT_ROOT: process.cwd(),
           };
-          const stdout = await new Promise<string>((resolve, reject) => {
-            execFile("npx", ["--yes", "eas-cli", "update:list", "--branch", branch, "--limit", "1", "--json", "--non-interactive"],
-              { cwd: process.cwd(), env: childEnv, maxBuffer: 4 * 1024 * 1024 },
-              (err, out) => err ? reject(err) : resolve(out));
-          });
-          let parsed: any = null;
-          try { parsed = JSON.parse(stdout); } catch {}
-          const latest = parsed?.currentPage?.[0];
+          const runEasJson = (args: string[]): Promise<any> =>
+            new Promise<string>((resolve, reject) => {
+              execFile("npx", ["--yes", "eas-cli", ...args],
+                { cwd: process.cwd(), env: childEnv, maxBuffer: 4 * 1024 * 1024 },
+                (err, out) => err ? reject(err) : resolve(out));
+            }).then(stdout => { try { return JSON.parse(stdout); } catch { return null; } });
+
+          // Step 1: find the latest group on the source branch.
+          // `update:list --json` returns {currentPage:[{group, ...}]} but NO
+          // createdAt — only a human-readable "9 minutes ago" message.
+          const listJson = await runEasJson(["update:list", "--branch", branch, "--limit", "1", "--json", "--non-interactive"]);
+          const latest = listJson?.currentPage?.[0];
           if (latest?.group) {
             resolvedOta.updateId = String(latest.group);
-            if (latest.createdAt) resolvedOta.createdAt = new Date(String(latest.createdAt));
+            // Step 2: fetch the group's createdAt via `update:view --json`.
+            // (--non-interactive isn't supported on this subcommand.)
+            const viewJson = await runEasJson(["update:view", String(latest.group), "--json"]);
+            const first = Array.isArray(viewJson) ? viewJson[0] : null;
+            if (first?.createdAt) resolvedOta.createdAt = new Date(String(first.createdAt));
           }
         } catch (otaErr: any) {
           // Non-fatal — the resolve still succeeds without the OTA snapshot;
