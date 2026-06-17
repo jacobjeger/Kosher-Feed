@@ -702,7 +702,12 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       // Allow retrying after 3s even if guard is set (previous attempt likely stuck)
       const guardAge = Date.now() - (loadingGuardStartRef.current || 0);
       if (guardAge < 3000) {
-        addLog("warn", `Play blocked by loading guard for: ${episode.title} (${Math.round(guardAge)}ms ago)`, undefined, "audio");
+        // Was a "warn" addLog — flooded the dashboard with one row per
+        // rapid double-tap. The guard is doing the right thing; the log was
+        // just noise. Keep a breadcrumb so error reports near this moment
+        // still see "user double-tapped play".
+        addBreadcrumb("playback", `play blocked by loading guard (${Math.round(guardAge)}ms ago)`,
+          { episodeTitle: episode.title?.substring(0, 80) });
         return;
       }
       addLog("warn", `Loading guard stale (${Math.round(guardAge)}ms) — forcing reset for: ${episode.title}`, undefined, "audio");
@@ -988,8 +993,14 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
         // Up to 3 attempts. If all fail, surface a real error to the UI
         // instead of pretending the audio is playing.
-        const MAX_ATTEMPTS = 3;
-        const TIMEOUT_MS = 15000;
+        // Bumped 3→5 attempts and 15s→25s per attempt after error-dashboard
+        // data showed Schok F1 phones on cellular consistently take 16-22s for
+        // the audio HAL to flip status.playing=true — the previous 15s ceiling
+        // gave up just before they would have succeeded. Total worst case now
+        // 5 × 25s = 2 min before "Playback failed" surfaces; in practice it
+        // confirms via position-advancement (line ~919) much sooner.
+        const MAX_ATTEMPTS = 5;
+        const TIMEOUT_MS = 25000;
         let succeeded = false;
         try {
           for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {

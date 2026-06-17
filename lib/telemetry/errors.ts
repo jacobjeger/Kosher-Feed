@@ -230,8 +230,11 @@ export function initErrorCapture() {
         const elapsed = Date.now() - startedAt;
         addBreadcrumb("fetch", `${method} ${shortUrl(url)} → ${res.status} (${elapsed}ms)`);
 
-        // emit slow-call metric (skip telemetry-own URLs)
-        if (elapsed > 2000 && !url.includes("/api/v1/ingest") && !url.includes("/api/error-reports")) {
+        // emit slow-call metric (skip telemetry-own URLs). Cap at 30s — a
+        // longer "duration" means the app was suspended mid-fetch and we'd
+        // be poisoning p95 with multi-minute values that don't reflect a
+        // real user-perceived slow request.
+        if (elapsed > 2000 && elapsed < 30_000 && !url.includes("/api/v1/ingest") && !url.includes("/api/error-reports")) {
           try {
             const { addMetric } = require("./metrics");
             addMetric("fetch_slow_ms", { valueNum: elapsed, valueText: `${method} ${shortUrl(url)}` });

@@ -185,7 +185,15 @@ export default function RootLayout() {
     // the admin can show OTA-adoption (how many devices are on the latest).
     try {
       const { addMetric, emitOtaHeartbeat } = require("@/lib/telemetry/metrics");
-      addMetric("cold_start_ms", { valueNum: Date.now() - APP_LAUNCH_TS, forceSample: true });
+      const coldStartMs = Date.now() - APP_LAUNCH_TS;
+      // Drop the metric entirely if it's >30s. JS modules eval at app start
+      // even when the OS launched the process in the background (push
+      // notification wake, foreground service restart, etc.) — those
+      // measurements aren't a "cold start" the user perceives, and they
+      // were skewing p95 from ~1s into the multi-minute range.
+      if (coldStartMs > 0 && coldStartMs < 30_000) {
+        addMetric("cold_start_ms", { valueNum: coldStartMs, forceSample: true });
+      }
       emitOtaHeartbeat();
     } catch {}
     setupNotificationChannel();
