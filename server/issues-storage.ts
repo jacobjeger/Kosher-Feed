@@ -627,6 +627,33 @@ export async function getOtaAdoption(windowMs: number = 24 * 60 * 60 * 1000): Pr
   };
 }
 
+// Snapshot the latest OTA bundle on a channel, sourced from our own
+// ota_active heartbeats (no eas-cli roundtrip). Used by the resolve
+// endpoint to capture { updateId, createdAt } so a future event whose
+// metadata.ota.createdAt is strictly greater can auto-reopen the issue.
+// Returns null when no device has emitted ota_active for that channel
+// yet (e.g. brand-new install of a channel).
+export async function getLatestOtaForChannel(channel: string): Promise<{ updateId: string; createdAt: Date | null } | null> {
+  const [row] = await db.select({
+    updateId: appMetrics.valueText,
+    metadata: appMetrics.metadata,
+    createdAt: appMetrics.createdAt,
+  }).from(appMetrics)
+    .where(and(
+      eq(appMetrics.kind, "ota_active"),
+      sql`(${appMetrics.metadata} ->> 'channel') = ${channel}`,
+    ))
+    .orderBy(desc(appMetrics.createdAt))
+    .limit(1);
+  if (!row?.updateId) return null;
+  const meta: any = row.metadata || {};
+  const otaCreatedAtRaw = meta.createdAt || meta.ota?.createdAt;
+  return {
+    updateId: String(row.updateId),
+    createdAt: otaCreatedAtRaw ? new Date(String(otaCreatedAtRaw)) : null,
+  };
+}
+
 // Distinct metric kinds seen recently — used by the admin "Metrics" tab dropdown
 // and `shiurctl metrics --list-kinds`.
 export async function listMetricKinds(windowMs: number = 7 * 24 * 60 * 60 * 1000): Promise<{ kind: string; count: number }[]> {
