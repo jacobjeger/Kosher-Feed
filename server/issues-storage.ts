@@ -151,9 +151,17 @@ export async function ingestEvent(input: IngestEventInput): Promise<IngestEventR
         });
         return { fingerprint: fp, status: "active", isNew: false, isRegression: false };
       }
-      // Auto-reopen: a resolved issue surfaces again on a newer version → regressed.
-      // Same-version recurrence keeps the "resolved" mark (probably stale device).
-      if (cur.status === "resolved" && isNewerVersion(input.appVersion, cur.resolvedAtVersion)) {
+      // Auto-reopen: a resolved issue surfaces again on a newer build → regressed.
+      // "Newer" means either a higher appVersion (native build bump) OR — for
+      // OTA-shipped fixes where appVersion stays put — a metadata.ota.createdAt
+      // strictly greater than the OTA snapshot we captured at resolve time.
+      // Same-build recurrence keeps the "resolved" mark (probably stale device).
+      const versionNewer = isNewerVersion(input.appVersion, cur.resolvedAtVersion);
+      const eventOtaCreatedRaw = input.metadata?.ota?.createdAt;
+      const eventOtaCreated = eventOtaCreatedRaw ? new Date(eventOtaCreatedRaw) : null;
+      const otaNewer = !!(cur.resolvedAtUpdateCreatedAt && eventOtaCreated
+        && eventOtaCreated.getTime() > cur.resolvedAtUpdateCreatedAt.getTime());
+      if (cur.status === "resolved" && (versionNewer || otaNewer)) {
         isRegression = true;
         newStatus = "regressed";
       } else if (cur.status === "regressed") {
@@ -263,11 +271,19 @@ export async function getIssue(fingerprint: string, eventsLimit: number = 20): P
 
 // ─── lifecycle ──────────────────────────────────────────────────────────────
 
-export async function resolveIssue(fp: string, version: string, note: string | null, by: string | null): Promise<Issue | null> {
+export async function resolveIssue(
+  fp: string,
+  version: string,
+  note: string | null,
+  by: string | null,
+  ota?: { updateId: string | null; createdAt: Date | null },
+): Promise<Issue | null> {
   const [updated] = await db.update(issues).set({
     status: "resolved",
     resolvedAt: new Date(),
     resolvedAtVersion: version,
+    resolvedAtUpdateId: ota?.updateId || null,
+    resolvedAtUpdateCreatedAt: ota?.createdAt || null,
     resolvedNote: note,
     resolvedBy: by,
   }).where(eq(issues.fingerprint, fp)).returning();
@@ -279,6 +295,8 @@ export async function reopenIssue(fp: string): Promise<Issue | null> {
     status: "active",
     resolvedAt: null,
     resolvedAtVersion: null,
+    resolvedAtUpdateId: null,
+    resolvedAtUpdateCreatedAt: null,
     resolvedNote: null,
     resolvedBy: null,
     archivedAt: null,

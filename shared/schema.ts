@@ -457,6 +457,14 @@ export const issues = pgTable("issues", {
   topMessage: text("top_message"),
   resolvedAt: timestamp("resolved_at"),
   resolvedAtVersion: text("resolved_at_version"),
+  // OTA-aware auto-reopen. When the operator resolves an issue we snapshot
+  // the current production OTA's group ID + publish time. A future event
+  // whose metadata.ota.createdAt is strictly greater than this value flips
+  // status to 'regressed' even if appVersion is unchanged — because EAS
+  // updates don't bump appVersion, so the version-only comparison would
+  // miss every OTA-shipped fix.
+  resolvedAtUpdateId: text("resolved_at_update_id"),
+  resolvedAtUpdateCreatedAt: timestamp("resolved_at_update_created_at"),
   resolvedNote: text("resolved_note"),
   resolvedBy: text("resolved_by"),
   archivedAt: timestamp("archived_at"),

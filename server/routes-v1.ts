@@ -193,9 +193,53 @@ export function registerV1Routes(app: Express) {
 
   app.post("/api/v1/issues/:fp/resolve", portalAuth as any, async (req: Request, res: Response) => {
     try {
-      const { version, note, by } = req.body || {};
+      const { version, note, by, otaBranch, updateId, updateCreatedAt } = req.body || {};
       if (!version) return res.status(400).json({ ok: false, error: "version required — pass --version to shiurctl resolve" });
-      const updated = await iss.resolveIssue(String(req.params.fp), String(version), note ? String(note) : null, by ? String(by) : "shiurctl");
+
+      // Snapshot the OTA bundle we're considering "resolved" so future events
+      // shipped via a NEWER OTA group can auto-reopen even when appVersion
+      // hasn't changed. Caller can pass updateId+updateCreatedAt explicitly,
+      // OR we'll fetch the latest from EAS for the branch (defaults to
+      // production — that's where "shipped a fix" semantically lives).
+      let resolvedOta: { updateId: string | null; createdAt: Date | null } = {
+        updateId: updateId ? String(updateId) : null,
+        updateCreatedAt: null,
+      } as any;
+      if (updateCreatedAt) resolvedOta.createdAt = new Date(String(updateCreatedAt));
+      if (!resolvedOta.updateId && process.env.EXPO_TOKEN || process.env.EAS_TOKEN) {
+        try {
+          const expoToken = process.env.EXPO_TOKEN || process.env.EAS_TOKEN;
+          const branch = otaBranch ? String(otaBranch) : "production";
+          const { execFile } = await import("node:child_process");
+          const childEnv = {
+            ...process.env,
+            EXPO_TOKEN: expoToken,
+            EAS_NO_VCS: "1",
+            EAS_PROJECT_ROOT: process.cwd(),
+          };
+          const stdout = await new Promise<string>((resolve, reject) => {
+            execFile("npx", ["--yes", "eas-cli", "update:list", "--branch", branch, "--limit", "1", "--json", "--non-interactive"],
+              { cwd: process.cwd(), env: childEnv, maxBuffer: 4 * 1024 * 1024 },
+              (err, out) => err ? reject(err) : resolve(out));
+          });
+          let parsed: any = null;
+          try { parsed = JSON.parse(stdout); } catch {}
+          const latest = parsed?.currentPage?.[0];
+          if (latest?.group) {
+            resolvedOta.updateId = String(latest.group);
+            if (latest.createdAt) resolvedOta.createdAt = new Date(String(latest.createdAt));
+          }
+        } catch (otaErr: any) {
+          // Non-fatal — the resolve still succeeds without the OTA snapshot;
+          // auto-reopen will fall back to appVersion-only comparison.
+          console.warn("resolve: failed to snapshot OTA — falling back to version-only auto-reopen:", otaErr?.message || otaErr);
+        }
+      }
+
+      const updated = await iss.resolveIssue(
+        String(req.params.fp), String(version), note ? String(note) : null, by ? String(by) : "shiurctl",
+        { updateId: resolvedOta.updateId, createdAt: resolvedOta.createdAt },
+      );
       if (!updated) return res.status(404).json({ ok: false, error: "Not found" });
       ok(res, updated);
     } catch (e: any) { publicError(res, e); }
