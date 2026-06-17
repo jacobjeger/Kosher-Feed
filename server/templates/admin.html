@@ -3,55 +3,160 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ShiurPod - Admin Panel</title>
+<title>ShiurPod — Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
 <style>
+  /* Palette refresh — match shiurpod.com landing page.
+     Backgrounds: deep navy with slight blue lift.
+     Brand: royal blue #1D4ED8 → light blue #3b82f6 gradient.
+     Headers: Playfair Display serif for that editorial feel; body in Inter. */
+  :root {
+    --bg-0: #0a1118;       /* page */
+    --bg-1: #131e2d;       /* cards, header, tab bar */
+    --bg-2: #0c1726;       /* inner panels, table rows, inputs */
+    --bg-3: #1a2a3a;       /* hovers, borders accent */
+    --line: #1e293b;
+    --text: #e8eef5;
+    --text-soft: #94a3b8;
+    --text-dim: #64748b;
+    --brand-1: #1D4ED8;
+    --brand-2: #3b82f6;
+    --brand-3: #60a5fa;
+    --danger: #ef4444;
+    --danger-2: #dc2626;
+    --success: #059669;
+    --success-2: #10b981;
+    --warning: #f59e0b;
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0f1a; color: #e2e8f0; min-height: 100vh; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    background: var(--bg-0);
+    color: var(--text);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    /* Subtle radial vignette matches the public site's hero. */
+    background-image:
+      radial-gradient(ellipse 1200px 600px at 20% -10%, rgba(29, 78, 216, 0.10), transparent 70%),
+      radial-gradient(ellipse 800px 400px at 90% 110%, rgba(59, 130, 246, 0.06), transparent 70%);
+    background-attachment: fixed;
+  }
+  .h-serif { font-family: 'Playfair Display', Georgia, serif; font-weight: 700; letter-spacing: -0.01em; }
+
   .login-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
-  .login-card { background: #151c2c; border-radius: 16px; padding: 40px; width: 100%; max-width: 400px; border: 1px solid #1e293b; }
-  .login-card h1 { font-size: 24px; margin-bottom: 8px; color: #f8fafc; }
-  .login-card p { color: #94a3b8; margin-bottom: 24px; font-size: 14px; }
+  .login-card {
+    background: linear-gradient(160deg, var(--bg-1) 0%, var(--bg-2) 100%);
+    border-radius: 16px; padding: 40px; width: 100%; max-width: 400px;
+    border: 1px solid var(--line);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+  .login-card h1 {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 28px; font-weight: 700; letter-spacing: -0.01em;
+    margin-bottom: 6px;
+    background: linear-gradient(135deg, var(--brand-3), #fff);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .login-card p { color: var(--text-soft); margin-bottom: 24px; font-size: 14px; }
   .form-group { margin-bottom: 16px; }
-  .form-group label { display: block; font-size: 13px; color: #94a3b8; margin-bottom: 6px; font-weight: 500; }
-  input, select, textarea { width: 100%; padding: 10px 14px; background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; color: #e2e8f0; font-size: 14px; outline: none; transition: border-color 0.2s; }
-  input:focus, select:focus, textarea:focus { border-color: #3b82f6; }
+  .form-group label { display: block; font-size: 13px; color: var(--text-soft); margin-bottom: 6px; font-weight: 500; }
+  input, select, textarea {
+    width: 100%; padding: 10px 14px; background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: 8px; color: var(--text); font-size: 14px; outline: none;
+    font-family: inherit;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--brand-2); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }
   textarea { resize: vertical; min-height: 80px; }
-  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 10px 20px; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; transition: background-color 0.15s, opacity 0.15s; }
-  .btn-primary { background: #3b82f6; color: #fff; }
-  .btn-primary:hover { background: #2563eb; }
-  .btn-danger { background: #ef4444; color: #fff; }
-  .btn-danger:hover { background: #dc2626; }
-  .btn-secondary { background: #1e293b; color: #e2e8f0; }
-  .btn-secondary:hover { background: #334155; }
-  .btn-success { background: #059669; color: #fff; }
-  .btn-success:hover { background: #047857; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 10px 20px; border: none; border-radius: 8px;
+    font-size: 14px; font-weight: 500; cursor: pointer;
+    font-family: inherit;
+    transition: filter 0.15s, transform 0.05s, box-shadow 0.15s, background 0.15s;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--brand-1), var(--brand-2));
+    color: #fff;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.1) inset, 0 4px 12px rgba(29, 78, 216, 0.25);
+  }
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn-danger { background: linear-gradient(135deg, var(--danger-2), var(--danger)); color: #fff; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.18); }
+  .btn-danger:hover { filter: brightness(1.08); }
+  .btn-secondary { background: rgba(255, 255, 255, 0.06); color: var(--text); border: 1px solid var(--line); }
+  .btn-secondary:hover { background: rgba(255, 255, 255, 0.10); border-color: var(--bg-3); }
+  .btn-success { background: linear-gradient(135deg, var(--success), var(--success-2)); color: #fff; box-shadow: 0 4px 12px rgba(5, 150, 105, 0.2); }
+  .btn-success:hover { filter: brightness(1.08); }
   .btn-sm { padding: 6px 12px; font-size: 12px; }
   .btn-full { width: 100%; justify-content: center; }
-  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(0.3); }
 
   .admin-panel { display: none; }
-  .header { background: #151c2c; border-bottom: 1px solid #1e293b; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; }
-  .header h1 { font-size: 20px; color: #f8fafc; }
+  .header {
+    background: linear-gradient(180deg, rgba(19, 30, 45, 0.95), rgba(12, 23, 38, 0.95));
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+    padding: 14px 24px; display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 50;
+  }
+  .header h1 {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 22px; font-weight: 700; letter-spacing: -0.01em;
+    background: linear-gradient(135deg, #fff 30%, var(--brand-3));
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
   .main { padding: 24px; max-width: 1400px; margin: 0 auto; }
 
   /* Tab bar: 16 tabs wouldn't fit in one row even at 1400px while staying
      readable. Let them size to content and wrap to a second row instead of
      forcing equal flex:1 widths (which truncated "Settings" and wrapped
      "Kol Halashon" to two lines on a single row). */
-  .tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 24px; background: #151c2c; border-radius: 10px; padding: 4px; }
-  .tab { padding: 10px 14px; border: none; background: none; color: #94a3b8; font-size: 14px; font-weight: 500; cursor: pointer; border-radius: 8px; transition: background-color 0.15s, color 0.15s; white-space: nowrap; }
-  .tab.active { background: #3b82f6; color: #fff; }
-  .tab:hover:not(.active) { background: #1e293b; }
+  .tabs {
+    display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 24px;
+    background: var(--bg-1); border-radius: 12px; padding: 4px;
+    border: 1px solid var(--line);
+  }
+  .tab {
+    padding: 10px 14px; border: none; background: none; color: var(--text-soft);
+    font-size: 13px; font-weight: 500; cursor: pointer; border-radius: 8px;
+    font-family: inherit;
+    transition: background 0.15s, color 0.15s;
+    white-space: nowrap;
+  }
+  .tab.active {
+    background: linear-gradient(135deg, var(--brand-1), var(--brand-2));
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(29, 78, 216, 0.25);
+  }
+  .tab:hover:not(.active) { background: rgba(255, 255, 255, 0.05); color: var(--text); }
 
-  .card { background: #151c2c; border-radius: 12px; border: 1px solid #1e293b; padding: 20px; margin-bottom: 16px; }
+  .card {
+    background: var(--bg-1); border-radius: 14px;
+    border: 1px solid var(--line);
+    padding: 22px; margin-bottom: 16px;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+  }
   .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
-  .card-header h2 { font-size: 18px; color: #f8fafc; }
+  .card-header h2 {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 20px; font-weight: 700; letter-spacing: -0.01em; color: var(--text);
+  }
 
-  .feed-item { display: flex; align-items: center; gap: 14px; padding: 14px; background: #0f172a; border-radius: 10px; margin-bottom: 8px; }
-  .feed-img { width: 48px; height: 48px; border-radius: 8px; object-fit: cover; background: #1e293b; flex-shrink: 0; }
+  .feed-item {
+    display: flex; align-items: center; gap: 14px; padding: 14px;
+    background: var(--bg-2); border-radius: 12px; margin-bottom: 8px;
+    border: 1px solid transparent;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .feed-item:hover { background: rgba(255, 255, 255, 0.03); border-color: var(--line); }
+  .feed-img { width: 48px; height: 48px; border-radius: 8px; object-fit: cover; background: var(--bg-3); flex-shrink: 0; }
   .feed-info { flex: 1; min-width: 0; }
-  .feed-title { font-weight: 600; font-size: 14px; color: #f8fafc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .feed-meta { font-size: 12px; color: #64748b; margin-top: 2px; }
+  .feed-title { font-weight: 600; font-size: 14px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .feed-meta { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
   .feed-actions { display: flex; gap: 6px; flex-shrink: 0; }
   .feed-stats-inline { display: flex; gap: 12px; margin-top: 4px; }
   .feed-stat { font-size: 11px; color: #94a3b8; }
@@ -60,25 +165,51 @@
   .category-tag { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: #0f172a; border-radius: 6px; font-size: 13px; color: #94a3b8; margin: 0 6px 6px 0; }
   .category-tag .remove { background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px; line-height: 1; }
 
-  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
-  .modal { background: #151c2c; border-radius: 16px; border: 1px solid #1e293b; padding: 24px; width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; }
-  .modal h2 { font-size: 18px; color: #f8fafc; margin-bottom: 20px; }
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px;
+  }
+  .modal {
+    background: linear-gradient(160deg, var(--bg-1) 0%, var(--bg-2) 100%);
+    border-radius: 16px; border: 1px solid var(--line);
+    padding: 24px; width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    animation: modalIn 0.18s ease-out;
+  }
+  @keyframes modalIn { from { opacity: 0; transform: scale(0.96) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+  .modal h2 { font-family: 'Playfair Display', Georgia, serif; font-size: 20px; font-weight: 700; color: var(--text); margin-bottom: 20px; }
 
-  .status-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
-  .status-active { background: #065f46; color: #6ee7b7; }
-  .status-inactive { background: #7f1d1d; color: #fca5a5; }
+  .status-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
+  .status-active { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.3); }
+  .status-inactive { background: rgba(239, 68, 68, 0.15); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3); }
 
-  .alert { padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; }
-  .alert-success { background: #064e3b; color: #6ee7b7; border: 1px solid #065f46; }
-  .alert-error { background: #7f1d1d; color: #fca5a5; border: 1px solid #991b1b; }
+  .alert { padding: 12px 16px; border-radius: 10px; margin-bottom: 16px; font-size: 13px; border: 1px solid transparent; }
+  .alert-success { background: rgba(16, 185, 129, 0.10); color: #6ee7b7; border-color: rgba(16, 185, 129, 0.25); }
+  .alert-error { background: rgba(239, 68, 68, 0.10); color: #fca5a5; border-color: rgba(239, 68, 68, 0.25); }
   .hidden { display: none !important; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+  /* Skeleton shimmer for loading states. Apply via class="skeleton" on a
+     placeholder block; defaults to a card-sized chunk. */
+  .skeleton {
+    background: linear-gradient(90deg, var(--bg-2) 25%, var(--bg-3) 50%, var(--bg-2) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
+    border-radius: 8px;
+  }
+  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
-  .stat-card { background: #151c2c; border: 1px solid #1e293b; border-radius: 12px; padding: 16px; }
-  .stat-value { font-size: 28px; font-weight: 700; color: #f8fafc; }
-  .stat-label { font-size: 12px; color: #64748b; margin-top: 4px; }
-  .stat-sub { font-size: 11px; color: #3b82f6; margin-top: 2px; }
+  .stat-card {
+    background: var(--bg-1); border: 1px solid var(--line);
+    border-radius: 14px; padding: 18px;
+    transition: transform 0.15s, border-color 0.15s;
+  }
+  .stat-card:hover { border-color: rgba(59, 130, 246, 0.3); transform: translateY(-1px); }
+  .stat-value { font-family: 'Playfair Display', Georgia, serif; font-size: 32px; font-weight: 700; color: var(--text); letter-spacing: -0.02em; }
+  .stat-label { font-size: 12px; color: var(--text-soft); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .stat-sub { font-size: 11px; color: var(--brand-2); margin-top: 2px; font-weight: 500; }
 
   .search-container { position: relative; }
   .search-container input { padding-right: 40px; }
@@ -1216,8 +1347,13 @@ async function loadAnalytics() {
     renderTopEpisodes();
     renderFeedPerformance();
     if (enhanced) renderEnhancedStats();
-    // Defer secondary analytics to avoid thundering herd
-    setTimeout(() => { loadListenerAnalytics(); loadSourceBreakdown(); loadDeviceAnalytics(); loadWebsiteAnalytics(); loadYtcUnlockStats(); }, 500);
+    // Defer secondary analytics to avoid thundering herd. Each loader
+    // re-checks _activeTab so navigating away mid-deferral doesn't fire
+    // unused calls.
+    setTimeout(() => {
+      if (_activeTab !== 'analytics') return;
+      loadListenerAnalytics(); loadSourceBreakdown(); loadDeviceAnalytics(); loadWebsiteAnalytics(); loadYtcUnlockStats();
+    }, 500);
   } catch(e) {
     console.error('Analytics error:', e);
   }
@@ -1647,6 +1783,7 @@ function filterFeeds(query) {
 
   // Render feed pagination
   const pag = document.getElementById('feedPagination');
+  if (!pag) return;
   if (totalPages > 1) {
     let html = '';
     if (feedPage > 1) html += '<button class="btn btn-secondary btn-sm" onclick="feedPage=' + (feedPage-1) + ';filterFeeds(document.getElementById(\'feedSearchInput\').value)">Prev</button>';
@@ -1888,7 +2025,7 @@ async function addCategory() {
 }
 
 async function deleteFeed(id) {
-  if (!confirm('Remove this feed and all its episodes?')) return;
+  if (!await confirmDialog({ title: 'Delete feed', body: 'Remove this feed and all its episodes? This cannot be undone.', danger: true, confirmLabel: 'Delete' })) return;
   try {
     await api(`/api/admin/feeds/${id}`, { method: 'DELETE' });
     allAdminFeeds = allAdminFeeds.filter(f => f.id !== id);
@@ -1900,7 +2037,7 @@ async function deleteFeed(id) {
 }
 
 async function deleteCategory(id) {
-  if (!confirm('Remove this category?')) return;
+  if (!await confirmDialog({ title: 'Delete category', body: 'Remove this category? Feeds assigned to it will become uncategorized.', danger: true, confirmLabel: 'Delete' })) return;
   try {
     await api(`/api/admin/categories/${id}`, { method: 'DELETE' });
     showAlert('Category removed');
@@ -1972,7 +2109,7 @@ async function executeMerge(sourceId) {
   if (!targetId) return;
   const source = allAdminFeeds.find(f => f.id === sourceId);
   const target = allAdminFeeds.find(f => f.id === targetId);
-  if (!confirm(`Merge "${source?.title}" into "${target?.title}"?\n\nAll episodes and subscribers will be moved to the target. The source feed will be deactivated (not deleted) and its platform links carried over.`)) return;
+  if (!await confirmDialog({ title: 'Merge feeds', body: `Merge "${source?.title || '?'}" into "${target?.title || '?'}"?\n\nAll episodes and subscribers will be moved to the target. The source feed will be deactivated (not deleted) and its platform links carried over.`, danger: true, confirmLabel: 'Merge' })) return;
   const btn = document.getElementById('mergeBtn');
   if (btn) { btn.disabled = true; btn.textContent = 'Merging...'; }
   try {
@@ -2243,12 +2380,17 @@ async function loadMergeHistory(feedId) {
         + '</div>';
     }).join('');
   } catch(e) {
-    // silently ignore — old feeds won't have history
+    // Old feeds won't have history (404 is expected); but log non-404
+    // failures so a broken merge_history endpoint isn't silent.
+    if (!String(e?.message || '').includes('404') && !String(e?.message || '').includes('Not found')) {
+      console.warn('loadMergeHistory failed:', e);
+    }
   }
 }
 
 async function saveFeedEdit(id) {
   const btn = event?.target;
+  const originalText = btn?.textContent || 'Save';
   if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
   try {
     const selectedCategoryIds = Array.from(document.querySelectorAll('.editCategoryCb:checked')).map(cb => cb.value);
@@ -2268,7 +2410,8 @@ async function saveFeedEdit(id) {
     await loadFeeds();
   } catch(e) {
     showAlert(e.message, 'error');
-    if (btn) { btn.disabled = false; btn.textContent = 'Save Changes'; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = originalText; }
   }
 }
 
@@ -2389,7 +2532,7 @@ async function updateSpeaker(id) {
 }
 
 async function deleteSpeaker(id) {
-  if (!confirm('Delete this speaker profile?')) return;
+  if (!await confirmDialog({ title: 'Delete speaker', body: 'Delete this speaker profile? Feeds will become unlinked from this speaker.', danger: true, confirmLabel: 'Delete' })) return;
   const btn = event?.target;
   if (btn) btn.disabled = true;
   try {
@@ -2473,7 +2616,7 @@ async function saveYtcCode() {
 }
 
 async function disableYtc() {
-  if (!confirm('Disable YTC access? The unlock code will be cleared. The settings entry to enter the code will disappear from the app within ~5 min. Currently-unlocked devices stay unlocked until they sign out.')) return;
+  if (!await confirmDialog({ title: 'Disable YTC access', body: 'The unlock code will be cleared. The settings entry to enter the code will disappear from the app within ~5 min. Currently-unlocked devices stay unlocked until they sign out.', danger: true, confirmLabel: 'Disable' })) return;
   const alertEl = document.getElementById('ytcSaveAlert');
   try {
     await api('/api/admin/config/ytc-unlock-code', { method: 'PUT', body: JSON.stringify({ value: '' }) });
@@ -2574,7 +2717,7 @@ async function loadGroupedErrors() {
 }
 
 async function resolveErrorGroup(hash, btn) {
-  if (!confirm('Mark this error group as resolved? If the bug recurs, a new unresolved group will appear automatically — use that as your signal that the fix didn\'t work.')) return;
+  if (!await confirmDialog({ title: 'Resolve error group', body: 'Mark this error group as resolved? If the bug recurs, a new unresolved group will appear automatically — use that as your signal that the fix didn\'t work.', confirmLabel: 'Resolve' })) return;
   const originalText = btn.textContent;
   btn.textContent = 'Resolving...';
   btn.disabled = true;
@@ -2799,7 +2942,7 @@ async function showDeviceProfile(deviceId) {
 }
 
 async function deleteResolvedErrors() {
-  if (!confirm('Delete all resolved error reports?')) return;
+  if (!await confirmDialog({ title: 'Delete resolved reports', body: 'Delete all resolved error reports? This permanently removes them.', danger: true, confirmLabel: 'Delete' })) return;
   const btn = event?.target;
   if (btn) { btn.disabled = true; btn.textContent = 'Deleting...'; }
   try {
@@ -3126,8 +3269,14 @@ async function sendThreadReplyByConvId(convId, subject, deviceId, btn) {
 }
 
 async function addFeedbackNote(id) {
-  const note = prompt('Enter admin note:');
-  if (note === null) return;
+  const result = await promptDialog({
+    title: 'Add admin note',
+    body: 'Internal note attached to this feedback. Not visible to the user.',
+    fields: [{ name: 'note', label: 'Note', type: 'textarea', placeholder: 'e.g. fixed in v2.0.1; replied directly', required: true }],
+    submitLabel: 'Save note',
+  });
+  if (!result) return;
+  const note = result.note;
   try {
     await api(`/api/admin/feedback/${id}`, { method: 'PUT', body: JSON.stringify({ adminNotes: note }) });
     showAlert('Note added', 'success');
@@ -3138,7 +3287,7 @@ async function addFeedbackNote(id) {
 }
 
 async function deleteFeedback(id) {
-  if (!confirm('Delete this feedback?')) return;
+  if (!await confirmDialog({ title: 'Delete feedback', body: 'Delete this feedback? It will be removed from the inbox permanently.', danger: true, confirmLabel: 'Delete' })) return;
   try {
     await api(`/api/admin/feedback/${id}`, { method: 'DELETE' });
     showAlert('Feedback deleted', 'success');
@@ -3261,7 +3410,7 @@ async function updateMessageStatus(id, status) {
 }
 
 async function deleteMessage(id) {
-  if (!confirm('Delete this message?')) return;
+  if (!await confirmDialog({ title: 'Delete message', body: 'Delete this message? The conversation thread will lose this entry.', danger: true, confirmLabel: 'Delete' })) return;
   const btn = event?.target;
   if (btn) btn.disabled = true;
   try {
@@ -3377,7 +3526,7 @@ async function activateApk(id) {
 }
 
 async function deleteApk(id) {
-  if (!confirm('Delete this APK?')) return;
+  if (!await confirmDialog({ title: 'Delete APK', body: 'Delete this APK? Users on this build will not be able to download it from the website afterwards.', danger: true, confirmLabel: 'Delete' })) return;
   const btn = event?.target;
   if (btn) btn.disabled = true;
   try {
@@ -3408,7 +3557,7 @@ async function toggleTAT() {
   const currentlyOn = btn.classList.contains('on');
   const newState = !currentlyOn;
   const action = newState ? 'enable' : 'disable';
-  if (!confirm('Are you sure you want to ' + action + ' all Torah Anytime feeds?')) return;
+  if (!await confirmDialog({ title: action === 'disable' ? 'Disable TAT feeds' : 'Enable TAT feeds', body: 'Are you sure you want to ' + action + ' all Torah Anytime feeds?', danger: action === 'disable', confirmLabel: action[0].toUpperCase() + action.slice(1) })) return;
   const statusArea = document.getElementById('tatStatusArea');
   const prevStatus = statusArea.innerHTML;
   statusArea.innerHTML = '<span style="color:#f59e0b;">Updating feeds...</span>';
@@ -3476,7 +3625,7 @@ async function toggleOUPlatform(platform) {
   const currentlyOn = btn.classList.contains('on');
   const newState = !currentlyOn;
   const action = newState ? 'enable' : 'disable';
-  if (!confirm('Are you sure you want to ' + action + ' all ' + label + ' feeds?')) return;
+  if (!await confirmDialog({ title: (action === 'disable' ? 'Disable ' : 'Enable ') + label + ' feeds', body: 'Are you sure you want to ' + action + ' all ' + label + ' feeds?', danger: action === 'disable', confirmLabel: action[0].toUpperCase() + action.slice(1) })) return;
   const statusArea = document.getElementById(platform + 'StatusArea');
   const prevStatus = statusArea.innerHTML;
   statusArea.innerHTML = '<span style="color:#f59e0b;">Updating feeds...</span>';
@@ -3551,7 +3700,7 @@ async function toggleKH() {
   const currentlyOn = btn.classList.contains('on');
   const newState = !currentlyOn;
   const action = newState ? 'enable' : 'disable';
-  if (!confirm('Are you sure you want to ' + action + ' all Kol Halashon feeds?')) return;
+  if (!await confirmDialog({ title: (action === 'disable' ? 'Disable ' : 'Enable ') + 'Kol Halashon feeds', body: 'Are you sure you want to ' + action + ' all Kol Halashon feeds?', danger: action === 'disable', confirmLabel: action[0].toUpperCase() + action.slice(1) })) return;
   const statusArea = document.getElementById('khStatusArea');
   const prevStatus = statusArea.innerHTML;
   statusArea.innerHTML = '<span style="color:#f59e0b;">Updating feeds...</span>';
@@ -3615,7 +3764,7 @@ async function toggleTD() {
   const currentlyOn = btn.classList.contains('on');
   const newState = !currentlyOn;
   const action = newState ? 'enable' : 'disable';
-  if (!confirm('Are you sure you want to ' + action + ' all TorahDownloads feeds?')) return;
+  if (!await confirmDialog({ title: (action === 'disable' ? 'Disable ' : 'Enable ') + 'TorahDownloads feeds', body: 'Are you sure you want to ' + action + ' all TorahDownloads feeds?', danger: action === 'disable', confirmLabel: action[0].toUpperCase() + action.slice(1) })) return;
   const statusArea = document.getElementById('tdStatusArea');
   const prevStatus = statusArea.innerHTML;
   statusArea.innerHTML = '<span style="color:#f59e0b;">Updating feeds...</span>';
@@ -3706,7 +3855,7 @@ async function loadMergers() {
 }
 
 async function unlinkPlatform(feedId, platform, btn) {
-  if (!confirm('Unlink "' + platform + '" from this feed? The feed will no longer pull episodes from that platform.')) return;
+  if (!await confirmDialog({ title: 'Unlink platform', body: 'Unlink "' + platform + '" from this feed? The feed will no longer pull episodes from that platform.', danger: true, confirmLabel: 'Unlink' })) return;
   btn.disabled = true;
   btn.textContent = '...';
   try {
@@ -3855,7 +4004,7 @@ async function toggleSponsor(id, activate) {
 }
 
 async function removeSponsor(id) {
-  if (!confirm('Delete this sponsor?')) return;
+  if (!await confirmDialog({ title: 'Delete sponsor', body: 'Delete this sponsor? It will be removed from the sponsor rotation.', danger: true, confirmLabel: 'Delete' })) return;
   const btn = event?.target;
   if (btn) btn.disabled = true;
   try {
@@ -4163,7 +4312,7 @@ async function checkManualReceipt() {
 }
 
 async function removePushDevice(id) {
-  if (!confirm('Remove this device from push notifications?')) return;
+  if (!await confirmDialog({ title: 'Remove push device', body: 'Remove this device from push notifications? It won\'t receive any further pushes until it re-registers.', danger: true, confirmLabel: 'Remove' })) return;
   try {
     await api('/api/admin/push-tokens/' + id, { method: 'DELETE' });
     showAlert('Device removed', 'success');
@@ -4857,7 +5006,7 @@ async function editAnnouncement(id) {
 }
 
 async function deleteAnnouncement(id) {
-  if (!confirm('Delete this announcement?')) return;
+  if (!await confirmDialog({ title: 'Delete announcement', body: 'Delete this announcement? Devices that haven\'t shown it yet will never see it.', danger: true, confirmLabel: 'Delete' })) return;
   try {
     await api('/api/admin/announcements/' + id, { method: 'DELETE' });
     showAlert('Announcement deleted');
@@ -5011,7 +5160,7 @@ async function loadDuplicates() {
 }
 
 async function mergeFeeds(keepId, removeId, removeTitle) {
-  if (!confirm('Move all subscribers from "' + removeTitle + '" into the kept feed and delete it?\n\nThis cannot be undone — episodes for the deleted feed will be removed (recoverable on next refresh of the kept feed).')) return;
+  if (!await confirmDialog({ title: 'Merge duplicate feeds', body: 'Move all subscribers from "' + removeTitle + '" into the kept feed and delete it?\n\nThis cannot be undone — episodes for the deleted feed will be removed (recoverable on next refresh of the kept feed).', danger: true, confirmLabel: 'Merge & delete' })) return;
   try {
     const r = await api('/api/admin/duplicates/merge', { method: 'POST', body: JSON.stringify({ keepId, removeId }) });
     showAlert('Merged: ' + r.subsMoved + ' subs moved, ' + r.episodesDropped + ' episodes dropped', 'success');
@@ -5235,7 +5384,7 @@ async function loadGlobalMergeHistory() {
 }
 
 async function reAddMergedFeed(rssUrl) {
-  if (!confirm('Re-add feed from RSS URL:\\n' + rssUrl + '\\n\\nThis will create a new feed from this RSS source.')) return;
+  if (!await confirmDialog({ title: 'Re-add feed', body: 'Re-add feed from RSS URL:\n' + rssUrl + '\n\nThis will create a new feed from this RSS source.', confirmLabel: 'Re-add' })) return;
   try {
     const result = await api('/api/admin/feeds', { method: 'POST', body: JSON.stringify({ rssUrl }) });
     showAlert('Feed re-added: ' + (result.title || 'New feed'));
@@ -5494,24 +5643,33 @@ function closeIssueDetail() {
 }
 
 async function resolveIssueAction(fp) {
-  const version = prompt('Mark resolved on which app version? (auto-reopens on any newer version)');
-  if (!version || !version.trim()) return;
-  const note = prompt('Optional fix note (what changed?)') || '';
+  // Single dialog asking for both fields at once — was two sequential
+  // prompt() calls, which felt clunky and lost the version on Esc.
+  const result = await promptDialog({
+    title: 'Resolve issue',
+    body: 'Auto-reopens if the same fingerprint surfaces on any newer app version. Use this so you know if the fix didn\'t hold.',
+    fields: [
+      { name: 'version', label: 'App version this fix shipped in', placeholder: '2.0.0', required: true },
+      { name: 'note', label: 'Fix note (optional)', type: 'textarea', placeholder: 'e.g. moved buzzsprout fetch behind proxy + added retry' },
+    ],
+    submitLabel: 'Resolve',
+  });
+  if (!result) return;
   try {
     const r = await fetch('/api/v1/issues/' + encodeURIComponent(fp) + '/resolve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Basic ' + token },
-      body: JSON.stringify({ version: version.trim(), note: note.trim() || null, by: 'admin' }),
+      body: JSON.stringify({ version: result.version, note: result.note || null, by: 'admin' }),
     });
     if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || 'failed'); }
     closeIssueDetail();
     loadIssues(); loadIssuesStats();
-    showAlert('Resolved on v' + version.trim(), 'success');
+    showAlert('Resolved on v' + result.version, 'success');
   } catch (e) { showAlert(e.message, 'error'); }
 }
 
 async function reopenIssueAction(fp) {
-  if (!confirm('Reopen this issue?')) return;
+  if (!await confirmDialog({ title: 'Reopen issue', body: 'Reopen this issue? It will surface back into the active queue.', confirmLabel: 'Reopen' })) return;
   try {
     const r = await fetch('/api/v1/issues/' + encodeURIComponent(fp) + '/reopen', {
       method: 'POST', headers: { 'Authorization': 'Basic ' + token },
@@ -5523,7 +5681,7 @@ async function reopenIssueAction(fp) {
 }
 
 async function archiveIssueAction(fp) {
-  if (!confirm('Archive this issue? It won\'t auto-reopen on new occurrences.')) return;
+  if (!await confirmDialog({ title: 'Archive issue', body: 'Archive this issue? It won\'t auto-reopen on new occurrences. Use this for known-acceptable noise.', danger: true, confirmLabel: 'Archive' })) return;
   try {
     const r = await fetch('/api/v1/issues/' + encodeURIComponent(fp) + '/archive', {
       method: 'POST', headers: { 'Authorization': 'Basic ' + token },
@@ -5535,13 +5693,18 @@ async function archiveIssueAction(fp) {
 }
 
 async function mergeIssueAction(fp) {
-  const into = prompt('Merge into which fingerprint? (this issue will be archived; its events move to the target)');
-  if (!into || !into.trim()) return;
+  const result = await promptDialog({
+    title: 'Merge issue',
+    body: 'This issue will be archived; its events move to the target fingerprint. Use when grouping was too granular.',
+    fields: [{ name: 'into', label: 'Target fingerprint', placeholder: 'e.g. a1b2c3d4e5f6...', required: true }],
+    submitLabel: 'Merge',
+  });
+  if (!result) return;
   try {
     const r = await fetch('/api/v1/issues/' + encodeURIComponent(fp) + '/merge', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Basic ' + token },
-      body: JSON.stringify({ into: into.trim() }),
+      body: JSON.stringify({ into: result.into }),
     });
     if (!r.ok) throw new Error('failed');
     closeIssueDetail(); loadIssues();
@@ -5662,7 +5825,7 @@ async function loadOtaAdoption() {
 }
 
 async function promoteOta() {
-  if (!confirm('Promote the LATEST preview update to production?\n\nThis ships to every real user on the App Store / Play APK on their next app launch. Make sure preview has been verified first.')) return;
+  if (!await confirmDialog({ title: 'Promote preview → production', body: 'This ships the latest preview build to every real user on the App Store / Play APK on their next app launch.\n\nMake sure preview has been verified first.', danger: true, confirmLabel: 'Promote to production' })) return;
   const resultEl = document.getElementById('otaPromoteResult');
   if (resultEl) resultEl.innerHTML = '<span style="color:#94a3b8;">Publishing…</span>';
   try {
@@ -5683,6 +5846,109 @@ async function promoteOta() {
     if (resultEl) resultEl.innerHTML = '<div style="color:#ef4444;">' + esc(e.message) + '</div>';
     showAlert(e.message, 'error');
   }
+}
+
+// ── Inline confirm / prompt dialogs ──────────────────────────────────────
+// Browser-native confirm()/prompt() blocks the JS thread, ignores theme,
+// and on iOS Safari shows a generic alert with no context. These helpers
+// render an in-page modal that returns a Promise, so the call site reads
+// the same:  if (!await confirmDialog({...})) return;
+//
+// Both helpers lazy-mount a singleton container on first use, dispose it
+// when resolved, and self-handle Esc + backdrop click → resolve(false/null).
+
+function _ensureDialogRoot() {
+  let root = document.getElementById('_dialogRoot');
+  if (root) return root;
+  root = document.createElement('div');
+  root.id = '_dialogRoot';
+  root.style.cssText = 'position:fixed;inset:0;z-index:10000;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.65);padding:20px;';
+  document.body.appendChild(root);
+  return root;
+}
+
+// confirmDialog({title, body, danger, confirmLabel, cancelLabel}) → Promise<bool>
+function confirmDialog(opts) {
+  return new Promise(resolve => {
+    const root = _ensureDialogRoot();
+    const danger = !!opts.danger;
+    const confirmColor = danger ? '#ef4444' : '#3b82f6';
+    root.innerHTML = '<div style="background:#1e293b;border-radius:12px;max-width:480px;width:100%;padding:24px;box-shadow:0 10px 40px rgba(0,0,0,0.5);">'
+      + '<h3 style="margin:0 0 12px;font-size:17px;color:#e2e8f0;">' + esc(opts.title || 'Confirm') + '</h3>'
+      + '<div style="font-size:13px;color:#cbd5e1;line-height:1.5;white-space:pre-line;margin-bottom:20px;">' + esc(opts.body || '') + '</div>'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end;">'
+      + '<button class="btn btn-secondary btn-sm" id="_dlgCancel">' + esc(opts.cancelLabel || 'Cancel') + '</button>'
+      + '<button class="btn btn-sm" id="_dlgConfirm" style="background:' + confirmColor + ';color:#fff;border:none;">' + esc(opts.confirmLabel || 'Confirm') + '</button>'
+      + '</div></div>';
+    root.style.display = 'flex';
+    const close = ok => { root.style.display = 'none'; root.innerHTML = ''; document.removeEventListener('keydown', onKey); resolve(ok); };
+    const onKey = e => { if (e.key === 'Escape') close(false); if (e.key === 'Enter') close(true); };
+    document.addEventListener('keydown', onKey);
+    document.getElementById('_dlgCancel').onclick = () => close(false);
+    document.getElementById('_dlgConfirm').onclick = () => close(true);
+    root.onclick = e => { if (e.target === root) close(false); };
+    setTimeout(() => document.getElementById('_dlgConfirm')?.focus(), 0);
+  });
+}
+
+// promptDialog({title, body, fields:[{name,label,placeholder,type?,required?,value?}], submitLabel}) → Promise<{}|null>
+function promptDialog(opts) {
+  return new Promise(resolve => {
+    const root = _ensureDialogRoot();
+    const fields = opts.fields || [{ name: 'value', label: opts.body || 'Value', placeholder: '' }];
+    const fieldsHtml = fields.map(f => {
+      const isTextarea = f.type === 'textarea';
+      const inputId = '_dlgField_' + f.name;
+      const common = 'id="' + inputId + '" placeholder="' + esc(f.placeholder || '') + '" style="width:100%;padding:8px 10px;background:#0f172a;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;font-size:13px;font-family:inherit;"';
+      const input = isTextarea
+        ? '<textarea rows="3" ' + common + '>' + esc(f.value || '') + '</textarea>'
+        : '<input type="' + esc(f.type || 'text') + '" value="' + esc(f.value || '') + '" ' + common + ' />';
+      return '<div style="margin-bottom:12px;">'
+        + '<label style="display:block;font-size:12px;color:#94a3b8;margin-bottom:4px;">' + esc(f.label) + (f.required ? ' <span style="color:#ef4444;">*</span>' : '') + '</label>'
+        + input + '</div>';
+    }).join('');
+    root.innerHTML = '<div style="background:#1e293b;border-radius:12px;max-width:520px;width:100%;padding:24px;box-shadow:0 10px 40px rgba(0,0,0,0.5);">'
+      + '<h3 style="margin:0 0 8px;font-size:17px;color:#e2e8f0;">' + esc(opts.title || 'Enter value') + '</h3>'
+      + (opts.body ? '<div style="font-size:12px;color:#94a3b8;line-height:1.4;margin-bottom:16px;">' + esc(opts.body) + '</div>' : '')
+      + fieldsHtml
+      + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">'
+      + '<button class="btn btn-secondary btn-sm" id="_dlgCancel">Cancel</button>'
+      + '<button class="btn btn-primary btn-sm" id="_dlgSubmit">' + esc(opts.submitLabel || 'Submit') + '</button>'
+      + '</div></div>';
+    root.style.display = 'flex';
+    const close = data => { root.style.display = 'none'; root.innerHTML = ''; document.removeEventListener('keydown', onKey); resolve(data); };
+    const collect = () => {
+      const out = {};
+      for (const f of fields) {
+        const el = document.getElementById('_dlgField_' + f.name);
+        out[f.name] = (el?.value || '').trim();
+        if (f.required && !out[f.name]) { el?.focus(); return null; }
+      }
+      return out;
+    };
+    const onKey = e => {
+      if (e.key === 'Escape') close(null);
+      if (e.key === 'Enter' && e.target?.tagName !== 'TEXTAREA') { e.preventDefault(); const d = collect(); if (d) close(d); }
+    };
+    document.addEventListener('keydown', onKey);
+    document.getElementById('_dlgCancel').onclick = () => close(null);
+    document.getElementById('_dlgSubmit').onclick = () => { const d = collect(); if (d) close(d); };
+    root.onclick = e => { if (e.target === root) close(null); };
+    setTimeout(() => document.getElementById('_dlgField_' + fields[0].name)?.focus(), 0);
+  });
+}
+
+// withBusyButton(btn, asyncFn) — disable the button + show busy text while
+// the action runs, restore on success OR failure. Eliminates double-clicks
+// on bulk actions and stale "Loading…" labels when an error path forgets
+// to reset state.
+async function withBusyButton(btn, busyLabel, fn) {
+  if (!btn) { return fn(); }
+  const original = btn.textContent;
+  btn.disabled = true;
+  if (busyLabel) btn.textContent = busyLabel;
+  try { return await fn(); }
+  finally { btn.disabled = false; btn.textContent = original; }
 }
 
 // Global keyboard shortcuts. Esc closes whichever modal is currently open

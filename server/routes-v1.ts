@@ -276,11 +276,21 @@ export function registerV1Routes(app: Express) {
   app.get("/api/v1/ota/updates", portalAuth as any, async (req: Request, res: Response) => {
     try {
       const branch = q(req.query.branch) || "preview";
-      if (!process.env.EAS_TOKEN) return res.status(503).json({ ok: false, error: "EAS_TOKEN not configured on server — set it on Railway to enable OTA controls." });
+      // eas-cli authenticates via the EXPO_TOKEN env var. We accept either
+      // EAS_TOKEN or EXPO_TOKEN at the Railway-config layer since the docs
+      // used to say EAS_TOKEN — map both to EXPO_TOKEN before exec.
+      const expoToken = process.env.EXPO_TOKEN || process.env.EAS_TOKEN;
+      if (!expoToken) return res.status(503).json({ ok: false, error: "EXPO_TOKEN (or EAS_TOKEN) not configured on server — set it on Railway to enable OTA controls." });
       const { execFile } = await import("node:child_process");
+      const childEnv = {
+        ...process.env,
+        EXPO_TOKEN: expoToken,
+        EAS_NO_VCS: "1",
+        EAS_PROJECT_ROOT: process.cwd(),
+      };
       const stdout = await new Promise<string>((resolve, reject) => {
         execFile("npx", ["--yes", "eas-cli", "update:list", "--branch", branch, "--limit", "5", "--json", "--non-interactive"],
-          { cwd: process.cwd(), env: { ...process.env, EAS_NO_VCS: "1" }, maxBuffer: 4 * 1024 * 1024 },
+          { cwd: process.cwd(), env: childEnv, maxBuffer: 4 * 1024 * 1024 },
           (err, out) => err ? reject(err) : resolve(out));
       });
       let parsed: any = null;
@@ -303,18 +313,25 @@ export function registerV1Routes(app: Express) {
       if (!h.startsWith("Basic ")) {
         return res.status(403).json({ ok: false, error: "OTA promote requires admin login (Basic auth), not a Bearer token." });
       }
-      if (!process.env.EAS_TOKEN) {
-        return res.status(503).json({ ok: false, error: "EAS_TOKEN not configured on server. Add it to Railway → ShiurPod → server → Variables." });
+      const expoToken = process.env.EXPO_TOKEN || process.env.EAS_TOKEN;
+      if (!expoToken) {
+        return res.status(503).json({ ok: false, error: "EXPO_TOKEN (or EAS_TOKEN) not configured on server. Add it to Railway → ShiurPod → server → Variables." });
       }
       const fromBranch = (req.body?.from as string) || "preview";
       const toBranch = (req.body?.to as string) || "production";
       const message = (req.body?.message as string) || `Promoted from ${fromBranch}`;
       let groupId = req.body?.groupId as string | undefined;
       const { execFile } = await import("node:child_process");
+      const childEnv = {
+        ...process.env,
+        EXPO_TOKEN: expoToken,           // eas-cli reads this, not EAS_TOKEN
+        EAS_NO_VCS: "1",                 // skip git probing on Railway (no git)
+        EAS_PROJECT_ROOT: process.cwd(), // explicit so git fallback isn't tried
+      };
       const runEas = (args: string[]): Promise<string> =>
         new Promise((resolve, reject) => {
           execFile("npx", ["--yes", "eas-cli", ...args],
-            { cwd: process.cwd(), env: { ...process.env, EAS_NO_VCS: "1" }, maxBuffer: 4 * 1024 * 1024 },
+            { cwd: process.cwd(), env: childEnv, maxBuffer: 4 * 1024 * 1024 },
             (err, out, errOut) => err ? reject(new Error((errOut || "") + (out || "") || err.message)) : resolve(out));
         });
 
