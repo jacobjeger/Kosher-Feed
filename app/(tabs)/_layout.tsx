@@ -1,7 +1,7 @@
 import { Tabs, usePathname } from "expo-router";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
-import { Platform, StyleSheet, View, Text, Pressable, Dimensions, Image, InteractionManager } from "react-native";
+import { Platform, StyleSheet, View, Text, Pressable, Dimensions, Image, InteractionManager, AppState } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useState, useEffect, useCallback } from "react";
@@ -187,21 +187,31 @@ export default function TabLayout() {
   //
   // CRITICAL: defer this past first paint/interactions. Running it
   // immediately on a cold start blocks the single JS thread — the
-  // Firebase SDK lazy-import + the 800-doc shiurim fetch + its multi-MB
-  // JSON.stringify/AsyncStorage write are all synchronous CPU work, which
-  // made the whole app unresponsive for ~the first minute on slow devices
-  // when YTC was unlocked. InteractionManager + a short timer push it off
-  // the critical window; the cache is still warm well before the user
-  // navigates into /ytc. Idempotent — guarded by in-flight dedupe.
+  // Firebase SDK lazy-import is still synchronous CPU work even after
+  // trimming fetchShiurim() out of the fan-out (see unlock.ts comment).
+  //
+  // Trigger: AppState 'background'/'inactive' OR a 30s fallback timer,
+  // whichever comes first. The 2s setTimeout we used to have fired
+  // while the home was still settling in on slow hardware. With the
+  // new trigger, on Schok F1 hardware the pre-warm runs either while
+  // the user has stepped out of the app (zero perceived cost) or 30s
+  // after launch (well past the user's first interactions).
   useEffect(() => {
     if (!showYtcTab) return;
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    let fired = false;
+    const fire = () => { if (fired) return; fired = true; prewarmYtcDataIfPossible(); };
+    let fallback: ReturnType<typeof setTimeout> | null = null;
+    let appStateSub: { remove: () => void } | null = null;
     const task = InteractionManager.runAfterInteractions(() => {
-      timer = setTimeout(() => prewarmYtcDataIfPossible(), 2000);
+      fallback = setTimeout(fire, 30_000);
+      appStateSub = AppState.addEventListener("change", (state) => {
+        if (state === "background" || state === "inactive") fire();
+      });
     });
     return () => {
       task.cancel();
-      if (timer) clearTimeout(timer);
+      if (fallback) clearTimeout(fallback);
+      appStateSub?.remove();
     };
   }, [showYtcTab]);
 

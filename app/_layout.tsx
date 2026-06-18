@@ -203,6 +203,8 @@ export default function RootLayout() {
     // payload, and getLastNotificationResponseAsync is what catches the
     // launch-from-tap case. Cheap setup, fires immediately.
     let pushAppStateSub: { remove: () => void } | null = null;
+    let heavyStartupAppStateSub: { remove: () => void } | null = null;
+    let heavyStartupTimer: ReturnType<typeof setTimeout> | null = null;
     let lastForegroundRegister = 0;
     if (Platform.OS !== "web") {
       notificationResponseListener.current =
@@ -214,18 +216,45 @@ export default function RootLayout() {
       });
     }
 
-    // Defer the expensive startup work (push token round-trip, OTA check,
-    // device-profile sync) past the first interaction window. On the
-    // Megalife these used to pin the JS thread for ~10s post-splash —
-    // long enough that taps felt dead. None of them gate user-facing
-    // functionality: the OTA applies on next restart anyway, push works
-    // off the token cached from the previous session, device-profile is
-    // analytics-only.
+    // Defer the expensive startup work past the first interaction window.
+    // Even with InteractionManager + cache-first push, checkForUpdate()
+    // still costs a 6s round-trip to u.expo.dev that NEVER affects this
+    // session (the new bundle only applies on next launch). So we hold
+    // it back until either the user backgrounds the app (perfect moment
+    // — they're off the screen) or a 60s fallback timer fires. Same
+    // shape for device-profile sync (analytics, not user-facing).
+    //
+    // Push token has its own cache-first fast path in registerPushToken
+    // (skips the FCM round-trip when the cache is <7d old) — for fresh
+    // installs / TTL-expired tokens we use the same background-or-fallback
+    // trigger so they don't block cold start either.
+    //
+    // Logcat measurements (Schok F1, 2026-06-18): the eager fan-out
+    // burned 9.5s on the push token alone + 6.4s on the update check,
+    // both on the JS thread, with a 1.2s 32MB GC at +11s.
     const deferredHandle = InteractionManager.runAfterInteractions(() => {
-      checkForUpdate();
+      // Light, idempotent work that doesn't touch the network — runs immediately.
       import("@/lib/device-profile").then(m => m.syncDeviceProfile()).catch(() => {});
+
+      let fired = false;
+      const fireHeavyStartup = () => {
+        if (fired) return;
+        fired = true;
+        checkForUpdate();
+        if (Platform.OS !== "web") {
+          registerPushToken().catch(() => {});
+        }
+      };
+
+      heavyStartupTimer = setTimeout(fireHeavyStartup, 60_000);
+      heavyStartupAppStateSub = AppState.addEventListener("change", (state) => {
+        if (state === "background" || state === "inactive") fireHeavyStartup();
+      });
+
+      // Foreground-return refresh: if the app comes back and the cached
+      // push token is older than the TTL, re-register. Throttled to once
+      // per 2 minutes so app-switching doesn't spam the network.
       if (Platform.OS !== "web") {
-        registerPushToken().catch(() => {});
         pushAppStateSub = AppState.addEventListener("change", (state) => {
           if (state !== "active") return;
           const now = Date.now();
@@ -240,6 +269,8 @@ export default function RootLayout() {
       deferredHandle?.cancel?.();
       notificationResponseListener.current?.remove();
       pushAppStateSub?.remove();
+      heavyStartupAppStateSub?.remove();
+      if (heavyStartupTimer) clearTimeout(heavyStartupTimer);
     };
     // Deps used to include `fontsLoaded`, but this effect doesn't read
     // it — including it caused the effect to run twice on cold start

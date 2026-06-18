@@ -8,7 +8,14 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const PUSH_TOKEN_KEY = "@shiurpod_push_token";
 const PUSH_PROVIDER_KEY = "@shiurpod_push_provider";
+const PUSH_TOKEN_REFRESHED_AT_KEY = "@shiurpod_push_token_refreshed_at";
 const TOKEN_FETCH_TIMEOUT_MS = 20000;
+// How long a successfully-registered token stays trusted before we re-fetch
+// from FCM/Expo on launch. FCM tokens are quasi-permanent; the canonical
+// way to learn they've changed is via Notifications.addPushTokenListener
+// (wired in initPushNotifications), not by polling. A weekly refresh is
+// a defensive backstop in case that listener missed an event.
+const TOKEN_REFRESH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 let notificationReceivedListener: Notifications.EventSubscription | null = null;
 
@@ -171,6 +178,26 @@ export async function registerPushToken(verbose = false): Promise<{ token: strin
   // does a fresh attempt.
   if (_inflightRegistration && !verbose) return _inflightRegistration;
 
+  // Fast path: if we have a cached token registered within TOKEN_REFRESH_TTL_MS,
+  // return it without hitting FCM/Expo. The previous flow ALWAYS called
+  // Notifications.getExpoPushTokenAsync() on launch — a 6-10s round-trip on
+  // slow kosher phones — and only THEN checked the cache to discover the
+  // token hadn't changed. Logcat measurements (2026-06-18) showed this
+  // single call dominated 9.5s of cold-start time on the Schok F1.
+  // Token rotations are caught in real time by Notifications.addPushTokenListener
+  // (initPushNotifications); the weekly TTL is just a backstop.
+  if (!verbose) {
+    try {
+      const cachedToken = await AsyncStorage.getItem(PUSH_TOKEN_KEY);
+      const cachedProvider = await AsyncStorage.getItem(PUSH_PROVIDER_KEY);
+      const refreshedAtRaw = await AsyncStorage.getItem(PUSH_TOKEN_REFRESHED_AT_KEY);
+      const refreshedAt = refreshedAtRaw ? Number(refreshedAtRaw) : 0;
+      if (cachedToken && cachedProvider && Date.now() - refreshedAt < TOKEN_REFRESH_TTL_MS) {
+        return { token: cachedToken, steps: ["[INFO] Using cached push token (still fresh)"] };
+      }
+    } catch { /* fall through to full registration */ }
+  }
+
   const run = async (): Promise<{ token: string | null; steps: string[] }> => {
     const steps: string[] = [];
     const log = (level: "info" | "warn" | "error", msg: string, stack?: string) => {
@@ -292,6 +319,9 @@ export async function registerPushToken(verbose = false): Promise<{ token: strin
       );
       await AsyncStorage.setItem(PUSH_TOKEN_KEY, token);
       await AsyncStorage.setItem(PUSH_PROVIDER_KEY, provider);
+      // Mark the refresh time so the fast path at the top of this function
+      // can skip the full FCM round-trip on the next launch.
+      await AsyncStorage.setItem(PUSH_TOKEN_REFRESHED_AT_KEY, String(Date.now()));
       log("info", `Push token (${provider}) successfully registered with server`);
     } catch (e) {
       const msg = (e as any)?.message || String(e);

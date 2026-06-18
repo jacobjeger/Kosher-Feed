@@ -111,12 +111,15 @@ export async function tryUnlock(entered: string, expected: string | null | undef
  *  warm by the time the user opens /ytc. Re-callable; cache layer
  *  dedupes duplicates.
  *
- *  Trimmed from the original 11-fetch fan-out to 4 essentials —
- *  saturating an 11-way Firestore parallel hit on slow networks
- *  could actually slow the experience instead of helping. The other
- *  fetchers (events, collections, alumni photos, rebbeim, alumni
- *  contacts) hit when the user navigates to those tabs and pre-warm
- *  again at sign-in via YtcAuthContext.checkAndSetApproval. */
+ *  fetchShiurim() was removed from this fan-out (2026-06-18). On Schok F1
+ *  hardware it was the single dominant cause of "app feels frozen after
+ *  splash hides" — 800+ Firestore docs → JSON.parse from disk cache or
+ *  JSON.stringify+AsyncStorage.setItem on refresh, all synchronous on
+ *  the JS thread. The 3 remaining fetches are each ≤20 docs and finish
+ *  in <100ms even on slow CPUs. The Shiurim tab triggers its own
+ *  fetchShiurim() on mount and renders a skeleton while it loads, so
+ *  the user-visible cost is moved from cold-start (always paid) to the
+ *  first time they enter the Shiurim tab (often skipped entirely). */
 export function prewarmYtcDataIfPossible(): void {
   (async () => {
     try {
@@ -125,7 +128,6 @@ export function prewarmYtcDataIfPossible(): void {
         f.fetchCarouselImages(),    // home hero backdrop
         f.fetchAnnouncements(),     // home top section
         f.fetchMostRecentShiur(),   // home + CTA target
-        f.fetchShiurim(),           // shiurim list (slowest fetch — 800+ docs)
       ]);
     } catch {}
   })();
