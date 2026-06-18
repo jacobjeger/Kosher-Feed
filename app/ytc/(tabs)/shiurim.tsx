@@ -12,6 +12,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import { ytcColors as Colors } from "@/constants/ytcColors";
 import { fetchShiurim, fetchShiurimFirstPage, fetchNewShiurimSince, invalidateYtcCache, peekYtcCacheMem } from "@/lib/ytc/firebase";
+import { markJank, clearJank } from "@/lib/perf/jank-detector";
 import type { Shiur } from "@/types/ytc";
 import { useYtcPlayer, YTC_EPISODE_PREFIX, ytcShiurToEpisodeAndFeed } from "@/lib/ytc/audio-adapter";
 import { usePositions } from "@/contexts/PositionsContext";
@@ -101,7 +102,12 @@ export default function ShiurimScreen() {
       // user already sees their 50 most-recent and this just merges in
       // the rest a few hundred ms later.
       const data = await fetchShiurim();
+      // Swapping from a 50-item list to an 800-item list forces FlatList
+      // to re-measure visible rows + recompute layout. Mark it so any
+      // jank lands attributed to "ytc:shiurim:setState".
+      markJank("ytc:shiurim:setState");
       setShiurim(data as Shiur[]);
+      clearJank();
     } catch (e) {
       console.error("YTC Shiurim load error:", e);
     } finally {

@@ -458,6 +458,7 @@ export async function fetchMyAlumniContact(userEmail: string | null | undefined)
 // TTL is fine and gives true offline-after-first-load behavior.
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { markJank, clearJank } from "@/lib/perf/jank-detector";
 
 const STORAGE_PREFIX = "@ytc_cache:v1:";
 type CacheEntry<T> = { data: T; ts: number };
@@ -467,12 +468,26 @@ const _inflight = new Map<string, Promise<any>>();
 async function readDisk<T>(key: string): Promise<CacheEntry<T> | null> {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_PREFIX + key);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    // JSON.parse of a large cached blob (e.g. 800-doc shiurim) can block
+    // the JS thread for hundreds of ms on slow eMMC. Mark so the jank
+    // detector attributes any freeze here to "ytc:cache-parse:<key>".
+    markJank(`ytc:cache-parse:${key}`);
+    try {
+      return JSON.parse(raw);
+    } finally {
+      clearJank();
+    }
   } catch { return null; }
 }
 
 async function writeDisk<T>(key: string, entry: CacheEntry<T>): Promise<void> {
-  try { await AsyncStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(entry)); } catch {}
+  try {
+    markJank(`ytc:cache-write:${key}`);
+    const serialized = JSON.stringify(entry);
+    clearJank();
+    await AsyncStorage.setItem(STORAGE_PREFIX + key, serialized);
+  } catch {}
 }
 
 async function cached<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
@@ -623,7 +638,12 @@ async function _fetchShiurimFromFirestore() {
   const { db } = await getYtcFirebase();
   const { collection, query, orderBy, getDocs } = await import("firebase/firestore");
   const snap = await getDocs(query(collection(db, "shiurim"), orderBy("date", "desc")));
+  // The .map(docToShiur) walk of ~800 docs is CPU work that runs
+  // synchronously on the JS thread once Firestore resolves. Mark it so
+  // any jank lands attributed to "ytc:shiurim:map" instead of "unknown".
+  markJank("ytc:shiurim:map");
   const all = snap.docs.map(docToShiur).filter(Boolean);
+  clearJank();
   // Mirror the most-recent docs into a separate cache entry so cold
   // mounts can parse just this slice. Fire-and-forget; never blocks
   // the caller waiting for AsyncStorage.

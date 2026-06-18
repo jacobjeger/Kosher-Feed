@@ -48,6 +48,15 @@ try {
 } catch {}
 setupForegroundNotificationHandler();
 setupPushNotificationChannels();
+// Jank detector: ticks a setInterval to spot JS-thread blocks > 500ms.
+// Emits js_jank_ms metric + console.warn for live adb visibility. The
+// heaviest YTC hot paths (cached() disk parse, full-shiurim fetch+map,
+// shiurim list state swap) wrap themselves in markJank() so we know
+// which path was running when a jank fires.
+try {
+  const { installJankDetector } = require("@/lib/perf/jank-detector");
+  installJankDetector();
+} catch {}
 
 
 function RootLayoutNav({ initialRoute }: { initialRoute: string }) {

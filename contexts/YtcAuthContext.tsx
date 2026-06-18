@@ -205,6 +205,8 @@ export function YtcAuthProvider({ children }: { children: React.ReactNode }) {
     // 3. Pre-warm content fetchers once approved. ONLY home-essential
     //    fetches (see import note above for why the other 4 were dropped).
     if (approved) {
+      const { markJank, clearJank } = require("@/lib/perf/jank-detector");
+      markJank("ytc:auth:prewarm-start");
       Promise.all([
         fetchCarouselImages(),
         fetchAnnouncements(),
@@ -213,7 +215,7 @@ export function YtcAuthProvider({ children }: { children: React.ReactNode }) {
         fetchFeaturedShiur(),
         fetchActiveCollections(),
         fetchAlumniPhotos(),
-      ]).catch(() => {});
+      ]).catch(() => {}).finally(() => { clearJank(); });
     }
 
     // 4. Real-time uploader-permission listener. Reattaches on every
