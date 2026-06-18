@@ -984,10 +984,18 @@ export async function fetchRebbeim() {
 export async function fetchApprovedAlumni() {
   return cached("approvedAlumni", TTL_DIRECTORY, async () => {
     const { db } = await getYtcFirebase();
-    const { collection, getDocs } = await import("firebase/firestore");
-    const snap = await getDocs(collection(db, "alumniContactSubmissions"));
+    // Previously: getDocs(collection(...)) downloaded the ENTIRE
+    // alumniContactSubmissions collection and filtered client-side.
+    // Jank metric pinned an 8.7s JS-thread block (10.7s marker age) to
+    // ytc:fetch:approvedAlumni — same offender pattern as the
+    // fetchMyAlumniContact fix. Use a server-side equality filter so
+    // Firestore only returns approved docs.
+    const { collection, getDocs, query, where } = await import("firebase/firestore");
+    const snap = await getDocs(query(
+      collection(db, "alumniContactSubmissions"),
+      where("status", "==", "approved"),
+    ));
     return snap.docs
-      .filter((d) => d.data().status === "approved")
       .map((d) => {
         const data = d.data();
         return {
