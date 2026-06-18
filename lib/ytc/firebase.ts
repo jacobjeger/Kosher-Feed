@@ -420,10 +420,12 @@ export async function fetchMyAlumniContact(userEmail: string | null | undefined)
   if (!userEmail) return null;
   const { db } = await getYtcFirebase();
   const { collection, getDocs } = await import("firebase/firestore");
+  markJank("ytc:fetch:alumniContactSubmissions");
   const snap = await getDocs(collection(db, "alumniContactSubmissions"));
   for (const d of snap.docs) {
     const data = d.data() as any;
     if (data?.email === userEmail) {
+      clearJank();
       return {
         id: d.id,
         name: (data.name ?? "") as string,
@@ -434,6 +436,7 @@ export async function fetchMyAlumniContact(userEmail: string | null | undefined)
       };
     }
   }
+  clearJank();
   return null;
 }
 
@@ -523,12 +526,18 @@ async function fetchAndStore<T>(key: string, fn: () => Promise<T>): Promise<T> {
   if (existing) return existing;
   const promise = (async () => {
     try {
+      // Mark BEFORE the await so when the network resolves and the JS
+      // thread picks back up to run fn()'s post-await code (Firestore
+      // doc decoding, .map work, etc.), any jank is attributed to this
+      // specific fetch. Cleared in finally.
+      markJank(`ytc:fetch:${key}`);
       const data = await fn();
       const entry: CacheEntry<T> = { data, ts: Date.now() };
       _mem.set(key, entry);
       writeDisk(key, entry); // fire-and-forget — disk persistence is best-effort
       return data;
     } finally {
+      clearJank();
       _inflight.delete(key);
     }
   })();

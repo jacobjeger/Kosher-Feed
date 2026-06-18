@@ -66,21 +66,22 @@ export default function HomeScreen() {
   useEffect(() => {
     if (autoRanRef.current) return;
     autoRanRef.current = true;
-    runYtcAutoDownload(downloadsCtx).catch(() => {});
+    const { withJankMark } = require("@/lib/perf/jank-detector");
+    withJankMark("ytc:home:autodownload", () => runYtcAutoDownload(downloadsCtx)).catch(() => {});
     // Multi-device position sync: pull remote saved positions into local
     // AsyncStorage, then start a debounced upload loop on every position
     // change. Both fire-and-forget; failures don't block anything.
-    hydrateYtcPositions().catch(() => {});
+    withJankMark("ytc:home:positions-hydrate", () => hydrateYtcPositions()).catch(() => {});
     startYtcPositionSync();
     // Push: ask for notification permission once, then subscribe to
     // default topics (idempotent — gated by a one-shot AsyncStorage flag).
     // Both no-op when @react-native-firebase/messaging isn't pointed at
     // the YTC Firebase project; the warning banner in /ytc/settings
     // tells the user.
-    (async () => {
+    withJankMark("ytc:home:push-bootstrap", async () => {
       try { await requestNotificationPermission(); } catch {}
       try { await bootstrapYtcPush(); } catch {}
-    })();
+    }).catch(() => {});
   }, []);
 
   const [carouselImages, setCarouselImages] = useState<CarouselImage[]>([]);
