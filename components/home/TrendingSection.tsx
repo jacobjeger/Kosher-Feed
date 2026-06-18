@@ -27,12 +27,6 @@ const TrendingEpisodeCard = React.memo(function TrendingEpisodeCard({ episode, f
       <View style={styles.trendingInfo}>
         <Text style={[styles.trendingFeed, { color: colors.accent }]} numberOfLines={1}>{feed.title}</Text>
         <Text style={[styles.trendingTitle, { color: colors.text }]} numberOfLines={2}>{episode.title}</Text>
-        <View style={styles.trendingMeta}>
-          <Ionicons name="headset-outline" size={11} color={colors.textSecondary} />
-          <Text style={[styles.trendingMetaText, { color: colors.textSecondary }]}>
-            {episode.listenCount} {episode.listenCount === 1 ? "listen" : "listens"}
-          </Text>
-        </View>
       </View>
       <FocusableView focusRadius={16} style={[styles.trendingPlayBtn, { backgroundColor: colors.accent }]} onPress={onPlay}>
         <Ionicons name="play" size={16} color="#fff" />

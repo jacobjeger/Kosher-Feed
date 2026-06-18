@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useRef } from "react";
 import { View, Text, Pressable, StyleSheet, Platform, ActivityIndicator } from "react-native";
 import FocusableView from "@/components/FocusableView";
 import Animated, { FadeInDown, FadeOutDown, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
@@ -7,7 +7,7 @@ import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useAudioPlayer, usePlaybackPosition } from "@/contexts/AudioPlayerContext";
-import { router } from "expo-router";
+import { router, usePathname } from "expo-router";
 import Colors from "@/constants/colors";
 
 function formatTime(ms: number): string {
@@ -73,6 +73,21 @@ function MiniPlayer() {
     transform: [{ scale: pressScale.value }],
   }));
 
+  // Guard against the "tap twice fast → two /player modals stacked" bug.
+  // Two protections: (1) bail if /player is already the active route — the
+  // user is already there. (2) hard-throttle pushes to once per 800ms to
+  // cover the case where pathname hasn't updated yet between back-to-back
+  // taps.
+  const pathname = usePathname();
+  const lastPushedAtRef = useRef(0);
+  const openPlayer = useCallback(() => {
+    if (pathname === "/player") return;
+    const now = Date.now();
+    if (now - lastPushedAtRef.current < 800) return;
+    lastPushedAtRef.current = now;
+    router.push("/player");
+  }, [pathname]);
+
   if (!currentEpisode) return null;
 
   const enteringAnimation = !isWeb ? FadeInDown.duration(300).springify() : undefined;
@@ -83,7 +98,7 @@ function MiniPlayer() {
       <FocusableView
         focusRadius={14}
         style={[styles.container, { backgroundColor: colors.playerBg }]}
-        onPress={() => router.push("/player")}
+        onPress={openPlayer}
         onPressIn={() => { pressScale.value = withSpring(0.98, { damping: 15 }); }}
         onPressOut={() => { pressScale.value = withSpring(1, { damping: 15 }); }}
       >
