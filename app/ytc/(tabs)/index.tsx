@@ -16,7 +16,8 @@ import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { PartyPopper, Megaphone } from "lucide-react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
+import { resizedImageUrl, IMG_CARD, IMG_HERO } from "@/lib/image-resize";
 import { ytcColors as Colors } from "@/constants/ytcColors";
 import { useYtcAuth } from "@/contexts/YtcAuthContext";
 import { fetchCarouselImages, fetchAnnouncements, fetchUpcomingEvents, fetchMostRecentShiur, fetchFeaturedShiur, fetchActiveCollections, fetchAlumniPhotos, fetchMyAlumniContact, invalidateYtcCache } from "@/lib/ytc/firebase";
@@ -159,10 +160,13 @@ export default function HomeScreen() {
   // they're looking at.
   const heroFlatListRef = useRef<FlatList<CarouselImage>>(null);
   const heroAutoPausedUntilRef = useRef<number>(0);
-  useEffect(() => {
+  // Switched from useEffect to useFocusEffect so the auto-rotate timer
+  // doesn't keep ticking (and re-rendering this whole screen) when the
+  // user is on Shiurim / Events / Contacts tabs. Each invisible tick
+  // measured ~50ms on Schok F1 — 10× per minute of pure waste.
+  useFocusEffect(useCallback(() => {
     if (carouselImages.length <= 1) return;
     const timer = setInterval(() => {
-      // Skip the tick if the user touched recently.
       if (Date.now() < heroAutoPausedUntilRef.current) return;
       setCarouselIndex((i) => {
         const next = (i + 1) % carouselImages.length;
@@ -171,7 +175,7 @@ export default function HomeScreen() {
       });
     }, 6000);
     return () => clearInterval(timer);
-  }, [carouselImages.length]);
+  }, [carouselImages.length]));
 
   // Width-based snap target — used by both `getItemLayout` and the
   // momentum-end index calc.
@@ -222,7 +226,7 @@ export default function HomeScreen() {
               renderItem={({ item }) => (
                 <View style={{ width: HERO_WIDTH, height: "100%" }}>
                   <Image
-                    source={{ uri: item.url }}
+                    source={{ uri: resizedImageUrl(item.url, IMG_HERO)! }}
                     style={StyleSheet.absoluteFillObject as any}
                     contentFit="cover"
                     cachePolicy="memory-disk"
@@ -286,57 +290,9 @@ export default function HomeScreen() {
           {announcements.length > 0 && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Mazel Tovs & Announcements</Text>
-              {(showAllAnnouncements ? announcements : announcements.slice(0, ANNOUNCEMENT_PREVIEW)).map((ann) => {
-                const isMazelTov = ann.type === "mazel_tov";
-                // Strip a redundant "Mazel Tov" prefix (incl. trailing
-                // "!" / ":" / "—") from the title — many entries are
-                // worded "Mazel Tov!" or "Mazel Tov to the Smith
-                // family" and we don't want to show that twice once
-                // the bold MAZEL TOV label is already on the card.
-                // If stripping leaves only punctuation/whitespace
-                // (e.g. the original title was just "Mazel Tov!"),
-                // we render the label alone with NO title row, instead
-                // of a stray "!" sitting under MAZEL TOV.
-                let titleText: string | null = ann.title;
-                if (isMazelTov) {
-                  const stripped = ann.title
-                    .replace(/^\s*mazel\s*tov\s*[!:\-—–]*\s*(to\s+)?/i, "")
-                    .replace(/^[!:.\-—–\s]+/, "")
-                    .trim();
-                  // Empty / punctuation-only after strip → don't show.
-                  titleText = stripped.length > 0 ? stripped : null;
-                }
-                return (
-                  // Slim card — top gold/navy accent strip removed per
-                  // user feedback ("make mazel tovs even thinner"). The
-                  // icon (PartyPopper / Megaphone) keeps the type signal.
-                  <View key={ann.id} style={styles.announcementCard}>
-                    <View style={styles.announcementBody}>
-                      <View style={styles.announcementIconRow}>
-                        <View style={[styles.announcementIconBadge, { backgroundColor: isMazelTov ? Colors.goldOpacity15 : Colors.navyOpacity10 }]}>
-                          {isMazelTov
-                            ? <PartyPopper size={18} color={Colors.gold} />
-                            : <Megaphone size={18} color={Colors.navy} />}
-                        </View>
-                        {/* Bold "Mazel Tov" label above the announcement
-                             title for the celebratory variant. The
-                             label is the user-facing category — the
-                             title field beneath holds the family /
-                             event name. */}
-                        <View style={{ flex: 1 }}>
-                          {isMazelTov && (
-                            <Text style={styles.mazelTovLabel}>Mazel Tov</Text>
-                          )}
-                          {titleText && (
-                            <Text style={styles.announcementTitle}>{titleText}</Text>
-                          )}
-                        </View>
-                      </View>
-                      <Text style={styles.announcementContent}>{ann.content}</Text>
-                    </View>
-                  </View>
-                );
-              })}
+              {(showAllAnnouncements ? announcements : announcements.slice(0, ANNOUNCEMENT_PREVIEW)).map((ann) => (
+                <AnnouncementCard key={ann.id} ann={ann} />
+              ))}
               {announcements.length > ANNOUNCEMENT_PREVIEW && (
                 <YtcFocusable style={styles.showMoreBtn} onPress={() => setShowAllAnnouncements((v) => !v)} focusRadius={10}>
                   <Text style={styles.showMoreText}>
@@ -443,7 +399,7 @@ export default function HomeScreen() {
                 contentContainerStyle={{ gap: 12, paddingRight: 16 }}
                 renderItem={({ item }) => (
                   <View style={styles.spotlightCard}>
-                    <Image source={{ uri: item.url }} style={styles.spotlightImg} contentFit="cover" cachePolicy="memory-disk" recyclingKey={item.id} transition={150} />
+                    <Image source={{ uri: resizedImageUrl(item.url, IMG_CARD)! }} style={styles.spotlightImg} contentFit="cover" cachePolicy="memory-disk" recyclingKey={item.id} transition={150} />
                     {item.name ? <Text style={styles.spotlightName} numberOfLines={1}>{item.name}</Text> : null}
                     {item.year ? <Text style={styles.spotlightYear}>{item.year}</Text> : null}
                   </View>
@@ -559,6 +515,49 @@ interface ShiurHomeCardProps {
 // useCallback at parent, getPosition from PositionsContext, shiur is
 // stable per id), so this card avoids re-rendering when sibling state
 // changes (carousel index, refresh control toggle, etc).
+// Extracted from an inline .map() so the carousel auto-rotate tick doesn't
+// re-render every announcement card on the home screen every 6 seconds.
+// React.memo + stable Announcement props (shallow-compared) short-circuits
+// the re-render of the entire list when only the carousel index changed.
+const AnnouncementCard = React.memo(function AnnouncementCardImpl({ ann }: { ann: Announcement }) {
+  const isMazelTov = ann.type === "mazel_tov";
+  // Strip a redundant "Mazel Tov" prefix (incl. trailing "!" / ":" / "—")
+  // from the title — many entries are worded "Mazel Tov!" or "Mazel Tov to
+  // the Smith family" and we don't want to show that twice once the bold
+  // MAZEL TOV label is already on the card. If stripping leaves only
+  // punctuation/whitespace, the label renders alone with no title row.
+  let titleText: string | null = ann.title;
+  if (isMazelTov) {
+    const stripped = ann.title
+      .replace(/^\s*mazel\s*tov\s*[!:\-—–]*\s*(to\s+)?/i, "")
+      .replace(/^[!:.\-—–\s]+/, "")
+      .trim();
+    titleText = stripped.length > 0 ? stripped : null;
+  }
+  return (
+    <View style={styles.announcementCard}>
+      <View style={styles.announcementBody}>
+        <View style={styles.announcementIconRow}>
+          <View style={[styles.announcementIconBadge, { backgroundColor: isMazelTov ? Colors.goldOpacity15 : Colors.navyOpacity10 }]}>
+            {isMazelTov
+              ? <PartyPopper size={18} color={Colors.gold} />
+              : <Megaphone size={18} color={Colors.navy} />}
+          </View>
+          <View style={{ flex: 1 }}>
+            {isMazelTov && (
+              <Text style={styles.mazelTovLabel}>Mazel Tov</Text>
+            )}
+            {titleText && (
+              <Text style={styles.announcementTitle}>{titleText}</Text>
+            )}
+          </View>
+        </View>
+        <Text style={styles.announcementContent}>{ann.content}</Text>
+      </View>
+    </View>
+  );
+});
+
 const ShiurHomeCard = React.memo(function ShiurHomeCardImpl({ shiur, sectionTitle, isFeatured, getPosition, playShiur, formatDate }: ShiurHomeCardProps) {
   const saved = getPosition(`${YTC_EPISODE_PREFIX}${shiur.id}`);
   const hasProgress = saved && saved.durationMs > 0 && saved.positionMs > 0;

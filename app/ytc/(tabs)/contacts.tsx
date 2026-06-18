@@ -1,6 +1,6 @@
 // YTC: rebbeim + alumni directory. Verbatim port from
 // /tmp/ytc-source/expo-app/app/(tabs)/contacts.tsx with imports remapped.
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import {
   View, Text, SectionList, StyleSheet, TouchableOpacity, TextInput,
   ActivityIndicator, Platform, RefreshControl, StatusBar,
@@ -13,6 +13,7 @@ import { fetchRebbeim, fetchApprovedAlumni, fetchMyAlumniContact, invalidateYtcC
 import { useYtcAuth } from "@/contexts/YtcAuthContext";
 import { SubmitAlumniContactModal } from "@/components/ytc/SubmitAlumniContactModal";
 import { copyToClipboard } from "@/lib/ytc/copy";
+import { resizedImageUrl, IMG_THUMB } from "@/lib/image-resize";
 import type { Rebbe, AlumniContact } from "@/types/ytc";
 
 type ContactTab = "rebbeim" | "alumni";
@@ -83,12 +84,20 @@ export default function ContactsScreen() {
     loadData();
   }, []);
 
-  const filteredAlumni = alumni.filter(
-    (a) =>
-      alumniSearch === "" ||
-      a.name.toLowerCase().includes(alumniSearch.toLowerCase()) ||
-      a.location?.toLowerCase().includes(alumniSearch.toLowerCase()),
-  );
+  // Defer the search input + lowercase the needle once per stable input.
+  // Without this the filter scanned 500+ alumni twice per character (.name
+  // + .location both lower-cased per row) on every keystroke. With
+  // useDeferredValue the typing stays responsive even if the filter pass
+  // is slow, and memoizing the needle eliminates 1000+ tiny string allocs.
+  const deferredAlumniSearch = useDeferredValue(alumniSearch);
+  const filteredAlumni = useMemo(() => {
+    if (!deferredAlumniSearch) return alumni;
+    const needle = deferredAlumniSearch.toLowerCase();
+    return alumni.filter(a =>
+      a.name.toLowerCase().includes(needle)
+      || (a.location?.toLowerCase().includes(needle) ?? false),
+    );
+  }, [alumni, deferredAlumniSearch]);
 
   // Reset pagination when search/tab changes so the first results render fast.
   useEffect(() => { setAlumniPage(1); }, [alumniSearch, activeTab]);
@@ -179,7 +188,7 @@ export default function ContactsScreen() {
               >
                 <View style={styles.rebbeRow}>
                   {rebbe.photoUrl
-                    ? <Image source={{ uri: rebbe.photoUrl }} style={styles.rebbePhoto} contentFit="cover" cachePolicy="memory-disk" recyclingKey={rebbe.id} transition={150} />
+                    ? <Image source={{ uri: resizedImageUrl(rebbe.photoUrl, IMG_THUMB)! }} style={styles.rebbePhoto} contentFit="cover" cachePolicy="memory-disk" recyclingKey={rebbe.id} transition={150} />
                     : <View style={styles.rebbePhotoPlaceholder}>
                         <Ionicons name="person-outline" size={28} color={Colors.gold} />
                       </View>}

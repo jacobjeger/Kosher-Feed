@@ -7,6 +7,7 @@ import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import { ytcColors as Colors } from "@/constants/ytcColors";
+import { resizedImageUrl, IMG_CARD } from "@/lib/image-resize";
 import { fetchEvents, fetchNewEventsSince, invalidateYtcCache, peekYtcCacheMem } from "@/lib/ytc/firebase";
 import { useYtcAuth } from "@/contexts/YtcAuthContext";
 import { SubmitSimchaForm } from "@/components/ytc/SubmitSimchaForm";
@@ -101,7 +102,7 @@ export default function EventsScreen() {
               focusRadius={10}
             >
               <Image
-                source={{ uri: event.imageUrl }}
+                source={{ uri: resizedImageUrl(event.imageUrl, IMG_CARD)! }}
                 style={styles.eventImage}
                 contentFit="cover"
                 cachePolicy="memory-disk"
