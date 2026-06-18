@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, RefreshControl, Platform } from "react-native";
+import { useFocusEffect } from "expo-router";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
@@ -49,7 +50,11 @@ function FollowingScreenInner() {
 
   const subscribedFeeds = feedsQuery.data || [];
   const episodes = episodesQuery.data || [];
-  const isLoading = feedsQuery.isLoading || episodesQuery.isLoading;
+  // !deviceId counts as loading — until getDeviceId() resolves, both queries
+  // are disabled (so .isLoading is false), and without this guard the screen
+  // briefly flashes the "No Subscriptions Yet" empty state before the real
+  // data arrives.
+  const isLoading = !deviceId || feedsQuery.isLoading || episodesQuery.isLoading;
   const hasError = feedsQuery.isError || episodesQuery.isError;
   const errorMessage = feedsQuery.error?.message || episodesQuery.error?.message || "Could not connect to server";
 
@@ -57,10 +62,24 @@ function FollowingScreenInner() {
     return subscribedFeeds.find(f => f.id === ep.feedId);
   };
 
+  // Refetch every time the tab gains focus — covers the "subscribed from
+  // another tab, didn't show up here until reopen" bug. The previous code
+  // relied on queryClient.invalidateQueries(["/api/subscriptions/feeds"])
+  // calls in app/podcast/[id].tsx, but the actual query key here is
+  // [`/api/subscriptions/${deviceId}/feeds`] — a single-element string —
+  // and TanStack's prefix matcher never reached it. Refetching on focus
+  // sidesteps the key-shape mismatch entirely.
+  useFocusEffect(useCallback(() => {
+    if (!deviceId) return;
+    feedsQuery.refetch();
+    episodesQuery.refetch();
+    whatsNewQuery.refetch();
+  }, [deviceId, feedsQuery.refetch, episodesQuery.refetch, whatsNewQuery.refetch]));
+
   const onRefresh = () => {
-    queryClient.invalidateQueries({ queryKey: ["/api/subscriptions/feeds"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/subscriptions/episodes"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/whatsnew"] });
+    feedsQuery.refetch();
+    episodesQuery.refetch();
+    whatsNewQuery.refetch();
   };
 
   if (isLoading) {
