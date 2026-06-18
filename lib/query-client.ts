@@ -142,7 +142,17 @@ export const getQueryFn: <T>(options: {
 
       await throwIfResNotOk(res);
       const data = await res.json();
-      cacheResponse(cacheKey, data);
+      // Defer the disk cache write off the critical path. cacheResponse
+      // does a synchronous JSON.stringify of the full response body, and
+      // when 4-8 useQueries land on cold start (home: categories, feeds,
+      // latest, trending, popular, featured, maggid) those stringifies
+      // compound into multi-second JS-thread blocks before React can
+      // paint. The jank detector logged 4.5s freezes on route:/ during
+      // cold start with no inner marker — this is the most likely
+      // contributor. Running the cache write on the next event loop
+      // tick lets react-query return the data, components re-render
+      // with content, and only THEN do we pay the stringify cost.
+      setTimeout(() => { cacheResponse(cacheKey, data); }, 0);
       return data;
     } catch (error: any) {
       const cached = await getCachedResponse(cacheKey);
