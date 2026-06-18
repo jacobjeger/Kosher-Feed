@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Platform, StyleSheet, View, Text, Pressable, Dimensions, Image, InteractionManager, AppState } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Colors from "@/constants/colors";
 import { router } from "expo-router";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -219,6 +219,19 @@ export default function TabLayout() {
   const pathname = usePathname();
   useEffect(() => { setErrorContext(pathname || "home"); }, [pathname]);
 
+  // YTC tab: prevent multi-tap from stacking multiple /ytc modals.
+  // Same family as the MiniPlayer double-tap bug — the tabBarButton's
+  // onPress fires router.push synchronously, and on slow hardware the
+  // pathname doesn't flip to "/ytc" before a second tap lands.
+  const lastYtcPushAtRef = useRef(0);
+  const openYtc = useCallback(() => {
+    if (pathname?.startsWith("/ytc")) return;
+    const now = Date.now();
+    if (now - lastYtcPushAtRef.current < 800) return;
+    lastYtcPushAtRef.current = now;
+    router.push("/ytc" as any);
+  }, [pathname]);
+
   const showTopNav = isDesktopWeb;
   const showBottomTabs = !isDesktopWeb;
 
@@ -335,7 +348,7 @@ export default function TabLayout() {
               ? (props: any) => (
                   <DpadTabButton
                     {...props}
-                    onPress={() => router.push("/ytc" as any)}
+                    onPress={openYtc}
                   />
                 )
               : undefined,
