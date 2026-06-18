@@ -14,6 +14,7 @@ import { lightHaptic } from "@/lib/haptics";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import FocusableView from "@/components/FocusableView";
 import { useBackHandler } from "@/hooks/useBackHandler";
+import { resizedImageUrl, IMG_CARD } from "@/lib/image-resize";
 
 function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
@@ -63,7 +64,7 @@ function MaggidShiurDetailInner() {
             onPress={() => { lightHaptic(); router.push(`/podcast/${item.id}`); }}
           >
             {item.imageUrl ? (
-              <Image source={{ uri: item.imageUrl }} style={styles.feedImage} contentFit="cover" cachePolicy="memory-disk" transition={180} />
+              <Image source={{ uri: resizedImageUrl(item.imageUrl, IMG_CARD)! }} style={styles.feedImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={item.id} transition={180} />
             ) : (
               <View style={[styles.feedImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
                 <Ionicons name="mic" size={32} color={colors.textSecondary} />

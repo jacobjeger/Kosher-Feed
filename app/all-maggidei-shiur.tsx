@@ -13,6 +13,7 @@ import { safeGoBack } from "@/lib/safe-back";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import FocusableView from "@/components/FocusableView";
 import { useBackHandler } from "@/hooks/useBackHandler";
+import { resizedImageUrl, IMG_THUMB } from "@/lib/image-resize";
 
 interface SpeakerGroup {
   author: string;
@@ -37,7 +38,7 @@ const SpeakerCard = React.memo(function SpeakerCard({ speaker, colors }: { speak
       }}
     >
       {speaker.imageUrl ? (
-        <Image source={{ uri: speaker.imageUrl }} style={styles.avatar} contentFit="cover" cachePolicy="memory-disk" transition={180} />
+        <Image source={{ uri: resizedImageUrl(speaker.imageUrl, IMG_THUMB)! }} style={styles.avatar} contentFit="cover" cachePolicy="memory-disk" recyclingKey={speaker.author} transition={180} />
       ) : (
         <View style={[styles.avatar, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="person" size={28} color={colors.textSecondary} />

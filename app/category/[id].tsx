@@ -13,6 +13,7 @@ import { safeGoBack } from "@/lib/safe-back";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import FocusableView from "@/components/FocusableView";
 import { useBackHandler } from "@/hooks/useBackHandler";
+import { resizedImageUrl, IMG_CARD } from "@/lib/image-resize";
 
 const ShiurRow = React.memo(function ShiurRow({ feed, colors }: { feed: Feed; colors: any }) {
   return (
@@ -25,7 +26,7 @@ const ShiurRow = React.memo(function ShiurRow({ feed, colors }: { feed: Feed; co
       onPress={() => { lightHaptic(); router.push(`/podcast/${feed.id}`); }}
     >
       {feed.imageUrl ? (
-        <Image source={{ uri: feed.imageUrl }} style={styles.rowImage} contentFit="cover" cachePolicy="memory-disk" transition={180} />
+        <Image source={{ uri: resizedImageUrl(feed.imageUrl, IMG_CARD)! }} style={styles.rowImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={feed.id} transition={180} />
       ) : (
         <View style={[styles.rowImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="mic" size={22} color={colors.textSecondary} />

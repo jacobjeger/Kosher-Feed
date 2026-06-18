@@ -16,6 +16,7 @@ import { extractKhRavId, extractTatSpeakerId, extractTorahDownloadsSpeakerId } f
 import { trackErrorForAlert, sendFeedbackNotification } from "./error-alerts";
 import { registerV1Routes } from "./routes-v1";
 import * as iss from "./issues-storage";
+import { imageResizeHandler } from "./image-resize";
 import multer from "multer";
 import path from "node:path";
 import fs from "node:fs";
@@ -218,6 +219,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/health", (_req: Request, res: Response) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
+
+  // On-demand image resize proxy. See server/image-resize.ts for the SSRF
+  // protection and Cloudflare-edge-cache design. Must come BEFORE the
+  // /api/images/:name static-asset handler so /api/images/resize doesn't
+  // get matched as `name=resize`.
+  app.get("/api/images/resize", imageResizeHandler as any);
 
   // Serve static brand images (e.g. Kol Halashon logo)
   app.get("/api/images/:name", (req: Request, res: Response) => {

@@ -1,10 +1,11 @@
-import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import React, { useCallback, useMemo } from "react";
+import { View, Text, StyleSheet, FlatList } from "react-native";
 import FocusableView from "@/components/FocusableView";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import SectionHeader from "./SectionHeader";
 import type { Feed, Episode } from "@/lib/types";
+import { resizedImageUrl, IMG_CARD } from "@/lib/image-resize";
 
 interface TrendingEpisode extends Episode {
   listenCount: number;
@@ -46,24 +47,44 @@ interface Props {
   onPlay: (episode: Episode, feed: Feed) => void;
 }
 
+type TrendingItem = { episode: TrendingEpisode; feed: Feed };
+
 export default React.memo(function TrendingSection({ items, colors, onPlay }: Props) {
+  // Switched from an unmemoized .map() to a FlatList so renderItem is a
+  // stable callback (was creating a fresh `() => onPlay(...)` closure per
+  // card on every parent re-render). Vertical stack stays the same — the
+  // list isn't paginated, just virtualized.
+  const itemsWithRank = useMemo(
+    () => items.map((it, i): TrendingItem & { rank: number } => ({ ...it, rank: i + 1 })),
+    [items],
+  );
+  const renderItem = useCallback(({ item }: { item: TrendingItem & { rank: number } }) => (
+    <TrendingEpisodeCard
+      episode={item.episode}
+      feed={item.feed}
+      rank={item.rank}
+      colors={colors}
+      onPlay={() => onPlay(item.episode, item.feed)}
+    />
+  ), [colors, onPlay]);
+  const keyExtractor = useCallback((item: TrendingItem) => item.episode.id, []);
+
   if (items.length === 0) return null;
 
   return (
     <View style={styles.section}>
       <SectionHeader title="Trending" icon="flame" iconColor="#f59e0b" colors={colors} />
-      <View style={{ paddingHorizontal: 20 }}>
-        {items.map(({ episode, feed }, index) => (
-          <TrendingEpisodeCard
-            key={episode.id}
-            episode={episode}
-            feed={feed}
-            rank={index + 1}
-            colors={colors}
-            onPlay={() => onPlay(episode, feed)}
-          />
-        ))}
-      </View>
+      <FlatList
+        data={itemsWithRank}
+        renderItem={renderItem}
+        keyExtractor={keyExtractor}
+        scrollEnabled={false}
+        contentContainerStyle={{ paddingHorizontal: 20 }}
+        initialNumToRender={5}
+        maxToRenderPerBatch={3}
+        windowSize={2}
+        removeClippedSubviews={false}
+      />
     </View>
   );
 });

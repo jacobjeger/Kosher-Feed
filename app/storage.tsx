@@ -11,6 +11,7 @@ import Colors from "@/constants/colors";
 import { useDownloads } from "@/contexts/DownloadsContext";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import type { DownloadedEpisode } from "@/lib/types";
+import { resizedImageUrl, IMG_CARD } from "@/lib/image-resize";
 
 interface FeedStorageInfo {
   feedId: string;
@@ -194,7 +195,7 @@ export default function StorageScreen() {
           <View key={group.feedId} style={[styles.feedSection, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
             <View style={styles.feedHeader}>
               {group.feedImageUrl ? (
-                <Image source={{ uri: group.feedImageUrl }} style={styles.feedImage} contentFit="cover" cachePolicy="memory-disk" transition={180} />
+                <Image source={{ uri: resizedImageUrl(group.feedImageUrl, IMG_CARD)! }} style={styles.feedImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={group.feedId} transition={180} />
               ) : (
                 <View style={[styles.feedImage, { backgroundColor: colors.surfaceAlt }]}>
                   <Ionicons name="musical-notes" size={18} color={colors.textSecondary} />

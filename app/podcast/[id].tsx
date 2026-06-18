@@ -13,6 +13,7 @@ import EpisodeItem from "@/components/EpisodeItem";
 import { EpisodeItemSkeleton } from "@/components/Skeleton";
 import Colors from "@/constants/colors";
 import type { Feed, Episode, Subscription } from "@/lib/types";
+import { resizedImageUrl, IMG_HERO } from "@/lib/image-resize";
 import { mediumHaptic, lightHaptic } from "@/lib/haptics";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useDownloads } from "@/contexts/DownloadsContext";
@@ -31,7 +32,7 @@ import { useBackHandler } from "@/hooks/useBackHandler";
 
 const StableArtwork = memo(function StableArtwork({ imageUrl, fallbackColor, iconColor }: { imageUrl?: string | null; fallbackColor: string; iconColor: string }) {
   if (imageUrl) {
-    return <Image source={{ uri: imageUrl }} style={styles.artwork} contentFit="cover" cachePolicy="memory-disk" recyclingKey={imageUrl} transition={180} />;
+    return <Image source={{ uri: resizedImageUrl(imageUrl, IMG_HERO)! }} style={styles.artwork} contentFit="cover" cachePolicy="memory-disk" recyclingKey={imageUrl} transition={180} />;
   }
   return (
     <View style={[styles.artwork, { backgroundColor: fallbackColor, alignItems: "center", justifyContent: "center" }]}>

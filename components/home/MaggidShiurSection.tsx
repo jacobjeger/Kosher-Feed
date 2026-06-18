@@ -7,6 +7,7 @@ import { router } from "expo-router";
 import { lightHaptic } from "@/lib/haptics";
 import SectionHeader from "./SectionHeader";
 import type { Feed } from "@/lib/types";
+import { resizedImageUrl, IMG_THUMB } from "@/lib/image-resize";
 
 const MaggidShiurCard = React.memo(function MaggidShiurCard({ author, feeds, colors }: { author: string; feeds: Feed[]; colors: any }) {
   const imageUrl = feeds[0]?.imageUrl;
@@ -17,7 +18,7 @@ const MaggidShiurCard = React.memo(function MaggidShiurCard({ author, feeds, col
       onPress={() => { lightHaptic(); router.push({ pathname: "/maggid-shiur/[author]" as any, params: { author, feedIds: feeds.map(f => f.id).join(",") } }); }}
     >
       {imageUrl ? (
-        <Image source={{ uri: imageUrl }} style={styles.maggidAvatar} contentFit="cover" cachePolicy="memory-disk" transition={180} />
+        <Image source={{ uri: resizedImageUrl(imageUrl, IMG_THUMB)! }} style={styles.maggidAvatar} contentFit="cover" cachePolicy="memory-disk" recyclingKey={imageUrl} transition={180} />
       ) : (
         <View style={[styles.maggidAvatar, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="person" size={24} color={colors.textSecondary} />

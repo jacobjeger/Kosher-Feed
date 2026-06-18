@@ -18,6 +18,7 @@ import { usePlayedEpisodes } from "@/contexts/PlayedEpisodesContext";
 import { HomeScreenSkeleton, FeedRowSkeleton } from "@/components/Skeleton";
 import { useNetworkStatus } from "@/components/OfflineBanner";
 import { useScreenMountMetric } from "@/lib/telemetry/metrics";
+import { resizedImageUrl, IMG_HERO } from "@/lib/image-resize";
 import SearchSection from "@/components/home/SearchSection";
 import ContinueListeningSection from "@/components/home/ContinueListeningSection";
 import TrendingSection from "@/components/home/TrendingSection";
@@ -119,7 +120,7 @@ const FeaturedCarousel = React.memo(function FeaturedCarousel({ feeds, colors, a
       onPress={() => { lightHaptic(); router.push(`/podcast/${item.id}`); }}
     >
       {item.imageUrl ? (
-        <Image source={{ uri: item.imageUrl }} style={[styles.carouselImage, { height: CAROUSEL_HEIGHT }]} contentFit="cover" cachePolicy="memory-disk" transition={180} />
+        <Image source={{ uri: resizedImageUrl(item.imageUrl, IMG_HERO)! }} style={[styles.carouselImage, { height: CAROUSEL_HEIGHT }]} contentFit="cover" cachePolicy="memory-disk" recyclingKey={item.id} transition={180} />
       ) : (
         <View style={[styles.carouselImage, { height: CAROUSEL_HEIGHT, backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="mic" size={56} color={colors.textSecondary} />
