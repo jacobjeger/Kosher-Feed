@@ -11,7 +11,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "expo-router";
 import { ytcColors as Colors } from "@/constants/ytcColors";
-import { fetchShiurim, fetchNewShiurimSince, invalidateYtcCache, peekYtcCacheMem } from "@/lib/ytc/firebase";
+import { fetchShiurim, fetchShiurimFirstPage, fetchNewShiurimSince, invalidateYtcCache, peekYtcCacheMem } from "@/lib/ytc/firebase";
 import type { Shiur } from "@/types/ytc";
 import { useYtcPlayer, YTC_EPISODE_PREFIX, ytcShiurToEpisodeAndFeed } from "@/lib/ytc/audio-adapter";
 import { usePositions } from "@/contexts/PositionsContext";
@@ -76,14 +76,36 @@ export default function ShiurimScreen() {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  // Was a single fetchShiurim() that blocked first paint on a 300-800ms
+  // JSON.parse of the full 800-doc cache. Now: read the small "first
+  // page" mirror cache first (~20-50ms parse) and render immediately,
+  // then fill in the rest from the full cache once the JS thread idles.
+  // Result: Shiurim tab feels instant even on the Schok F1.
   const loadShiurim = async () => {
+    let unlockedPaint = false;
     try {
+      // Fast path: render the first 50 from the mirror cache. Fail
+      // silently if it's not warm yet (truly cold install) — the full
+      // fetch below will paint instead.
+      try {
+        const first = await fetchShiurimFirstPage();
+        if (first.length > 0) {
+          setShiurim(first);
+          setIsLoading(false);
+          unlockedPaint = true;
+        }
+      } catch {}
+
+      // Background path: full list. Without unlockedPaint, this is the
+      // first paint (cold install) and will block normally. With it, the
+      // user already sees their 50 most-recent and this just merges in
+      // the rest a few hundred ms later.
       const data = await fetchShiurim();
       setShiurim(data as Shiur[]);
     } catch (e) {
       console.error("YTC Shiurim load error:", e);
     } finally {
-      setIsLoading(false);
+      if (!unlockedPaint) setIsLoading(false);
       setRefreshing(false);
     }
   };

@@ -18,6 +18,7 @@
 import type { FirebaseApp } from "firebase/app";
 import type { Auth, User } from "firebase/auth";
 import type { Firestore, DocumentSnapshot } from "firebase/firestore";
+import type { Shiur } from "@/types/ytc";
 
 // Public client config — identical across all YTC variants. Safe to commit;
 // the actual security boundary is Firestore rules + auth approval check.
@@ -609,15 +610,51 @@ function docToEvent(d: DocumentSnapshot) {
 // see a cold-cache hit on app update; if you need to bust, change the
 // STORAGE_PREFIX version number above.
 
+// Size of the "first page" mirror cache. Cold-cache mount on the YTC
+// Shiurim tab on a Schok F1 used to read the full ~800-doc blob from
+// AsyncStorage and JSON.parse it on the JS thread — 300-800ms of frozen
+// UI. By writing a smaller mirror cache containing only the most-recent
+// SHIURIM_FIRST_PAGE_SIZE docs, fetchShiurimFirstPage() can read+parse
+// in ~20-50ms and unblock the first paint; the full list streams in
+// behind it via the normal cached("shiurim") path.
+const SHIURIM_FIRST_PAGE_SIZE = 50;
+
 async function _fetchShiurimFromFirestore() {
   const { db } = await getYtcFirebase();
   const { collection, query, orderBy, getDocs } = await import("firebase/firestore");
   const snap = await getDocs(query(collection(db, "shiurim"), orderBy("date", "desc")));
-  return snap.docs.map(docToShiur).filter(Boolean);
+  const all = snap.docs.map(docToShiur).filter(Boolean);
+  // Mirror the most-recent docs into a separate cache entry so cold
+  // mounts can parse just this slice. Fire-and-forget; never blocks
+  // the caller waiting for AsyncStorage.
+  writeDisk("shiurim:page0", { data: all.slice(0, SHIURIM_FIRST_PAGE_SIZE), ts: Date.now() }).catch(() => {});
+  return all;
 }
 
 export async function fetchShiurim() {
   return cached("shiurim", TTL_LIST, _fetchShiurimFromFirestore);
+}
+
+/**
+ * Fast-path reader for the YTC Shiurim tab's first paint. Returns the
+ * most-recent ~50 shiurim from a small mirror cache (or in-memory if the
+ * full cache is already hydrated). Trades search/filter completeness for
+ * speed — the caller should then load the full list via fetchShiurim()
+ * behind first paint.
+ *
+ * Returns [] when nothing is cached on disk yet (truly cold install) —
+ * caller falls back to fetchShiurim().
+ */
+export async function fetchShiurimFirstPage(): Promise<Shiur[]> {
+  // Memory cache is the truth if it exists. Slice without touching disk.
+  const mem = _mem.get("shiurim") as CacheEntry<Shiur[]> | undefined;
+  if (mem) return mem.data.slice(0, SHIURIM_FIRST_PAGE_SIZE);
+  // Disk fast-path: small blob, fast parse.
+  const fast = await readDisk<Shiur[]>("shiurim:page0");
+  if (fast) return fast.data;
+  // No fast cache. Don't kick a Firestore fetch from here — let the
+  // caller do that via fetchShiurim() so SWR semantics stay centralized.
+  return [];
 }
 
 /**
