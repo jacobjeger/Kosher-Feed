@@ -31,13 +31,17 @@ import {
   // because Firestore round-trips overlap with the navigation animation.
   fetchCarouselImages, fetchAnnouncements, fetchUpcomingEvents,
   fetchMostRecentShiur, fetchFeaturedShiur, fetchActiveCollections,
-  fetchAlumniPhotos, fetchRebbeim, fetchApprovedAlumni,
-  // Full lists for the Shiurim + Events tabs. The Megalife runs Android
-  // on a low-end CPU + slow eMMC, so the AsyncStorage hydrate of the
-  // full shiurim payload (~MB of JSON) is noticeable. Pre-warming here
-  // hides that work behind the auth-check + nav transition, so by the
-  // time the user actually taps Shiurim or Events the cache is hot.
-  fetchShiurim, fetchEvents,
+  fetchAlumniPhotos,
+  // Trimmed 2026-06-18: the 4 fetches below — fetchRebbeim,
+  // fetchApprovedAlumni, fetchShiurim, fetchEvents — were dropped from
+  // the auth-gate pre-warm because each owning tab already fetches its
+  // own data on focus (shiurim.tsx:96, events.tsx:48, contacts.tsx).
+  // Together they were ~8MB of JSON hitting the JS thread in a single
+  // burst right behind the navigation animation; Schok F1 measurements
+  // showed 1-3s of fragmentation. The home tab keeps the 7 light
+  // fetches above (~380KB total) so first paint stays snappy. The
+  // in-flight dedupe in lib/ytc/firebase.cached() means a tab's own
+  // fetch on focus won't race with anything else.
 } from "@/lib/ytc/firebase";
 
 interface AuthState {
@@ -198,7 +202,8 @@ export function YtcAuthProvider({ children }: { children: React.ReactNode }) {
       isLoading: false,
     }));
 
-    // 3. Pre-warm content fetchers once approved.
+    // 3. Pre-warm content fetchers once approved. ONLY home-essential
+    //    fetches (see import note above for why the other 4 were dropped).
     if (approved) {
       Promise.all([
         fetchCarouselImages(),
@@ -208,10 +213,6 @@ export function YtcAuthProvider({ children }: { children: React.ReactNode }) {
         fetchFeaturedShiur(),
         fetchActiveCollections(),
         fetchAlumniPhotos(),
-        fetchRebbeim(),
-        fetchApprovedAlumni(),
-        fetchShiurim(),
-        fetchEvents(),
       ]).catch(() => {});
     }
 

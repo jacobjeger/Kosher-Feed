@@ -8,6 +8,7 @@ import {
 import { Image } from "expo-image";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "expo-router";
 import { ytcColors as Colors } from "@/constants/ytcColors";
 import { fetchRebbeim, fetchApprovedAlumni, fetchMyAlumniContact, invalidateYtcCache } from "@/lib/ytc/firebase";
 import { useYtcAuth } from "@/contexts/YtcAuthContext";
@@ -77,7 +78,11 @@ export default function ContactsScreen() {
       .catch(() => setHasMyEntry(false));
   }, [user?.email, alumni.length]);
 
-  useEffect(() => { loadData(); }, []);
+  // Was useEffect → moved to useFocusEffect so the rebbeim + alumni
+  // Firestore fetches fire when the user actually navigates here, not
+  // at every YTC nav transition + first paint. Pairs with trimming the
+  // YtcAuthContext pre-warm (which used to fetch the same data eagerly).
+  useFocusEffect(useCallback(() => { loadData(); }, []));
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await Promise.all([invalidateYtcCache("rebbeim"), invalidateYtcCache("approvedAlumni")]);
