@@ -305,6 +305,13 @@ export async function registerPushToken(verbose = false): Promise<{ token: strin
     const previousToken = await AsyncStorage.getItem(PUSH_TOKEN_KEY);
     const previousProvider = await AsyncStorage.getItem(PUSH_PROVIDER_KEY);
     if (previousToken === token && previousProvider === provider && !verbose) {
+      // The token IS the same as last time — server already has it, we
+      // just confirmed it's still issued by FCM. Bump REFRESHED_AT so the
+      // cache-first path at the top of registerPushToken can skip the
+      // entire FCM round-trip on next launch. Without this, the timestamp
+      // only ever gets set on the (rare) full re-registration path, so
+      // the cache-first optimization never engages on the common case.
+      try { await AsyncStorage.setItem(PUSH_TOKEN_REFRESHED_AT_KEY, String(Date.now())); } catch {}
       log("info", "Push token unchanged, skipping re-registration");
       return { token, steps };
     }
