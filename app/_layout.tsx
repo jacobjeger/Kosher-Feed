@@ -1,5 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Stack, router } from "expo-router";
+import { Stack, router, usePathname } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
 import { Ionicons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -58,6 +58,20 @@ try {
   installJankDetector();
 } catch {}
 
+
+// Jank detector: keep the background marker in sync with the current
+// route so any "unknown" jank is at least attributed to the screen the
+// user was on when the JS thread blocked.
+function JankRouteSync() {
+  const pathname = usePathname();
+  useEffect(() => {
+    try {
+      const { setJankRoute } = require("@/lib/perf/jank-detector");
+      setJankRoute(pathname || null);
+    } catch {}
+  }, [pathname]);
+  return null;
+}
 
 function RootLayoutNav({ initialRoute }: { initialRoute: string }) {
   return (
@@ -361,6 +375,7 @@ export default function RootLayout() {
                         <BackgroundSync />
                         <OfflineBanner />
                         <DeepLinkHandler />
+                        <JankRouteSync />
                         <RootLayoutNav initialRoute={initialRoute} />
                         <MiniPlayerHost />
                         <AnnouncementModal
