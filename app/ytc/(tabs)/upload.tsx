@@ -13,7 +13,20 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import * as DocumentPicker from "expo-document-picker";
+// expo-document-picker is loaded LAZILY (inside the pick handler) because
+// the native module isn't included in every APK build of ShiurPod — when
+// it isn't, a top-level import resolves the module to `undefined`, and
+// expo-router's route-loader trips on `.ErrorBoundary of undefined`,
+// crashing the entire YTC tab navigator with a white screen. Lazy import
+// + try/catch lets the route still mount and gives the upload action a
+// clean user-facing message instead.
+let _DocumentPicker: any | null = null;
+function loadDocumentPicker(): any | null {
+  if (_DocumentPicker) return _DocumentPicker;
+  try { _DocumentPicker = require("expo-document-picker"); }
+  catch { _DocumentPicker = null; }
+  return _DocumentPicker;
+}
 import { useYtcAuth } from "@/contexts/YtcAuthContext";
 import { useYtcColors } from "@/contexts/YtcThemeContext";
 import { ytcColors as StaticColors } from "@/constants/ytcColors";
@@ -99,7 +112,15 @@ export default function UploadShiurScreen() {
   };
 
   const pickAudio = async () => {
-    const res = await DocumentPicker.getDocumentAsync({
+    const dp = loadDocumentPicker();
+    if (!dp?.getDocumentAsync) {
+      Alert.alert(
+        "Upload not available yet",
+        "File uploads require a new app build that hasn't been published yet. Please check back after the next release.",
+      );
+      return;
+    }
+    const res = await dp.getDocumentAsync({
       type: "audio/*",
       copyToCacheDirectory: true,
       multiple: false,
@@ -116,7 +137,15 @@ export default function UploadShiurScreen() {
   };
 
   const pickPdf = async () => {
-    const res = await DocumentPicker.getDocumentAsync({
+    const dp = loadDocumentPicker();
+    if (!dp?.getDocumentAsync) {
+      Alert.alert(
+        "Upload not available yet",
+        "File uploads require a new app build that hasn't been published yet. Please check back after the next release.",
+      );
+      return;
+    }
+    const res = await dp.getDocumentAsync({
       type: "application/pdf",
       copyToCacheDirectory: true,
       multiple: false,
