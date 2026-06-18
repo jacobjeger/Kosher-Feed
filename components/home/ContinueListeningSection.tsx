@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback } from "react";
 import { View, Text, FlatList, StyleSheet, Platform } from "react-native";
 import FocusableView from "@/components/FocusableView";
 import { Ionicons } from "@expo/vector-icons";
@@ -57,6 +57,21 @@ interface Props {
 }
 
 export default React.memo(function ContinueListeningSection({ items, colors, onPlay, onDismiss }: Props) {
+  // renderItem stabilized on the props that actually drive child renders.
+  // Per-card onPlay/onDismiss are now bound via item ids so we don't create
+  // new closures inside the render path for every card every parent render.
+  const renderItem = useCallback(({ item }: { item: ContinueListeningItem }) => (
+    <ContinueListeningCard
+      episode={item.episode}
+      feed={item.feed}
+      position={item.position}
+      colors={colors}
+      onPlay={() => onPlay(item.episode, item.feed)}
+      onDismiss={() => onDismiss(item.episode.id)}
+    />
+  ), [colors, onPlay, onDismiss]);
+  const keyExtractor = useCallback((item: ContinueListeningItem) => item.episode.id, []);
+
   if (items.length === 0) return null;
 
   return (
@@ -65,17 +80,8 @@ export default React.memo(function ContinueListeningSection({ items, colors, onP
       <FlatList
         horizontal
         data={items}
-        keyExtractor={(item) => item.episode.id}
-        renderItem={({ item }) => (
-          <ContinueListeningCard
-            episode={item.episode}
-            feed={item.feed}
-            position={item.position}
-            colors={colors}
-            onPlay={() => onPlay(item.episode, item.feed)}
-            onDismiss={() => onDismiss(item.episode.id)}
-          />
-        )}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 20 }}
         initialNumToRender={5}

@@ -812,7 +812,14 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           // non-default UA so their CDN serves the file.
           const player = createAudioPlayerFn(
             { uri: resolveAudioUrl(episode.audioUrl), headers: { "User-Agent": "ShiurPod/1.0" } },
-            { updateInterval: 500 },
+            // updateInterval 500ms used to overlap with the JS 1000ms position
+            // poll, doubling status-update work for no UX benefit (we render
+            // the progress bar every 1s anyway). 2026-06-18 frame trace on
+            // Schok F1 showed 14fps median during scrolling; one of the
+            // contributors was native listener fires every 500ms competing
+            // with the JS interval. Aligning both at 1000ms halves listener
+            // CPU on the player path without visibly changing the UI.
+            { updateInterval: 1000 },
           );
           nativePlayerRef.current = player;
           nativePlayerInstance = player;

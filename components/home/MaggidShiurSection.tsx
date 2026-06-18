@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback } from "react";
 import { View, Text, FlatList, StyleSheet, Platform } from "react-native";
 import FocusableView from "@/components/FocusableView";
 import { Ionicons } from "@expo/vector-icons";
@@ -35,6 +35,13 @@ interface Props {
 }
 
 export default React.memo(function MaggidShiurSection({ maggidShiurim, colors }: Props) {
+  // renderItem stabilized on [colors] — only recomputes on theme change.
+  const renderItem = useCallback(({ item }: { item: { author: string; feeds: Feed[] } }) => (
+    <MaggidShiurCard author={item.author} feeds={item.feeds} colors={colors} />
+  ), [colors]);
+  const keyExtractor = useCallback((item: { author: string }) => item.author, []);
+  const onSeeAll = useCallback(() => router.push("/all-maggidei-shiur"), []);
+
   if (maggidShiurim.length === 0) return null;
 
   return (
@@ -42,13 +49,13 @@ export default React.memo(function MaggidShiurSection({ maggidShiurim, colors }:
       <SectionHeader
         title="Maggidei Shiur"
         colors={colors}
-        onSeeAll={() => router.push("/all-maggidei-shiur")}
+        onSeeAll={onSeeAll}
       />
       <FlatList
         horizontal
         data={maggidShiurim}
-        keyExtractor={(item) => item.author}
-        renderItem={({ item }) => <MaggidShiurCard author={item.author} feeds={item.feeds} colors={colors} />}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 20 }}
         initialNumToRender={6}

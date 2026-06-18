@@ -1,6 +1,6 @@
 import { Platform, AppState } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { QueryClient, QueryFunction, keepPreviousData, focusManager, onlineManager } from "@tanstack/react-query";
+import { QueryClient, QueryFunction, focusManager, onlineManager } from "@tanstack/react-query";
 
 // React Native integration for TanStack Query. Without this, focusManager
 // assumes the app is *permanently focused* (there's no `document` on native),
@@ -160,12 +160,21 @@ export const queryClient = new QueryClient({
       refetchInterval: false,
       refetchOnWindowFocus: false,
       staleTime: 5 * 60 * 1000,
-      gcTime: 30 * 60 * 1000,
+      // gcTime trimmed 30min → 5min after Schok F1 frame trace (2026-06-18)
+      // showed a 32MB Background GC firing mid-scroll, eating 759ms (~46
+      // frames). TanStack's cache was holding Episode-list responses for
+      // 30 minutes after they went stale — multi-megabyte arrays per query
+      // × several queries × keepPreviousData (which stores BOTH old and new
+      // snapshots during refetch) ≈ 8-15MB of episode JSON pinned to the
+      // heap. 5 minutes is still long enough to cover normal tab switching.
+      gcTime: 5 * 60 * 1000,
       retry: 1,
       retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 8000),
-      // Keep previous data visible while refetching — prevents screens from
-      // flashing to skeleton when switching between cached tabs.
-      placeholderData: keepPreviousData,
+      // keepPreviousData removed. It prevented skeleton flashes during
+      // refetch but doubled the cache footprint (old + new snapshots held
+      // simultaneously). On low-RAM kosher phones the GC cost outweighed
+      // the skeleton-flash polish; the home screen sections already render
+      // skeletons cleanly when staleTime expires.
     },
     mutations: {
       retry: 1,
