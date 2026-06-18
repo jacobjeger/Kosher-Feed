@@ -39,9 +39,20 @@ export async function getYtcFirebase(): Promise<Initialized> {
   if (_initialized) return _initialized;
   if (!_initPromise) {
     _initPromise = (async () => {
+      // Heavy bundle eval on first call — Firebase SDK is several MB
+      // and Hermes parses it synchronously. Mark each lazy import so
+      // jank during cold-init attributes to the specific module.
+      const { markJank, clearJank } = require("@/lib/perf/jank-detector");
+      markJank("ytc:firebase-import:app");
       const { initializeApp, getApps } = await import("firebase/app");
+      clearJank();
+      markJank("ytc:firebase-import:auth");
       const authMod: any = await import("firebase/auth");
+      clearJank();
+      markJank("ytc:firebase-import:firestore");
       const { getFirestore } = await import("firebase/firestore");
+      clearJank();
+      markJank("ytc:firebase-init");
       const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
       // Auth persistence on React Native:
@@ -82,6 +93,7 @@ export async function getYtcFirebase(): Promise<Initialized> {
       }
 
       _initialized = { app, auth, db: getFirestore(app) };
+      clearJank();
       return _initialized;
     })();
   }
@@ -419,25 +431,29 @@ export async function submitAlumniContact(input: {
 export async function fetchMyAlumniContact(userEmail: string | null | undefined) {
   if (!userEmail) return null;
   const { db } = await getYtcFirebase();
-  const { collection, getDocs } = await import("firebase/firestore");
-  markJank("ytc:fetch:alumniContactSubmissions");
-  const snap = await getDocs(collection(db, "alumniContactSubmissions"));
-  for (const d of snap.docs) {
-    const data = d.data() as any;
-    if (data?.email === userEmail) {
-      clearJank();
-      return {
-        id: d.id,
-        name: (data.name ?? "") as string,
-        email: (data.email ?? null) as string | null,
-        phone: (data.phone ?? null) as string | null,
-        location: (data.location ?? "") as string,
-        status: (data.status ?? "pending") as "pending" | "approved" | "rejected",
-      };
-    }
-  }
-  clearJank();
-  return null;
+  // Previously: `getDocs(collection(...))` downloaded the ENTIRE
+  // alumniContactSubmissions collection and scanned client-side for an
+  // email match. Measured 2.3s of JS-thread block on Schok F1 (per the
+  // ytc:fetch:alumniContactSubmissions jank metric). Replaced with a
+  // server-side equality filter — Firestore returns 0–1 docs, decode is
+  // trivial. Single-field equality query, no composite index needed.
+  const { collection, getDocs, query, where, limit } = await import("firebase/firestore");
+  const snap = await getDocs(query(
+    collection(db, "alumniContactSubmissions"),
+    where("email", "==", userEmail),
+    limit(1),
+  ));
+  const d = snap.docs[0];
+  if (!d) return null;
+  const data = d.data() as any;
+  return {
+    id: d.id,
+    name: (data.name ?? "") as string,
+    email: (data.email ?? null) as string | null,
+    phone: (data.phone ?? null) as string | null,
+    location: (data.location ?? "") as string,
+    status: (data.status ?? "pending") as "pending" | "approved" | "rejected",
+  };
 }
 
 // ─── Caching ────────────────────────────────────────────────────────────────
