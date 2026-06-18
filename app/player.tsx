@@ -16,6 +16,7 @@ import { getBookmarks, addBookmark, removeBookmark, type Bookmark } from "@/lib/
 import { useSettings } from "@/contexts/SettingsContext";
 import TinyPlayerLayout from "@/components/TinyPlayerLayout";
 import { useFavorites } from "@/contexts/FavoritesContext";
+import { useDownloads } from "@/contexts/DownloadsContext";
 import OptionPickerModal, { type PickerOption } from "@/components/OptionPickerModal";
 import FocusableView from "@/components/FocusableView";
 
@@ -57,6 +58,7 @@ export default function PlayerScreen() {
   const position = usePlaybackPosition();
   const { settings } = useSettings();
   const { toggleFavorite, isFavorite } = useFavorites();
+  const { isDownloaded, isDownloading, downloadEpisode } = useDownloads();
   const colorScheme = useAppColorScheme();
   const isDark = colorScheme === "dark";
   const colors = isDark ? Colors.dark : Colors.light;
@@ -434,10 +436,39 @@ export default function PlayerScreen() {
       </View>
 
       {playback.playbackError ? (
-        <View style={{ paddingHorizontal: 24, paddingBottom: 8, alignItems: "center" }}>
+        <View style={{ paddingHorizontal: 24, paddingBottom: 8, alignItems: "center", gap: 8 }}>
           <Text style={{ color: "#ef4444", fontSize: 13, textAlign: "center" }}>
-            {playback.playbackError} Tap the red button to retry.
+            {playback.playbackError}
           </Text>
+          {/* Affected users tend to be on slow or unreliable cellular paths to
+              the source CDN. Streaming retries hit a wall there; downloading
+              once on a stable connection then playing offline reliably works.
+              Surface that path inline when the stream gives up. */}
+          {currentEpisode && currentFeed
+            && !isDownloaded(currentEpisode.id)
+            && !isDownloading(currentEpisode.id) ? (
+            <FocusableView
+              focusRadius={10}
+              style={{ marginTop: 4, paddingVertical: 10, paddingHorizontal: 16, backgroundColor: colors.accent, borderRadius: 10, flexDirection: "row", alignItems: "center", gap: 8 }}
+              onPress={() => {
+                lightHaptic();
+                downloadEpisode(currentEpisode, currentFeed);
+              }}
+            >
+              <Ionicons name="cloud-download-outline" size={18} color="#fff" />
+              <Text style={{ color: "#fff", fontSize: 14, fontWeight: "600" }}>
+                Download to listen offline
+              </Text>
+            </FocusableView>
+          ) : isDownloading(currentEpisode?.id || "") ? (
+            <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4 }}>
+              Downloading… tap retry once it&apos;s ready.
+            </Text>
+          ) : (
+            <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4 }}>
+              Tap the red button to retry.
+            </Text>
+          )}
         </View>
       ) : null}
       <View style={[styles.controls, isSmallScreen && styles.controlsSmall]}>
