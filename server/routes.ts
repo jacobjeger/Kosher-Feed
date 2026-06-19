@@ -331,9 +331,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const baseUrl = `${protocol}://${host}`;
       const feedList = await storage.getActiveFeeds();
       const mappings = await storage.getAllFeedCategoryMappings();
+      // Drop server-internal fields the client never reads from /api/feeds.
+      // With 829 feeds the original payload was ~697KB; stripping these cuts
+      // it to ~430KB. The Schok F1 was paying 300-500ms of JSON.parse + the
+      // cacheResponse JSON.stringify on every cold start. Single-feed routes
+      // (/api/feeds/:id) keep the full shape for admin / detail use.
       let feedsWithCategories = feedList.map(f => {
         const catIds = mappings.filter(m => m.feedId === f.id).map(m => m.categoryId);
-        return addDefaultImage({ ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) }, baseUrl);
+        const {
+          rssUrl: _rssUrl,
+          etag: _etag,
+          lastModifiedHeader: _lastModifiedHeader,
+          lastFetchedAt: _lastFetchedAt,
+          createdAt: _createdAt,
+          sourceNetwork: _sourceNetwork,
+          scheduledPublishAt: _scheduledPublishAt,
+          tatSpeakerId: _tatSpeakerId,
+          alldafAuthorId: _alldafAuthorId,
+          allmishnahAuthorId: _allmishnahAuthorId,
+          allparshaAuthorId: _allparshaAuthorId,
+          allhalachaAuthorId: _allhalachaAuthorId,
+          kolhalashonRavId: _kolhalashonRavId,
+          torahdownloadsSpeakerId: _torahdownloadsSpeakerId,
+          ...slim
+        } = f as any;
+        return addDefaultImage({ ...slim, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) }, baseUrl);
       });
 
       // Sort by popularity if requested
