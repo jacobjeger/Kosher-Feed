@@ -193,12 +193,15 @@ export interface AutoDownloadResult {
  * dedup in DownloadsContext.downloadEpisode prevent re-enqueue.
  */
 export async function runYtcAutoDownload(ctx: DownloadsLike): Promise<AutoDownloadResult> {
+  const { markJank, clearJank } = require("@/lib/perf/jank-detector");
   const ranAt = new Date().toISOString();
   const settings = await getYtcDownloadSettings();
 
   // Auto-delete runs regardless of auto-download mode — the user can
   // turn auto-download off but still want completed shiurim cleared.
+  markJank("ytc:autodl:cleanup");
   await cleanupExpiredYtcDownloads(ctx).catch(() => {});
+  clearJank();
 
   if (settings.mode === "off") return { ranAt, skippedReason: "off", queued: 0, alreadyHave: 0, evicted: 0 };
 
@@ -209,8 +212,11 @@ export async function runYtcAutoDownload(ctx: DownloadsLike): Promise<AutoDownlo
 
   let shiurim: Shiur[];
   try {
+    markJank("ytc:autodl:fetch-shiurim");
     shiurim = (await fetchShiurim()) as Shiur[];
+    clearJank();
   } catch {
+    clearJank();
     return { ranAt, skippedReason: "no-shiurim", queued: 0, alreadyHave: 0, evicted: 0 };
   }
   if (!shiurim.length) return { ranAt, skippedReason: "no-shiurim", queued: 0, alreadyHave: 0, evicted: 0 };
@@ -228,6 +234,15 @@ export async function runYtcAutoDownload(ctx: DownloadsLike): Promise<AutoDownlo
   const maxItems = settings.maxItems;
   if (maxItems >= 0) candidates = candidates.slice(0, maxItems);
 
+  // Queue loop. Each ctx.downloadEpisode() triggers a setState in
+  // DownloadsContext, so calling 50× in one tight burst was producing a
+  // sustained re-render storm (the 31s freeze on /ytc that landed ~30s
+  // after open lines up with auto-download triggering after a slow
+  // fetchShiurim resolves). Yield to the event loop every 5 items so
+  // React can flush. setTimeout(0) is the cheapest way to bounce off the
+  // macrotask queue. The downloads still run via DownloadsContext's own
+  // queue; spreading the queue calls just keeps the JS thread responsive.
+  markJank("ytc:autodl:queue-loop");
   let queued = 0;
   let alreadyHave = 0;
   for (const s of candidates) {
@@ -242,13 +257,17 @@ export async function runYtcAutoDownload(ctx: DownloadsLike): Promise<AutoDownlo
       trackShiurDownload(s.id).catch(() => {});
       ctx.downloadEpisode(episode, feed).catch(() => {});
       queued += 1;
+      if (queued % 5 === 0) await new Promise((r) => setTimeout(r, 0));
     } catch {}
   }
+  clearJank();
 
   // Evict overflow AFTER queueing so newly-queued items count toward
   // the cap on the next run.
+  markJank("ytc:autodl:enforce-limit");
   const beforeCount = getYtcDownloads(ctx).length;
   await enforceYtcStorageLimit(ctx, maxItems);
   const afterCount = getYtcDownloads(ctx).length;
+  clearJank();
   return { ranAt, queued, alreadyHave, evicted: Math.max(0, beforeCount - afterCount) };
 }

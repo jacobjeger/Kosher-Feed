@@ -367,28 +367,29 @@ function HomeScreenInner() {
     })();
   }, [inProgressPositions]);
 
-  // Below-the-fold query gate. Tier 1 (categories/feeds/latest) feeds
-  // the hero + first carousel, so they fire on mount. Tier 2 (trending,
-  // popular, featured, maggid) feeds sections users only see after
-  // scrolling, so we hold them back ~500ms to keep the JS thread free
-  // for taps during the cold-start render storm.
-  // The DeferredMount wrapper around those sections already delays the
-  // PAINT, but the useQuery hooks live at the parent level and fire
-  // unconditionally — gating with `enabled` is the only way to keep
-  // their setState chains off the critical path.
-  const [belowFoldReady, setBelowFoldReady] = useState(false);
+  // Below-the-fold query gate. Tier 1 (categories/feeds/latest) feeds the
+  // hero + first carousel, so they fire on mount. Tier 2-4 are gated in
+  // staggered phases so their responses don't all land in the same render
+  // tick — when 4 useQueries land simultaneously and trigger re-renders
+  // of the same parent at once, the cascade was a measurable contributor
+  // to the cold-start jank. Each phase activates the next; the biggest
+  // payload (maggid-shiur, ~280KB after server slim) is intentionally
+  // last so its parse + render doesn't compound with the others.
+  const [belowFoldPhase, setBelowFoldPhase] = useState(0);
   useEffect(() => {
-    const t = setTimeout(() => setBelowFoldReady(true), 500);
-    return () => clearTimeout(t);
+    const t1 = setTimeout(() => setBelowFoldPhase(1), 500);   // trending + popular (small)
+    const t2 = setTimeout(() => setBelowFoldPhase(2), 1000);  // featured (~3KB, almost free)
+    const t3 = setTimeout(() => setBelowFoldPhase(3), 1500);  // maggid (biggest)
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, []);
 
   const categoriesQuery = useQuery<Category[]>({ queryKey: ["/api/categories"], staleTime: 60 * 60 * 1000 });
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
   const latestQuery = useQuery<Episode[]>({ queryKey: ["/api/episodes/latest"] });
-  const trendingQuery = useQuery<TrendingEpisode[]>({ queryKey: ["/api/episodes/trending"], staleTime: 15 * 60 * 1000, enabled: belowFoldReady });
-  const popularQuery = useQuery<TrendingEpisode[]>({ queryKey: ["/api/episodes/popular?limit=60"], staleTime: 30 * 60 * 1000, enabled: belowFoldReady });
-  const featuredQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds/featured"], staleTime: 30 * 60 * 1000, enabled: belowFoldReady });
-  const maggidQuery = useQuery<{ author: string; feeds: Feed[] }[]>({ queryKey: ["/api/feeds/maggid-shiur"], staleTime: 30 * 60 * 1000, enabled: belowFoldReady });
+  const trendingQuery = useQuery<TrendingEpisode[]>({ queryKey: ["/api/episodes/trending"], staleTime: 15 * 60 * 1000, enabled: belowFoldPhase >= 1 });
+  const popularQuery = useQuery<TrendingEpisode[]>({ queryKey: ["/api/episodes/popular?limit=60"], staleTime: 30 * 60 * 1000, enabled: belowFoldPhase >= 1 });
+  const featuredQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds/featured"], staleTime: 30 * 60 * 1000, enabled: belowFoldPhase >= 2 });
+  const maggidQuery = useQuery<{ author: string; feeds: Feed[] }[]>({ queryKey: ["/api/feeds/maggid-shiur"], staleTime: 30 * 60 * 1000, enabled: belowFoldPhase >= 3 });
   // Recommended section removed from home — disable the query so we don't
   // burn JS thread time + network on data we never render.
   const recommendationsQuery = useQuery<Feed[]>({
