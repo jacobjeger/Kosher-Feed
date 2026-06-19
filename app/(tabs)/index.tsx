@@ -403,6 +403,19 @@ function HomeScreenInner() {
   const errorMessage = feedsQuery.error?.message || categoriesQuery.error?.message || "Could not connect to server";
   const categories = categoriesQuery.data || [];
   const allFeeds = feedsQuery.data || [];
+  // Index feeds by id for O(1) lookups instead of allFeeds.find(...) chains.
+  // Multiple useMemos below resolve feedId → feed: quickPlayItems (up to 6
+  // finds), popularFeeds (up to 50 finds), continueListeningItems,
+  // recentlyListenedItems. With 829 feeds, each .find() walks the array; the
+  // cascade was ~40k+ string comparisons during the below-fold-queries-land
+  // render storm — measurable contributor to the cold-start jank. The Map
+  // is rebuilt only when allFeeds identity changes (i.e., the feedsQuery
+  // payload updates), which is rare after first paint.
+  const feedsById = useMemo(() => {
+    const m = new Map<string, Feed>();
+    for (const f of allFeeds) m.set(f.id, f);
+    return m;
+  }, [allFeeds]);
   const latestEpisodes = (latestQuery.data || []).slice(0, 20);
   const trendingEpisodes = trendingQuery.data || [];
   const popularEpisodes = popularQuery.data || [];
@@ -435,18 +448,18 @@ function HomeScreenInner() {
     const items: { episode: TrendingEpisode; feed: Feed }[] = [];
     for (let i = 0; i < trending.length && items.length < 6; i++) {
       const ep = trending[i] as TrendingEpisode;
-      const feed = allFeeds.find(f => f.id === ep.feedId);
+      const feed = feedsById.get(ep.feedId);
       if (feed) items.push({ episode: ep, feed });
     }
 
     return items;
-  }, [trendingEpisodes, latestEpisodes, allFeeds]);
+  }, [trendingEpisodes, latestEpisodes, feedsById]);
 
   // Derive top popular FEEDS from popular episodes by aggregating listen
   // counts per feed and returning the feeds themselves — so the section can
   // use the same horizontal PodcastCard slider layout as other categories.
   const popularFeeds = useMemo(() => {
-    if (popularEpisodes.length === 0 || allFeeds.length === 0) return [];
+    if (popularEpisodes.length === 0 || feedsById.size === 0) return [];
     const feedCounts = new Map<string, number>();
     for (const ep of popularEpisodes) {
       feedCounts.set(ep.feedId, (feedCounts.get(ep.feedId) || 0) + (ep.listenCount || 0));
@@ -458,15 +471,15 @@ function HomeScreenInner() {
     const feeds: Feed[] = [];
     for (const id of sortedFeedIds) {
       if (seen.has(id)) continue;
-      const feed = allFeeds.find(f => f.id === id);
+      const feed = feedsById.get(id);
       if (feed) { feeds.push(feed); seen.add(id); }
       if (feeds.length >= 15) break;
     }
     return feeds;
-  }, [popularEpisodes, allFeeds]);
+  }, [popularEpisodes, feedsById]);
 
   const continueListeningItems = useMemo(() => {
-    if (inProgressPositions.length === 0 || allFeeds.length === 0) return [];
+    if (inProgressPositions.length === 0 || feedsById.size === 0) return [];
     const allEpisodes = latestQuery.data || [];
     const episodeMap = new Map(allEpisodes.map(ep => [ep.id, ep]));
     return inProgressPositions
@@ -475,13 +488,13 @@ function HomeScreenInner() {
         // in-progress episodes aren't in /api/episodes/latest but are still
         // loaded via /api/episodes/batch above.
         const episode = episodeMap.get(pos.episodeId) || inProgressEpisodes[pos.episodeId];
-        const feed = allFeeds.find(f => f.id === pos.feedId);
+        const feed = feedsById.get(pos.feedId);
         if (episode && feed) return { episode, feed, position: pos };
         return null;
       })
       .filter(Boolean)
       .slice(0, 10) as { episode: Episode; feed: Feed; position: SavedPositionEntry }[];
-  }, [inProgressPositions, latestQuery.data, allFeeds, inProgressEpisodes]);
+  }, [inProgressPositions, latestQuery.data, feedsById, inProgressEpisodes]);
 
   const recentlyListenedItems = useMemo(() => {
     if (recentlyPlayed.length === 0) return [];
@@ -490,12 +503,12 @@ function HomeScreenInner() {
     return recentlyPlayed
       .map(entry => {
         const episode = episodeMap.get(entry.episodeId);
-        const feed = allFeeds.find(f => f.id === entry.feedId);
+        const feed = feedsById.get(entry.feedId);
         if (episode && feed) return { episode, feed };
         return null;
       })
       .filter(Boolean) as { episode: Episode; feed: Feed }[];
-  }, [recentlyPlayed, latestQuery.data, allFeeds]);
+  }, [recentlyPlayed, latestQuery.data, feedsById]);
 
   const feedsWithNew = useMemo(() => {
     const set = new Set<string>();
