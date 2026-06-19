@@ -44,3 +44,42 @@ export function resizedImageUrl(url: string | null | undefined, width: number): 
   const base = getApiUrl();
   return `${base}/api/images/resize?url=${encodeURIComponent(url)}&w=${width}&f=webp`;
 }
+
+// Local bundled fallback logos. Server's addDefaultImage sets
+// feed.imageUrl to https://shiurpod.com/api/images/{ou-torah-logo,kol-
+// halashon-logo}.png for KH / OU-network feeds with no artwork. These
+// two URLs alone accounted for ~54 of ~262 Glide loads in the Moshe
+// Greer 2026-06-16 session — each went through DATA_DISK_CACHE
+// (200ms–1.4s on Schok F1) because Glide's memory cache was getting
+// evicted under pressure. The PNGs already exist in assets/images/,
+// so we substitute the bundled asset at render time and avoid network
+// + disk-cache entirely.
+const KH_LOGO_LOCAL = require("@/assets/images/kol-halashon-logo.png");
+const OU_LOGO_LOCAL = require("@/assets/images/ou-torah-logo.png");
+
+function isLocalDefaultLogo(url: string): "kh" | "ou" | null {
+  // Match by suffix so we catch both staging and production hosts.
+  if (url.endsWith("/api/images/kol-halashon-logo.png")) return "kh";
+  if (url.endsWith("/api/images/ou-torah-logo.png")) return "ou";
+  return null;
+}
+
+/**
+ * Resolve a feed/episode image URL to an expo-image `source` value.
+ * Use this INSTEAD of `{ uri: resizedImageUrl(url, w) }` at the Image
+ * call site, so the bundled OU / KH fallbacks short-circuit to a
+ * require()'d asset (instant, no disk-cache pressure) while other URLs
+ * still go through the resize proxy.
+ *
+ * Return type is `any` to satisfy expo-image's polymorphic `source`
+ * prop (string | object | number) without forcing every call site to
+ * import expo-image's ImageSource type.
+ */
+export function feedImageSource(url: string | null | undefined, width: number): any {
+  if (!url) return null;
+  const local = isLocalDefaultLogo(url);
+  if (local === "kh") return KH_LOGO_LOCAL;
+  if (local === "ou") return OU_LOGO_LOCAL;
+  const resized = resizedImageUrl(url, width);
+  return resized ? { uri: resized } : null;
+}

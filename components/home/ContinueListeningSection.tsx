@@ -5,7 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import SectionHeader from "./SectionHeader";
 import type { Feed, Episode } from "@/lib/types";
-import { resizedImageUrl, IMG_CARD } from "@/lib/image-resize";
+import { feedImageSource, IMG_CARD } from "@/lib/image-resize";
 
 interface SavedPositionEntry {
   episodeId: string;
@@ -32,7 +32,7 @@ const ContinueListeningCard = React.memo(function ContinueListeningCard({ episod
         <Ionicons name="close" size={12} color="#fff" />
       </FocusableView>
       {feed.imageUrl ? (
-        <Image source={{ uri: resizedImageUrl(feed.imageUrl, IMG_CARD)! }} style={styles.continueImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={feed.id} transition={180} />
+        <Image source={feedImageSource(feed.imageUrl, IMG_CARD)} style={styles.continueImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={feed.id} transition={180} />
       ) : (
         <View style={[styles.continueImage, { backgroundColor: colors.surfaceAlt }]}>
           <Ionicons name="mic" size={24} color={colors.textSecondary} />

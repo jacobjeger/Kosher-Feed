@@ -36,7 +36,10 @@ function formatTimerRemaining(ms: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-const RATES = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+// Aligned with TinyPlayerLayout — the two screens previously had 6 vs 7
+// values, so the same shiur jumped between rate sets depending on which
+// layout was rendered. Added 1.75 to keep parity with the website.
+const RATES = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
 
 const SLEEP_OPTIONS = [15, 30, 45, 60, "endOfEpisode" as const, "cancel" as const];
 
@@ -68,6 +71,12 @@ export default function PlayerScreen() {
   const [bookmarkSaved, setBookmarkSaved] = useState(false);
   const [webSleepIndex, setWebSleepIndex] = useState(0);
   const [sleepModalVisible, setSleepModalVisible] = useState(false);
+  // Rate picker modal — replaces the one-way cycle button so the user
+  // can jump straight to any speed instead of mashing through the cycle
+  // (the cycle-only behavior was Moshe Greer's "slow / unresponsive /
+  // not intuitive" complaint). Long-press still cycles backward for
+  // power users who liked the gesture.
+  const [rateModalVisible, setRateModalVisible] = useState(false);
 
   const swipeAnim = useRef(new RNAnimated.Value(0)).current;
 
@@ -235,6 +244,23 @@ export default function PlayerScreen() {
     const nextIndex = (currentRateIndex + 1) % RATES.length;
     await setRate(RATES[nextIndex]);
   };
+
+  // Long-press cycles backward — keeps the one-tap cycle gesture for
+  // users who liked it, but adds an escape hatch instead of forcing
+  // them to wrap-around through every rate to slow down.
+  const cycleRateBackward = async () => {
+    lightHaptic();
+    const prevIndex = (currentRateIndex - 1 + RATES.length) % RATES.length;
+    await setRate(RATES[prevIndex]);
+  };
+
+  const rateModalOptions = React.useMemo((): PickerOption[] => {
+    return RATES.map((r) => ({
+      label: `${r}x${r === 1 ? "  (normal)" : ""}`,
+      onPress: () => { setRate(r); },
+      selected: playback.playbackRate === r,
+    }));
+  }, [playback.playbackRate, setRate]);
 
   const sleepButtonLabel = sleepTimer.active
     ? sleepTimer.mode === "endOfEpisode"
@@ -474,7 +500,9 @@ export default function PlayerScreen() {
       <View style={[styles.controls, isSmallScreen && styles.controlsSmall]}>
         <FocusableView
           focusRadius={12}
-          onPress={cycleRate}
+          onPress={() => { lightHaptic(); setRateModalVisible(true); }}
+          onLongPress={cycleRateBackward}
+          delayLongPress={350}
           style={[styles.rateBtn, { backgroundColor: colors.surfaceAlt }]}
         >
           <Text style={[styles.rateText, { color: colors.text }]}>
@@ -660,6 +688,14 @@ export default function PlayerScreen() {
           : "Stop playback after:"}
         options={sleepModalOptions}
         onClose={() => setSleepModalVisible(false)}
+      />
+
+      <OptionPickerModal
+        visible={rateModalVisible}
+        title="Playback Speed"
+        subtitle={`Currently ${playback.playbackRate}x`}
+        options={rateModalOptions}
+        onClose={() => setRateModalVisible(false)}
       />
     </ScrollView>
   );

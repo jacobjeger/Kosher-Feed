@@ -8,7 +8,7 @@ import Colors from "@/constants/colors";
 import { cardShadow } from "@/constants/shadows";
 import type { Feed } from "@/lib/types";
 import { router } from "expo-router";
-import { resizedImageUrl, IMG_CARD, IMG_HERO } from "@/lib/image-resize";
+import { feedImageSource, IMG_CARD, IMG_HERO } from "@/lib/image-resize";
 
 interface Props {
   feed: Feed;
@@ -23,13 +23,13 @@ function PodcastCard({ feed, size = "small", hasNewEpisodes }: Props) {
   const colors = isDark ? Colors.dark : Colors.light;
   const [imgError, setImgError] = useState(false);
 
-  // Memoize the resized URL + source object so the Image component sees a
-  // stable reference across re-renders (parent state ticks otherwise would
-  // create a new {uri:...} literal per render, churning the GC).
-  const imageSource = useMemo(() => {
-    const url = resizedImageUrl(feed.imageUrl, size === "featured" ? IMG_HERO : IMG_CARD);
-    return url ? { uri: url } : null;
-  }, [feed.imageUrl, size]);
+  // Memoize the resolved source so the Image component sees a stable
+  // reference across re-renders. feedImageSource short-circuits the
+  // bundled OU/KH default logos to a require()'d local asset.
+  const imageSource = useMemo(
+    () => feedImageSource(feed.imageUrl, size === "featured" ? IMG_HERO : IMG_CARD),
+    [feed.imageUrl, size],
+  );
 
   const scaleAnim = useRef(new RNAnimated.Value(1)).current;
   const isNative = Platform.OS !== "web";

@@ -9,6 +9,12 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 const PUSH_TOKEN_KEY = "@shiurpod_push_token";
 const PUSH_PROVIDER_KEY = "@shiurpod_push_provider";
 const PUSH_TOKEN_REFRESHED_AT_KEY = "@shiurpod_push_token_refreshed_at";
+// Persisted denial timestamp so the 1-hour cooldown survives across
+// cold starts. Previously the in-memory _lastDenialAt reset on every JS
+// context start, so a user who denied got re-prompted (and we re-ran the
+// full registerPushToken flow, including 5 log lines + Notifications.
+// getPermissionsAsync round-trip) on every force-quit + reopen.
+const PUSH_DENIAL_AT_KEY = "@shiurpod_push_denial_at";
 const TOKEN_FETCH_TIMEOUT_MS = 20000;
 // How long a successfully-registered token stays trusted before we re-fetch
 // from FCM/Expo on launch. FCM tokens are quasi-permanent; the canonical
@@ -196,6 +202,20 @@ export async function registerPushToken(verbose = false): Promise<{ token: strin
         return { token: cachedToken, steps: ["[INFO] Using cached push token (still fresh)"] };
       }
     } catch { /* fall through to full registration */ }
+
+    // Denial cooldown: if the user denied within the last hour (across
+    // cold starts via AsyncStorage), skip the entire flow. Avoids
+    // re-prompting and the 5 wasted [push] log lines per cold start.
+    try {
+      if (_lastDenialAt === 0) {
+        const persistedDenialRaw = await AsyncStorage.getItem(PUSH_DENIAL_AT_KEY);
+        const persistedDenial = persistedDenialRaw ? Number(persistedDenialRaw) : 0;
+        if (persistedDenial > 0) _lastDenialAt = persistedDenial;
+      }
+      if (_lastDenialAt > 0 && Date.now() - _lastDenialAt < DENIAL_COOLDOWN_MS) {
+        return { token: null, steps: ["[INFO] Recently denied — cooldown active"] };
+      }
+    } catch { /* fall through */ }
   }
 
   const run = async (): Promise<{ token: string | null; steps: string[] }> => {
@@ -250,8 +270,20 @@ export async function registerPushToken(verbose = false): Promise<{ token: strin
           log("warn", `Push notification permission denied (status: ${finalStatus})`);
         }
         _lastDenialAt = Date.now();
+        // Persist so next cold start sees the cooldown and skips the
+        // full flow (and the OS-level prompt for users who already
+        // explicitly denied).
+        AsyncStorage.setItem(PUSH_DENIAL_AT_KEY, String(_lastDenialAt)).catch(() => {});
         return { token: null, steps };
       }
+
+    // Permission granted — clear any previously persisted denial so a
+    // user who toggled the OS-level setting back on doesn't stay in the
+    // cooldown loop next session.
+    if (_lastDenialAt > 0) {
+      _lastDenialAt = 0;
+      AsyncStorage.removeItem(PUSH_DENIAL_AT_KEY).catch(() => {});
+    }
 
     let token: string | null = null;
     let provider: string = "expo";

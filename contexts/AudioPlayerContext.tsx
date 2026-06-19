@@ -316,20 +316,44 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   const playStartedAtRef = useRef<number>(0);
   const stallStartedAtRef = useRef<number>(0);
 
+  // Cached resume-rewind seconds. Previously applySmartRewind awaited
+  // AsyncStorage.getItem on every resume — on Schok F1's slow eMMC that
+  // was a 100-300ms delay between the user tapping play and audio
+  // resuming, contributing to the "play/pause randomly jams" complaint.
+  // We load once on mount and refresh whenever the SettingsScreen writes
+  // (it lives in the same JS context and fires a custom event). Default
+  // (5) matches the previous in-flow fallback.
+  const resumeRewindMsRef = useRef<number>(5_000);
+  useEffect(() => {
+    let cancelled = false;
+    const loadRewindSetting = async () => {
+      try {
+        const raw = await AsyncStorage.getItem("@kosher_shiurim_settings");
+        const s = raw ? JSON.parse(raw) : {};
+        if (cancelled) return;
+        const sec = typeof s.resumeRewindSeconds === "number" ? s.resumeRewindSeconds : 5;
+        resumeRewindMsRef.current = sec >= 1 ? sec * 1000 : 0;
+      } catch {}
+    };
+    loadRewindSetting();
+    // Refresh on AppState 'active' — covers the rare case where the user
+    // changed the setting (we share AsyncStorage but not in-process state
+    // with the SettingsContext's local cache; this avoids a hard
+    // dependency on the context's update event).
+    const { AppState } = require("react-native");
+    const sub = AppState.addEventListener("change", (state: string) => {
+      if (state === "active") loadRewindSetting();
+    });
+    return () => { cancelled = true; sub?.remove?.(); };
+  }, []);
+
   // Apply smart-rewind seek if enabled and in a paused→play transition.
-  // Returns true if rewind was applied. Reads setting from AsyncStorage so
-  // it works from both the JS resume() path and the native status listener
-  // (when media buttons / lock screen trigger play).
+  // Returns true if rewind was applied. Reads from the in-memory cache
+  // (refreshed on app-foreground) so the play tap doesn't wait on disk.
   const applySmartRewind = useCallback(async (): Promise<boolean> => {
     if (!wasPausedRef.current) return false;
     wasPausedRef.current = false;
-    let rewindMs = 0;
-    try {
-      const raw = await AsyncStorage.getItem("@kosher_shiurim_settings");
-      const s = raw ? JSON.parse(raw) : {};
-      const sec = typeof s.resumeRewindSeconds === "number" ? s.resumeRewindSeconds : 5;
-      if (sec >= 1) rewindMs = sec * 1000;
-    } catch {}
+    const rewindMs = resumeRewindMsRef.current;
     const pos = positionRef.current;
     if (rewindMs > 0 && pos.positionMs > 3000) {
       const target = Math.max(0, pos.positionMs - rewindMs);

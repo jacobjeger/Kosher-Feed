@@ -90,6 +90,11 @@ function isPushNoise(msg: string): boolean {
 const NOISE_PATTERNS = [
   "useNativeDriver", "shadow*", "pointerEvents is deprecated",
   "expo-notifications", "should be updated for best compatibility",
+  // expo-router passes iOS-only Stack.Screen props on every nav transition;
+  // RNScreens warns once per prop per screen. 70+ duplicate lines in
+  // Moshe's log (2026-06-16 session) — pure noise from a library default,
+  // not anything we can fix in our code.
+  "[RNScreens]:",
 ];
 
 function isNoisyMsg(msg: string): boolean {

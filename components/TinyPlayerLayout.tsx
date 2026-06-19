@@ -69,6 +69,12 @@ export default function TinyPlayerLayout(props: Props) {
     const nextIndex = (currentRateIndex + 1) % RATES.length;
     await onSetRate(RATES[nextIndex]);
   }, [currentRateIndex, onSetRate]);
+  // Long-press cycles backward for users who want to slow down without
+  // wrapping through every rate. Matches the main player UX.
+  const cycleRateBackward = useCallback(async () => {
+    const prevIndex = (currentRateIndex - 1 + RATES.length) % RATES.length;
+    await onSetRate(RATES[prevIndex]);
+  }, [currentRateIndex, onSetRate]);
 
   return (
     <View style={[styles.container, { paddingTop: insetTop + 2, backgroundColor: colors.background }]}>
@@ -146,7 +152,7 @@ export default function TinyPlayerLayout(props: Props) {
 
       {/* Controls */}
       <View style={styles.controls}>
-        <FocusableView focusRadius={12} onPress={cycleRate} style={[styles.smallBtn, { backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)" }]}>
+        <FocusableView focusRadius={12} onPress={cycleRate} onLongPress={cycleRateBackward} delayLongPress={350} style={[styles.smallBtn, { backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)" }]}>
           <Text style={{ fontSize: 12, fontWeight: "700", color: colors.text }}>{playback.playbackRate}x</Text>
         </FocusableView>
         {onSkipPrevEpisode ? (

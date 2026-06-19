@@ -7,7 +7,7 @@ import { router } from "expo-router";
 import EpisodeItem from "@/components/EpisodeItem";
 import { lightHaptic } from "@/lib/haptics";
 import type { Feed, Episode } from "@/lib/types";
-import { resizedImageUrl, IMG_CARD } from "@/lib/image-resize";
+import { feedImageSource, IMG_CARD } from "@/lib/image-resize";
 
 interface SearchSectionProps {
   searchQuery: string;
@@ -31,7 +31,7 @@ const SearchResultItem = React.memo(function SearchResultItem({ feed, colors }: 
       onPress={() => { lightHaptic(); router.push(`/podcast/${feed.id}`); }}
     >
       {feed.imageUrl ? (
-        <Image source={{ uri: resizedImageUrl(feed.imageUrl, IMG_CARD)! }} style={styles.searchResultImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={feed.id} transition={180} />
+        <Image source={feedImageSource(feed.imageUrl, IMG_CARD)} style={styles.searchResultImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={feed.id} transition={180} />
       ) : (
         <View style={[styles.searchResultImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
           <Ionicons name="mic" size={20} color={colors.textSecondary} />
@@ -83,7 +83,7 @@ export default React.memo(function SearchSection({ searchQuery, searchResults, s
                 onPress={() => { lightHaptic(); router.push({ pathname: "/maggid-shiur/[author]" as any, params: { author: speaker.author, feedIds: speaker.feeds.map((f: Feed) => f.id).join(",") } }); }}
               >
                 {speaker.feeds[0]?.imageUrl ? (
-                  <Image source={{ uri: resizedImageUrl(speaker.feeds[0].imageUrl, IMG_CARD)! }} style={styles.searchResultImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={speaker.feeds[0].id} transition={180} />
+                  <Image source={feedImageSource(speaker.feeds[0].imageUrl, IMG_CARD)} style={styles.searchResultImage} contentFit="cover" cachePolicy="memory-disk" recyclingKey={speaker.feeds[0].id} transition={180} />
                 ) : (
                   <View style={[styles.searchResultImage, { backgroundColor: colors.surfaceAlt, alignItems: "center", justifyContent: "center" }]}>
                     <Ionicons name="person" size={20} color={colors.textSecondary} />
