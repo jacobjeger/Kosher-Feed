@@ -40,6 +40,46 @@ function addDefaultImage(feed: any, baseUrl?: string): any {
   return feed;
 }
 
+// Strip server-internal fields from a Feed before returning it from a
+// LIST endpoint. Cuts /api/feeds payload from ~697KB to ~470KB and
+// /api/feeds/maggid-shiur (which nests Feeds inside each maggid group)
+// from ~718KB.
+//
+// KEPT (client reads these from the list payload):
+//   - sourceNetwork: rendered as a network badge in EpisodeItem,
+//     player.tsx, and podcast/[id].tsx (also used by addDefaultImage).
+//   - lastFetchedAt: podcast/[id].tsx uses it from feedsQuery.data when
+//     present to decide whether to auto-refresh the episode list.
+//
+// STRIPPED (server-internal, client never reads):
+//   rssUrl, etag, lastModifiedHeader, createdAt, scheduledPublishAt,
+//   and 7 third-party speaker IDs (tatSpeakerId, alldafAuthorId,
+//   allmishnahAuthorId, allparshaAuthorId, allhalachaAuthorId,
+//   kolhalashonRavId, torahdownloadsSpeakerId).
+//
+// Single-feed routes (/api/feeds/:id) keep the full shape for admin /
+// detail surfaces.
+//
+// Call AFTER addDefaultImage() — addDefaultImage reads sourceNetwork.
+function slimFeedForList(feed: any): any {
+  const {
+    rssUrl: _rssUrl,
+    etag: _etag,
+    lastModifiedHeader: _lastModifiedHeader,
+    createdAt: _createdAt,
+    scheduledPublishAt: _scheduledPublishAt,
+    tatSpeakerId: _tatSpeakerId,
+    alldafAuthorId: _alldafAuthorId,
+    allmishnahAuthorId: _allmishnahAuthorId,
+    allparshaAuthorId: _allparshaAuthorId,
+    allhalachaAuthorId: _allhalachaAuthorId,
+    kolhalashonRavId: _kolhalashonRavId,
+    torahdownloadsSpeakerId: _torahdownloadsSpeakerId,
+    ...slim
+  } = feed;
+  return slim;
+}
+
 // Resolve KH audio URLs through the proxy worker
 function resolveKHAudioUrl(audioUrl: string): { url: string; headers: Record<string, string> } {
   const khMatch = audioUrl.match(/https?:\/\/srv\.kolhalashon\.com\/api\/files\/(?:GetMp3FileToPlay|getLocationOfFileToVideo)\/(\d+)/);
@@ -331,31 +371,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const baseUrl = `${protocol}://${host}`;
       const feedList = await storage.getActiveFeeds();
       const mappings = await storage.getAllFeedCategoryMappings();
-      // Drop server-internal fields the client never reads from /api/feeds.
-      // With 829 feeds the original payload was ~697KB; stripping these cuts
-      // it to ~430KB. The Schok F1 was paying 300-500ms of JSON.parse + the
-      // cacheResponse JSON.stringify on every cold start. Single-feed routes
-      // (/api/feeds/:id) keep the full shape for admin / detail use.
       let feedsWithCategories = feedList.map(f => {
         const catIds = mappings.filter(m => m.feedId === f.id).map(m => m.categoryId);
-        const {
-          rssUrl: _rssUrl,
-          etag: _etag,
-          lastModifiedHeader: _lastModifiedHeader,
-          lastFetchedAt: _lastFetchedAt,
-          createdAt: _createdAt,
-          sourceNetwork: _sourceNetwork,
-          scheduledPublishAt: _scheduledPublishAt,
-          tatSpeakerId: _tatSpeakerId,
-          alldafAuthorId: _alldafAuthorId,
-          allmishnahAuthorId: _allmishnahAuthorId,
-          allparshaAuthorId: _allparshaAuthorId,
-          allhalachaAuthorId: _allhalachaAuthorId,
-          kolhalashonRavId: _kolhalashonRavId,
-          torahdownloadsSpeakerId: _torahdownloadsSpeakerId,
-          ...slim
-        } = f as any;
-        return addDefaultImage({ ...slim, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) }, baseUrl);
+        const withImage = addDefaultImage({ ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) }, baseUrl);
+        return slimFeedForList(withImage);
       });
 
       // Sort by popularity if requested
@@ -382,7 +401,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const featured = await storage.getFeaturedFeeds();
       res.setHeader("Cache-Control", "public, max-age=60");
-      res.json(featured);
+      res.json(featured.map(slimFeedForList));
     } catch (e: any) {
       publicError(res, e);
     }
@@ -401,7 +420,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const mappings = await storage.getAllFeedCategoryMappings();
       const enriched = results.map(f => {
         const catIds = mappings.filter(m => m.feedId === f.id).map(m => m.categoryId);
-        return addDefaultImage({ ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) }, baseUrl);
+        return slimFeedForList(addDefaultImage({ ...f, categoryIds: catIds.length > 0 ? catIds : (f.categoryId ? [f.categoryId] : []) }, baseUrl));
       });
       res.setHeader("Cache-Control", "public, max-age=30");
       res.json(enriched);
@@ -420,7 +439,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const allFeedsMap = new Map<string, any>();
       for (const f of legacyFeeds) allFeedsMap.set(f.id, f);
       for (const f of junctionFeeds) allFeedsMap.set(f.id, f);
-      res.json(Array.from(allFeedsMap.values()).map(f => addDefaultImage(f, baseUrl)));
+      res.json(Array.from(allFeedsMap.values()).map(f => slimFeedForList(addDefaultImage(f, baseUrl))));
     } catch (e: any) {
       publicError(res, e);
     }
@@ -435,7 +454,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const grouped = await storage.getActiveFeedsGroupedByAuthor();
       const enriched = grouped.map((g: any) => ({
         ...g,
-        feeds: g.feeds.map((f: any) => addDefaultImage(f, baseUrl)),
+        feeds: g.feeds.map((f: any) => slimFeedForList(addDefaultImage(f, baseUrl))),
       }));
       res.setHeader("Cache-Control", "public, max-age=60");
       res.json(enriched);
