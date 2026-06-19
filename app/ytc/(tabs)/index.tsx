@@ -33,14 +33,6 @@ import { YtcFocusable } from "@/components/ytc/YtcFocusable";
 
 
 export default function HomeScreen() {
-  // Render marker — set during this component's render, cleared on
-  // commit. Any 33s freeze landing while we're here gets attributed to
-  // "ytc:mount:home" instead of the generic route:/ytc fallback.
-  try { require("@/lib/perf/jank-detector").markJank("ytc:mount:home"); } catch {}
-  React.useEffect(() => {
-    try { require("@/lib/perf/jank-detector").clearJank(); } catch {}
-  }, []);
-
   const { user, isAdmin, signOut } = useYtcAuth();
   const playShiur = useYtcPlay();
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);

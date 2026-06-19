@@ -113,16 +113,6 @@ async function clearAuthCache(emailLower: string): Promise<void> {
 }
 
 export function YtcAuthProvider({ children }: { children: React.ReactNode }) {
-  // Mount marker — if a 30s freeze happens while YTC's React tree is
-  // mounting (provider tree, lazy auth subscribe, etc.) the jank
-  // detector will attribute it to "ytc:mount:auth-provider" instead of
-  // the generic route:/ytc fallback. Marker is set during render and
-  // cleared on commit, so only render-time work shows up here.
-  try { require("@/lib/perf/jank-detector").markJank("ytc:mount:auth-provider"); } catch {}
-  React.useEffect(() => {
-    try { require("@/lib/perf/jank-detector").clearJank(); } catch {}
-  }, []);
-
   const [state, setState] = useState<AuthState>({
     user: null,
     isApproved: false,
