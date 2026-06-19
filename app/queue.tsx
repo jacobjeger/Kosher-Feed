@@ -13,7 +13,7 @@ import { safeGoBack } from "@/lib/safe-back";
 import Colors from "@/constants/colors";
 import { lightHaptic, mediumHaptic } from "@/lib/haptics";
 import type { Feed, Episode } from "@/lib/types";
-import { resizedImageUrl, IMG_HERO } from "@/lib/image-resize";
+import { feedImageSource, IMG_HERO } from "@/lib/image-resize";
 import { reorderQueue } from "@/lib/queue";
 import { useBackHandler } from "@/hooks/useBackHandler";
 
@@ -106,7 +106,7 @@ export default function QueueScreen() {
           <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Now Playing</Text>
           <View style={[styles.nowPlayingCard, { backgroundColor: colors.surfaceAlt }]}>
             {currentFeed.imageUrl ? (
-              <Image source={{ uri: resizedImageUrl(currentFeed.imageUrl, IMG_HERO)! }} style={styles.artwork} contentFit="cover" cachePolicy="memory-disk" recyclingKey={currentFeed.id} transition={180} />
+              <Image source={feedImageSource(currentFeed.imageUrl, IMG_HERO)} style={styles.artwork} contentFit="cover" cachePolicy="memory-disk" recyclingKey={currentFeed.id} transition={180} />
             ) : (
               <View style={[styles.artwork, { backgroundColor: colors.border, alignItems: "center", justifyContent: "center" }]}>
                 <Ionicons name="mic" size={18} color={colors.textSecondary} />
@@ -132,7 +132,7 @@ export default function QueueScreen() {
           <View style={[styles.queueCard, { backgroundColor: colors.surface, borderColor: colors.cardBorder }]}>
             <FocusableView focusRadius={12} onPress={() => handlePlayFromQueue(item.episode, item.feed)} style={styles.queueCardContent}>
               {item.feed.imageUrl ? (
-                <Image source={{ uri: resizedImageUrl(item.feed.imageUrl, IMG_HERO)! }} style={styles.artwork} contentFit="cover" cachePolicy="memory-disk" recyclingKey={item.feed.id} transition={180} />
+                <Image source={feedImageSource(item.feed.imageUrl, IMG_HERO)} style={styles.artwork} contentFit="cover" cachePolicy="memory-disk" recyclingKey={item.feed.id} transition={180} />
               ) : (
                 <View style={[styles.artwork, { backgroundColor: colors.border, alignItems: "center", justifyContent: "center" }]}>
                   <Ionicons name="mic" size={18} color={colors.textSecondary} />

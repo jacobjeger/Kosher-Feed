@@ -6,6 +6,7 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import Slider from "@react-native-community/slider";
 import type { Episode, Feed } from "@/lib/types";
+import { feedImageSource, IMG_HERO } from "@/lib/image-resize";
 
 const RATES = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 
@@ -83,7 +84,7 @@ export default function TinyPlayerLayout(props: Props) {
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
           <BlurView intensity={80} style={StyleSheet.absoluteFill}>
             <Image
-              source={{ uri: feed.imageUrl }}
+              source={feedImageSource(feed.imageUrl, IMG_HERO)}
               style={{ width: "100%", height: "100%", opacity: isDark ? 0.15 : 0.08 }}
               contentFit="cover"
               cachePolicy="memory-disk"
@@ -105,7 +106,7 @@ export default function TinyPlayerLayout(props: Props) {
       <View style={styles.artRow}>
         <View style={[styles.artworkWrap, { backgroundColor: colors.surfaceAlt, shadowColor: isDark ? "#000" : "#333" }]}>
           {feed.imageUrl ? (
-            <Image source={{ uri: feed.imageUrl }} style={styles.artworkImg} contentFit="cover" cachePolicy="memory-disk" recyclingKey={feed.imageUrl} priority="high" transition={180} />
+            <Image source={feedImageSource(feed.imageUrl, IMG_HERO)} style={styles.artworkImg} contentFit="cover" cachePolicy="memory-disk" recyclingKey={feed.imageUrl} priority="high" transition={180} />
           ) : (
             <View style={[styles.artworkImg, { alignItems: "center", justifyContent: "center" }]}>
               <Ionicons name="mic" size={40} color={colors.textSecondary} />

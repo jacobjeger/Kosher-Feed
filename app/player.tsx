@@ -19,6 +19,7 @@ import { useFavorites } from "@/contexts/FavoritesContext";
 import { useDownloads } from "@/contexts/DownloadsContext";
 import OptionPickerModal, { type PickerOption } from "@/components/OptionPickerModal";
 import FocusableView from "@/components/FocusableView";
+import { feedImageSource, IMG_HERO } from "@/lib/image-resize";
 
 function formatTime(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
@@ -77,6 +78,19 @@ export default function PlayerScreen() {
   // not intuitive" complaint). Long-press still cycles backward for
   // power users who liked the gesture.
   const [rateModalVisible, setRateModalVisible] = useState(false);
+
+  // Memoize the resolved artwork source so the 3 Image components (main
+  // artwork + 2 blur background variants) share one reference and don't
+  // each create a fresh {uri:...} literal per render. Crucially, this
+  // also pipes the URL through feedImageSource so the 1400×1400 source
+  // gets resized to IMG_HERO (720px) — Schok F1's player-mount jank in
+  // production logs (68 users) was largely the full-res bitmap decode
+  // happening on the JS thread as the player modal opened. Bundled OU /
+  // KH default logos skip the network entirely (local require).
+  const artworkSource = React.useMemo(
+    () => feedImageSource(currentFeed?.imageUrl, IMG_HERO),
+    [currentFeed?.imageUrl],
+  );
 
   const swipeAnim = useRef(new RNAnimated.Value(0)).current;
 
@@ -337,7 +351,7 @@ export default function PlayerScreen() {
           <View style={styles.artworkGlow}>
             {Platform.OS === "web" ? (
               <Image
-                source={{ uri: currentFeed.imageUrl }}
+                source={artworkSource}
                 style={[styles.artworkGlowImage, { maxWidth: artworkMaxSize * 1.3 }]}
                 contentFit="cover"
                 cachePolicy="memory-disk"
@@ -345,7 +359,7 @@ export default function PlayerScreen() {
             ) : (
               <BlurView intensity={60} style={StyleSheet.absoluteFill}>
                 <Image
-                  source={{ uri: currentFeed.imageUrl }}
+                  source={artworkSource}
                   style={[styles.artworkGlowImage, { maxWidth: artworkMaxSize * 1.3 }]}
                   contentFit="cover"
                   cachePolicy="memory-disk"
@@ -361,7 +375,7 @@ export default function PlayerScreen() {
           {currentFeed.imageUrl ? (
             <View style={[{ borderRadius: 16 }, cardShadow("lg", colors.shadowColor)]}>
               <Image
-                source={{ uri: currentFeed.imageUrl }}
+                source={artworkSource}
                 style={[styles.artwork, { maxWidth: artworkMaxSize }]}
                 contentFit="cover"
                 cachePolicy="memory-disk"
