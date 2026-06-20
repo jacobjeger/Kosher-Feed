@@ -225,6 +225,23 @@ export default function PlayerScreen() {
     await toggleFavorite(currentEpisode.id);
   }, [currentEpisode, toggleFavorite]);
 
+  // Rate picker options — MUST stay above the early-return below.
+  // Yesterday's commit (e7d20f5) added this useMemo lower in the
+  // function, after the `if (!currentEpisode || !currentFeed) return`
+  // guard. When currentEpisode flipped between non-null and null
+  // (stop / next-episode / autoplay-finish), the hook count changed
+  // between renders and React threw "Rendered more/fewer hooks than
+  // expected". ~19 unique users hit this within 8 hours of shipping
+  // (issues 4d9a60601a00333f / 6a973fabbc3fe7b1 / 6e055f2ea771fbab
+  // / 56885c912cba8a62). Keeping the hook above the guard is the fix.
+  const rateModalOptions = React.useMemo((): PickerOption[] => {
+    return RATES.map((r) => ({
+      label: `${r}x${r === 1 ? "  (normal)" : ""}`,
+      onPress: () => { setRate(r); },
+      selected: playback.playbackRate === r,
+    }));
+  }, [playback.playbackRate, setRate]);
+
   if (!currentEpisode || !currentFeed) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
@@ -267,14 +284,6 @@ export default function PlayerScreen() {
     const prevIndex = (currentRateIndex - 1 + RATES.length) % RATES.length;
     await setRate(RATES[prevIndex]);
   };
-
-  const rateModalOptions = React.useMemo((): PickerOption[] => {
-    return RATES.map((r) => ({
-      label: `${r}x${r === 1 ? "  (normal)" : ""}`,
-      onPress: () => { setRate(r); },
-      selected: playback.playbackRate === r,
-    }));
-  }, [playback.playbackRate, setRate]);
 
   const sleepButtonLabel = sleepTimer.active
     ? sleepTimer.mode === "endOfEpisode"
