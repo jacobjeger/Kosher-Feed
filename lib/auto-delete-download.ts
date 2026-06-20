@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 import { Platform } from "react-native";
 import { addLog } from "@/lib/error-logger";
 

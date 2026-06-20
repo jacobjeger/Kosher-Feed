@@ -1,5 +1,5 @@
 import { Platform } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 import type { Episode, Feed } from "@/lib/types";
 import { addLog } from "@/lib/error-logger";
 

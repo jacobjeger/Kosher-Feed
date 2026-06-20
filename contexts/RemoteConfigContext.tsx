@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, type ReactNode } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 import { getApiUrl } from "@/lib/query-client";
 import { setAudioProxyRules } from "@/lib/audio-url";
 import { applyDownloadConfig } from "@/contexts/DownloadsContext";

@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Image } from "expo-image";
 import { useQuery } from "@tanstack/react-query";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import Colors from "@/constants/colors";

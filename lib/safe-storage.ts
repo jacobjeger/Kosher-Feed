@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 
 export async function safeGetJSON<T>(key: string, fallback: T): Promise<T> {
   try {

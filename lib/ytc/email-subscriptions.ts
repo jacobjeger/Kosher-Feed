@@ -33,7 +33,7 @@
 // (admin-curated list), NOT from scanning the shiurim collection. We
 // expose `getShiurOptions()` for the screen to use.
 
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 import { addLog } from "@/lib/error-logger";
 import { getYtcFirebase } from "@/lib/ytc/firebase";
 

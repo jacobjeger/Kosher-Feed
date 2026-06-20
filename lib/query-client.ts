@@ -1,5 +1,5 @@
 import { Platform, AppState } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 import { QueryClient, QueryFunction, focusManager, onlineManager } from "@tanstack/react-query";
 
 // React Native integration for TanStack Query. Without this, focusManager

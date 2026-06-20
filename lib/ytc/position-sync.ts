@@ -20,7 +20,7 @@
 // per shiur so a user who paused on phone-A and then continued on
 // phone-B doesn't lose progress on either device.
 
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 import { addLog } from "@/lib/error-logger";
 import { onPositionsChanged, loadPositions } from "@/contexts/AudioPlayerContext";
 import { getYtcFirebase } from "@/lib/ytc/firebase";

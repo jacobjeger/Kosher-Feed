@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 
 const HISTORY_KEY = "@shiurpod_history";
 const MAX_HISTORY = 50;

@@ -64,9 +64,6 @@
           }
         }
       ],
-      "expo-web-browser",
-      "expo-background-task",
-      "expo-task-manager",
       [
         "expo-notifications",
         {

@@ -12,7 +12,7 @@
 // inside lock() uses dynamic import so that module load only happens
 // when the user actually locks (after a YTC session existed).
 
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 import { Platform } from "react-native";
 import Constants from "expo-constants";
 import { useEffect, useState } from "react";

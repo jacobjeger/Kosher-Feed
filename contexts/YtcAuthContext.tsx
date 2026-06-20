@@ -19,7 +19,7 @@
 //    known truth instead of resetting to false (which used to send
 //    already-verified users to /pending — see issue thread).
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 import type { User } from "firebase/auth";
 import {
   subscribeAuth, checkUserApproval, firebaseSignOutIfInitialized,

@@ -476,7 +476,7 @@ export async function fetchMyAlumniContact(userEmail: string | null | undefined)
 // Long TTLs intentionally — rebbeim and alumni rarely change, so a 24h
 // TTL is fine and gives true offline-after-first-load behavior.
 
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 import { markJank, clearJank } from "@/lib/perf/jank-detector";
 
 const STORAGE_PREFIX = "@ytc_cache:v1:";

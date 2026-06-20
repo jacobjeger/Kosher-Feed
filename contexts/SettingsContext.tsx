@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, type ReactNode } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 import { scheduleDailyReminder, cancelDailyReminder } from "@/lib/notifications";
 import { useRemoteConfig } from "@/contexts/RemoteConfigContext";
 import { setHapticEnabled } from "@/lib/haptics";

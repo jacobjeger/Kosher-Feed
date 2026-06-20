@@ -8,7 +8,7 @@ import { AppState, InteractionManager, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import * as Notifications from "expo-notifications";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { queryClient } from "@/lib/query-client";
 import { AudioPlayerProvider } from "@/contexts/AudioPlayerContext";
@@ -37,6 +37,14 @@ SplashScreen.preventAutoHideAsync();
 // Capture launch time as early as possible — used for the cold_start_ms metric
 // emitted once the splash screen hides (= app reached interactive).
 const APP_LAUNCH_TS = Date.now();
+// Kick off the one-time AsyncStorage→MMKV migration. Fire-and-forget;
+// every kv.* call internally awaits this promise so we don't need a
+// race-free boot order. The migration is ~5-20ms on first launch after
+// the new APK installs; nothing on subsequent launches.
+try {
+  const { initKV } = require("@/lib/kv");
+  initKV().catch(() => {});
+} catch {}
 initErrorLogger();
 setupGlobalErrorHandlers();
 // Replay any native crash captured by withNativeCrashCapture on the previous

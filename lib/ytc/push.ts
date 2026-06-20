@@ -31,7 +31,7 @@
 //      flips true; subscribe calls actually land.
 
 import { Platform } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 import { addLog } from "@/lib/error-logger";
 import { isReactNativeFirebaseAvailable } from "@/lib/ytc/push-availability";
 

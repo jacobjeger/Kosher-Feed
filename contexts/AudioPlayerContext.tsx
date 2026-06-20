@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { Platform, InteractionManager } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 import type { Episode, Feed } from "@/lib/types";
 import { addLog } from "@/lib/error-logger";
 import { playbackMetric, addMetric } from "@/lib/telemetry/metrics";
@@ -547,6 +547,16 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       audioRef.current?.pause();
     } else if (nativePlayerRef.current) {
       nativePlayerRef.current.pause();
+    }
+    // Stop the position-tracking interval while paused — position isn't
+    // changing, so the 1Hz tick is just wasted JS-thread + setState +
+    // notifyPositionListeners work. The mediaSession notification spam
+    // Moshe Greer's session captured (20 enqueues in 80 min) was partly
+    // driven by these idle ticks reaching expo-audio's native state
+    // every second. Restart the interval in resume().
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
     }
     setPlayback(prev => ({ ...prev, isPlaying: false }));
     wasPausedRef.current = true;
@@ -1206,6 +1216,10 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     try {
       await applySmartRewind();
       setPlayback(prev => ({ ...prev, isPlaying: true }));
+      // Restart the 1Hz position-tracking interval that pause() stopped.
+      // Safe to call even if it's already running — startPositionTracking
+      // clears any existing interval before scheduling a new one.
+      startPositionTracking();
       if (Platform.OS === "web") {
         await audioRef.current?.play();
       } else if (nativePlayerRef.current) {
@@ -1245,7 +1259,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       setPlayback(prev => ({ ...prev, isPlaying: false }));
       addLog("error", `Resume failed: ${(e as any)?.message || e}`, (e as any)?.stack, "audio");
     }
-  }, [playEpisodeInternal, applySmartRewind]);
+  }, [playEpisodeInternal, applySmartRewind, startPositionTracking]);
 
   const seekTo = useCallback(async (positionMs: number) => {
     try {

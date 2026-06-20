@@ -4,7 +4,7 @@ import Constants from "expo-constants";
 import { getDeviceId } from "@/lib/device-id";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { addLog } from "@/lib/error-logger";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 
 const PUSH_TOKEN_KEY = "@shiurpod_push_token";
 const PUSH_PROVIDER_KEY = "@shiurpod_push_provider";

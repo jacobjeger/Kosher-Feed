@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 import { getApiUrl } from "@/lib/query-client";
 import { getDeviceId } from "@/lib/device-id";
 

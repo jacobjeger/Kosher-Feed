@@ -9,7 +9,7 @@
 // drain pending on init. Uses the un-wrapped fetch (__origFetch) so emitting
 // telemetry doesn't recurse through the fetch error wrapper.
 
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 import { Platform } from "react-native";
 import { getApiUrl } from "@/lib/query-client";
 

@@ -1,5 +1,5 @@
 import { Platform } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 import * as Crypto from "expo-crypto";
 
 const DEVICE_ID_KEY = "@kosher_podcast_device_id";

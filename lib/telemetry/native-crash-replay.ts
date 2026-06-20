@@ -6,7 +6,7 @@
 // AsyncStorage read for the device id, doesn't depend on the queue.
 
 import { Platform } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 import { getApiUrl } from "@/lib/query-client";
 
 const FILENAME = "last_native_crash.json";

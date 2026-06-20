@@ -15,7 +15,7 @@
 // runs through a different cache. Keeping it scoped here means
 // removing YTC later is one delete + a few callsites.
 
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 import { isOnWifi } from "@/lib/network";
 import { fetchShiurim } from "@/lib/ytc/firebase";
 import { ytcShiurToEpisodeAndFeed, isYtcEpisodeId } from "@/lib/ytc/audio-adapter";

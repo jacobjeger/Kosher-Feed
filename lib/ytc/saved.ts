@@ -12,7 +12,7 @@
 // addLog. On YTC unlock / cold start, we hydrate from Firebase so a
 // user's web-saves land in the app.
 
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 import { addLog } from "@/lib/error-logger";
 import { getYtcFirebase } from "@/lib/ytc/firebase";
 

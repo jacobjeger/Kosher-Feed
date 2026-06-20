@@ -16,7 +16,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Appearance, useColorScheme as useRNColorScheme, StyleSheet } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@/lib/kv";
 import { ytcColors, ytcDarkColors, type YtcColorPalette } from "@/constants/ytcColors";
 
 const STORAGE_KEY = "@ytc_theme:v1";
