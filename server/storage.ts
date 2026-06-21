@@ -2,7 +2,7 @@ import { db } from "./db";
 import { isApiOnlyUrl } from "./alldaf";
 import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals, queueItems, notificationTaps, feedMergeHistory, appConfig, deviceProfiles, conversations, conversationMessages, pageViews, ytcUnlocks } from "@shared/schema";
 import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor, NotificationPreference, Announcement, AnnouncementDismissal, NotificationTap, AppConfig, DeviceProfile, Conversation, ConversationMessage, PageView } from "@shared/schema";
-import { eq, and, desc, asc, inArray, sql, count, ilike } from "drizzle-orm";
+import { eq, and, or, desc, asc, inArray, sql, count, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
 export async function getAllCategories(): Promise<Category[]> {
@@ -738,6 +738,23 @@ export async function getEpisodesByFeed(feedId: string): Promise<Episode[]> {
   return db.select().from(episodes).where(eq(episodes.feedId, feedId)).orderBy(desc(episodes.publishedAt));
 }
 
+// Search predicate shared between paginated listing and count so a "no
+// match in title" episode whose description contains the term still
+// returns from BOTH (otherwise the totalCount would diverge from the
+// page array and pagination would break). User feedback (2026-06-21)
+// flagged that the in-podcast search felt like it was "only searching
+// loaded episodes" — i.e., matches against ANY field beyond title
+// silently failed, so episodes deeper in the feed never surfaced.
+function episodesSearchWhere(feedId: string, q: string) {
+  return and(
+    eq(episodes.feedId, feedId),
+    or(
+      ilike(episodes.title, `%${q}%`),
+      ilike(episodes.description, `%${q}%`),
+    ),
+  );
+}
+
 export async function getEpisodesByFeedPaginated(feedId: string, page: number = 1, pageLimit: number = 50, sort: string = 'newest', search?: string): Promise<Episode[]> {
   const offset = (page - 1) * pageLimit;
   // Deterministic order: real publish date first; fall back to ingestion time
@@ -749,7 +766,7 @@ export async function getEpisodesByFeedPaginated(feedId: string, page: number = 
     : [sql`${episodes.publishedAt} DESC NULLS LAST`, desc(episodes.createdAt), desc(episodes.id)];
   const q = search?.trim();
   const where = q
-    ? and(eq(episodes.feedId, feedId), ilike(episodes.title, `%${q}%`))
+    ? episodesSearchWhere(feedId, q)
     : eq(episodes.feedId, feedId);
   return db.select().from(episodes).where(where).orderBy(...orderClauses).limit(pageLimit).offset(offset);
 }
@@ -757,7 +774,7 @@ export async function getEpisodesByFeedPaginated(feedId: string, page: number = 
 export async function getEpisodeCountByFeed(feedId: string, search?: string): Promise<number> {
   const q = search?.trim();
   const where = q
-    ? and(eq(episodes.feedId, feedId), ilike(episodes.title, `%${q}%`))
+    ? episodesSearchWhere(feedId, q)
     : eq(episodes.feedId, feedId);
   const result = await db.select({ value: count() }).from(episodes).where(where);
   return result[0]?.value || 0;
@@ -1646,7 +1663,19 @@ export async function getFeedListenerCount(feedId: string): Promise<number> {
 }
 
 export async function searchEpisodes(query: string, limit: number = 20): Promise<Episode[]> {
-  return db.select().from(episodes).where(ilike(episodes.title, `%${query}%`)).orderBy(desc(episodes.publishedAt)).limit(limit);
+  // Match either title OR description so users searching by topic
+  // ("daf yomi yevamos", "parsha"-words mentioned in the body, etc.)
+  // get results when the episode title is generic ("Episode 142").
+  // Sort by title-match first so direct-hit matches outrank
+  // description-only matches.
+  const pattern = `%${query}%`;
+  return db.select().from(episodes)
+    .where(or(ilike(episodes.title, pattern), ilike(episodes.description, pattern)))
+    .orderBy(
+      sql`CASE WHEN ${episodes.title} ILIKE ${pattern} THEN 0 ELSE 1 END`,
+      desc(episodes.publishedAt),
+    )
+    .limit(limit);
 }
 
 export async function getNewEpisodesForSubscribedFeeds(deviceId: string, limit: number = 50, since?: Date): Promise<Episode[]> {
