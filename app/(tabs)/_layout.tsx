@@ -260,16 +260,18 @@ export default function TabLayout() {
                 elevation: 0,
                 ...(isWeb
                   ? { height: 56, paddingBottom: 34 }
-                  : {
-                      // Size the bar explicitly. React Navigation's default
-                      // centers the icons in a 49pt row and stacks the full
-                      // home-indicator inset beneath them, which left a big
-                      // empty band under the icons on iOS. Keep a slim
-                      // clearance instead so the icons sit near the bottom.
-                      height: 50 + safeAreaInsets.bottom,
-                      paddingTop: 6,
-                      paddingBottom: Math.max(safeAreaInsets.bottom - 8, 6),
-                    }),
+                  : isIOS
+                    ? {
+                        // iOS only. RN's default centers the icons in a 49pt
+                        // row and stacks the full home-indicator inset beneath
+                        // them, leaving a big empty band under the icons. Size
+                        // the bar explicitly with a slim clearance instead.
+                        // Android keeps its default (works fine) — no regression.
+                        height: 50 + safeAreaInsets.bottom,
+                        paddingTop: 6,
+                        paddingBottom: Math.max(safeAreaInsets.bottom - 8, 6),
+                      }
+                    : {}),
               },
           tabBarBackground: () =>
             isIOS ? (
