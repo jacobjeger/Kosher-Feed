@@ -6,6 +6,7 @@ import { Ionicons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
 import { AppState, InteractionManager, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { SafeAreaProvider, initialWindowMetrics } from "react-native-safe-area-context";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import * as Notifications from "expo-notifications";
 import AsyncStorage from "@/lib/kv";
@@ -378,7 +379,8 @@ export default function RootLayout() {
               <FavoritesProvider>
                 <PlayedEpisodesProvider>
                   <PositionsProvider>
-                    <GestureHandlerRootView>
+                    <SafeAreaProvider initialWindowMetrics={initialWindowMetrics}>
+                    <GestureHandlerRootView style={{ flex: 1 }}>
                       <KeyboardProvider>
                         <BackgroundSync />
                         <OfflineBanner />
@@ -393,6 +395,7 @@ export default function RootLayout() {
                         />
                       </KeyboardProvider>
                     </GestureHandlerRootView>
+                    </SafeAreaProvider>
                   </PositionsProvider>
                 </PlayedEpisodesProvider>
               </FavoritesProvider>
