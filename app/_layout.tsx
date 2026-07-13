@@ -379,7 +379,7 @@ export default function RootLayout() {
               <FavoritesProvider>
                 <PlayedEpisodesProvider>
                   <PositionsProvider>
-                    <SafeAreaProvider initialWindowMetrics={initialWindowMetrics}>
+                    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
                     <GestureHandlerRootView style={{ flex: 1 }}>
                       <KeyboardProvider>
                         <BackgroundSync />

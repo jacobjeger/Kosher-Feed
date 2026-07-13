@@ -49,6 +49,8 @@ interface Props {
   onOpenPodcast: () => void;
   onSkipPrevEpisode?: () => void;
   onSkipNextEpisode?: () => void;
+  /** Tap the speed button → open the SpeedControlModal (fine control). */
+  onRatePress?: () => void;
 }
 
 export default function TinyPlayerLayout(props: Props) {
@@ -58,7 +60,7 @@ export default function TinyPlayerLayout(props: Props) {
     skipForwardSeconds, skipBackwardSeconds, skipBackwardIcon, skipForwardIcon,
     onSleepPress, onBookmarkPress, onFavoritePress, onQueuePress,
     sleepLabel, sleepActive, bookmarkSaved, isFavorited, onOpenPodcast,
-    onSkipPrevEpisode, onSkipNextEpisode,
+    onSkipPrevEpisode, onSkipNextEpisode, onRatePress,
   } = props;
 
   const [isSeeking, setIsSeeking] = useState(false);
@@ -153,7 +155,7 @@ export default function TinyPlayerLayout(props: Props) {
 
       {/* Controls */}
       <View style={styles.controls}>
-        <FocusableView focusRadius={12} onPress={cycleRate} onLongPress={cycleRateBackward} delayLongPress={350} style={[styles.smallBtn, { backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)" }]}>
+        <FocusableView focusRadius={12} onPress={onRatePress ?? cycleRate} onLongPress={cycleRateBackward} delayLongPress={350} style={[styles.smallBtn, { backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)" }]}>
           <Text style={{ fontSize: 12, fontWeight: "700", color: colors.text }}>{playback.playbackRate}x</Text>
         </FocusableView>
         {onSkipPrevEpisode ? (

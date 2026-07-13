@@ -18,6 +18,7 @@ import TinyPlayerLayout from "@/components/TinyPlayerLayout";
 import { useFavorites } from "@/contexts/FavoritesContext";
 import { useDownloads } from "@/contexts/DownloadsContext";
 import OptionPickerModal, { type PickerOption } from "@/components/OptionPickerModal";
+import SpeedControlModal from "@/components/SpeedControlModal";
 import FocusableView from "@/components/FocusableView";
 import { feedImageSource, IMG_HERO } from "@/lib/image-resize";
 
@@ -225,23 +226,6 @@ export default function PlayerScreen() {
     await toggleFavorite(currentEpisode.id);
   }, [currentEpisode, toggleFavorite]);
 
-  // Rate picker options — MUST stay above the early-return below.
-  // Yesterday's commit (e7d20f5) added this useMemo lower in the
-  // function, after the `if (!currentEpisode || !currentFeed) return`
-  // guard. When currentEpisode flipped between non-null and null
-  // (stop / next-episode / autoplay-finish), the hook count changed
-  // between renders and React threw "Rendered more/fewer hooks than
-  // expected". ~19 unique users hit this within 8 hours of shipping
-  // (issues 4d9a60601a00333f / 6a973fabbc3fe7b1 / 6e055f2ea771fbab
-  // / 56885c912cba8a62). Keeping the hook above the guard is the fix.
-  const rateModalOptions = React.useMemo((): PickerOption[] => {
-    return RATES.map((r) => ({
-      label: `${r}x${r === 1 ? "  (normal)" : ""}`,
-      onPress: () => { setRate(r); },
-      selected: playback.playbackRate === r,
-    }));
-  }, [playback.playbackRate, setRate]);
-
   if (!currentEpisode || !currentFeed) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
@@ -270,15 +254,9 @@ export default function PlayerScreen() {
   const progress = position.durationMs > 0 ? (isSeeking ? seekValue : position.positionMs) / position.durationMs : 0;
   const currentRateIndex = RATES.indexOf(playback.playbackRate);
 
-  const cycleRate = async () => {
-    lightHaptic();
-    const nextIndex = (currentRateIndex + 1) % RATES.length;
-    await setRate(RATES[nextIndex]);
-  };
-
-  // Long-press cycles backward — keeps the one-tap cycle gesture for
-  // users who liked it, but adds an escape hatch instead of forcing
-  // them to wrap-around through every rate to slow down.
+  // Tap opens the SpeedControlModal; long-press is a quick "nudge
+  // slower" shortcut that steps backward through the presets without
+  // opening the sheet.
   const cycleRateBackward = async () => {
     lightHaptic();
     const prevIndex = (currentRateIndex - 1 + RATES.length) % RATES.length;
@@ -336,8 +314,15 @@ export default function PlayerScreen() {
           }}
           onSkipPrevEpisode={() => { lightHaptic(); skipToPreviousEpisode(); }}
           onSkipNextEpisode={() => { lightHaptic(); skipToNextEpisode(); }}
+          onRatePress={() => { lightHaptic(); setRateModalVisible(true); }}
         />
         <OptionPickerModal visible={sleepModalVisible} title="Sleep Timer" subtitle={sleepTimer.active ? `Timer active: ${sleepTimer.mode === "endOfEpisode" ? "End of Episode" : formatTimerRemaining(sleepTimer.remainingMs)}` : "Stop playback after:"} options={sleepModalOptions} onClose={() => setSleepModalVisible(false)} />
+        <SpeedControlModal
+          visible={rateModalVisible}
+          rate={playback.playbackRate}
+          onSetRate={setRate}
+          onClose={() => setRateModalVisible(false)}
+        />
       </View>
     );
   }
@@ -713,11 +698,10 @@ export default function PlayerScreen() {
         onClose={() => setSleepModalVisible(false)}
       />
 
-      <OptionPickerModal
+      <SpeedControlModal
         visible={rateModalVisible}
-        title="Playback Speed"
-        subtitle={`Currently ${playback.playbackRate}x`}
-        options={rateModalOptions}
+        rate={playback.playbackRate}
+        onSetRate={setRate}
         onClose={() => setRateModalVisible(false)}
       />
     </ScrollView>
