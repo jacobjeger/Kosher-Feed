@@ -30,9 +30,10 @@ import MiniPlayerHost from "@/components/MiniPlayerHost";
 import { RemoteConfigProvider } from "@/contexts/RemoteConfigContext";
 import { getDeviceId } from "@/lib/device-id";
 import { getApiUrl, apiRequest } from "@/lib/query-client";
-import { checkForUpdate } from "@/lib/updates";
+import { checkForUpdate, applyFirstLaunchUpdate } from "@/lib/updates";
 
 const ONBOARDING_KEY = "@shiurpod_onboarding_complete";
+const FIRST_LAUNCH_UPDATE_KEY = "@shiurpod_first_launch_update_done";
 
 SplashScreen.preventAutoHideAsync();
 // Capture launch time as early as possible — used for the cold_start_ms metric
@@ -195,14 +196,27 @@ export default function RootLayout() {
       setOnboardingChecked(true);
       return;
     }
-    AsyncStorage.getItem(ONBOARDING_KEY).then((value) => {
-      if (value !== "true") {
-        setInitialRoute("onboarding");
-      }
+    (async () => {
+      // First-launch OTA gate: on a brand-new install, fetch + apply the
+      // latest OTA behind the splash so the first real use isn't on the
+      // stale embedded bundle. Runs at most once — the flag is set BEFORE
+      // the reload so it can't loop — and is bounded (10s) so a slow/no
+      // network just launches on the embedded bundle as before.
+      try {
+        const done = await AsyncStorage.getItem(FIRST_LAUNCH_UPDATE_KEY);
+        if (done !== "true") {
+          await AsyncStorage.setItem(FIRST_LAUNCH_UPDATE_KEY, "true").catch(() => {});
+          const reloading = await applyFirstLaunchUpdate(10000);
+          if (reloading) return; // app is restarting into the new bundle
+        }
+      } catch {}
+      // Onboarding route decision (unchanged).
+      try {
+        const value = await AsyncStorage.getItem(ONBOARDING_KEY);
+        if (value !== "true") setInitialRoute("onboarding");
+      } catch {}
       setOnboardingChecked(true);
-    }).catch(() => {
-      setOnboardingChecked(true);
-    });
+    })();
   }, []);
 
   useEffect(() => {
