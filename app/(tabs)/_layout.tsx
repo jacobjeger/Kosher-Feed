@@ -265,11 +265,12 @@ export default function TabLayout() {
                         // iOS only. RN's default centers the icons in a 49pt
                         // row and stacks the full home-indicator inset beneath
                         // them, leaving a big empty band under the icons. Size
-                        // the bar explicitly with a slim clearance instead.
+                        // the bar tight to the bottom with only a slim
+                        // home-indicator clearance (inset − 22, floored at 4).
                         // Android keeps its default (works fine) — no regression.
-                        height: 50 + safeAreaInsets.bottom,
-                        paddingTop: 6,
-                        paddingBottom: Math.max(safeAreaInsets.bottom - 8, 6),
+                        height: 44 + Math.max(safeAreaInsets.bottom - 22, 4),
+                        paddingTop: 4,
+                        paddingBottom: Math.max(safeAreaInsets.bottom - 22, 4),
                       }
                     : {}),
               },
