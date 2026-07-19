@@ -33,6 +33,7 @@ import java.net.UnknownHostException
 import java.net.URL
 import java.net.URLEncoder
 import android.content.pm.PackageManager
+import android.provider.Settings
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import java.io.ByteArrayOutputStream
@@ -58,6 +59,10 @@ class ShiurPodAutoService : MediaLibraryService() {
   private val RECENTLY_PLAYED_TTL_MS = 60 * 1000L // 1 min for recently played
   private val PLACEHOLDER_TIMEOUT_MS = 30_000L
   private lateinit var apiBaseUrl: String
+  // Resolved in onCreate — stamped onto every crash-dashboard report so
+  // Android Auto errors are attributable by version/device.
+  private var appVersion: String = "unknown"
+  private var autoDeviceId: String = "auto-unknown"
   private lateinit var defaultArtworkUri: android.net.Uri
   private val mainHandler = Handler(Looper.getMainLooper())
   private var placeholderTimeoutRunnable: Runnable? = null
@@ -97,6 +102,13 @@ class ShiurPodAutoService : MediaLibraryService() {
       Log.w(TAG, "Failed to read API URL from manifest, using default", e)
       DEFAULT_API_BASE_URL
     }
+    appVersion = try {
+      packageManager.getPackageInfo(packageName, 0).versionName ?: "unknown"
+    } catch (e: Exception) { "unknown" }
+    autoDeviceId = try {
+      Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "auto-unknown"
+    } catch (e: Exception) { "auto-unknown" }
+    Log.i(TAG, "onCreate: Android Auto library service starting, apiBaseUrl=$apiBaseUrl v=$appVersion")
 
     // Default artwork: use hosted ShiurPod logo
     defaultArtworkUri = android.net.Uri.parse("$apiBaseUrl/api/images/icon.png")
@@ -167,6 +179,54 @@ class ShiurPodAutoService : MediaLibraryService() {
     }
   }
 
+  /**
+   * Report an Android Auto error to the crash dashboard
+   * (/api/v1/ingest/events). The Auto service runs without the RN JS
+   * context, so it can't use the JS error-logger — it POSTs directly.
+   * Fire-and-forget on the io pool; failures are logged, never thrown.
+   * Everything is tagged source="android-auto" / metadata.component so
+   * these are easy to filter in shiurctl.
+   */
+  private fun reportError(
+    message: String,
+    severity: String,
+    metadata: Map<String, Any?>? = null,
+  ) {
+    ioExecutor.execute {
+      var conn: HttpURLConnection? = null
+      try {
+        val md = JSONObject().apply {
+          put("component", "android-auto")
+          metadata?.forEach { (k, v) -> put(k, v ?: JSONObject.NULL) }
+        }
+        val ev = JSONObject().apply {
+          put("message", message.take(2000))
+          put("source", "android-auto")
+          put("severity", severity)
+          put("platform", "android")
+          put("appVersion", appVersion)
+          put("deviceId", autoDeviceId)
+          put("metadata", md)
+        }
+        val body = JSONObject().put("events", JSONArray().put(ev)).toString()
+        conn = (URL("$apiBaseUrl/api/v1/ingest/events").openConnection() as HttpURLConnection).apply {
+          connectTimeout = 8000
+          readTimeout = 8000
+          requestMethod = "POST"
+          doOutput = true
+          setRequestProperty("Content-Type", "application/json")
+        }
+        conn.outputStream.use { it.write(body.toByteArray()) }
+        val code = conn.responseCode
+        if (code !in 200..299) Log.w(TAG, "reportError ingest HTTP $code")
+      } catch (e: Exception) {
+        Log.w(TAG, "reportError failed: ${e.message}")
+      } finally {
+        conn?.disconnect()
+      }
+    }
+  }
+
   private fun fetchJson(urlString: String): String? {
     var conn: HttpURLConnection? = null
     return try {
@@ -184,19 +244,25 @@ class ShiurPodAutoService : MediaLibraryService() {
         response
       } else {
         Log.w(TAG, "HTTP ${conn.responseCode} fetching $urlString")
+        reportError("Android Auto fetch failed: HTTP ${conn.responseCode}", "warn",
+          mapOf("url" to urlString, "httpStatus" to conn.responseCode))
         null
       }
     } catch (e: SocketTimeoutException) {
       Log.w(TAG, "Timeout fetching $urlString", e)
+      reportError("Android Auto fetch timeout (8s)", "warn", mapOf("url" to urlString))
       null
     } catch (e: UnknownHostException) {
       Log.w(TAG, "No network fetching $urlString", e)
+      reportError("Android Auto fetch failed: no network / unknown host", "warn", mapOf("url" to urlString))
       null
     } catch (e: IOException) {
       Log.w(TAG, "IO error fetching $urlString", e)
+      reportError("Android Auto fetch IO error: ${e.message}", "warn", mapOf("url" to urlString))
       null
     } catch (e: Exception) {
       Log.e(TAG, "Unexpected error fetching $urlString", e)
+      reportError("Android Auto fetch unexpected error: ${e.message}", "nonfatal", mapOf("url" to urlString))
       null
     } finally {
       conn?.disconnect()
@@ -721,6 +787,7 @@ class ShiurPodAutoService : MediaLibraryService() {
       browser: MediaSession.ControllerInfo,
       params: LibraryParams?
     ): ListenableFuture<LibraryResult<MediaItem>> {
+      Log.i(TAG, "onGetLibraryRoot: connected by ${browser.packageName} (uid=${browser.uid})")
       val rootExtras = Bundle().apply {
         putBoolean(CONTENT_STYLE_SUPPORTED, true)
         putInt(CONTENT_STYLE_BROWSABLE_HINT, CONTENT_STYLE_GRID_ITEM_HINT_VALUE)
@@ -753,6 +820,7 @@ class ShiurPodAutoService : MediaLibraryService() {
       pageSize: Int,
       params: LibraryParams?
     ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+      Log.i(TAG, "onGetChildren: parentId=$parentId page=$page pageSize=$pageSize")
       val future = SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
       ioExecutor.execute {
         try {
@@ -760,6 +828,7 @@ class ShiurPodAutoService : MediaLibraryService() {
           if (isCacheValid(parentId)) {
             val cached = cachedTree[parentId]
             if (cached != null) {
+              Log.i(TAG, "onGetChildren: parentId=$parentId served ${cached.size} items from cache")
               future.set(LibraryResult.ofItemList(ImmutableList.copyOf(cached), params))
               return@execute
             }
@@ -786,10 +855,13 @@ class ShiurPodAutoService : MediaLibraryService() {
             }
           }
 
+          Log.i(TAG, "onGetChildren: parentId=$parentId fetched ${children.size} items")
           cacheItems(parentId, children)
           future.set(LibraryResult.ofItemList(ImmutableList.copyOf(children), params))
         } catch (e: Exception) {
           Log.e(TAG, "Error getting children for $parentId", e)
+          reportError("Android Auto onGetChildren failed for $parentId: ${e.message}", "nonfatal",
+            mapOf("parentId" to parentId, "exception" to (e.javaClass.simpleName)))
           val errorCode = when (e) {
             is SocketTimeoutException -> LibraryResult.RESULT_ERROR_IO
             is UnknownHostException -> LibraryResult.RESULT_ERROR_IO
