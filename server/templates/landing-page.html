@@ -1180,6 +1180,9 @@
         } else if (isIOS) {
           var playBtn = document.getElementById("play-store-btn");
           if (playBtn) playBtn.style.display = "none";
+          // iOS can't install Android APKs — hide the APK button there.
+          var apkBtn = document.getElementById("apk-download");
+          if (apkBtn) apkBtn.style.display = "none";
         }
 
         fetch("/api/public-stats").then(function(r) { return r.json(); }).then(function(data) {
@@ -1191,8 +1194,9 @@
           }
         }).catch(function() {});
 
-        // APK button is always visible; the endpoint itself returns 404 if
-        // no APK is uploaded, which users rarely hit in production.
+        // APK button shows on Android/desktop (hidden on iOS above); the
+        // endpoint itself returns 404 if no APK is uploaded, which users
+        // rarely hit in production.
 
         // Sticky nav on scroll
         var stickyNav = document.getElementById("sticky-nav");
