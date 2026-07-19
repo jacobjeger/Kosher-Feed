@@ -161,6 +161,7 @@ export function playbackMetric(kind:
   | "playback_underrun"
   | "playback_retry"
   | "playback_error"
+  | "playback_stuck"
   | "playback_seek_ms",
   episodeId: string | null,
   feedId: string | null,

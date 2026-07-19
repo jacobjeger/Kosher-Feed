@@ -901,6 +901,18 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           let lastSeenPosition = 0;
           let positionSeenAt = Date.now();
 
+          // Startup diagnostics for the playback_stuck metric: capture what
+          // the player was actually doing if this attempt never confirms.
+          // statusUpdates=0 → player/URL never initialized; sawBuffering &&
+          // lastCurrentTime===0 → stuck buffering (slow host / no range
+          // support); sawPlaying without progress → HAL reported playing but
+          // no audio. Bucketed by audioHost + networkType server-side.
+          let statusUpdateCount = 0;
+          let sawBuffering = false;
+          let sawPlayingFlag = false;
+          let lastCurrentTime = 0;
+          let lastIsBuffering: boolean | null = null;
+
           return new Promise<boolean>((resolve) => {
             const confirmPlaying = (reason: string) => {
               if (hasConfirmedPlaying) return;
@@ -922,6 +934,13 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
 
             statusSubRef.current = player.addListener("playbackStatusUpdate", (status: any) => {
               if (nativePlayerRef.current !== player) return;
+
+              // Startup diagnostics (see playback_stuck below).
+              statusUpdateCount++;
+              if (status.isBuffering === true) sawBuffering = true;
+              if (status.playing === true) sawPlayingFlag = true;
+              if (typeof status.currentTime === "number") lastCurrentTime = status.currentTime;
+              if (typeof status.isBuffering === "boolean") lastIsBuffering = status.isBuffering;
 
               // Stall detection: after confirmation, a buffering tick means
               // the user is hearing audio drop out — the "choppy/glitchy"
@@ -1022,6 +1041,21 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
               if (!resolved && !hasConfirmedPlaying) {
                 resolved = true;
                 addLog("warn", `Playback not confirmed after ${confirmTimeoutMs}ms (attempt ${attempt}/${maxAttempts})`, undefined, "audio");
+                // Startup diagnostics: what was the player doing when it gave
+                // up? Lets us split real stalls (stuck buffering / dead URL)
+                // from HAL false-negatives, bucketed by audioHost + network.
+                let audioHost = "unknown";
+                try { audioHost = new URL(episode.audioUrl).host; } catch {}
+                playbackMetric("playback_stuck", episode.id, feed.id, episode.audioUrl, confirmTimeoutMs, {
+                  attempt,
+                  statusUpdates: statusUpdateCount,
+                  sawBuffering,
+                  sawPlaying: sawPlayingFlag,
+                  lastCurrentTime: Math.round(lastCurrentTime * 1000),
+                  lastIsBuffering,
+                  audioHost,
+                });
+                addBreadcrumb("playback", `stuck: updates=${statusUpdateCount} buffering=${sawBuffering} playing=${sawPlayingFlag} ct=${lastCurrentTime.toFixed(1)}s host=${audioHost}`);
                 // Remove the status listener now so it can't fire after the
                 // player is torn down and trick the next attempt's state.
                 try { statusSubRef.current?.remove?.(); } catch {}
