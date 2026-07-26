@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { View, Text, Pressable, StyleSheet, Platform, Alert, ScrollView, PanResponder, Animated as RNAnimated, Dimensions, ActivityIndicator } from "react-native";
+import { View, Text, Pressable, StyleSheet, Platform, Alert, ScrollView, PanResponder, Animated as RNAnimated, Dimensions, ActivityIndicator, Share } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
@@ -224,6 +224,28 @@ export default function PlayerScreen() {
     lightHaptic();
     await toggleFavorite(currentEpisode.id);
   }, [currentEpisode, toggleFavorite]);
+
+  // Share the episode's canonical web URL — a universal link that opens the
+  // app to this episode if installed (once associatedDomains ships in a
+  // native build), else the web episode page. URL scheme MUST match the
+  // server's episode route: /{speakerSlug}/{titleSlug}-{episodeId}.
+  const handleShare = useCallback(async () => {
+    if (!currentEpisode || !currentFeed) return;
+    const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const author = currentFeed.author || "";
+    const speakerSlug = author ? slugify(author) : "";
+    const url = speakerSlug
+      ? `https://shiurpod.com/${speakerSlug}/${slugify(currentEpisode.title)}-${currentEpisode.id}`
+      : `https://shiurpod.com/webapp/player?e=${currentEpisode.id}`;
+    lightHaptic();
+    try {
+      await Share.share({
+        title: currentEpisode.title,
+        message: `${currentEpisode.title}${author ? ` — ${author}` : ""}\n${url}`,
+        url,
+      });
+    } catch { /* user cancelled */ }
+  }, [currentEpisode, currentFeed]);
 
   if (!currentEpisode || !currentFeed) {
     return (
@@ -657,6 +679,14 @@ export default function PlayerScreen() {
           style={[styles.secondaryBtn, { backgroundColor: colors.surfaceAlt }]}
         >
           <Ionicons name="list" size={18} color={colors.textSecondary} />
+        </FocusableView>
+
+        <FocusableView
+          focusRadius={10}
+          onPress={handleShare}
+          style={[styles.secondaryBtn, { backgroundColor: colors.surfaceAlt }]}
+        >
+          <Ionicons name={Platform.OS === "ios" ? "share-outline" : "share-social-outline"} size={18} color={colors.textSecondary} />
         </FocusableView>
       </View>
 
