@@ -10,7 +10,6 @@
 // down to ~0.4MB — a ~20× reduction that eliminates the mid-scroll GC
 // spike measured on the Schok F1 (2026-06-18 frame trace).
 
-import { Platform } from "react-native";
 import { getApiUrl } from "@/lib/query-client";
 
 // Standard widths the app uses. Pick the closest *2 to the display size for
@@ -34,12 +33,15 @@ const PASSTHROUGH = (url: string) =>
  * unchanged for local URIs (data:/file:/blob:), our own static assets,
  * or URLs already going through a resizer.
  *
- * Web platforms intentionally bypass the proxy — browsers handle decoded
- * bitmap caching themselves and we'd just be adding a hop.
+ * Web goes through the proxy too: many podcast covers are served over
+ * http:// or with hotlink protection, and on the https webapp the raw
+ * URL is blocked as mixed content / fails to load (the "album art not
+ * showing on web" bug). The proxy re-serves them over https from our
+ * origin (Cloudflare-cached), which fixes it — the extra hop is cached
+ * at the edge.
  */
 export function resizedImageUrl(url: string | null | undefined, width: number): string | null {
   if (!url) return null;
-  if (Platform.OS === "web") return url;
   if (PASSTHROUGH(url)) return url;
   const base = getApiUrl();
   return `${base}/api/images/resize?url=${encodeURIComponent(url)}&w=${width}&f=webp`;

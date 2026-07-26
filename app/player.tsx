@@ -351,10 +351,10 @@ export default function PlayerScreen() {
               pointerEvents="none"
               style={{
                 position: "absolute",
-                width: artworkMaxSize * 1.4,
-                height: artworkMaxSize * 1.4,
-                top: -artworkMaxSize * 0.2,
-                left: -artworkMaxSize * 0.2,
+                width: artworkMaxSize * 1.15,
+                height: artworkMaxSize * 1.15,
+                top: -artworkMaxSize * 0.075,
+                left: -artworkMaxSize * 0.075,
               }}
             >
               <Image
@@ -363,12 +363,12 @@ export default function PlayerScreen() {
                   width: "100%",
                   height: "100%",
                   borderRadius: 28,
-                  opacity: 0.35,
-                  ...(Platform.OS === "web" ? ({ filter: "blur(40px)" } as any) : {}),
+                  opacity: 0.4,
+                  ...(Platform.OS === "web" ? ({ filter: "blur(24px)" } as any) : {}),
                 }}
                 contentFit="cover"
                 cachePolicy="memory-disk"
-                blurRadius={Platform.OS === "web" ? 0 : 60}
+                blurRadius={Platform.OS === "web" ? 0 : 24}
               />
             </View>
           )}
@@ -747,11 +747,15 @@ const styles = StyleSheet.create({
   artworkContainer: {
     alignItems: "center",
     paddingHorizontal: 40,
-    paddingVertical: 8,
+    // Generous vertical room so (a) the blurred glow halo has space to
+    // breathe without bleeding into "NOW PLAYING" or the title, and
+    // (b) the player uses its vertical space instead of pooling dead
+    // space at the bottom.
+    paddingVertical: 44,
     justifyContent: "center",
   },
   artworkContainerSmall: {
-    paddingVertical: 4,
+    paddingVertical: 20,
     paddingHorizontal: 60,
   },
   artworkGlow: {

@@ -5,6 +5,7 @@ import Animated, { FadeInDown, FadeOutDown, useAnimatedStyle, useSharedValue, wi
 import { LinearGradient } from "expo-linear-gradient";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
+import { feedImageSource, IMG_CARD } from "@/lib/image-resize";
 import { Ionicons } from "@expo/vector-icons";
 import { useAudioPlayer, usePlaybackPosition } from "@/contexts/AudioPlayerContext";
 import { router, usePathname } from "expo-router";
@@ -107,7 +108,7 @@ function MiniPlayer() {
         <View style={styles.content}>
           {currentFeed?.imageUrl ? (
             <Image
-              source={{ uri: currentFeed.imageUrl }}
+              source={feedImageSource(currentFeed.imageUrl, IMG_CARD)}
               style={styles.artwork}
               contentFit="cover"
               cachePolicy="memory-disk"
