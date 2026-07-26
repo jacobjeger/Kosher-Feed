@@ -285,6 +285,7 @@ async function serveLandingPage({
     .replace(/APP_NAME_PLACEHOLDER/g, appName);
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache");
   res.status(200).send(html);
 }
 
@@ -346,6 +347,11 @@ function configureExpoAndLanding(app: express.Application) {
     for (const p of [webappIndexPath, staticIndexPath]) {
       if (fs.existsSync(p)) {
         res.setHeader("Content-Type", "text/html; charset=utf-8");
+        // Always revalidate index.html so a new web deploy (new hashed bundle)
+        // is picked up immediately instead of Safari serving a stale shell
+        // that references an old/crashing bundle. The bundle files themselves
+        // are content-hashed, so they stay cacheable.
+        res.setHeader("Cache-Control", "no-cache");
         res.send(fs.readFileSync(p, "utf-8"));
         return true;
       }
