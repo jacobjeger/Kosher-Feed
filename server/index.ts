@@ -36,7 +36,9 @@ function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
-function renderSeoPage(opts: { title: string; description: string; canonicalUrl: string; baseUrl: string; heading: string; subheading: string; contentHtml: string; jsonLd: string }): string {
+function renderSeoPage(opts: { title: string; description: string; canonicalUrl: string; baseUrl: string; heading: string; subheading: string; contentHtml: string; jsonLd: string; imageUrl?: string | null; ogType?: string }): string {
+  const ogImage = opts.imageUrl || `${opts.baseUrl}/assets/images/icon.png`;
+  const ogType = opts.ogType || "website";
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -48,11 +50,12 @@ function renderSeoPage(opts: { title: string; description: string; canonicalUrl:
   <meta property="og:title" content="${escHtml(opts.title)}">
   <meta property="og:description" content="${escHtml(opts.description)}">
   <meta property="og:url" content="${escHtml(opts.canonicalUrl)}">
-  <meta property="og:type" content="website">
-  <meta property="og:image" content="${escHtml(opts.baseUrl)}/assets/images/icon.png">
-  <meta name="twitter:card" content="summary">
+  <meta property="og:type" content="${escHtml(ogType)}">
+  <meta property="og:image" content="${escHtml(ogImage)}">
+  <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="${escHtml(opts.title)}">
   <meta name="twitter:description" content="${escHtml(opts.description)}">
+  <meta name="twitter:image" content="${escHtml(ogImage)}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
   <script type="application/ld+json">${opts.jsonLd}</script>
@@ -480,50 +483,9 @@ function configureExpoAndLanding(app: express.Application) {
     }
   });
 
-  // SEO: Speaker landing pages
-  app.get("/speaker/:author", async (req: Request, res: Response) => {
-    try {
-      const authorSlug = decodeURIComponent(req.params.author);
-      const allFeeds = await storage.getActiveFeeds();
-      const feeds = allFeeds.filter(f => f.author && slugify(f.author) === authorSlug);
-      if (feeds.length === 0) return res.status(404).send("Speaker not found");
-
-      const authorName = feeds[0].author!;
-      const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
-      const host = req.header("x-forwarded-host") || req.get("host");
-      const baseUrl = `${protocol}://${host}`;
-      const canonicalUrl = `${baseUrl}/speaker/${authorSlug}`;
-
-      const feedListHtml = feeds.map(f =>
-        `<li class="feed-card"><a href="${baseUrl}">${escHtml(f.title)}</a>${f.description ? `<p>${escHtml(f.description.substring(0, 200))}</p>` : ""}</li>`
-      ).join("");
-
-      const jsonLd = JSON.stringify({
-        "@context": "https://schema.org",
-        "@type": "ProfilePage",
-        name: `${authorName} - Torah Shiurim`,
-        description: `Listen to Torah lectures by ${authorName} on ShiurPod.`,
-        url: canonicalUrl,
-        mainEntity: {
-          "@type": "Person",
-          name: authorName,
-        },
-      });
-
-      res.setHeader("Cache-Control", "public, max-age=3600");
-      res.send(renderSeoPage({
-        title: `${authorName} - Torah Shiurim | ShiurPod`,
-        description: `Listen to ${feeds.length} Torah shiurim by ${authorName}. Stream online or download for offline learning on ShiurPod.`,
-        canonicalUrl,
-        baseUrl,
-        heading: authorName,
-        subheading: `${feeds.length} shiurim available`,
-        contentHtml: `<ul class="feed-list">${feedListHtml}</ul>`,
-        jsonLd,
-      }));
-    } catch (e: any) {
-      res.status(500).send("Server error");
-    }
+  // SEO: legacy /speaker/{slug} → 301 to the pretty top-level /{slug}.
+  app.get("/speaker/:author", (req: Request, res: Response) => {
+    res.redirect(301, "/" + req.params.author);
   });
 
   // SEO: Sitemap
@@ -534,15 +496,16 @@ function configureExpoAndLanding(app: express.Application) {
       const baseUrl = `${protocol}://${host}`;
       const cats = await storage.getAllCategories();
       const allFeeds = await storage.getActiveFeeds();
-      const authors = [...new Set(allFeeds.filter(f => f.author).map(f => f.author!))];
+      // Dedupe speaker slugs so each pretty URL appears once (collisions).
+      const speakerSlugs = [...new Set(allFeeds.filter(f => f.author).map(f => slugify(f.author!)).filter(Boolean))];
 
       let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
       xml += `  <url><loc>${baseUrl}/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>\n`;
       for (const cat of cats) {
         xml += `  <url><loc>${baseUrl}/category/${cat.slug}</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>\n`;
       }
-      for (const author of authors) {
-        xml += `  <url><loc>${baseUrl}/speaker/${slugify(author)}</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>\n`;
+      for (const slug of speakerSlugs) {
+        xml += `  <url><loc>${baseUrl}/${slug}</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>\n`;
       }
       xml += `</urlset>`;
 
@@ -614,6 +577,134 @@ function configureExpoAndLanding(app: express.Application) {
     return proxyToExpo(req, res);
   });
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
+
+  // ── SEO: rich top-level speaker + episode pages ──────────────────────
+  //   /{slug}                       → speaker page
+  //   /{slug}/{title-slug}-{uuid}   → episode page
+  // Registered after static-file serving + all explicit routes, before the
+  // SPA fallback: real files win, reserved paths + unknown slugs fall
+  // through (next()). The ".includes('.')" guard rejects asset requests.
+  const SEO_RESERVED = new Set(["app", "api", "webapp", "admin", "privacy", "terms", "support", "category", "speaker", "sitemap.xml", "robots.txt", "favicon.ico", "favicon.png", "apple-touch-icon.png", "apple-touch-icon-precomposed.png", "assets", "_expo", "node_modules", "share", "manifest", "podcast", "maggid-shiur", "player", "queue", "storage", "stats", "debug-logs", "legal", "onboarding", "settings", "(tabs)"]);
+  const UUID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+  const seoBaseUrl = (req: Request) => {
+    const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
+    const host = req.header("x-forwarded-host") || req.get("host");
+    return `${protocol}://${host}`;
+  };
+  const stripHtml = (s: string) => s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const episodeUrl = (baseUrl: string, slug: string, ep: { id: string; title: string }) =>
+    `${baseUrl}/${slug}/${slugify(ep.title)}-${ep.id}`;
+  // 60s in-memory cache of the grouped-speakers list so unknown-slug
+  // requests (bots hitting random paths) don't each hit the DB.
+  let _groupsCache: { at: number; data: Awaited<ReturnType<typeof storage.getActiveFeedsGroupedByAuthor>> } | null = null;
+  const getGroupsCached = async () => {
+    if (_groupsCache && Date.now() - _groupsCache.at < 60_000) return _groupsCache.data;
+    const data = await storage.getActiveFeedsGroupedByAuthor();
+    _groupsCache = { at: Date.now(), data };
+    return data;
+  };
+  // Resolve a speaker slug → its feed group. Collision (two authors → same
+  // slug) resolves to the group with the most feeds (deterministic).
+  const resolveSpeakerGroup = async (slug: string) => {
+    const groups = await getGroupsCached();
+    let best: (typeof groups)[number] | null = null;
+    for (const g of groups) {
+      if (!g.author || slugify(g.author) !== slug) continue;
+      if (!best || (g.feeds?.length || 0) > (best.feeds?.length || 0)) best = g;
+    }
+    return best;
+  };
+
+  // Episode page (2-segment) — registered before the 1-segment speaker route.
+  app.get("/:speakerSlug/:episodeSlug", async (req: Request, res: Response, next: NextFunction) => {
+    const speakerSlug = String(req.params.speakerSlug);
+    const episodeSlug = String(req.params.episodeSlug);
+    if (speakerSlug.includes(".") || SEO_RESERVED.has(speakerSlug)) return next();
+    const m = episodeSlug.match(UUID_RE);
+    if (!m) return next();
+    try {
+      const ep = await storage.getEpisodeById(m[1]);
+      if (!ep) return next();
+      const group = await resolveSpeakerGroup(speakerSlug);
+      const feed = group?.feeds.find(f => f.id === ep.feedId);
+      const baseUrl = seoBaseUrl(req);
+      const speakerName = group?.author || feed?.author || "ShiurPod";
+      const canonicalUrl = episodeUrl(baseUrl, speakerSlug, ep);
+      const img = ep.imageUrl || feed?.imageUrl || group?.imageUrl || null;
+      const descRaw = ep.description ? stripHtml(ep.description) : `Listen to "${ep.title}" by ${speakerName} on ShiurPod.`;
+      const desc = descRaw.substring(0, 300);
+      const dateStr = ep.publishedAt ? new Date(ep.publishedAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "";
+      const appLink = `${baseUrl}/webapp/player?e=${encodeURIComponent(ep.id)}`;
+      const jsonLd = JSON.stringify({
+        "@context": "https://schema.org", "@type": "PodcastEpisode",
+        name: ep.title, url: canonicalUrl,
+        ...(ep.publishedAt ? { datePublished: new Date(ep.publishedAt).toISOString() } : {}),
+        description: desc,
+        ...(img ? { image: img } : {}),
+        partOfSeries: { "@type": "PodcastSeries", name: `${speakerName} Shiurim`, url: `${baseUrl}/${speakerSlug}` },
+        associatedMedia: { "@type": "AudioObject", contentUrl: ep.audioUrl },
+      });
+      const content =
+        (img ? `<div style="text-align:center;margin-bottom:20px"><img src="${escHtml(img)}" alt="${escHtml(ep.title)}" style="width:220px;height:220px;border-radius:16px;object-fit:cover"></div>` : "") +
+        (group ? `<p style="text-align:center;margin-bottom:8px"><a href="${escHtml(`${baseUrl}/${speakerSlug}`)}" style="color:#3b82f6;text-decoration:none;font-weight:600">${escHtml(speakerName)}</a></p>` : "") +
+        (dateStr ? `<p style="text-align:center;color:#64748b;font-size:13px;margin-bottom:16px">${escHtml(dateStr)}${ep.duration ? ` &middot; ${escHtml(ep.duration)}` : ""}</p>` : "") +
+        `<audio controls preload="none" src="${escHtml(ep.audioUrl)}" style="width:100%;max-width:640px;display:block;margin:0 auto 24px"></audio>` +
+        `<div style="text-align:center;margin-bottom:28px"><a class="nav-cta" href="${escHtml(appLink)}">Open in app</a></div>` +
+        (ep.description ? `<div style="color:#94a3b8;max-width:640px;margin:0 auto;line-height:1.7">${escHtml(stripHtml(ep.description).substring(0, 1500))}</div>` : "");
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      res.send(renderSeoPage({
+        title: `${ep.title} - ${speakerName} | ShiurPod`,
+        description: desc.substring(0, 160), canonicalUrl, baseUrl,
+        heading: ep.title, subheading: speakerName,
+        contentHtml: content, jsonLd, imageUrl: img, ogType: "music.song",
+      }));
+    } catch { return next(); }
+  });
+
+  // Speaker page (1-segment).
+  app.get("/:speakerSlug", async (req: Request, res: Response, next: NextFunction) => {
+    const slug = String(req.params.speakerSlug);
+    if (slug.includes(".") || SEO_RESERVED.has(slug)) return next();
+    try {
+      const group = await resolveSpeakerGroup(slug);
+      if (!group) return next();
+      const baseUrl = seoBaseUrl(req);
+      const name = group.author;
+      const canonicalUrl = `${baseUrl}/${slug}`;
+      const img = group.imageUrl || group.feeds.find(f => f.imageUrl)?.imageUrl || null;
+      const bio = (group.bio && stripHtml(group.bio)) || `Listen to Torah shiurim by ${name} on ShiurPod. Stream online or download for offline learning.`;
+      const feedIds = group.feeds.map(f => f.id).join(",");
+      const appLink = `${baseUrl}/webapp/maggid-shiur/${encodeURIComponent(name)}?feedIds=${encodeURIComponent(feedIds)}`;
+      const epLists = await Promise.all(group.feeds.slice(0, 6).map(f =>
+        storage.getEpisodesByFeedPaginated(f.id, 1, 10, "newest").catch(() => [])
+      ));
+      const episodes = epLists.flat()
+        .sort((a, b) => (b.publishedAt ? new Date(b.publishedAt).getTime() : 0) - (a.publishedAt ? new Date(a.publishedAt).getTime() : 0))
+        .slice(0, 25);
+      const epHtml = episodes.map(e => {
+        const date = e.publishedAt ? new Date(e.publishedAt).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "";
+        return `<li class="feed-card"><a href="${escHtml(episodeUrl(baseUrl, slug, e))}">${escHtml(e.title)}</a>${date ? `<span class="feed-author">${escHtml(date)}</span>` : ""}</li>`;
+      }).join("");
+      const showsHtml = group.feeds.map(f => `<li class="feed-card"><a href="${escHtml(appLink)}">${escHtml(f.title)}</a>${f.description ? `<p>${escHtml(stripHtml(f.description).substring(0, 160))}</p>` : ""}</li>`).join("");
+      const jsonLd = JSON.stringify([
+        { "@context": "https://schema.org", "@type": "ProfilePage", name: `${name} - Torah Shiurim`, url: canonicalUrl, mainEntity: { "@type": "Person", name, ...(img ? { image: img } : {}), description: bio } },
+        { "@context": "https://schema.org", "@type": "ItemList", itemListElement: episodes.map((e, i) => ({ "@type": "ListItem", position: i + 1, name: e.title, url: episodeUrl(baseUrl, slug, e) })) },
+      ]);
+      const content =
+        (img ? `<div style="text-align:center;margin-bottom:20px"><img src="${escHtml(img)}" alt="${escHtml(name)}" style="width:180px;height:180px;border-radius:16px;object-fit:cover"></div>` : "") +
+        `<p style="color:#94a3b8;max-width:640px;margin:0 auto 20px;text-align:center;line-height:1.6">${escHtml(bio)}</p>` +
+        `<div style="text-align:center;margin-bottom:32px"><a class="nav-cta" href="${escHtml(appLink)}">Open in app</a></div>` +
+        (epHtml ? `<h2 style="font-size:20px;margin:24px 0 12px">Recent shiurim</h2><ul class="feed-list">${epHtml}</ul>` : "") +
+        `<h2 style="font-size:20px;margin:32px 0 12px">Shows</h2><ul class="feed-list">${showsHtml}</ul>`;
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      res.send(renderSeoPage({
+        title: `${name} - Torah Shiurim & Lectures | ShiurPod`,
+        description: bio.substring(0, 160), canonicalUrl, baseUrl,
+        heading: name, subheading: `${group.feeds.length} show${group.feeds.length > 1 ? "s" : ""}${episodes.length ? ` &middot; ${episodes.length} recent shiurim` : ""}`,
+        contentHtml: content, jsonLd, imageUrl: img, ogType: "profile",
+      }));
+    } catch { return next(); }
+  });
 
   const clientRoutes = ["/podcast", "/maggid-shiur", "/player", "/queue", "/storage", "/stats", "/debug-logs", "/legal", "/onboarding", "/settings"];
   app.use((req: Request, res: Response, next: NextFunction) => {
