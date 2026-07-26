@@ -340,27 +340,42 @@ export default function PlayerScreen() {
       </View>
 
       <View style={[styles.artworkContainer, isSmallScreen && styles.artworkContainerSmall]}>
-        {/* Blurred-artwork "glow" backdrop. NOTE: expo-blur's BlurView blurs
-            what's BEHIND it, not its children — the old code wrapped the
-            Image in a BlurView, so the image stayed sharp (just faded) and
-            read as a doubled cover. Blur the image itself via expo-image's
-            blurRadius instead. Web keeps its CSS filter (artworkGlow style),
-            so blurRadius is native-only to avoid double-blurring there. */}
-        {currentFeed.imageUrl && (
-          <View style={styles.artworkGlow} pointerEvents="none">
-            <Image
-              source={artworkSource}
-              style={[styles.artworkGlowImage, { maxWidth: artworkMaxSize * 1.4 }]}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-              blurRadius={Platform.OS === "web" ? 0 : 60}
-            />
-          </View>
-        )}
-        <RNAnimated.View
-          {...panResponder.panHandlers}
-          style={{ transform: [{ translateX: swipeAnim }] }}
-        >
+        {/* Glow halo: a heavily-blurred copy of the cover, absolutely centered
+            BEHIND the square with EQUAL overflow on all four sides (even halo,
+            not bottom-heavy). Blur the image itself via expo-image blurRadius —
+            BlurView blurs its backdrop, not its children, which is what caused
+            the earlier "doubled cover" look. */}
+        <View style={{ width: artworkMaxSize, height: artworkMaxSize }}>
+          {currentFeed.imageUrl && (
+            <View
+              pointerEvents="none"
+              style={{
+                position: "absolute",
+                width: artworkMaxSize * 1.4,
+                height: artworkMaxSize * 1.4,
+                top: -artworkMaxSize * 0.2,
+                left: -artworkMaxSize * 0.2,
+              }}
+            >
+              <Image
+                source={artworkSource}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  borderRadius: 28,
+                  opacity: 0.35,
+                  ...(Platform.OS === "web" ? ({ filter: "blur(40px)" } as any) : {}),
+                }}
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                blurRadius={Platform.OS === "web" ? 0 : 60}
+              />
+            </View>
+          )}
+          <RNAnimated.View
+            {...panResponder.panHandlers}
+            style={{ transform: [{ translateX: swipeAnim }] }}
+          >
           {currentFeed.imageUrl ? (
             <View style={[{ borderRadius: 16 }, cardShadow("lg", colors.shadowColor)]}>
               <Image
@@ -377,7 +392,8 @@ export default function PlayerScreen() {
               <Ionicons name="mic" size={isSmallScreen ? 48 : 80} color={colors.textSecondary} />
             </View>
           )}
-        </RNAnimated.View>
+          </RNAnimated.View>
+        </View>
       </View>
 
       {playback.isLoading && (
