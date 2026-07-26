@@ -237,7 +237,7 @@ export default function PlayerScreen() {
     const speakerSlug = author ? (slugify(author.replace(/[\s-]+(shiurim|shiur|podcast|daily)\s*$/i, "").trim()) || slugify(author)) : "";
     const url = speakerSlug
       ? `https://shiurpod.com/${speakerSlug}/${slugify(currentEpisode.title)}-${currentEpisode.id}`
-      : `https://shiurpod.com/webapp/player?e=${currentEpisode.id}`;
+      : `https://shiurpod.com/app/player?e=${currentEpisode.id}`;
     lightHaptic();
     const text = `${currentEpisode.title}${author ? ` — ${author}` : ""}`;
     try {

@@ -222,7 +222,7 @@ function PodcastDetailScreenInner() {
     const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
     const author = feed.author || "";
     const spk = author ? (slugify(author.replace(/[\s-]+(shiurim|shiur|podcast|daily)\s*$/i, "").trim()) || slugify(author)) : "";
-    const url = spk ? `https://shiurpod.com/${spk}` : `https://shiurpod.com/webapp/podcast/${feed.id}`;
+    const url = spk ? `https://shiurpod.com/${spk}` : `https://shiurpod.com/app/podcast/${feed.id}`;
     const text = feed.author || feed.title;
     lightHaptic();
     try {

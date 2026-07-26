@@ -340,21 +340,15 @@ function configureExpoAndLanding(app: express.Application) {
 
   const isProduction = process.env.NODE_ENV === "production";
 
+  // baseUrl:"/app" (app.json) means the SPA runs under /app natively, so the
+  // old prefix-strip routerFix is gone — serve the exported index.html as-is.
   const serveStaticWebApp = (res: Response) => {
-    const routerFix = `<script>if(window.location.pathname.startsWith('/webapp')){history.replaceState(null,'','/' + window.location.pathname.slice('/webapp'.length).replace(/^\\//, '') + window.location.search + window.location.hash);}</script>`;
-    if (fs.existsSync(webappIndexPath)) {
-      let html = fs.readFileSync(webappIndexPath, "utf-8");
-      html = html.replace('</head>', `${routerFix}</head>`);
-      res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.send(html);
-      return true;
-    }
-    if (fs.existsSync(staticIndexPath)) {
-      let html = fs.readFileSync(staticIndexPath, "utf-8");
-      html = html.replace('</head>', `${routerFix}</head>`);
-      res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.send(html);
-      return true;
+    for (const p of [webappIndexPath, staticIndexPath]) {
+      if (fs.existsSync(p)) {
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        res.send(fs.readFileSync(p, "utf-8"));
+        return true;
+      }
     }
     return false;
   };
@@ -369,11 +363,8 @@ function configureExpoAndLanding(app: express.Application) {
     try {
       const resp = await fetch(expoDevTarget);
       if (!resp.ok) throw new Error("Expo dev server not ready");
-      let html = await resp.text();
-      const routerFix = `<script>if(window.location.pathname.startsWith('/webapp')){history.replaceState(null,'','/' + window.location.pathname.slice('/webapp'.length).replace(/^\\//, '') + window.location.search + window.location.hash);}</script>`;
-      html = html.replace('</head>', `${routerFix}</head>`);
       res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.send(html);
+      res.send(await resp.text());
     } catch {
       if (!serveStaticWebApp(res)) {
         res.status(502).send(loadingHtml);
@@ -381,24 +372,26 @@ function configureExpoAndLanding(app: express.Application) {
     }
   };
 
-  app.get("/webapp", serveExpoWebApp as any);
-  app.get("/webapp/*path", serveExpoWebApp as any);
+  // 301 old /webapp links → /app (users have shared /webapp/... URLs).
+  app.get(["/webapp", "/webapp/*path"], (req: Request, res: Response) => {
+    res.redirect(301, req.originalUrl.replace(/^\/webapp/, "/app") || "/app");
+  });
 
-  app.use("/webapp", express.static(webappBuildPath) as any);
-
+  // Serve the SPA under /app. With baseUrl:"/app", the export references
+  // /app/_expo, /app/assets, /app/favicon.ico — all served by the static
+  // mount from webappBuildPath (which lays them out at that root). Static is
+  // registered FIRST so asset files win; the index.html handlers below catch
+  // the exact /app and any /app/* client route (SPA routing).
   if (isProduction) {
-    const webappExpoPath = path.join(webappBuildPath, "_expo");
-    if (fs.existsSync(webappExpoPath)) {
-      app.use("/_expo", express.static(webappExpoPath) as any);
-    }
-    const webappAssetsPath = path.join(webappBuildPath, "assets");
-    if (fs.existsSync(webappAssetsPath)) {
-      app.use("/assets", express.static(webappAssetsPath) as any);
-    }
+    app.use("/app", express.static(webappBuildPath) as any);
   } else {
-    app.use("/node_modules", proxyToExpo as any);
-    app.use("/_expo", proxyToExpo as any);
+    // Dev: Metro serves under the same baseUrl — forward the asset paths.
+    app.use("/app/node_modules", proxyToExpo as any);
+    app.use("/app/_expo", proxyToExpo as any);
+    app.use("/app/assets", proxyToExpo as any);
   }
+  app.get("/app", serveExpoWebApp as any);
+  app.get("/app/*path", serveExpoWebApp as any);
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (req.path.startsWith("/api") || req.path.startsWith("/share/")) {
@@ -717,7 +710,7 @@ function configureExpoAndLanding(app: express.Application) {
       const descRaw = ep.description ? stripHtml(ep.description) : `Listen to "${ep.title}" by ${speakerName} on ShiurPod.`;
       const desc = descRaw.substring(0, 300);
       const dateStr = ep.publishedAt ? new Date(ep.publishedAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "";
-      const appLink = `${baseUrl}/webapp/player?e=${encodeURIComponent(ep.id)}`;
+      const appLink = `${baseUrl}/app/player?e=${encodeURIComponent(ep.id)}`;
       const jsonLd = JSON.stringify({
         "@context": "https://schema.org", "@type": "PodcastEpisode",
         name: ep.title, url: canonicalUrl,
@@ -758,7 +751,7 @@ function configureExpoAndLanding(app: express.Application) {
       const img = group.imageUrl || group.feeds.find(f => f.imageUrl)?.imageUrl || null;
       const bio = (group.bio && stripHtml(group.bio)) || `Listen to Torah shiurim by ${name} on ShiurPod. Stream online or download for offline learning.`;
       const feedIds = group.feeds.map(f => f.id).join(",");
-      const appLink = `${baseUrl}/webapp/maggid-shiur/${encodeURIComponent(name)}?feedIds=${encodeURIComponent(feedIds)}`;
+      const appLink = `${baseUrl}/app/maggid-shiur/${encodeURIComponent(name)}?feedIds=${encodeURIComponent(feedIds)}`;
       const epLists = await Promise.all(group.feeds.slice(0, 6).map(f =>
         storage.getEpisodesByFeedPaginated(f.id, 1, 10, "newest").catch(() => [])
       ));
@@ -790,20 +783,15 @@ function configureExpoAndLanding(app: express.Application) {
     } catch { return next(); }
   });
 
+  // The app now lives under /app; 301 old bare client-route links
+  // (shiurpod.com/podcast/… etc, from the previous strip-to-root scheme)
+  // to their /app equivalents so shared/bookmarked links keep working.
   const clientRoutes = ["/podcast", "/maggid-shiur", "/player", "/queue", "/storage", "/stats", "/debug-logs", "/legal", "/onboarding", "/settings"];
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (req.method !== "GET") return next();
-    if (req.path.startsWith("/api") || req.path.startsWith("/share/") || req.path.startsWith("/admin")) return next();
     const isClientRoute = clientRoutes.some(r => req.path.startsWith(r)) || req.path === "/(tabs)";
     if (!isClientRoute) return next();
-
-    if (isProduction) {
-      if (!serveStaticWebApp(res)) {
-        return next();
-      }
-    } else {
-      proxyToExpo(req, res);
-    }
+    res.redirect(301, "/app" + req.originalUrl);
   });
 
   log("Expo routing: Checking expo-platform header on / and /manifest");

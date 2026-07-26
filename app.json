@@ -108,7 +108,8 @@
     "runtimeVersion": "1.0.0",
     "experiments": {
       "typedRoutes": true,
-      "reactCompiler": true
+      "reactCompiler": true,
+      "baseUrl": "/app"
     },
     "extra": {
       "router": {

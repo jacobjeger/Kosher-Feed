@@ -37,7 +37,7 @@ function parseDeepLink(url: string): { episodeId: string; timestamp?: number } |
       return { episodeId: id, timestamp };
     }
     // Universal links: episode pages /{speaker}/{title}-{uuid}, and the
-    // player deep link /app|/webapp/player?e={id}. Pull the episode id from
+    // player deep link /app|/app/player?e={id}. Pull the episode id from
     // the ?e= query first, else the trailing UUID in the path.
     let path = url;
     let query = new URLSearchParams(url.split("?")[1] || "");
