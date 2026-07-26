@@ -250,7 +250,33 @@ function serveExpoManifest(platform: string, res: Response) {
   res.send(manifest);
 }
 
-function serveLandingPage({
+// Cached (5 min) crawlable list of speaker links for the landing page —
+// gives search crawlers a real <a href="/{slug}"> path from the homepage
+// into every speaker page (previously nothing linked to them but the
+// sitemap). Never throws; returns "" on error.
+let _speakerLinksCache: { at: number; html: string } | null = null;
+async function getSpeakerLinksHtml(): Promise<string> {
+  if (_speakerLinksCache && Date.now() - _speakerLinksCache.at < 5 * 60_000) return _speakerLinksCache.html;
+  try {
+    const groups = await storage.getActiveFeedsGroupedByAuthor();
+    const seen = new Set<string>();
+    const links: string[] = [];
+    for (const g of groups) {
+      if (!g.author) continue;
+      const slug = slugify(g.author);
+      if (!slug || seen.has(slug)) continue;
+      seen.add(slug);
+      links.push(`<a href="/${slug}" style="color:#cbd5e1;text-decoration:none;font-size:14px;padding:6px 12px;background:rgba(255,255,255,0.05);border-radius:8px;display:inline-block;margin:4px">${escHtml(g.author)}</a>`);
+    }
+    const html = links.length
+      ? `<section style="max-width:1080px;margin:0 auto;padding:56px 24px"><h2 style="color:#fff;font-size:26px;margin-bottom:20px;text-align:center">Browse Maggidei Shiur</h2><div style="text-align:center;line-height:2.2">${links.join("")}</div></section>`
+      : "";
+    _speakerLinksCache = { at: Date.now(), html };
+    return html;
+  } catch { return ""; }
+}
+
+async function serveLandingPage({
   req,
   res,
   landingPageTemplate,
@@ -271,10 +297,12 @@ function serveLandingPage({
   log(`baseUrl`, baseUrl);
   log(`expsUrl`, expsUrl);
 
+  const speakerLinks = await getSpeakerLinksHtml();
   const html = landingPageTemplate
     .replace(/BASE_URL_PLACEHOLDER/g, baseUrl)
     .replace(/EXPS_URL_PLACEHOLDER/g, expsUrl)
-    .replace(/APP_NAME_PLACEHOLDER/g, appName);
+    .replace(/APP_NAME_PLACEHOLDER/g, appName)
+    .replace(/SPEAKER_LINKS_PLACEHOLDER/g, speakerLinks);
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.status(200).send(html);
