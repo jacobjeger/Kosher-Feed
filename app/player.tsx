@@ -4,7 +4,6 @@ import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BlurView } from "expo-blur";
 import { router } from "expo-router";
 import { safeGoBack } from "@/lib/safe-back";
 import Slider from "@react-native-community/slider";
@@ -341,27 +340,10 @@ export default function PlayerScreen() {
       </View>
 
       <View style={[styles.artworkContainer, isSmallScreen && styles.artworkContainerSmall]}>
-        {currentFeed.imageUrl && (
-          <View style={styles.artworkGlow}>
-            {Platform.OS === "web" ? (
-              <Image
-                source={artworkSource}
-                style={[styles.artworkGlowImage, { maxWidth: artworkMaxSize * 1.3 }]}
-                contentFit="cover"
-                cachePolicy="memory-disk"
-              />
-            ) : (
-              <BlurView intensity={60} style={StyleSheet.absoluteFill}>
-                <Image
-                  source={artworkSource}
-                  style={[styles.artworkGlowImage, { maxWidth: artworkMaxSize * 1.3 }]}
-                  contentFit="cover"
-                  cachePolicy="memory-disk"
-                />
-              </BlurView>
-            )}
-          </View>
-        )}
+        {/* Blurred-artwork "glow" backdrop removed: expo-blur wasn't blurring
+            it enough on iOS, so it rendered as a second, offset copy of the
+            cover behind the square (the "doubled album art" report). Clean
+            square only now. */}
         <RNAnimated.View
           {...panResponder.panHandlers}
           style={{ transform: [{ translateX: swipeAnim }] }}
