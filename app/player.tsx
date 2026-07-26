@@ -340,10 +340,23 @@ export default function PlayerScreen() {
       </View>
 
       <View style={[styles.artworkContainer, isSmallScreen && styles.artworkContainerSmall]}>
-        {/* Blurred-artwork "glow" backdrop removed: expo-blur wasn't blurring
-            it enough on iOS, so it rendered as a second, offset copy of the
-            cover behind the square (the "doubled album art" report). Clean
-            square only now. */}
+        {/* Blurred-artwork "glow" backdrop. NOTE: expo-blur's BlurView blurs
+            what's BEHIND it, not its children — the old code wrapped the
+            Image in a BlurView, so the image stayed sharp (just faded) and
+            read as a doubled cover. Blur the image itself via expo-image's
+            blurRadius instead. Web keeps its CSS filter (artworkGlow style),
+            so blurRadius is native-only to avoid double-blurring there. */}
+        {currentFeed.imageUrl && (
+          <View style={styles.artworkGlow} pointerEvents="none">
+            <Image
+              source={artworkSource}
+              style={[styles.artworkGlowImage, { maxWidth: artworkMaxSize * 1.4 }]}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              blurRadius={Platform.OS === "web" ? 0 : 60}
+            />
+          </View>
+        )}
         <RNAnimated.View
           {...panResponder.panHandlers}
           style={{ transform: [{ translateX: swipeAnim }] }}
