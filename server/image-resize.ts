@@ -175,7 +175,22 @@ export async function imageResizeHandler(req: Request, res: Response): Promise<v
     res.send(out);
   } catch (e: any) {
     const msg = e?.message || "resize failed";
+    const upstream = msg.match(/^source returned (\d{3})$/);
     const isClient = /invalid url|blocked|too large|only http/i.test(msg);
-    res.status(isClient ? 400 : 502).json({ error: msg });
+    let status = 502;
+    if (upstream && Number(upstream[1]) >= 400 && Number(upstream[1]) < 500) {
+      // A dead/forbidden SOURCE image is a definitive client-side 4xx, not a
+      // gateway failure. Returning 502 made expo-image/Glide treat it as
+      // retryable and hammer this endpoint — the convo-6807 log showed ~289
+      // requests from one device in 90s, all 502 "source returned 404", while
+      // artwork stayed broken. Return 404 so the client fails fast and shows
+      // its placeholder; cache briefly so repeated loads of the same dead
+      // image don't keep re-hitting the origin.
+      status = 404;
+      res.setHeader("Cache-Control", "public, max-age=3600");
+    } else if (isClient) {
+      status = 400;
+    }
+    res.status(status).json({ error: msg });
   }
 }
