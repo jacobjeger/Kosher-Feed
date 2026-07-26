@@ -554,6 +554,42 @@ function configureExpoAndLanding(app: express.Application) {
     res.send(`User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\n\nSitemap: ${protocol}://${host}/sitemap.xml\n`);
   });
 
+  // ── Deep linking: iOS Universal Links + Android App Links ─────────────
+  // Lets a shared episode/speaker URL open the app (if installed) instead
+  // of the browser. Requires matching native config (app.json
+  // ios.associatedDomains + android.intentFilters) shipped in a native
+  // build. Served at both /.well-known/* and the legacy root path.
+  const aasa = {
+    applinks: {
+      apps: [],
+      details: [{
+        appID: "6NHBUTFG94.com.shiurpod.app",
+        // Open speaker + episode pages in-app; exclude infra + the webapp itself.
+        paths: ["NOT /api/*", "NOT /app/*", "NOT /webapp/*", "NOT /admin", "NOT /assets/*", "NOT /_expo/*", "NOT /.well-known/*", "/*"],
+      }],
+    },
+  };
+  const serveAasa = (_req: Request, res: Response) => {
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.send(JSON.stringify(aasa));
+  };
+  app.get("/.well-known/apple-app-site-association", serveAasa as any);
+  app.get("/apple-app-site-association", serveAasa as any);
+
+  app.get("/.well-known/assetlinks.json", (_req: Request, res: Response) => {
+    // Play App Signing cert SHA-256 — set ANDROID_SHA256_CERT_FINGERPRINT
+    // (from Play Console → App integrity → App signing) so Android verifies
+    // the link. Multiple fingerprints comma-separated (e.g. upload + Play).
+    const fps = (process.env.ANDROID_SHA256_CERT_FINGERPRINT || "").split(",").map(s => s.trim()).filter(Boolean);
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.send(JSON.stringify(fps.length ? [{
+      relation: ["delegate_permission/common.handle_all_urls"],
+      target: { namespace: "android_app", package_name: "com.shiurpod.app", sha256_cert_fingerprints: fps },
+    }] : []));
+  });
+
   // Serve favicon — real .ico (multi-size) at /favicon.ico, PNG variants at
   // /favicon.png and /apple-touch-icon.png for browsers/devices that prefer
   // those. All come from assets/images/*.

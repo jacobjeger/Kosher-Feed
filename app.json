@@ -11,6 +11,10 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.shiurpod.app",
+      "associatedDomains": [
+        "applinks:shiurpod.com",
+        "applinks:www.shiurpod.com"
+      ],
       "infoPlist": {
         "UIBackgroundModes": [
           "audio"
@@ -21,6 +25,19 @@
       "package": "com.shiurpod.app",
       "versionCode": 8,
       "googleServicesFile": "./google-services.json",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            { "scheme": "https", "host": "shiurpod.com" }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ],
       "permissions": [
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_MEDIA_PLAYBACK"

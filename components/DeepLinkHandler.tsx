@@ -20,21 +20,32 @@ async function fetchSharedEpisode(episodeId: string): Promise<{ episode: Episode
   }
 }
 
+const UUID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+
 function parseDeepLink(url: string): { episodeId: string; timestamp?: number } | null {
   try {
+    // Legacy shiurpod://episode/{id}?t= deep links.
     if (url.includes("/episode/")) {
-      const parts = url.split("/episode/");
-      const rest = parts[1];
+      const rest = url.split("/episode/")[1];
       if (!rest) return null;
       const [id, queryString] = rest.split("?");
       let timestamp: number | undefined;
       if (queryString) {
-        const params = new URLSearchParams(queryString);
-        const t = params.get("t");
+        const t = new URLSearchParams(queryString).get("t");
         if (t) timestamp = parseInt(t, 10);
       }
       return { episodeId: id, timestamp };
     }
+    // Universal links: episode pages /{speaker}/{title}-{uuid}, and the
+    // player deep link /app|/webapp/player?e={id}. Pull the episode id from
+    // the ?e= query first, else the trailing UUID in the path.
+    let path = url;
+    let query = new URLSearchParams(url.split("?")[1] || "");
+    try { const u = new URL(url); path = u.pathname; query = u.searchParams; } catch { /* non-URL scheme */ }
+    const eParam = query.get("e");
+    if (eParam && UUID_RE.test(eParam)) return { episodeId: eParam };
+    const m = path.match(UUID_RE);
+    if (m) return { episodeId: m[1] };
     return null;
   } catch {
     return null;
