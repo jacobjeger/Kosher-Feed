@@ -757,9 +757,14 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   scrollContentWeb: {
-    maxWidth: 500,
+    maxWidth: 520,
     marginHorizontal: "auto" as any,
     width: "100%" as any,
+    // Vertically center the player on desktop instead of pinning it to the
+    // top with a huge empty lower half. flexGrow:1 (scrollContent) fills the
+    // viewport height; justifyContent centers the column within it.
+    justifyContent: "center" as any,
+    paddingVertical: 24,
   },
   header: {
     flexDirection: "row",
