@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect, memo } from "react";
-import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Platform, Switch, Alert, TextInput, RefreshControl, Dimensions } from "react-native";
+import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Platform, Switch, Alert, TextInput, RefreshControl, Dimensions, Share } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { Image } from "expo-image";
 import { Ionicons, Feather } from "@expo/vector-icons";
@@ -217,6 +217,20 @@ function PodcastDetailScreenInner() {
     followMutation.mutate();
   }, [followMutation]);
 
+  const handleSharePodcast = useCallback(async () => {
+    if (!feed) return;
+    const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const author = feed.author || "";
+    const spk = author ? (slugify(author.replace(/[\s-]+(shiurim|shiur|podcast|daily)\s*$/i, "").trim()) || slugify(author)) : "";
+    const url = spk ? `https://shiurpod.com/${spk}` : `https://shiurpod.com/webapp/podcast/${feed.id}`;
+    const text = feed.author || feed.title;
+    lightHaptic();
+    try {
+      if (Platform.OS === "ios") await Share.share({ message: text, url });
+      else await Share.share({ message: `${text}\n${url}`, title: feed.title });
+    } catch { /* cancelled */ }
+  }, [feed]);
+
   const handleToggleNotifications = useCallback(async (value: boolean) => {
     lightHaptic();
     if (value) {
@@ -377,6 +391,14 @@ function PodcastDetailScreenInner() {
               <Text style={[styles.followText, { color: isFollowing ? colors.text : "#fff" }]}>
                 {isFollowing ? "Following" : "Follow"}
               </Text>
+            </FocusableView>
+
+            <FocusableView
+              focusRadius={20}
+              onPress={handleSharePodcast}
+              style={{ width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceAlt, borderColor: colors.border, borderWidth: 1 }}
+            >
+              <Ionicons name={Platform.OS === "ios" ? "share-outline" : "share-social-outline"} size={18} color={colors.text} />
             </FocusableView>
           </View>
         </View>

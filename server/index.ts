@@ -36,6 +36,14 @@ function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
+// Speaker slug: drop a trailing "Shiurim"/"Shiur"/"Podcast" from the author
+// so URLs read /rabbi-daniel-kalish, not /rabbi-daniel-kalish-shiurim.
+// Falls back to the plain slug if stripping would leave nothing.
+function toSpeakerSlug(author: string): string {
+  const stripped = author.replace(/[\s-]+(shiurim|shiur|podcast|daily)\s*$/i, "").trim();
+  return slugify(stripped) || slugify(author);
+}
+
 function renderSeoPage(opts: { title: string; description: string; canonicalUrl: string; baseUrl: string; heading: string; subheading: string; contentHtml: string; jsonLd: string; imageUrl?: string | null; ogType?: string }): string {
   const ogImage = opts.imageUrl || `${opts.baseUrl}/assets/images/icon.png`;
   const ogType = opts.ogType || "website";
@@ -96,7 +104,7 @@ function renderSeoPage(opts: { title: string; description: string; canonicalUrl:
   </div>
   <div class="content">${opts.contentHtml}</div>
   <footer class="footer">
-    <p>&copy; ${new Date().getFullYear()} <a href="${escHtml(opts.baseUrl)}">ShiurPod</a> &middot; <a href="${escHtml(opts.baseUrl)}/privacy">Privacy</a> &middot; <a href="${escHtml(opts.baseUrl)}/terms">Terms</a></p>
+    <p>&copy; ${new Date().getFullYear()} <a href="${escHtml(opts.baseUrl)}">ShiurPod</a> · <a href="${escHtml(opts.baseUrl)}/privacy">Privacy</a> · <a href="${escHtml(opts.baseUrl)}/terms">Terms</a></p>
   </footer>
   <script>(function(){try{var s=sessionStorage.getItem('_pvs')||Math.random().toString(36).slice(2);sessionStorage.setItem('_pvs',s);fetch('/api/analytics/pageview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:location.pathname,referrer:document.referrer||null,sessionId:s}),keepalive:true}).catch(function(){});}catch(e){}})();</script>
 </body>
@@ -250,32 +258,6 @@ function serveExpoManifest(platform: string, res: Response) {
   res.send(manifest);
 }
 
-// Cached (5 min) crawlable list of speaker links for the landing page —
-// gives search crawlers a real <a href="/{slug}"> path from the homepage
-// into every speaker page (previously nothing linked to them but the
-// sitemap). Never throws; returns "" on error.
-let _speakerLinksCache: { at: number; html: string } | null = null;
-async function getSpeakerLinksHtml(): Promise<string> {
-  if (_speakerLinksCache && Date.now() - _speakerLinksCache.at < 5 * 60_000) return _speakerLinksCache.html;
-  try {
-    const groups = await storage.getActiveFeedsGroupedByAuthor();
-    const seen = new Set<string>();
-    const links: string[] = [];
-    for (const g of groups) {
-      if (!g.author) continue;
-      const slug = slugify(g.author);
-      if (!slug || seen.has(slug)) continue;
-      seen.add(slug);
-      links.push(`<a href="/${slug}" style="color:#cbd5e1;text-decoration:none;font-size:14px;padding:6px 12px;background:rgba(255,255,255,0.05);border-radius:8px;display:inline-block;margin:4px">${escHtml(g.author)}</a>`);
-    }
-    const html = links.length
-      ? `<section style="max-width:1080px;margin:0 auto;padding:56px 24px"><h2 style="color:#fff;font-size:26px;margin-bottom:20px;text-align:center">Browse Maggidei Shiur</h2><div style="text-align:center;line-height:2.2">${links.join("")}</div></section>`
-      : "";
-    _speakerLinksCache = { at: Date.now(), html };
-    return html;
-  } catch { return ""; }
-}
-
 async function serveLandingPage({
   req,
   res,
@@ -297,12 +279,10 @@ async function serveLandingPage({
   log(`baseUrl`, baseUrl);
   log(`expsUrl`, expsUrl);
 
-  const speakerLinks = await getSpeakerLinksHtml();
   const html = landingPageTemplate
     .replace(/BASE_URL_PLACEHOLDER/g, baseUrl)
     .replace(/EXPS_URL_PLACEHOLDER/g, expsUrl)
-    .replace(/APP_NAME_PLACEHOLDER/g, appName)
-    .replace(/SPEAKER_LINKS_PLACEHOLDER/g, speakerLinks);
+    .replace(/APP_NAME_PLACEHOLDER/g, appName);
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.status(200).send(html);
@@ -511,6 +491,42 @@ function configureExpoAndLanding(app: express.Application) {
     }
   });
 
+  // SEO: complete index of all maggidei shiur (linked from the landing
+  // footer) — the crawlable path into every speaker page.
+  app.get("/speakers", async (req: Request, res: Response) => {
+    try {
+      const groups = await storage.getActiveFeedsGroupedByAuthor();
+      const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
+      const host = req.header("x-forwarded-host") || req.get("host");
+      const baseUrl = `${protocol}://${host}`;
+      const seen = new Set<string>();
+      const items: string[] = [];
+      for (const g of [...groups].sort((a, b) => (a.author || "").localeCompare(b.author || ""))) {
+        if (!g.author) continue;
+        const slug = toSpeakerSlug(g.author);
+        if (!slug || seen.has(slug)) continue;
+        seen.add(slug);
+        const count = g.feeds?.length || 0;
+        items.push(`<li class="feed-card"><a href="${baseUrl}/${slug}">${escHtml(g.author)}</a>${count ? `<span class="feed-author">${count} show${count > 1 ? "s" : ""}</span>` : ""}</li>`);
+      }
+      const jsonLd = JSON.stringify({
+        "@context": "https://schema.org", "@type": "CollectionPage",
+        name: "Maggidei Shiur - Torah Speakers", url: `${baseUrl}/speakers`,
+        isPartOf: { "@type": "WebSite", name: "ShiurPod", url: baseUrl },
+        numberOfItems: items.length,
+      });
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      res.send(renderSeoPage({
+        title: "All Maggidei Shiur - Torah Speakers | ShiurPod",
+        description: `Browse ${items.length} maggidei shiur on ShiurPod — Torah shiurim and lectures from your favorite speakers.`,
+        canonicalUrl: `${baseUrl}/speakers`, baseUrl,
+        heading: "Maggidei Shiur", subheading: `${items.length} speakers`,
+        contentHtml: `<ul class="feed-list">${items.join("")}</ul>`,
+        jsonLd,
+      }));
+    } catch { res.status(500).send("Server error"); }
+  });
+
   // SEO: legacy /speaker/{slug} → 301 to the pretty top-level /{slug}.
   app.get("/speaker/:author", (req: Request, res: Response) => {
     res.redirect(301, "/" + req.params.author);
@@ -525,7 +541,7 @@ function configureExpoAndLanding(app: express.Application) {
       const cats = await storage.getAllCategories();
       const allFeeds = await storage.getActiveFeeds();
       // Dedupe speaker slugs so each pretty URL appears once (collisions).
-      const speakerSlugs = [...new Set(allFeeds.filter(f => f.author).map(f => slugify(f.author!)).filter(Boolean))];
+      const speakerSlugs = [...new Set(allFeeds.filter(f => f.author).map(f => toSpeakerSlug(f.author!)).filter(Boolean))];
 
       let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
       xml += `  <url><loc>${baseUrl}/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>\n`;
@@ -648,7 +664,7 @@ function configureExpoAndLanding(app: express.Application) {
   // Registered after static-file serving + all explicit routes, before the
   // SPA fallback: real files win, reserved paths + unknown slugs fall
   // through (next()). The ".includes('.')" guard rejects asset requests.
-  const SEO_RESERVED = new Set(["app", "api", "webapp", "admin", "privacy", "terms", "support", "category", "speaker", "sitemap.xml", "robots.txt", "favicon.ico", "favicon.png", "apple-touch-icon.png", "apple-touch-icon-precomposed.png", "assets", "_expo", "node_modules", "share", "manifest", "podcast", "maggid-shiur", "player", "queue", "storage", "stats", "debug-logs", "legal", "onboarding", "settings", "(tabs)"]);
+  const SEO_RESERVED = new Set(["app", "api", "webapp", "admin", "privacy", "terms", "support", "category", "speaker", "speakers", "sitemap.xml", "robots.txt", "favicon.ico", "favicon.png", "apple-touch-icon.png", "apple-touch-icon-precomposed.png", "assets", "_expo", "node_modules", "share", "manifest", "podcast", "maggid-shiur", "player", "queue", "storage", "stats", "debug-logs", "legal", "onboarding", "settings", "(tabs)"]);
   const UUID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
   const seoBaseUrl = (req: Request) => {
     const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
@@ -673,7 +689,9 @@ function configureExpoAndLanding(app: express.Application) {
     const groups = await getGroupsCached();
     let best: (typeof groups)[number] | null = null;
     for (const g of groups) {
-      if (!g.author || slugify(g.author) !== slug) continue;
+      if (!g.author) continue;
+      // Match the clean slug or the raw slug (so old /…-shiurim links still resolve).
+      if (toSpeakerSlug(g.author) !== slug && slugify(g.author) !== slug) continue;
       if (!best || (g.feeds?.length || 0) > (best.feeds?.length || 0)) best = g;
     }
     return best;
@@ -693,7 +711,8 @@ function configureExpoAndLanding(app: express.Application) {
       const feed = group?.feeds.find(f => f.id === ep.feedId);
       const baseUrl = seoBaseUrl(req);
       const speakerName = group?.author || feed?.author || "ShiurPod";
-      const canonicalUrl = episodeUrl(baseUrl, speakerSlug, ep);
+      const cleanSpeakerSlug = group ? toSpeakerSlug(group.author) : slugify(speakerName);
+      const canonicalUrl = episodeUrl(baseUrl, cleanSpeakerSlug, ep);
       const img = ep.imageUrl || feed?.imageUrl || group?.imageUrl || null;
       const descRaw = ep.description ? stripHtml(ep.description) : `Listen to "${ep.title}" by ${speakerName} on ShiurPod.`;
       const desc = descRaw.substring(0, 300);
@@ -705,13 +724,13 @@ function configureExpoAndLanding(app: express.Application) {
         ...(ep.publishedAt ? { datePublished: new Date(ep.publishedAt).toISOString() } : {}),
         description: desc,
         ...(img ? { image: img } : {}),
-        partOfSeries: { "@type": "PodcastSeries", name: `${speakerName} Shiurim`, url: `${baseUrl}/${speakerSlug}` },
+        partOfSeries: { "@type": "PodcastSeries", name: `${speakerName} Shiurim`, url: `${baseUrl}/${cleanSpeakerSlug}` },
         associatedMedia: { "@type": "AudioObject", contentUrl: ep.audioUrl },
       });
       const content =
         (img ? `<div style="text-align:center;margin-bottom:20px"><img src="${escHtml(img)}" alt="${escHtml(ep.title)}" style="width:220px;height:220px;border-radius:16px;object-fit:cover"></div>` : "") +
-        (group ? `<p style="text-align:center;margin-bottom:8px"><a href="${escHtml(`${baseUrl}/${speakerSlug}`)}" style="color:#3b82f6;text-decoration:none;font-weight:600">${escHtml(speakerName)}</a></p>` : "") +
-        (dateStr ? `<p style="text-align:center;color:#64748b;font-size:13px;margin-bottom:16px">${escHtml(dateStr)}${ep.duration ? ` &middot; ${escHtml(ep.duration)}` : ""}</p>` : "") +
+        (group ? `<p style="text-align:center;margin-bottom:8px"><a href="${escHtml(`${baseUrl}/${cleanSpeakerSlug}`)}" style="color:#3b82f6;text-decoration:none;font-weight:600">${escHtml(speakerName)}</a></p>` : "") +
+        (dateStr ? `<p style="text-align:center;color:#64748b;font-size:13px;margin-bottom:16px">${escHtml(dateStr)}${ep.duration ? ` · ${escHtml(ep.duration)}` : ""}</p>` : "") +
         `<audio controls preload="none" src="${escHtml(ep.audioUrl)}" style="width:100%;max-width:640px;display:block;margin:0 auto 24px"></audio>` +
         `<div style="text-align:center;margin-bottom:28px"><a class="nav-cta" href="${escHtml(appLink)}">Open in app</a></div>` +
         (ep.description ? `<div style="color:#94a3b8;max-width:640px;margin:0 auto;line-height:1.7">${escHtml(stripHtml(ep.description).substring(0, 1500))}</div>` : "");
@@ -734,7 +753,8 @@ function configureExpoAndLanding(app: express.Application) {
       if (!group) return next();
       const baseUrl = seoBaseUrl(req);
       const name = group.author;
-      const canonicalUrl = `${baseUrl}/${slug}`;
+      const cleanSlug = toSpeakerSlug(name);
+      const canonicalUrl = `${baseUrl}/${cleanSlug}`;
       const img = group.imageUrl || group.feeds.find(f => f.imageUrl)?.imageUrl || null;
       const bio = (group.bio && stripHtml(group.bio)) || `Listen to Torah shiurim by ${name} on ShiurPod. Stream online or download for offline learning.`;
       const feedIds = group.feeds.map(f => f.id).join(",");
@@ -747,12 +767,12 @@ function configureExpoAndLanding(app: express.Application) {
         .slice(0, 25);
       const epHtml = episodes.map(e => {
         const date = e.publishedAt ? new Date(e.publishedAt).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "";
-        return `<li class="feed-card"><a href="${escHtml(episodeUrl(baseUrl, slug, e))}">${escHtml(e.title)}</a>${date ? `<span class="feed-author">${escHtml(date)}</span>` : ""}</li>`;
+        return `<li class="feed-card"><a href="${escHtml(episodeUrl(baseUrl, cleanSlug, e))}">${escHtml(e.title)}</a>${date ? `<span class="feed-author">${escHtml(date)}</span>` : ""}</li>`;
       }).join("");
       const showsHtml = group.feeds.map(f => `<li class="feed-card"><a href="${escHtml(appLink)}">${escHtml(f.title)}</a>${f.description ? `<p>${escHtml(stripHtml(f.description).substring(0, 160))}</p>` : ""}</li>`).join("");
       const jsonLd = JSON.stringify([
         { "@context": "https://schema.org", "@type": "ProfilePage", name: `${name} - Torah Shiurim`, url: canonicalUrl, mainEntity: { "@type": "Person", name, ...(img ? { image: img } : {}), description: bio } },
-        { "@context": "https://schema.org", "@type": "ItemList", itemListElement: episodes.map((e, i) => ({ "@type": "ListItem", position: i + 1, name: e.title, url: episodeUrl(baseUrl, slug, e) })) },
+        { "@context": "https://schema.org", "@type": "ItemList", itemListElement: episodes.map((e, i) => ({ "@type": "ListItem", position: i + 1, name: e.title, url: episodeUrl(baseUrl, cleanSlug, e) })) },
       ]);
       const content =
         (img ? `<div style="text-align:center;margin-bottom:20px"><img src="${escHtml(img)}" alt="${escHtml(name)}" style="width:180px;height:180px;border-radius:16px;object-fit:cover"></div>` : "") +
@@ -764,7 +784,7 @@ function configureExpoAndLanding(app: express.Application) {
       res.send(renderSeoPage({
         title: `${name} - Torah Shiurim & Lectures | ShiurPod`,
         description: bio.substring(0, 160), canonicalUrl, baseUrl,
-        heading: name, subheading: `${group.feeds.length} show${group.feeds.length > 1 ? "s" : ""}${episodes.length ? ` &middot; ${episodes.length} recent shiurim` : ""}`,
+        heading: name, subheading: `${group.feeds.length} show${group.feeds.length > 1 ? "s" : ""}${episodes.length ? ` · ${episodes.length} recent shiurim` : ""}`,
         contentHtml: content, jsonLd, imageUrl: img, ogType: "profile",
       }));
     } catch { return next(); }

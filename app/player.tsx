@@ -232,18 +232,23 @@ export default function PlayerScreen() {
   const handleShare = useCallback(async () => {
     if (!currentEpisode || !currentFeed) return;
     const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    // Match the server's speakerSlug(): drop a trailing Shiurim/Shiur/Podcast.
     const author = currentFeed.author || "";
-    const speakerSlug = author ? slugify(author) : "";
+    const speakerSlug = author ? (slugify(author.replace(/[\s-]+(shiurim|shiur|podcast|daily)\s*$/i, "").trim()) || slugify(author)) : "";
     const url = speakerSlug
       ? `https://shiurpod.com/${speakerSlug}/${slugify(currentEpisode.title)}-${currentEpisode.id}`
       : `https://shiurpod.com/webapp/player?e=${currentEpisode.id}`;
     lightHaptic();
+    const text = `${currentEpisode.title}${author ? ` — ${author}` : ""}`;
     try {
-      await Share.share({
-        title: currentEpisode.title,
-        message: `${currentEpisode.title}${author ? ` — ${author}` : ""}\n${url}`,
-        url,
-      });
+      // iOS: message is text-only and `url` carries the link (putting the URL
+      // in both made it appear twice). Android has no `url` field, so the URL
+      // goes in the message.
+      if (Platform.OS === "ios") {
+        await Share.share({ message: text, url });
+      } else {
+        await Share.share({ message: `${text}\n${url}`, title: currentEpisode.title });
+      }
     } catch { /* user cancelled */ }
   }, [currentEpisode, currentFeed]);
 

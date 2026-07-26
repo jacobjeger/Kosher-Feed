@@ -1145,11 +1145,10 @@
       </div>
     </section>
 
-    SPEAKER_LINKS_PLACEHOLDER
-
     <footer class="footer">
       <div class="footer-inner">
         <div class="footer-links">
+          <a href="/speakers">Maggidei Shiur</a>
           <a href="/privacy">Privacy Policy</a>
           <a href="/terms">Terms of Service</a>
           <a href="/support">Support</a>
@@ -1164,17 +1163,10 @@
         var ua = navigator.userAgent;
         var isAndroid = /Android/i.test(ua);
         var isIOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-        var deepLink = "exps://EXPS_URL_PLACEHOLDER";
-
-        if (isAndroid || isIOS) {
-          document.getElementById("loading").style.display = "block";
-          document.getElementById("hero-section").style.display = "none";
-          window.location.href = deepLink;
-          setTimeout(function () {
-            document.getElementById("loading").style.display = "none";
-            document.getElementById("hero-section").style.display = "flex";
-          }, 500);
-        }
+        // NOTE: removed the on-load redirect to exps://EXPS_URL_PLACEHOLDER —
+        // exps:// is the Expo Go scheme, which a production iPhone can't open,
+        // so Safari threw an error on load. The app now opens via Universal
+        // Links / App Links (associated domains) and the store badges below.
 
         if (isAndroid) {
           var appBtn = document.getElementById("app-store-btn");
