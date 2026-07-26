@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect } from "react";
 import { View, Text, FlatList, Pressable, StyleSheet, Platform } from "react-native";
 import { useAppColorScheme } from "@/lib/useAppColorScheme";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -33,8 +33,16 @@ function MaggidShiurDetailInner() {
   const feedsQuery = useQuery<Feed[]>({ queryKey: ["/api/feeds"] });
   const allFeeds = feedsQuery.data || [];
 
-  const feedIdList = feedIds?.split(",") || [];
+  const feedIdList = feedIds?.split(",").filter(Boolean) || [];
   const authorFeeds = allFeeds.filter(f => feedIdList.includes(f.id));
+
+  // A speaker with a single show has no "pick a show" step — go straight
+  // to that show's episodes.
+  useEffect(() => {
+    if (feedIdList.length === 1) {
+      router.replace(`/podcast/${feedIdList[0]}`);
+    }
+  }, [feedIds]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -127,6 +135,9 @@ const styles = StyleSheet.create({
   },
   gridContent: {
     padding: 16,
+    // Cap width on desktop web so the 2-col grid doesn't blow the artwork up
+    // to full-screen size.
+    ...(Platform.OS === "web" ? { maxWidth: 720, alignSelf: "center", width: "100%" as any } : {}),
   },
   gridRow: {
     gap: 12,

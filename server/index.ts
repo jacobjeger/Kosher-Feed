@@ -764,6 +764,8 @@ function configureExpoAndLanding(app: express.Application) {
       const episodes = epLists.flat()
         .sort((a, b) => (b.publishedAt ? new Date(b.publishedAt).getTime() : 0) - (a.publishedAt ? new Date(a.publishedAt).getTime() : 0))
         .slice(0, 25);
+      // Total shiurim across all the speaker's shows (not just the recent list).
+      const totalShiurim = (await Promise.all(group.feeds.map(f => storage.getEpisodeCountByFeed(f.id).catch(() => 0)))).reduce((a, b) => a + b, 0);
       const epHtml = episodes.map(e => {
         const date = e.publishedAt ? new Date(e.publishedAt).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "";
         return `<li class="feed-card"><a href="${escHtml(episodeUrl(baseUrl, cleanSlug, e))}">${escHtml(e.title)}</a>${date ? `<span class="feed-author">${escHtml(date)}</span>` : ""}</li>`;
@@ -783,7 +785,7 @@ function configureExpoAndLanding(app: express.Application) {
       res.send(renderSeoPage({
         title: `${name} - Torah Shiurim & Lectures | ShiurPod`,
         description: bio.substring(0, 160), canonicalUrl, baseUrl,
-        heading: name, subheading: `${group.feeds.length} show${group.feeds.length > 1 ? "s" : ""}${episodes.length ? ` · ${episodes.length} recent shiurim` : ""}`,
+        heading: name, subheading: `${group.feeds.length} show${group.feeds.length > 1 ? "s" : ""}${totalShiurim ? ` · ${totalShiurim.toLocaleString()} shiurim` : ""}`,
         contentHtml: content, jsonLd, imageUrl: img, ogType: "profile",
       }));
     } catch { return next(); }
