@@ -1414,15 +1414,27 @@ export async function claimYouTubeMediaJobs(limit: number): Promise<YoutubePendi
     )
     RETURNING *
   `);
+  // db.execute() returns raw driver rows, where timestamps may arrive as
+  // strings rather than Dates. Drizzle calls .toISOString() on whatever is
+  // handed back to it on insert, so these must be real Dates or creating the
+  // episode throws "value.toISOString is not a function" AFTER the audio has
+  // already been downloaded.
+  const toDate = (v: any): Date | null => {
+    if (!v) return null;
+    if (v instanceof Date) return v;
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+  };
+
   return (rows.rows as any[]).map(r => ({
     id: r.id, feedId: r.feed_id, videoId: r.video_id, title: r.title,
     description: r.description, duration: r.duration, durationSeconds: r.duration_seconds,
-    publishedAt: r.published_at, imageUrl: r.image_url, channelTitle: r.channel_title,
-    status: r.status, reviewedAt: r.reviewed_at, reviewedBy: r.reviewed_by,
+    publishedAt: toDate(r.published_at), imageUrl: r.image_url, channelTitle: r.channel_title,
+    status: r.status, reviewedAt: toDate(r.reviewed_at), reviewedBy: r.reviewed_by,
     reviewNote: r.review_note, episodeId: r.episode_id, mediaStatus: r.media_status,
     mediaPath: r.media_path, mediaBytes: r.media_bytes, mediaDurationSec: r.media_duration_sec,
-    mediaError: r.media_error, mediaAttempts: r.media_attempts, mediaUpdatedAt: r.media_updated_at,
-    createdAt: r.created_at,
+    mediaError: r.media_error, mediaAttempts: r.media_attempts, mediaUpdatedAt: toDate(r.media_updated_at),
+    createdAt: toDate(r.created_at) || new Date(),
   })) as YoutubePending[];
 }
 
