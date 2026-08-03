@@ -1530,7 +1530,11 @@ function startAutoRefresh() {
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: (req) => ipKeyGenerator(clientIp(req)),
-    skip: (req) => req.path.startsWith("/api/admin"), // admin has its own auth
+    // Authenticated admin operations are exempt — they're behind Basic auth and
+    // a bulk sync can legitimately exceed 200 req/min. But NOT the login
+    // endpoint: exempting it left an unauthenticated, unthrottled, bcrypt-backed
+    // endpoint open to unlimited password guessing. It gets writeLimiter below.
+    skip: (req) => req.path.startsWith("/api/admin") && req.path !== "/api/admin/login",
   });
   const writeLimiter = rateLimit({
     windowMs: 60 * 1000,
@@ -1541,6 +1545,10 @@ function startAutoRefresh() {
     message: { error: "Too many requests, please try again later" },
   });
   app.use("/api/", generalLimiter);
+  // Brute-force protection for the admin password. 30/min per IP still allows
+  // a person fat-fingering their password while making an online guessing
+  // attack useless.
+  app.use("/api/admin/login", writeLimiter);
   app.use("/api/feedback", writeLimiter);
   app.use("/api/contact", writeLimiter);
   app.use("/api/error-reports", writeLimiter);
