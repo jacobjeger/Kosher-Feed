@@ -18,20 +18,19 @@ import { Innertube, type Types } from "youtubei.js";
 // failing across the board, set YOUTUBE_HTTP_PROXY to route through a
 // residential proxy.
 
-// Ordered by how well each client survives a datacenter IP. The TV clients
-// lead because they're what still works when YouTube's bot check flags the
-// host; the mobile clients follow; WEB is deliberately absent (it always
-// demands a Proof-of-Origin token now).
+// IOS leads because it's what actually resolves on a healthy session — it won
+// every probe from Railway once the session was fresh. The rest are fallbacks
+// for the cases where a single client is restricted (age-gate, embed rules).
+// Order matters for latency: every client that fails before the winning one
+// costs a round trip on each cold resolve.
 //
-// Railway IS flagged — plain IOS/MWEB resolution fails there while working
-// from a residential IP — so this order is load-bearing, not defensive
-// padding. Each miss costs a round trip, but a success is cached for hours
-// and failures are negative-cached for 5 minutes.
+// WEB is deliberately absent — it unconditionally requires a Proof-of-Origin
+// token now and would fail every time.
 const CLIENT_CHAIN: Types.InnerTubeClient[] = [
-  "TV",
-  "TV_SIMPLY",
   "IOS",
   "ANDROID",
+  "TV",
+  "TV_SIMPLY",
   "ANDROID_VR",
   "YTMUSIC_ANDROID",
   "WEB_EMBEDDED",
@@ -119,7 +118,33 @@ function pruneCache(): void {
   }
 }
 
+let lastSessionRotateAt = 0;
+const SESSION_ROTATE_COOLDOWN_MS = 60_000;
+
 async function resolveUncached(videoId: string): Promise<ResolvedAudio> {
+  try {
+    return await attemptResolve(videoId);
+  } catch (firstErr: any) {
+    // YouTube flags the Innertube SESSION, not just the host. Once it decides
+    // a session is a bot, every client in the chain starts answering
+    // "Streaming data not available" — including clients that worked minutes
+    // earlier. Minting a fresh session clears it, which is why a redeploy
+    // always appears to "fix" YouTube playback.
+    //
+    // Rotate and retry once. The cooldown stops a run of genuinely dead
+    // videos (private, deleted, region-locked) from spinning up a new session
+    // per request — those fail for real reasons a new session won't change.
+    if (Date.now() - lastSessionRotateAt < SESSION_ROTATE_COOLDOWN_MS) throw firstErr;
+    lastSessionRotateAt = Date.now();
+    console.warn(`YouTube audio: all clients failed for ${videoId} — rotating Innertube session and retrying`);
+    resetInnertube();
+    const resolved = await attemptResolve(videoId);
+    console.log(`YouTube audio: session rotation recovered ${videoId}`);
+    return resolved;
+  }
+}
+
+async function attemptResolve(videoId: string): Promise<ResolvedAudio> {
   const yt = await getInnertube();
   const errors: string[] = [];
 
