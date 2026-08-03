@@ -1237,6 +1237,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const safeTitle = (episode.title || "episode").replace(/[^a-zA-Z0-9 _-]/g, "").replace(/\s+/g, "_").substring(0, 100);
       const filename = safeAuthor ? `${safeAuthor}_-_${safeTitle}.mp3` : `${safeTitle}.mp3`;
 
+      // Stored YouTube audio lives on our own disk and is recorded as a
+      // server-relative path, which fetch() can't take. Stream it straight from
+      // the volume instead of round-tripping through HTTP to ourselves.
+      const storedMatch = episode.audioUrl.match(/^\/api\/media\/yt\/([A-Za-z0-9_-]{11})\.mp3$/);
+      if (storedMatch) {
+        const filePath = mediaPathFor(storedMatch[1]);
+        try {
+          const st = await fsp.stat(filePath);
+          res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+          res.setHeader("Content-Type", "audio/mpeg");
+          res.setHeader("Content-Length", String(st.size));
+          await pipeline(fs.createReadStream(filePath), res).catch(() => {});
+        } catch {
+          if (!res.headersSent) res.status(404).json({ error: "Media not found" });
+        }
+        return;
+      }
+
       // YouTube episodes carry the yt://audio/{videoId} placeholder rather than
       // a fetchable URL — mint a fresh stream URL before downloading, or fetch()
       // would throw on the unsupported protocol.

@@ -726,7 +726,13 @@ function configureExpoAndLanding(app: express.Application) {
         description: desc,
         ...(img ? { image: img } : {}),
         partOfSeries: { "@type": "PodcastSeries", name: `${speakerName} Shiurim`, url: `${baseUrl}/${cleanSpeakerSlug}` },
-        associatedMedia: { "@type": "AudioObject", contentUrl: ep.audioUrl },
+        // Stored YouTube audio is recorded as a server-relative path. That's
+        // fine for the <audio> tag below (same origin) but structured data is
+        // consumed off-site, so it needs an absolute URL.
+        associatedMedia: {
+          "@type": "AudioObject",
+          contentUrl: ep.audioUrl?.startsWith("/") ? `${baseUrl}${ep.audioUrl}` : ep.audioUrl,
+        },
       });
       const content =
         (img ? `<div style="text-align:center;margin-bottom:20px"><img src="${escHtml(img)}" alt="${escHtml(ep.title)}" style="width:220px;height:220px;border-radius:16px;object-fit:cover"></div>` : "") +

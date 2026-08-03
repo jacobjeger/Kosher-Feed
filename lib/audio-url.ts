@@ -45,5 +45,12 @@ export function resolveAudioUrl(audioUrl: string): string {
       return result;
     }
   }
+  // Server-relative audio (stored YouTube MP3s are saved as
+  // /api/media/yt/{id}.mp3) must be absolutised against the API host. A bare
+  // path works in the browser because it resolves against the page origin, but
+  // the native player needs a full URI and fails silently without one.
+  if (audioUrl.startsWith("/")) {
+    return baseUrl + audioUrl;
+  }
   return audioUrl;
 }
