@@ -54,3 +54,4 @@ yarn-error.*
 
 # yt-dlp binary is fetched at build time, never committed
 bin/yt-dlp
+bin/deno

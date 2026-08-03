@@ -149,9 +149,31 @@ export interface DownloadResult {
   durationSec: number | null;
 }
 
+// Directory holding the fetched binaries. It must be on PATH for the yt-dlp
+// child process, because yt-dlp discovers its JS runtime (Deno) by looking for
+// an executable on PATH — and without that runtime it can't solve YouTube's n
+// challenge and returns zero formats.
+export function binDir(): string {
+  return path.resolve(process.cwd(), "bin");
+}
+
+export function denoPath(): string | null {
+  const p = path.join(binDir(), "deno");
+  return fs.existsSync(p) ? p : null;
+}
+
+function ytdlpEnv(): NodeJS.ProcessEnv {
+  const dir = binDir();
+  const current = process.env.PATH || "";
+  return {
+    ...process.env,
+    PATH: current.split(":").includes(dir) ? current : `${dir}:${current}`,
+  };
+}
+
 function runYtdlp(args: string[], onLog?: (line: string) => void): Promise<{ code: number; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(ytdlpPath(), args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(ytdlpPath(), args, { stdio: ["ignore", "pipe", "pipe"], env: ytdlpEnv() });
     let stderr = "";
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
@@ -215,7 +237,10 @@ export async function downloadYouTubeAudio(
     "--retries", "5",
     "--fragment-retries", "5",
     "--socket-timeout", "30",
-    "-f", "bestaudio",
+    // YouTube auto-dubs some videos into other languages and exposes them as
+    // sibling audio tracks. Prefer the track explicitly marked "original" so a
+    // shiur can never be served as a machine-dubbed Hindi or German version.
+    "-f", "bestaudio[format_note*=original]/bestaudio",
     "-x", "--audio-format", "mp3",
     "--audio-quality", AUDIO_BITRATE,
     // Speech is mono — halves the size with no audible loss for a shiur.
@@ -297,6 +322,7 @@ export async function mediaToolingStatus(): Promise<{
   dirWritable: boolean;
   dir: string;
   cookies: ReturnType<typeof cookieStatus>;
+  deno: string | null;
 }> {
   const ff = !!(ffmpegStatic as unknown as string | null);
   let version: string | null = null;
@@ -324,8 +350,22 @@ export async function mediaToolingStatus(): Promise<{
     dirWritable = true;
   } catch {}
 
+  let deno: string | null = null;
+  const dp = denoPath();
+  if (dp) {
+    try {
+      deno = await new Promise<string | null>((resolve) => {
+        const c = spawn(dp, ["--version"], { stdio: ["ignore", "pipe", "ignore"] });
+        let out = "";
+        c.stdout.on("data", (d) => { out += String(d); });
+        c.on("error", () => resolve(null));
+        c.on("close", (code) => resolve(code === 0 ? (out.split("\n")[0] || "").trim() : null));
+      });
+    } catch { deno = null; }
+  }
+
   return {
     ytdlp: version, ytdlpPath: ytdlpPath(), ffmpeg: ff, dirWritable, dir: mediaDir(),
-    cookies: cookieStatus(),
+    cookies: cookieStatus(), deno,
   };
 }

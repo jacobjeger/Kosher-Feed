@@ -2780,6 +2780,9 @@ async function loadYtDiagnostics() {
       const problems = [];
       if (!m.tooling.ytdlp) problems.push('yt-dlp missing (' + esc(m.tooling.ytdlpPath) + ')');
       if (!m.tooling.ffmpeg) problems.push('ffmpeg missing');
+      // Without a JS runtime yt-dlp can't solve YouTube's n challenge and gets
+      // zero audio formats — every download fails with no obvious cause.
+      if (!m.tooling.deno) problems.push('deno missing — YouTube returns no audio formats without it');
       if (!m.tooling.dirWritable) problems.push('media dir not writable (' + esc(m.tooling.dir) + ') — attach a volume');
       const ck = m.tooling.cookies || {};
       if (!ck.configured) problems.push('no YouTube cookies — downloads will hit the bot check');
