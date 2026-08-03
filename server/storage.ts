@@ -1553,6 +1553,27 @@ export async function requeueLegacyYouTubeEpisodes(): Promise<number> {
   return (rows.rows as any[]).length;
 }
 
+// Reclaim downloads that failed the bot check, once cookies are available.
+//
+// Those rows exhausted their retries for a reason that has since been fixed
+// by configuration, so they'd otherwise sit in `failed` forever waiting for a
+// human to click Retry. Deliberately narrow: only auth-shaped failures are
+// reclaimed, so a genuinely dead video (deleted, private, region-locked)
+// doesn't get retried on every boot.
+export async function requeueAuthFailedYouTubeMedia(): Promise<number> {
+  const rows = await db.execute(sql`
+    UPDATE youtube_pending SET media_status = 'queued', media_attempts = 0,
+                               media_error = NULL, media_updated_at = now()
+    WHERE status = 'approved' AND media_status = 'failed'
+      AND (media_error ILIKE '%confirm you%not a bot%'
+        OR media_error ILIKE '%sign in%'
+        OR media_error ILIKE '%cookies%'
+        OR media_error ILIKE '%age-restricted%')
+    RETURNING id
+  `);
+  return (rows.rows as any[]).length;
+}
+
 export async function countEpisodesByFeed(feedId: string): Promise<number> {
   const [row] = await db.select({ n: count() }).from(episodes).where(eq(episodes.feedId, feedId));
   return Number(row?.n || 0);

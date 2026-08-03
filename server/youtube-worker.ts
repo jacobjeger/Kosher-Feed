@@ -1,5 +1,5 @@
 import * as storage from "./storage";
-import { downloadYouTubeAudio, mediaExists, mediaPathFor, ytdlpPath } from "./youtube-media";
+import { downloadYouTubeAudio, mediaExists, mediaPathFor, ytdlpPath, ensureCookieFile } from "./youtube-media";
 import { sendNewEpisodePushes, PUSH_BACKFILL_THRESHOLD } from "./push";
 import fsp from "node:fs/promises";
 
@@ -97,8 +97,15 @@ export function startYouTubeMediaWorker(): void {
       // dead yt://audio proxy. Re-queue them once so they self-heal.
       const legacy = await storage.requeueLegacyYouTubeEpisodes();
       if (legacy > 0) console.log(`YouTube media: re-queued ${legacy} legacy episode(s) for download`);
+
+      // Downloads that died on YouTube's bot check are recoverable now that a
+      // cookie jar exists — the reason they failed has been fixed.
+      if (ensureCookieFile()) {
+        const reclaimed = await storage.requeueAuthFailedYouTubeMedia();
+        if (reclaimed > 0) console.log(`YouTube media: reclaimed ${reclaimed} auth-failed download(s) now that cookies are set`);
+      }
     } catch (e: any) {
-      console.error(`YouTube media: legacy re-queue failed — ${e?.message?.slice(0, 160)}`);
+      console.error(`YouTube media: boot re-queue failed — ${e?.message?.slice(0, 160)}`);
     }
     void tick();
   }, 5_000);
