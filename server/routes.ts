@@ -28,6 +28,8 @@ import { imageResizeHandler } from "./image-resize";
 import multer from "multer";
 import path from "node:path";
 import fs from "node:fs";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 
 const ON_DEMAND_STALE_MS = 5 * 60 * 1000;
 
@@ -1414,20 +1416,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // and these responses are large enough that long caching hurts.
         res.setHeader("Cache-Control", "public, max-age=3600");
 
-        const reader = upstream.body?.getReader();
-        if (!reader) {
+        if (!upstream.body) {
           if (!res.headersSent) res.status(502).json({ error: "No stream" });
           return;
         }
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (res.writableEnded) break;
-          res.write(Buffer.from(value));
-        }
-        res.end();
+        // pipeline() honours backpressure: it stops pulling from googlevideo
+        // whenever the phone's socket is full. A manual read/write loop would
+        // buffer the entire track in server memory when the client is slower
+        // than the upstream — which, for a 60MB shiur over cellular, is
+        // always. It also tears the upstream down if the listener skips or
+        // closes the app mid-track.
+        await pipeline(Readable.fromWeb(upstream.body as any), res);
         return;
       } catch (e: any) {
+        // A listener skipping tracks, seeking, or backgrounding the app aborts
+        // the response mid-flight. That's routine, not a failure — don't log it
+        // as an error and don't evict a perfectly good cached URL over it.
+        const aborted = e?.code === "ERR_STREAM_PREMATURE_CLOSE"
+          || e?.code === "ECONNRESET"
+          || e?.code === "ERR_STREAM_DESTROYED"
+          || res.destroyed;
+        if (aborted) return;
+
         console.error(`YouTube audio: stream failed for ${videoId} — ${e.message?.slice(0, 160)}`);
         invalidateAudioCache(videoId);
         // Once bytes are on the wire we can't start over — a second attempt
@@ -3904,22 +3914,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const exposed: Record<string, any> = { ...config, ytcUnlockCode: ytcCode || null };
       delete (exposed as any).ytc_unlock_code;
 
-      // A stored audioProxyRules row REPLACES the app's baked-in defaults
-      // wholesale (see setAudioProxyRules in lib/audio-url.ts). If an admin
-      // saved that key before YouTube existed, it won't carry the yt:// rule
-      // and every YouTube episode would fail to play on any device that has
-      // fetched remote config. Guarantee the rule is always present.
-      if (Array.isArray(exposed.audioProxyRules)) {
-        const hasYtRule = exposed.audioProxyRules.some(
-          (r: any) => typeof r?.match === "string" && r.match.includes("yt://audio"),
-        );
-        if (!hasYtRule) {
-          exposed.audioProxyRules = [
-            ...exposed.audioProxyRules,
-            { match: "^yt://audio/([A-Za-z0-9_-]{11})$", replace: "/api/audio/yt/$1" },
-          ];
-        }
+      // Audio proxy rules are ALWAYS served, even when no app_config row
+      // exists. This is what lets a new source play on already-installed
+      // builds: the app only knows the rules baked into its bundle, so an
+      // app shipped before YouTube existed has no yt:// rule and would hand
+      // the raw placeholder to the player. Serving the rules from here
+      // retrofits them over the air.
+      //
+      // The array REPLACES the client's baked-in defaults wholesale (see
+      // setAudioProxyRules in lib/audio-url.ts), so it must always be
+      // COMPLETE — every rule the app needs, not just the new one. An admin
+      // override is used as the base and any missing default is appended.
+      const DEFAULT_AUDIO_PROXY_RULES = [
+        { match: "https?://srv\\.kolhalashon\\.com/api/files/(?:GetMp3FileToPlay|getLocationOfFileToVideo)/(\\d+)", replace: "/api/audio/kh/$1" },
+        { match: "^yt://audio/([A-Za-z0-9_-]{11})$", replace: "/api/audio/yt/$1" },
+      ];
+      const storedRules = Array.isArray(exposed.audioProxyRules) ? exposed.audioProxyRules : [];
+      const merged = [...storedRules];
+      for (const def of DEFAULT_AUDIO_PROXY_RULES) {
+        const present = merged.some((r: any) => typeof r?.match === "string" && r.match === def.match);
+        if (!present) merged.push(def);
       }
+      exposed.audioProxyRules = merged;
+
       res.setHeader("Cache-Control", "public, max-age=300");
       res.json(exposed);
     } catch (e: any) {
