@@ -1387,9 +1387,16 @@ export async function createEpisodeForStoredYouTubeMedia(
 
   let linked: Episode | undefined = episode;
   if (!linked) {
-    const [existing] = await db.select().from(episodes)
+    // Episode already existed — either a concurrent approval, or a row created
+    // under the old scheme whose audioUrl still points at the dead
+    // yt://audio/… proxy. Repoint it at the stored file either way.
+    const [existing] = await db.update(episodes).set({
+      audioUrl: `/api/media/yt/${row.videoId}.mp3`,
+      duration: durationLabel,
+      youtubeVideoId: row.videoId,
+    } as any)
       .where(and(eq(episodes.feedId, row.feedId), eq(episodes.guid, `yt-${row.videoId}`)))
-      .limit(1);
+      .returning();
     linked = existing;
   }
 
@@ -1464,6 +1471,24 @@ export async function getYouTubeMediaCounts(): Promise<Record<string, number>> {
   const out: Record<string, number> = { queued: 0, downloading: 0, ready: 0, failed: 0 };
   for (const r of rows) if (r.s) out[r.s] = Number(r.n);
   return out;
+}
+
+// One-time repair for episodes approved under the old live-proxy scheme.
+// Their audioUrl is yt://audio/{id}, which no longer plays — re-queue the
+// media fetch so the worker downloads the MP3 and repoints the episode.
+export async function requeueLegacyYouTubeEpisodes(): Promise<number> {
+  const rows = await db.execute(sql`
+    UPDATE youtube_pending SET media_status = 'queued', media_error = NULL,
+                               media_attempts = 0, media_updated_at = now()
+    WHERE status = 'approved'
+      AND (media_status IS NULL OR media_status = 'ready')
+      AND video_id IN (
+        SELECT youtube_video_id FROM episodes
+        WHERE youtube_video_id IS NOT NULL AND audio_url LIKE 'yt://audio/%'
+      )
+    RETURNING id
+  `);
+  return (rows.rows as any[]).length;
 }
 
 export async function countEpisodesByFeed(feedId: string): Promise<number> {

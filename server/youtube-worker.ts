@@ -91,7 +91,17 @@ export function startYouTubeMediaWorker(): void {
   console.log(`YouTube media worker: started (yt-dlp at ${ytdlpPath()})`);
   timer = setInterval(() => { void tick(); }, TICK_MS);
   // Kick immediately so a restart resumes pending work without waiting a tick.
-  setTimeout(() => { void tick(); }, 5_000);
+  setTimeout(async () => {
+    try {
+      // Episodes approved before audio was stored locally still point at the
+      // dead yt://audio proxy. Re-queue them once so they self-heal.
+      const legacy = await storage.requeueLegacyYouTubeEpisodes();
+      if (legacy > 0) console.log(`YouTube media: re-queued ${legacy} legacy episode(s) for download`);
+    } catch (e: any) {
+      console.error(`YouTube media: legacy re-queue failed — ${e?.message?.slice(0, 160)}`);
+    }
+    void tick();
+  }, 5_000);
 }
 
 // Let the admin "approve" path nudge the worker instead of waiting for the
