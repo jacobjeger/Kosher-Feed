@@ -1150,8 +1150,12 @@
       <div class="card" style="margin-bottom:20px;">
         <div class="card-header">
           <h2>Add YouTube Playlist</h2>
-          <span id="ytApiKeyBadge" class="status-badge status-inactive">Checking…</span>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            <span id="ytApiKeyBadge" class="status-badge status-inactive">Checking…</span>
+            <span id="ytToolingBadge" class="status-badge status-inactive">Media…</span>
+          </div>
         </div>
+        <div id="ytMediaSummary" style="font-size:12px;color:#94a3b8;margin-bottom:12px;"></div>
         <div id="ytAddAlert"></div>
         <p style="color:#94a3b8;font-size:13px;margin-bottom:16px;line-height:1.5;">
           Paste a playlist URL, a channel URL, or an <code>@handle</code> (a channel
@@ -1195,8 +1199,8 @@
           <h2>Review Queue</h2>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             <select id="ytQueueStatus" onchange="loadYtQueue(1)" style="width:auto;padding:6px 10px;font-size:12px;">
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
+              <option value="pending">Pending review</option>
+              <option value="approved">Approved (downloading / ready)</option>
               <option value="rejected">Rejected</option>
             </select>
             <select id="ytQueueFeed" onchange="loadYtQueue(1)" style="width:auto;padding:6px 10px;font-size:12px;min-width:150px;">
@@ -2686,22 +2690,65 @@ function ytAlert(msg, type = 'success') {
   setTimeout(() => { if (area.firstChild === div) area.innerHTML = ''; }, 6000);
 }
 
+function fmtBytes(n) {
+  if (!n) return '0 B';
+  const u = ['B','KB','MB','GB','TB'];
+  let i = 0; let v = n;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return v.toFixed(v < 10 && i > 0 ? 1 : 0) + ' ' + u[i];
+}
+
 async function loadYtDiagnostics() {
   const badge = document.getElementById('ytApiKeyBadge');
-  if (!badge) return;
-  try {
-    const d = await api('/api/admin/youtube/diagnostics');
-    if (d.apiKeyConfigured) {
-      badge.textContent = 'API key set';
-      badge.className = 'status-badge status-active';
-    } else {
-      badge.textContent = 'YOUTUBE_API_KEY missing';
+  if (badge) {
+    try {
+      const d = await api('/api/admin/youtube/diagnostics');
+      badge.textContent = d.apiKeyConfigured ? 'API key set' : 'YOUTUBE_API_KEY missing';
+      badge.className = 'status-badge ' + (d.apiKeyConfigured ? 'status-active' : 'status-inactive');
+    } catch {
+      badge.textContent = 'Unknown';
       badge.className = 'status-badge status-inactive';
     }
-  } catch {
-    badge.textContent = 'Unknown';
-    badge.className = 'status-badge status-inactive';
   }
+
+  // Media pipeline: without yt-dlp / ffmpeg / a writable dir, approvals queue
+  // up forever and never become episodes — so surface it loudly.
+  const tb = document.getElementById('ytToolingBadge');
+  const sum = document.getElementById('ytMediaSummary');
+  try {
+    const m = await api('/api/admin/youtube/media/status');
+    const ok = !!m.tooling.ytdlp && m.tooling.ffmpeg && m.tooling.dirWritable;
+    if (tb) {
+      tb.textContent = ok ? ('yt-dlp ' + m.tooling.ytdlp) : 'Media pipeline unavailable';
+      tb.className = 'status-badge ' + (ok ? 'status-active' : 'status-inactive');
+    }
+    if (sum) {
+      const problems = [];
+      if (!m.tooling.ytdlp) problems.push('yt-dlp missing (' + esc(m.tooling.ytdlpPath) + ')');
+      if (!m.tooling.ffmpeg) problems.push('ffmpeg missing');
+      if (!m.tooling.dirWritable) problems.push('media dir not writable (' + esc(m.tooling.dir) + ') — attach a volume');
+      const c = m.counts || {};
+      const queue = `queued ${c.queued||0} · downloading ${c.downloading||0} · ready ${c.ready||0} · failed ${c.failed||0}`;
+      sum.innerHTML = problems.length
+        ? `<span style="color:#f87171;">⚠ ${problems.map(esc).join(' · ')}</span><br>${queue}`
+        : `Stored: ${m.usage.files} file(s), ${fmtBytes(m.usage.bytes)} in ${esc(m.usage.dir)} · ${queue}`;
+    }
+  } catch (e) {
+    if (tb) { tb.textContent = 'Media status unknown'; tb.className = 'status-badge status-inactive'; }
+  }
+}
+
+function ytMediaBadge(it) {
+  if (!it.mediaStatus) return '';
+  const map = {
+    queued: ['#fbbf24', 'queued for download'],
+    downloading: ['#38bdf8', 'downloading…'],
+    ready: ['#86efac', 'ready'],
+    failed: ['#f87171', 'download failed'],
+  };
+  const [color, label] = map[it.mediaStatus] || ['#94a3b8', it.mediaStatus];
+  const size = it.mediaBytes ? ' · ' + fmtBytes(it.mediaBytes) : '';
+  return `<span style="color:${color};font-weight:600;">${esc(label)}</span>${size}`;
 }
 
 async function addYouTubeFeed() {
@@ -2842,7 +2889,9 @@ async function loadYtQueue(page) {
           <div style="font-size:12px;color:#64748b;margin-bottom:4px;">
             ${esc(it.feedTitle || '')} · ${esc(date)}${it.duration ? ' · ' + esc(it.duration) : ''}
             ${it.durationSeconds != null && it.durationSeconds < 90 ? ' · <span style="color:#fbbf24;">short clip</span>' : ''}
+            ${it.mediaStatus ? ' · ' + ytMediaBadge(it) : ''}
           </div>
+          ${it.mediaError ? `<div style="font-size:11px;color:#fca5a5;margin-bottom:4px;">${esc(it.mediaError)}</div>` : ''}
           ${desc ? `<div style="font-size:12px;color:#94a3b8;line-height:1.45;">${esc(desc)}${it.description.length > 220 ? '…' : ''}</div>` : ''}
           ${it.reviewNote ? `<div style="font-size:11px;color:#fca5a5;margin-top:4px;">Note: ${esc(it.reviewNote)}</div>` : ''}
         </div>
@@ -2852,6 +2901,8 @@ async function loadYtQueue(page) {
             <button class="btn btn-secondary btn-sm" onclick="withLoading(this, () => ytReviewOne('${esc(it.id)}', 'reject'))">Reject</button>
           ` : ''}
           ${status === 'rejected' ? `<button class="btn btn-secondary btn-sm" onclick="withLoading(this, () => ytUnreject('${esc(it.id)}'))">Restore</button>` : ''}
+          ${it.mediaStatus === 'failed' ? `<button class="btn btn-secondary btn-sm" onclick="withLoading(this, () => ytRetryMedia('${esc(it.id)}'))">Retry</button>` : ''}
+          ${it.mediaStatus === 'ready' ? `<a class="btn btn-secondary btn-sm" href="/api/media/yt/${esc(it.videoId)}.mp3" target="_blank" style="text-decoration:none;text-align:center;">Play</a>` : ''}
         </div>
       </div>`;
     }).join('');
@@ -2909,8 +2960,8 @@ async function ytReviewOne(id, action) {
       method: 'POST',
       body: JSON.stringify({ ids: [id] }),
     });
-    ytAlert(action === 'approve' ? `Approved — ${d.episodes} episode(s) created` : 'Rejected');
-    await Promise.all([loadYtQueue(_ytQueuePage), loadYtFeeds()]);
+    ytAlert(action === 'approve' ? 'Approved — downloading audio now' : 'Rejected');
+    await Promise.all([loadYtQueue(_ytQueuePage), loadYtFeeds(), loadYtDiagnostics()]);
   } catch (e) {
     ytAlert(e.message, 'error');
   }
@@ -2935,9 +2986,19 @@ async function ytReview(action, all) {
     const body = all ? { all: true, feedId: feedId || undefined, note } : { ids: [..._ytSelected], note };
     const d = await api(`/api/admin/youtube/pending/${action}`, { method: 'POST', body: JSON.stringify(body) });
     ytAlert(action === 'approve'
-      ? `Approved ${d.approved} — ${d.episodes} episode(s) created`
+      ? `Approved ${d.approved} — downloading audio in the background; episodes appear as each finishes`
       : `Rejected ${d.rejected}`);
-    await Promise.all([loadYtQueue(1), loadYtFeeds()]);
+    await Promise.all([loadYtQueue(1), loadYtFeeds(), loadYtDiagnostics()]);
+  } catch (e) {
+    ytAlert(e.message, 'error');
+  }
+}
+
+async function ytRetryMedia(id) {
+  try {
+    await api('/api/admin/youtube/media/retry', { method: 'POST', body: JSON.stringify({ ids: [id] }) });
+    ytAlert('Re-queued for download');
+    await Promise.all([loadYtQueue(_ytQueuePage), loadYtDiagnostics()]);
   } catch (e) {
     ytAlert(e.message, 'error');
   }

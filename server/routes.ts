@@ -21,6 +21,9 @@ import {
   fetchPlaylistMeta,
 } from "./youtube";
 import { resolveAudioStream, invalidateAudioCache, audioCacheStats, YT_VIDEO_ID_RE } from "./youtube-audio";
+import { mediaPathFor, mediaUsage, mediaToolingStatus, deleteYouTubeAudio } from "./youtube-media";
+import { nudgeYouTubeMediaWorker } from "./youtube-worker";
+import fsp from "node:fs/promises";
 import { trackErrorForAlert, sendFeedbackNotification } from "./error-alerts";
 import { registerV1Routes } from "./routes-v1";
 import * as iss from "./issues-storage";
@@ -1344,8 +1347,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Stored YouTube audio. Approved videos are fetched once and transcoded to
+  // mono MP3 on our own disk, so playback is a plain static file — no YouTube
+  // request, no signed URLs, no throttling. This is the path real episodes use.
+  app.get("/api/media/yt/:file", async (req: Request, res: Response) => {
+    try {
+      const file = String(req.params.file || "");
+      const m = file.match(/^([A-Za-z0-9_-]{11})\.mp3$/);
+      if (!m) return res.status(400).json({ error: "Invalid media file" });
+      const filePath = mediaPathFor(m[1]);
+
+      let stat;
+      try {
+        stat = await fsp.stat(filePath);
+      } catch {
+        return res.status(404).json({ error: "Media not found" });
+      }
+
+      res.setHeader("Content-Type", "audio/mpeg");
+      res.setHeader("Accept-Ranges", "bytes");
+      // Immutable: the file for a given video id never changes once written.
+      res.setHeader("Cache-Control", "public, max-age=604800, immutable");
+
+      const range = req.headers.range;
+      if (range) {
+        const rm = /bytes=(\d*)-(\d*)/.exec(String(range));
+        if (rm) {
+          const start = rm[1] ? parseInt(rm[1], 10) : 0;
+          const end = rm[2] ? parseInt(rm[2], 10) : stat.size - 1;
+          if (Number.isNaN(start) || start >= stat.size || start > end) {
+            res.setHeader("Content-Range", `bytes */${stat.size}`);
+            return res.status(416).end();
+          }
+          const safeEnd = Math.min(end, stat.size - 1);
+          res.status(206);
+          res.setHeader("Content-Range", `bytes ${start}-${safeEnd}/${stat.size}`);
+          res.setHeader("Content-Length", String(safeEnd - start + 1));
+          await pipeline(fs.createReadStream(filePath, { start, end: safeEnd }), res).catch(() => {});
+          return;
+        }
+      }
+
+      res.setHeader("Content-Length", String(stat.size));
+      await pipeline(fs.createReadStream(filePath), res).catch(() => {});
+    } catch (e: any) {
+      if (!res.headersSent) res.status(500).json({ error: e.message });
+    }
+  });
+
   // YouTube audio proxy — resolves an audio-only stream for the video and pipes
   // it back to the client.
+  //
+  // LEGACY: episodes no longer use this. YouTube throttles repeated reads of a
+  // stream so aggressively that live proxying fails within seconds of playback
+  // starting, which is why approved videos are downloaded to MP3 instead. Kept
+  // only so any episode row written before that change still resolves.
   //
   // Episodes store yt://audio/{videoId} rather than a real URL: googlevideo
   // links are signed and expire in ~6h, so they have to be minted per playback.
@@ -1661,27 +1717,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (all) targetIds = await storage.getAllPendingYouTubeIds(feedId || undefined);
       if (targetIds.length === 0) return res.json({ approved: 0, episodes: 0 });
 
+      // Approval only queues the audio fetch — the episode appears once the
+      // MP3 is stored. Returning immediately keeps a 300-video bulk approve
+      // from blocking on hours of downloading.
       const result = await storage.approveYouTubePending(targetIds, adminUsername(req));
+      nudgeYouTubeMediaWorker();
 
-      // Reveal any feed that just got its first approved episode.
-      const touchedFeedIds = new Set(result.episodes.map(ep => ep.feedId));
-      for (const fid of touchedFeedIds) {
-        try {
-          const feed = await storage.getFeedById(fid);
-          if (feed && !feed.showInBrowse) {
-            await storage.updateFeed(fid, { showInBrowse: true } as any);
-          }
-          // Push only for small batches — a 500-video bulk approval must not
-          // fan out 500 notifications.
-          if (feed && result.episodes.length <= PUSH_BACKFILL_THRESHOLD) {
-            for (const ep of result.episodes.filter(e => e.feedId === fid).slice(0, 3)) {
-              sendNewEpisodePushes(fid, { title: ep.title, id: ep.id, publishedAt: (ep as any).publishedAt }, feed.title).catch(() => {});
-            }
-          }
-        } catch {}
-      }
-
-      res.json({ approved: result.approved, episodes: result.episodes.length });
+      res.json({ approved: result.approved, queued: result.queued });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }
@@ -1727,6 +1769,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(ingest);
     } catch (e: any) {
       res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Re-queue a failed download.
+  app.post("/api/admin/youtube/media/retry", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) return res.json({ retried: 0 });
+      const retried = await storage.retryYouTubeMedia(ids);
+      nudgeYouTubeMediaWorker();
+      res.json({ retried });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Media pipeline health: is the toolchain present, how much disk is in use,
+  // and where the queue stands.
+  app.get("/api/admin/youtube/media/status", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const [tooling, usage, counts] = await Promise.all([
+        mediaToolingStatus(),
+        mediaUsage(),
+        storage.getYouTubeMediaCounts(),
+      ]);
+      res.json({ tooling, usage, counts });
+    } catch (e: any) {
+      publicError(res, e);
     }
   });
 

@@ -242,13 +242,26 @@ export const youtubePending = pgTable("youtube_pending", {
   reviewedAt: timestamp("reviewed_at"),
   reviewedBy: text("reviewed_by"),
   reviewNote: text("review_note"),
-  // Set when approved — links back to the episode row this became.
+  // Set once the MP3 is stored — links back to the episode this became.
   episodeId: varchar("episode_id").references(() => episodes.id, { onDelete: "set null" }),
+  // Media pipeline. Approving does NOT create an episode directly: it queues a
+  // one-time fetch+transcode, and the episode is created only once the MP3 is
+  // on disk. YouTube throttles repeated reads of the same stream hard, so
+  // playback can never hit YouTube — we serve our own file.
+  // queued | downloading | ready | failed
+  mediaStatus: text("media_status"),
+  mediaPath: text("media_path"),
+  mediaBytes: integer("media_bytes"),
+  mediaDurationSec: integer("media_duration_sec"),
+  mediaError: text("media_error"),
+  mediaAttempts: integer("media_attempts").default(0).notNull(),
+  mediaUpdatedAt: timestamp("media_updated_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("youtube_pending_feed_video_idx").on(table.feedId, table.videoId),
   index("youtube_pending_status_idx").on(table.status, table.publishedAt),
   index("youtube_pending_feed_status_idx").on(table.feedId, table.status),
+  index("youtube_pending_media_status_idx").on(table.mediaStatus),
 ]);
 
 export type YoutubePending = typeof youtubePending.$inferSelect;

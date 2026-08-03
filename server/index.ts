@@ -18,6 +18,7 @@ import { refreshKHFeedEpisodes, syncKHSpeakers } from "./kolhalashon";
 import { isMergedFeed, filterCrossSourceDuplicates, dedupWithinBatch } from "./episode-dedup";
 import { refreshTorahDownloadsFeedEpisodes, syncTorahDownloadsSpeakers } from "./torahdownloads";
 import { refreshYouTubeFeedEpisodes, extractYouTubePlaylistId } from "./youtube";
+import { startYouTubeMediaWorker } from "./youtube-worker";
 import { autoCategorizeFeeds } from "./auto-categorize";
 import { extractKhRavId, extractTatSpeakerId, extractTorahDownloadsSpeakerId } from "./feed-utils";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
@@ -1439,6 +1440,8 @@ function startAutoRefresh() {
   }, 5000);
   setTimeout(slowRefreshInactiveKH, 60000); // first run after 1 min
   startKeepAlive();
+  // Turns approved YouTube videos into stored MP3s, then into episodes.
+  startYouTubeMediaWorker();
 
   // Daily error digest — send at 8am EST (13:00 UTC)
   function scheduleDailyDigest() {

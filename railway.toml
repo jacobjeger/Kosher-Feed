@@ -1,5 +1,5 @@
 [build]
-buildCommand = "npm run server:build && npx drizzle-kit push && node scripts/build.js"
+buildCommand = "npm run server:build && npx drizzle-kit push && node scripts/build.js && bash scripts/fetch-ytdlp.sh"
 
 [deploy]
 startCommand = "npm run server:prod"

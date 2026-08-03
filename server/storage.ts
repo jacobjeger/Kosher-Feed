@@ -1310,62 +1310,171 @@ export async function getYouTubePendingCounts(): Promise<Record<string, number>>
   return out;
 }
 
-// Promote reviewed videos into real episodes.
+// Approve reviewed videos.
 //
-// audioUrl is the yt://audio/{videoId} placeholder — the client rewrites it to
-// /api/audio/yt/{videoId} via the audio-proxy rules, and the server resolves a
-// fresh googlevideo URL per playback. Storing a real stream URL here would be
-// wrong: they expire in ~6 hours.
+// This does NOT create episodes. Approval only queues a one-time audio fetch;
+// the episode is created by the media worker once the MP3 is actually on disk
+// (see createEpisodeForStoredYouTubeMedia). Doing it the other way round would
+// publish an episode whose audio might never arrive.
 export async function approveYouTubePending(
   ids: string[],
   reviewedBy?: string,
-): Promise<{ approved: number; episodes: Episode[] }> {
-  if (ids.length === 0) return { approved: 0, episodes: [] };
+): Promise<{ approved: number; queued: number }> {
+  if (ids.length === 0) return { approved: 0, queued: 0 };
 
-  const rows = await db.select().from(youtubePending)
-    .where(and(inArray(youtubePending.id, ids), eq(youtubePending.status, "pending")));
-  if (rows.length === 0) return { approved: 0, episodes: [] };
+  const updated = await db.update(youtubePending).set({
+    status: "approved",
+    reviewedAt: new Date(),
+    reviewedBy: reviewedBy || null,
+    mediaStatus: "queued",
+    mediaError: null,
+    mediaAttempts: 0,
+    mediaUpdatedAt: new Date(),
+  } as any)
+    .where(and(inArray(youtubePending.id, ids), eq(youtubePending.status, "pending")))
+    .returning({ id: youtubePending.id });
 
-  const created: Episode[] = [];
-  for (const row of rows) {
-    try {
-      const [episode] = await db.insert(episodes).values({
-        feedId: row.feedId,
-        title: row.title,
-        description: row.description,
-        audioUrl: `yt://audio/${row.videoId}`,
-        duration: row.duration,
-        publishedAt: row.publishedAt as any,
-        guid: `yt-${row.videoId}`,
-        imageUrl: row.imageUrl,
-        youtubeVideoId: row.videoId,
-      } as any).onConflictDoNothing().returning();
+  return { approved: updated.length, queued: updated.length };
+}
 
-      // onConflictDoNothing returns nothing when the guid already exists (e.g.
-      // the same video approved twice via concurrent requests). Look up the
-      // existing row so the queue entry still links to a real episode.
-      let linked: Episode | undefined = episode;
-      if (!linked) {
-        const [existing] = await db.select().from(episodes)
-          .where(and(eq(episodes.feedId, row.feedId), eq(episodes.guid, `yt-${row.videoId}`)))
-          .limit(1);
-        linked = existing;
-      } else {
-        created.push(linked);
-      }
+// Claim the next batch of approved-but-not-yet-downloaded videos. Rows are
+// flipped to `downloading` in the same statement they're selected by, so two
+// worker ticks can't pick up the same video.
+export async function claimYouTubeMediaJobs(limit: number): Promise<YoutubePending[]> {
+  const rows = await db.execute(sql`
+    UPDATE youtube_pending SET media_status = 'downloading', media_updated_at = now()
+    WHERE id IN (
+      SELECT id FROM youtube_pending
+      WHERE status = 'approved' AND media_status = 'queued'
+      ORDER BY reviewed_at ASC
+      LIMIT ${limit}
+      FOR UPDATE SKIP LOCKED
+    )
+    RETURNING *
+  `);
+  return (rows.rows as any[]).map(r => ({
+    id: r.id, feedId: r.feed_id, videoId: r.video_id, title: r.title,
+    description: r.description, duration: r.duration, durationSeconds: r.duration_seconds,
+    publishedAt: r.published_at, imageUrl: r.image_url, channelTitle: r.channel_title,
+    status: r.status, reviewedAt: r.reviewed_at, reviewedBy: r.reviewed_by,
+    reviewNote: r.review_note, episodeId: r.episode_id, mediaStatus: r.media_status,
+    mediaPath: r.media_path, mediaBytes: r.media_bytes, mediaDurationSec: r.media_duration_sec,
+    mediaError: r.media_error, mediaAttempts: r.media_attempts, mediaUpdatedAt: r.media_updated_at,
+    createdAt: r.created_at,
+  })) as YoutubePending[];
+}
 
-      await db.update(youtubePending).set({
-        status: "approved",
-        reviewedAt: new Date(),
-        reviewedBy: reviewedBy || null,
-        episodeId: linked?.id || null,
-      } as any).where(eq(youtubePending.id, row.id));
-    } catch (e: any) {
-      console.error(`YouTube approve failed for ${row.videoId}: ${e.message?.slice(0, 120)}`);
-    }
+// Media landed — create the episode pointing at OUR file, not at YouTube.
+export async function createEpisodeForStoredYouTubeMedia(
+  row: YoutubePending,
+  media: { path: string; bytes: number; durationSec: number | null },
+): Promise<Episode | undefined> {
+  const durationLabel = media.durationSec != null
+    ? formatSeconds(media.durationSec)
+    : row.duration;
+
+  const [episode] = await db.insert(episodes).values({
+    feedId: row.feedId,
+    title: row.title,
+    description: row.description,
+    audioUrl: `/api/media/yt/${row.videoId}.mp3`,
+    duration: durationLabel,
+    publishedAt: row.publishedAt as any,
+    guid: `yt-${row.videoId}`,
+    imageUrl: row.imageUrl,
+    youtubeVideoId: row.videoId,
+  } as any).onConflictDoNothing().returning();
+
+  let linked: Episode | undefined = episode;
+  if (!linked) {
+    const [existing] = await db.select().from(episodes)
+      .where(and(eq(episodes.feedId, row.feedId), eq(episodes.guid, `yt-${row.videoId}`)))
+      .limit(1);
+    linked = existing;
   }
 
-  return { approved: rows.length, episodes: created };
+  await db.update(youtubePending).set({
+    mediaStatus: "ready",
+    mediaPath: media.path,
+    mediaBytes: media.bytes,
+    mediaDurationSec: media.durationSec,
+    mediaError: null,
+    mediaUpdatedAt: new Date(),
+    episodeId: linked?.id || null,
+  } as any).where(eq(youtubePending.id, row.id));
+
+  return linked;
+}
+
+function formatSeconds(total: number): string {
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+export async function markYouTubeMediaFailed(id: string, error: string, attempts: number): Promise<void> {
+  // Back to `queued` while retries remain so the next worker tick picks it up;
+  // `failed` is terminal and needs an admin retry.
+  const exhausted = attempts >= 4;
+  await db.update(youtubePending).set({
+    mediaStatus: exhausted ? "failed" : "queued",
+    mediaError: error.slice(0, 500),
+    mediaAttempts: attempts,
+    mediaUpdatedAt: new Date(),
+  } as any).where(eq(youtubePending.id, id));
+}
+
+export async function retryYouTubeMedia(ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const updated = await db.update(youtubePending).set({
+    mediaStatus: "queued",
+    mediaError: null,
+    mediaAttempts: 0,
+    mediaUpdatedAt: new Date(),
+  } as any)
+    .where(and(inArray(youtubePending.id, ids), eq(youtubePending.status, "approved")))
+    .returning({ id: youtubePending.id });
+  return updated.length;
+}
+
+// Rows stuck in `downloading` because the process died mid-fetch. Without this
+// an approved shiur would sit invisible forever after a deploy or crash.
+export async function requeueStalledYouTubeMedia(olderThanMs: number): Promise<number> {
+  const cutoff = new Date(Date.now() - olderThanMs);
+  const updated = await db.update(youtubePending).set({
+    mediaStatus: "queued",
+    mediaUpdatedAt: new Date(),
+  } as any)
+    .where(and(
+      eq(youtubePending.mediaStatus, "downloading"),
+      sql`${youtubePending.mediaUpdatedAt} < ${cutoff}`,
+    ))
+    .returning({ id: youtubePending.id });
+  return updated.length;
+}
+
+export async function getYouTubeMediaCounts(): Promise<Record<string, number>> {
+  const rows = await db
+    .select({ s: youtubePending.mediaStatus, n: count() })
+    .from(youtubePending)
+    .where(sql`${youtubePending.mediaStatus} IS NOT NULL`)
+    .groupBy(youtubePending.mediaStatus);
+  const out: Record<string, number> = { queued: 0, downloading: 0, ready: 0, failed: 0 };
+  for (const r of rows) if (r.s) out[r.s] = Number(r.n);
+  return out;
+}
+
+export async function countEpisodesByFeed(feedId: string): Promise<number> {
+  const [row] = await db.select({ n: count() }).from(episodes).where(eq(episodes.feedId, feedId));
+  return Number(row?.n || 0);
+}
+
+export async function getYouTubeVideoIdForEpisode(episodeId: string): Promise<string | null> {
+  const [row] = await db.select({ v: episodes.youtubeVideoId }).from(episodes)
+    .where(eq(episodes.id, episodeId)).limit(1);
+  return row?.v || null;
 }
 
 export async function rejectYouTubePending(
