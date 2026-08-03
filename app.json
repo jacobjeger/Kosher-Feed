@@ -23,7 +23,7 @@
     },
     "android": {
       "package": "com.shiurpod.app",
-      "versionCode": 8,
+      "versionCode": 9,
       "googleServicesFile": "./google-services.json",
       "intentFilters": [
         {
