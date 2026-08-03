@@ -2,7 +2,7 @@
 buildCommand = "npm run server:build && npx drizzle-kit push && node scripts/build.js && bash scripts/fetch-ytdlp.sh"
 
 [deploy]
-startCommand = "npm run server:prod"
+startCommand = "NODE_ENV=production node server_dist/index.js"
 healthcheckPath = "/"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"

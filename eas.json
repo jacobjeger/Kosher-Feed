@@ -28,6 +28,16 @@
         "EXPO_PUBLIC_API_URL": "https://shiurpod.com",
         "EXPO_PUBLIC_YTC_PUSH": "1"
       }
+    },
+    "playstore": {
+      "channel": "production",
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://shiurpod.com",
+        "EXPO_PUBLIC_YTC_PUSH": "1"
+      }
     }
   },
   "submit": {
