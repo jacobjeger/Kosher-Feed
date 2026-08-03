@@ -1553,13 +1553,17 @@ export async function requeueLegacyYouTubeEpisodes(): Promise<number> {
   return (rows.rows as any[]).length;
 }
 
-// Reclaim downloads that failed the bot check, once cookies are available.
+// Reclaim downloads that failed for an environmental reason we've since fixed.
 //
-// Those rows exhausted their retries for a reason that has since been fixed
-// by configuration, so they'd otherwise sit in `failed` forever waiting for a
-// human to click Retry. Deliberately narrow: only auth-shaped failures are
-// reclaimed, so a genuinely dead video (deleted, private, region-locked)
-// doesn't get retried on every boot.
+// These rows exhausted their retries because the server was missing something
+// — cookies for the bot check, or a JS runtime to solve YouTube's n challenge
+// (which surfaces as "Requested format is not available", since an unsolved
+// challenge yields zero formats). Once the toolchain is complete they're
+// perfectly downloadable, but nothing would retry them without this.
+//
+// Deliberately narrow: matches only environment-shaped failures. A genuinely
+// dead video — deleted, private, region-locked — reports differently and keeps
+// its failed state instead of being retried on every deploy.
 export async function requeueAuthFailedYouTubeMedia(): Promise<number> {
   const rows = await db.execute(sql`
     UPDATE youtube_pending SET media_status = 'queued', media_attempts = 0,
@@ -1568,7 +1572,10 @@ export async function requeueAuthFailedYouTubeMedia(): Promise<number> {
       AND (media_error ILIKE '%confirm you%not a bot%'
         OR media_error ILIKE '%sign in%'
         OR media_error ILIKE '%cookies%'
-        OR media_error ILIKE '%age-restricted%')
+        OR media_error ILIKE '%age-restricted%'
+        OR media_error ILIKE '%format is not available%'
+        OR media_error ILIKE '%n challenge%'
+        OR media_error ILIKE '%JavaScript runtime%')
     RETURNING id
   `);
   return (rows.rows as any[]).length;
