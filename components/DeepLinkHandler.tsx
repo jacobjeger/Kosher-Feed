@@ -44,6 +44,10 @@ function parseDeepLink(url: string): { episodeId: string; timestamp?: number } |
     try { const u = new URL(url); path = u.pathname; query = u.searchParams; } catch { /* non-URL scheme */ }
     const eParam = query.get("e");
     if (eParam && UUID_RE.test(eParam)) return { episodeId: eParam };
+    // Routes whose trailing UUID is NOT an episode id. Without this, opening a
+    // podcast page fires /api/share/episode/{feedId} and 404s on every load —
+    // harmless but a wasted round trip and a console error on every feed view.
+    if (/\/(podcast|category|maggid-shiur)\//.test(path)) return null;
     const m = path.match(UUID_RE);
     if (m) return { episodeId: m[1] };
     return null;
