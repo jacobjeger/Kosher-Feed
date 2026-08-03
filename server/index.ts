@@ -17,6 +17,7 @@ import { refreshOUFeedEpisodes, syncOUPlatformAuthors, fetchAuthorById, OU_PLATF
 import { refreshKHFeedEpisodes, syncKHSpeakers } from "./kolhalashon";
 import { isMergedFeed, filterCrossSourceDuplicates, dedupWithinBatch } from "./episode-dedup";
 import { refreshTorahDownloadsFeedEpisodes, syncTorahDownloadsSpeakers } from "./torahdownloads";
+import { refreshYouTubeFeedEpisodes, extractYouTubePlaylistId } from "./youtube";
 import { autoCategorizeFeeds } from "./auto-categorize";
 import { extractKhRavId, extractTatSpeakerId, extractTorahDownloadsSpeakerId } from "./feed-utils";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
@@ -846,7 +847,7 @@ export interface RefreshResult {
   episodesFound: number;
 }
 
-export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string; etag?: string | null; lastModifiedHeader?: string | null; tatSpeakerId?: number | null; alldafAuthorId?: number | null; allmishnahAuthorId?: number | null; allparshaAuthorId?: number | null; allhalachaAuthorId?: number | null; kolhalashonRavId?: number | null; torahdownloadsSpeakerId?: number | null }): Promise<RefreshResult> {
+export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: string; etag?: string | null; lastModifiedHeader?: string | null; tatSpeakerId?: number | null; alldafAuthorId?: number | null; allmishnahAuthorId?: number | null; allparshaAuthorId?: number | null; allhalachaAuthorId?: number | null; kolhalashonRavId?: number | null; torahdownloadsSpeakerId?: number | null; youtubePlaylistId?: string | null }): Promise<RefreshResult> {
   const start = Date.now();
 
   // Detect every source this feed pulls from. A feed can have multiple
@@ -860,10 +861,12 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
   const isTatUrl = feed.rssUrl.startsWith("tat://");
   const isKhUrl = feed.rssUrl.startsWith("kh://");
   const isTdUrl = feed.rssUrl.startsWith("td://");
+  const isYtUrl = feed.rssUrl.startsWith("yt://");
   const isOUUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
   const effectiveTatSpeakerId = extractTatSpeakerId(feed);
   const effectiveKhRavId = extractKhRavId(feed);
   const effectiveTdSpeakerId = extractTorahDownloadsSpeakerId(feed);
+  const effectiveYtPlaylistId = extractYouTubePlaylistId(feed);
 
   let totalNew = 0;
 
@@ -915,10 +918,24 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
     }
   }
 
+  // YouTube ingest only fills the review queue — it never creates episodes, so
+  // totalNew stays untouched here. Approval (admin action) is what produces
+  // episodes and fires pushes.
+  if (effectiveYtPlaylistId) {
+    try {
+      await refreshYouTubeFeedEpisodes(
+        { id: feed.id, title: feed.title, youtubePlaylistId: effectiveYtPlaylistId },
+        feed,
+      );
+    } catch (e: any) {
+      console.log(`YouTube refresh failed for ${feed.title}: ${(e as Error).message?.slice(0, 100)}`);
+    }
+  }
+
   // Skip RSS parsing when the URL is an API-only scheme — it'd just 404 or
   // worse, drop into axios with a non-HTTP URL and throw. RSS-base feeds
   // still parse their RSS even if a non-RSS source already ran above.
-  if (isTatUrl || isOUUrl || isKhUrl || isTdUrl) {
+  if (isTatUrl || isOUUrl || isKhUrl || isTdUrl || isYtUrl) {
     return {
       newEpisodes: totalNew,
       method: 'stream',
@@ -995,10 +1012,11 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
 let isAutoRefreshing = false;
 
 // Feed type classification for concurrency and stale intervals
-function getFeedType(feed: { rssUrl: string }): 'rss' | 'tat' | 'ou' | 'kh' | 'td' {
+function getFeedType(feed: { rssUrl: string }): 'rss' | 'tat' | 'ou' | 'kh' | 'td' | 'yt' {
   if (feed.rssUrl.startsWith("kh://")) return 'kh';
   if (feed.rssUrl.startsWith("tat://")) return 'tat';
   if (feed.rssUrl.startsWith("td://")) return 'td';
+  if (feed.rssUrl.startsWith("yt://")) return 'yt';
   if (Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme))) return 'ou';
   return 'rss';
 }
@@ -1014,6 +1032,10 @@ const STALE_INTERVALS: Record<string, number> = {
   ou:  2 * 60 * 60 * 1000,   // 2 hours
   kh:  4 * 60 * 60 * 1000,   // 4 hours
   td:  4 * 60 * 60 * 1000,   // 4 hours
+  // YouTube costs API quota per crawl (10k units/day, shared across every
+  // playlist) and nothing it finds is user-visible until a human approves it,
+  // so there's no freshness benefit to polling harder.
+  yt:  6 * 60 * 60 * 1000,   // 6 hours
 };
 
 // Concurrency per feed type (keep total across all types ≤ pool max to avoid DB exhaustion).
@@ -1026,6 +1048,9 @@ const CONCURRENCY: Record<string, number> = {
   ou:  3,
   kh:  5,
   td:  1,
+  // Held low so a burst of playlist crawls can't drain the daily API quota in
+  // one cycle.
+  yt:  2,
 };
 
 async function autoRefreshFeeds() {
@@ -1059,7 +1084,7 @@ async function autoRefreshFeeds() {
     }
 
     // Group feeds by type for different concurrency levels
-    const feedsByType: Record<string, typeof staleFeeds> = { rss: [], tat: [], ou: [], kh: [], td: [] };
+    const feedsByType: Record<string, typeof staleFeeds> = { rss: [], tat: [], ou: [], kh: [], td: [], yt: [] };
     for (const f of staleFeeds) {
       feedsByType[getFeedType(f)].push(f);
     }
@@ -1134,6 +1159,7 @@ async function autoRefreshFeeds() {
       ...processPool(feedsByType.ou, CONCURRENCY.ou),
       ...processPool(feedsByType.kh, CONCURRENCY.kh),
       ...processPool(feedsByType.td, CONCURRENCY.td),
+      ...processPool(feedsByType.yt, CONCURRENCY.yt),
     ];
 
     await Promise.all(allTasks);

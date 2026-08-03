@@ -320,7 +320,14 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
         // SSL cert errors or network failures — retry through server proxy
         if (errMsg.includes('CertPath') || errMsg.includes('SSL') || errMsg.includes('Trust anchor') || errMsg.includes('certificate')) {
           addLog("warn", `Direct download SSL error, retrying via proxy: ${episode.title}`, undefined, "downloads");
-          const proxyUrl = `${getApiUrl()}/api/audio/proxy?url=${encodeURIComponent(episode.audioUrl)}`;
+          // Wrap the RESOLVED url, not the raw one. Sources that already route
+          // through our own server (YouTube's yt://audio/… placeholder becomes
+          // /api/audio/yt/…) must not be re-wrapped: /api/audio/proxy only
+          // accepts https URLs and would reject the placeholder outright.
+          const resolvedUrl = resolveAudioUrl(episode.audioUrl);
+          const proxyUrl = resolvedUrl.startsWith(getApiUrl())
+            ? resolvedUrl
+            : `${getApiUrl()}/api/audio/proxy?url=${encodeURIComponent(resolvedUrl)}`;
           const proxyResumable = LegacyFS.createDownloadResumable(proxyUrl, fileUri, {
             headers: { "User-Agent": "ShiurPod/1.0" },
           });

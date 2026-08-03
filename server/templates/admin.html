@@ -350,6 +350,7 @@
       <button class="tab" onclick="switchTab('vitals', this)">Feed Vitals</button>
       <button class="tab" onclick="switchTab('announcements', this)">Announcements</button>
       <button class="tab" onclick="switchTab('kolhalashon', this)">Kol Halashon</button>
+      <button class="tab" onclick="switchTab('youtube', this)">YouTube <span id="ytPendingBadge" class="status-badge status-inactive" style="margin-left:4px;display:none;">0</span></button>
       <button class="tab" onclick="switchTab('ytc', this)">YTC Alumni</button>
       <button class="tab" onclick="switchTab('settings', this)">Settings</button>
     </div>
@@ -1138,6 +1139,93 @@
           </div>
         </div>
         <div id="khVitalsTable" style="color:#94a3b8;font-size:13px;">Loading...</div>
+      </div>
+    </div>
+
+    <!-- YouTube: playlist ingest + manual review queue.
+         Nothing from YouTube reaches the app until it's approved here —
+         ingest writes to youtube_pending, and only approval creates episodes.
+         Ties to /api/admin/youtube/* in routes.ts. -->
+    <div id="youtubeTab" class="hidden">
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <h2>Add YouTube Playlist</h2>
+          <span id="ytApiKeyBadge" class="status-badge status-inactive">Checking…</span>
+        </div>
+        <div id="ytAddAlert"></div>
+        <p style="color:#94a3b8;font-size:13px;margin-bottom:16px;line-height:1.5;">
+          Paste a playlist URL, a channel URL, or an <code>@handle</code> (a channel
+          pulls its full uploads history). Every video is queued for review below —
+          <strong>nothing appears in the app until you approve it</strong>. Only the
+          audio track is ever served; the app never opens YouTube.
+        </p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;">
+          <input id="ytAddUrl" type="text" placeholder="https://www.youtube.com/playlist?list=PL… or @channelhandle" autocomplete="off" style="flex:1;min-width:280px;padding:10px 12px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;color:#f8fafc;font-size:14px;">
+          <select id="ytAddCategory" style="width:auto;padding:10px 12px;font-size:13px;min-width:150px;">
+            <option value="">No category</option>
+          </select>
+          <button class="btn btn-primary" onclick="withLoading(this, addYouTubeFeed)">Add &amp; Scan</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <h2>YouTube Sources</h2>
+          <span id="ytFeedCount" style="font-size:12px;color:#64748b;"></span>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="feed-table">
+            <thead>
+              <tr>
+                <th>Feed</th>
+                <th style="text-align:right;">Pending</th>
+                <th style="text-align:right;">Approved</th>
+                <th style="text-align:right;">Rejected</th>
+                <th style="text-align:center;">In Browse</th>
+                <th style="text-align:right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="ytFeedBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+          <h2>Review Queue</h2>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <select id="ytQueueStatus" onchange="loadYtQueue(1)" style="width:auto;padding:6px 10px;font-size:12px;">
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+            <select id="ytQueueFeed" onchange="loadYtQueue(1)" style="width:auto;padding:6px 10px;font-size:12px;min-width:150px;">
+              <option value="">All feeds</option>
+            </select>
+            <select id="ytQueueSort" onchange="loadYtQueue(1)" style="width:auto;padding:6px 10px;font-size:12px;">
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </select>
+            <input type="text" id="ytQueueSearch" placeholder="Search titles..." oninput="debounce('ytQueueSearch', () => loadYtQueue(1), 300)" style="padding:6px 10px;font-size:12px;width:170px;">
+          </div>
+        </div>
+
+        <div id="ytBulkBar" style="display:none;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 0 14px;border-bottom:1px solid #1e293b;margin-bottom:14px;">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#e2e8f0;cursor:pointer;">
+            <input type="checkbox" id="ytSelectAll" onchange="toggleYtSelectAll(this.checked)" style="width:auto;margin:0;">
+            Select page
+          </label>
+          <span id="ytSelectedCount" style="font-size:12px;color:#64748b;"></span>
+          <span style="flex:1;"></span>
+          <button class="btn btn-primary btn-sm" onclick="withLoading(this, () => ytReview('approve', false))">Approve selected</button>
+          <button class="btn btn-secondary btn-sm" onclick="withLoading(this, () => ytReview('reject', false))">Reject selected</button>
+          <span style="width:1px;height:20px;background:#1e293b;"></span>
+          <button class="btn btn-sm" style="background:#14532d;color:#86efac;border:1px solid #166534;" onclick="withLoading(this, () => ytReview('approve', true))">Approve ALL pending</button>
+          <button class="btn btn-sm" style="background:#7f1d1d;color:#fca5a5;border:1px solid #991b1b;" onclick="withLoading(this, () => ytReview('reject', true))">Reject ALL pending</button>
+        </div>
+
+        <div id="ytQueueList" style="color:#94a3b8;font-size:13px;">Loading…</div>
+        <div id="ytQueuePager" style="display:flex;gap:8px;align-items:center;justify-content:center;margin-top:16px;"></div>
       </div>
     </div>
 
@@ -2572,8 +2660,297 @@ function switchTab(tab, btn) {
   if (tab === 'vitals') loadVitals();
   if (tab === 'announcements') loadAnnouncements();
   if (tab === 'kolhalashon') { loadKHStatus(); loadKHSpeakers(); setTimeout(loadKHVitals, 300); }
+  if (tab === 'youtube') { loadYtFeeds(); loadYtQueue(1); loadYtDiagnostics(); }
   if (tab === 'ytc') loadYtcCode();
   if (tab === 'settings') { loadTATStatus(); setTimeout(() => { loadAllOUStatuses(); loadTDStatus(); loadMergers(); loadGlobalMergeHistory(); }, 300); }
+}
+
+// ---- YouTube review queue ----
+//
+// The whole point of this panel is the human gate: ingest only ever fills
+// youtube_pending, and an episode exists only once someone clicks Approve.
+// Backed by /api/admin/youtube/* in routes.ts.
+
+let _ytQueuePage = 1;
+let _ytQueueTotal = 0;
+const _ytSelected = new Set();
+
+function ytAlert(msg, type = 'success') {
+  const area = document.getElementById('ytAddAlert');
+  if (!area) return showAlert(msg, type);
+  const div = document.createElement('div');
+  div.className = `alert alert-${type}`;
+  div.textContent = msg;
+  area.innerHTML = '';
+  area.appendChild(div);
+  setTimeout(() => { if (area.firstChild === div) area.innerHTML = ''; }, 6000);
+}
+
+async function loadYtDiagnostics() {
+  const badge = document.getElementById('ytApiKeyBadge');
+  if (!badge) return;
+  try {
+    const d = await api('/api/admin/youtube/diagnostics');
+    if (d.apiKeyConfigured) {
+      badge.textContent = 'API key set';
+      badge.className = 'status-badge status-active';
+    } else {
+      badge.textContent = 'YOUTUBE_API_KEY missing';
+      badge.className = 'status-badge status-inactive';
+    }
+  } catch {
+    badge.textContent = 'Unknown';
+    badge.className = 'status-badge status-inactive';
+  }
+}
+
+async function addYouTubeFeed() {
+  const input = document.getElementById('ytAddUrl');
+  const url = (input.value || '').trim();
+  if (!url) return ytAlert('Enter a playlist URL, channel URL, or @handle', 'error');
+  const categoryId = document.getElementById('ytAddCategory').value || null;
+  try {
+    const d = await api('/api/admin/youtube/feeds', {
+      method: 'POST',
+      body: JSON.stringify({ url, categoryId, categoryIds: categoryId ? [categoryId] : [] }),
+    });
+    input.value = '';
+    const q = d.ingest || {};
+    if (d.warning) {
+      ytAlert(d.warning, 'error');
+    } else {
+      ytAlert(`Added "${d.feed.title}" — ${q.queued || 0} video(s) queued for review`
+        + (q.skippedLive ? `, ${q.skippedLive} live/upcoming skipped` : ''));
+    }
+    await Promise.all([loadYtFeeds(), loadYtQueue(1)]);
+  } catch (e) {
+    ytAlert(e.message, 'error');
+  }
+}
+
+async function loadYtFeeds() {
+  const body = document.getElementById('ytFeedBody');
+  const countEl = document.getElementById('ytFeedCount');
+  if (!body) return;
+
+  // Keep the add-form category picker in sync with the global category list.
+  // `categories` is normally filled by the analytics tab, so load it here too —
+  // otherwise landing straight on this tab leaves the picker empty.
+  const catSel = document.getElementById('ytAddCategory');
+  if (catSel && catSel.options.length <= 1) {
+    if (!categories.length) { try { await loadCategories(); } catch {} }
+    if (categories.length) {
+      catSel.innerHTML = '<option value="">No category</option>'
+        + categories.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+    }
+  }
+
+  try {
+    const feeds = await api('/api/admin/youtube/feeds');
+    if (countEl) countEl.textContent = `${feeds.length} source(s)`;
+
+    const feedSel = document.getElementById('ytQueueFeed');
+    if (feedSel) {
+      const current = feedSel.value;
+      feedSel.innerHTML = '<option value="">All feeds</option>'
+        + feeds.map(f => `<option value="${esc(f.id)}">${esc(f.title)}</option>`).join('');
+      feedSel.value = current;
+    }
+
+    if (feeds.length === 0) {
+      body.innerHTML = '<tr><td colspan="6" style="color:#64748b;padding:16px;text-align:center;">No YouTube sources yet.</td></tr>';
+      return;
+    }
+
+    body.innerHTML = feeds.map(f => `
+      <tr>
+        <td>
+          <div style="font-weight:600;color:#e2e8f0;">${esc(f.title)}</div>
+          <div style="font-size:11px;color:#64748b;font-family:'SF Mono',Menlo,monospace;">${esc(f.youtubePlaylistId || '')}</div>
+        </td>
+        <td style="text-align:right;color:${f.pendingCount ? '#fbbf24' : '#64748b'};font-weight:${f.pendingCount ? '700' : '400'};">${f.pendingCount}</td>
+        <td style="text-align:right;color:#86efac;">${f.approvedCount}</td>
+        <td style="text-align:right;color:#64748b;">${f.rejectedCount}</td>
+        <td style="text-align:center;">${f.showInBrowse ? '✅' : '—'}</td>
+        <td style="text-align:right;white-space:nowrap;">
+          <button class="btn btn-secondary btn-sm" onclick="withLoading(this, () => syncYtFeed('${esc(f.id)}', false))">Scan</button>
+          <button class="btn btn-secondary btn-sm" onclick="withLoading(this, () => syncYtFeed('${esc(f.id)}', true))" title="Ignore the unchanged-playlist shortcut and re-walk every page">Full</button>
+        </td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    body.innerHTML = `<tr><td colspan="6" style="color:#f87171;padding:16px;">${esc(e.message)}</td></tr>`;
+  }
+}
+
+async function syncYtFeed(feedId, full) {
+  try {
+    const d = await api(`/api/admin/youtube/feeds/${feedId}/sync${full ? '?full=true' : ''}`, { method: 'POST' });
+    ytAlert(d.shortCircuited
+      ? 'Playlist unchanged — nothing new'
+      : `${d.queued} new video(s) queued for review`);
+    await Promise.all([loadYtFeeds(), loadYtQueue(_ytQueuePage)]);
+  } catch (e) {
+    ytAlert(e.message, 'error');
+  }
+}
+
+function ytStatusFilter() { return document.getElementById('ytQueueStatus')?.value || 'pending'; }
+
+async function loadYtQueue(page) {
+  _ytQueuePage = page || 1;
+  _ytSelected.clear();
+  const list = document.getElementById('ytQueueList');
+  if (!list) return;
+  list.innerHTML = 'Loading…';
+
+  const status = ytStatusFilter();
+  const feedId = document.getElementById('ytQueueFeed')?.value || '';
+  const sort = document.getElementById('ytQueueSort')?.value || 'newest';
+  const search = document.getElementById('ytQueueSearch')?.value || '';
+
+  const params = new URLSearchParams({ status, page: String(_ytQueuePage), limit: '50', sort });
+  if (feedId) params.set('feedId', feedId);
+  if (search) params.set('search', search);
+
+  try {
+    const d = await api(`/api/admin/youtube/pending?${params.toString()}`);
+    _ytQueueTotal = d.total;
+
+    const bulkBar = document.getElementById('ytBulkBar');
+    if (bulkBar) bulkBar.style.display = (status === 'pending' && d.items.length) ? 'flex' : 'none';
+    const selAll = document.getElementById('ytSelectAll');
+    if (selAll) selAll.checked = false;
+    updateYtSelectedCount();
+    updateYtPendingBadge();
+
+    if (d.items.length === 0) {
+      list.innerHTML = `<div style="padding:24px;text-align:center;color:#64748b;">Nothing ${esc(status)}.</div>`;
+      renderYtPager();
+      return;
+    }
+
+    list.innerHTML = d.items.map(it => {
+      const date = it.publishedAt ? new Date(it.publishedAt).toLocaleDateString() : 'Unknown date';
+      const desc = (it.description || '').slice(0, 220);
+      return `
+      <div style="display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #1e293b;align-items:flex-start;">
+        ${status === 'pending' ? `<input type="checkbox" data-yt-id="${esc(it.id)}" onchange="toggleYtSelect('${esc(it.id)}', this.checked)" style="width:auto;margin:4px 0 0;">` : ''}
+        ${it.imageUrl ? `<img src="${esc(it.imageUrl)}" alt="" style="width:120px;height:68px;object-fit:cover;border-radius:6px;flex-shrink:0;background:#0f172a;">` : '<div style="width:120px;height:68px;border-radius:6px;background:#0f172a;flex-shrink:0;"></div>'}
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;color:#e2e8f0;margin-bottom:4px;">${esc(it.title)}</div>
+          <div style="font-size:12px;color:#64748b;margin-bottom:4px;">
+            ${esc(it.feedTitle || '')} · ${esc(date)}${it.duration ? ' · ' + esc(it.duration) : ''}
+            ${it.durationSeconds != null && it.durationSeconds < 90 ? ' · <span style="color:#fbbf24;">short clip</span>' : ''}
+          </div>
+          ${desc ? `<div style="font-size:12px;color:#94a3b8;line-height:1.45;">${esc(desc)}${it.description.length > 220 ? '…' : ''}</div>` : ''}
+          ${it.reviewNote ? `<div style="font-size:11px;color:#fca5a5;margin-top:4px;">Note: ${esc(it.reviewNote)}</div>` : ''}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">
+          ${status === 'pending' ? `
+            <button class="btn btn-primary btn-sm" onclick="withLoading(this, () => ytReviewOne('${esc(it.id)}', 'approve'))">Approve</button>
+            <button class="btn btn-secondary btn-sm" onclick="withLoading(this, () => ytReviewOne('${esc(it.id)}', 'reject'))">Reject</button>
+          ` : ''}
+          ${status === 'rejected' ? `<button class="btn btn-secondary btn-sm" onclick="withLoading(this, () => ytUnreject('${esc(it.id)}'))">Restore</button>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+
+    renderYtPager();
+  } catch (e) {
+    list.innerHTML = `<div style="color:#f87171;padding:16px;">${esc(e.message)}</div>`;
+  }
+}
+
+function renderYtPager() {
+  const pager = document.getElementById('ytQueuePager');
+  if (!pager) return;
+  const pages = Math.max(1, Math.ceil(_ytQueueTotal / 50));
+  if (pages <= 1) { pager.innerHTML = `<span style="font-size:12px;color:#64748b;">${_ytQueueTotal} item(s)</span>`; return; }
+  pager.innerHTML = `
+    <button class="btn btn-secondary btn-sm" ${_ytQueuePage <= 1 ? 'disabled' : ''} onclick="loadYtQueue(${_ytQueuePage - 1})">Prev</button>
+    <span style="font-size:12px;color:#94a3b8;">Page ${_ytQueuePage} of ${pages} · ${_ytQueueTotal} item(s)</span>
+    <button class="btn btn-secondary btn-sm" ${_ytQueuePage >= pages ? 'disabled' : ''} onclick="loadYtQueue(${_ytQueuePage + 1})">Next</button>
+  `;
+}
+
+function toggleYtSelect(id, checked) {
+  if (checked) _ytSelected.add(id); else _ytSelected.delete(id);
+  updateYtSelectedCount();
+}
+
+function toggleYtSelectAll(checked) {
+  document.querySelectorAll('#ytQueueList input[data-yt-id]').forEach(cb => {
+    cb.checked = checked;
+    toggleYtSelect(cb.getAttribute('data-yt-id'), checked);
+  });
+}
+
+function updateYtSelectedCount() {
+  const el = document.getElementById('ytSelectedCount');
+  if (el) el.textContent = _ytSelected.size ? `${_ytSelected.size} selected` : '';
+}
+
+async function updateYtPendingBadge() {
+  const badge = document.getElementById('ytPendingBadge');
+  if (!badge) return;
+  try {
+    const counts = await api('/api/admin/youtube/counts');
+    const n = counts.pending || 0;
+    badge.textContent = String(n);
+    badge.style.display = n > 0 ? '' : 'none';
+    badge.className = n > 0 ? 'status-badge status-active' : 'status-badge status-inactive';
+  } catch {}
+}
+
+async function ytReviewOne(id, action) {
+  try {
+    const d = await api(`/api/admin/youtube/pending/${action}`, {
+      method: 'POST',
+      body: JSON.stringify({ ids: [id] }),
+    });
+    ytAlert(action === 'approve' ? `Approved — ${d.episodes} episode(s) created` : 'Rejected');
+    await Promise.all([loadYtQueue(_ytQueuePage), loadYtFeeds()]);
+  } catch (e) {
+    ytAlert(e.message, 'error');
+  }
+}
+
+async function ytReview(action, all) {
+  const feedId = document.getElementById('ytQueueFeed')?.value || '';
+  if (!all && _ytSelected.size === 0) return ytAlert('Nothing selected', 'error');
+
+  if (all) {
+    const scope = feedId ? 'this feed' : 'EVERY feed';
+    const verb = action === 'approve' ? 'approve' : 'reject';
+    if (!confirm(`This will ${verb} all pending videos for ${scope}. Continue?`)) return;
+  }
+
+  let note;
+  if (action === 'reject') {
+    note = prompt('Optional reason (stored on the rejected rows):') || undefined;
+  }
+
+  try {
+    const body = all ? { all: true, feedId: feedId || undefined, note } : { ids: [..._ytSelected], note };
+    const d = await api(`/api/admin/youtube/pending/${action}`, { method: 'POST', body: JSON.stringify(body) });
+    ytAlert(action === 'approve'
+      ? `Approved ${d.approved} — ${d.episodes} episode(s) created`
+      : `Rejected ${d.rejected}`);
+    await Promise.all([loadYtQueue(1), loadYtFeeds()]);
+  } catch (e) {
+    ytAlert(e.message, 'error');
+  }
+}
+
+async function ytUnreject(id) {
+  try {
+    await api('/api/admin/youtube/pending/unreject', { method: 'POST', body: JSON.stringify({ ids: [id] }) });
+    ytAlert('Restored to the review queue');
+    await Promise.all([loadYtQueue(_ytQueuePage), loadYtFeeds()]);
+  } catch (e) {
+    ytAlert(e.message, 'error');
+  }
 }
 
 // YTC: load + save handlers for the access code panel. Uses the existing

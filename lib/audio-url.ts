@@ -4,6 +4,10 @@ import type { AudioProxyRule } from "@/contexts/RemoteConfigContext";
 // Default rules baked in as fallback (matches the KH proxy pattern)
 const DEFAULT_RULES: AudioProxyRule[] = [
   { match: "https?://srv\\.kolhalashon\\.com/api/files/(?:GetMp3FileToPlay|getLocationOfFileToVideo)/(\\d+)", replace: "/api/audio/kh/$1" },
+  // YouTube episodes store a yt://audio/{videoId} placeholder rather than a
+  // real URL — googlevideo links expire in ~6h, so the server mints a fresh
+  // one per playback behind this proxy path.
+  { match: "^yt://audio/([A-Za-z0-9_-]{11})$", replace: "/api/audio/yt/$1" },
 ];
 
 let _rules: AudioProxyRule[] = DEFAULT_RULES;

@@ -187,8 +187,9 @@ export function isMergedFeed(feed: {
   allhalachaAuthorId?: number | null;
   kolhalashonRavId?: number | null;
   torahdownloadsSpeakerId?: number | null;
+  youtubePlaylistId?: string | null;
 }): boolean {
-  const apiSchemes = ["tat://", "kh://", "td://", "alldaf://", "allmishnah://", "allparsha://", "allhalacha://"];
+  const apiSchemes = ["tat://", "kh://", "td://", "yt://", "alldaf://", "allmishnah://", "allparsha://", "allhalacha://"];
   const hasRealRss = feed.rssUrl && !apiSchemes.some(s => feed.rssUrl.startsWith(s));
 
   const platformCount = [
@@ -199,6 +200,7 @@ export function isMergedFeed(feed: {
     feed.allhalachaAuthorId,
     feed.kolhalashonRavId,
     feed.torahdownloadsSpeakerId,
+    feed.youtubePlaylistId,
   ].filter(id => id != null).length;
 
   // Merged if has real RSS + any platform, or multiple platforms

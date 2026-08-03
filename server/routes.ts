@@ -13,6 +13,14 @@ import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, OU_PLAT
 import { syncKHSpeakers, refreshKHFeedEpisodes, reloadKHClient, getHeaders as getKHHeaders } from "./kolhalashon";
 import { syncTorahDownloadsSpeakers, refreshTorahDownloadsFeedEpisodes, fetchShiurUploadDate, fetchShiurUploadDateDebug } from "./torahdownloads";
 import { extractKhRavId, extractTatSpeakerId, extractTorahDownloadsSpeakerId } from "./feed-utils";
+import {
+  refreshYouTubeFeedEpisodes,
+  ingestYouTubePlaylist,
+  extractYouTubePlaylistId,
+  resolvePlaylistInput,
+  fetchPlaylistMeta,
+} from "./youtube";
+import { resolveAudioStream, invalidateAudioCache, audioCacheStats, YT_VIDEO_ID_RE } from "./youtube-audio";
 import { trackErrorForAlert, sendFeedbackNotification } from "./error-alerts";
 import { registerV1Routes } from "./routes-v1";
 import * as iss from "./issues-storage";
@@ -186,9 +194,15 @@ async function onDemandRefreshFeed(feedId: string): Promise<void> {
       return;
     }
 
-    // Regular RSS feed (skip TAT/OU/KH/TD-only URLs)
+    // YouTube feeds are deliberately NOT refreshed on demand. A crawl costs API
+    // quota and can't change anything the user sees — new videos land in the
+    // review queue, not in the feed. Ingest happens on the 6h cron and via the
+    // admin sync button only.
+    const isYtUrl = feed.rssUrl.startsWith("yt://");
+
+    // Regular RSS feed (skip TAT/OU/KH/TD/YT-only URLs)
     const isOUUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
-    if (!feed.rssUrl || isOnDemandTatUrl || isOUUrl || isKhUrl || isTdUrl) return;
+    if (!feed.rssUrl || isOnDemandTatUrl || isOUUrl || isKhUrl || isTdUrl || isYtUrl) return;
     const parsed = await parseFeed(feed.id, feed.rssUrl);
     if (!parsed) {
       await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
@@ -645,9 +659,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalNew += tdResult.newEpisodes;
       }
 
-      // RSS refresh (skip for TAT-only, OU-only, KH-only, and TD-only feeds)
+      // YouTube refresh — queues for review, so it contributes no new episodes.
+      const isYtFeedUrl = feed.rssUrl.startsWith("yt://");
+      const effectiveYtId = extractYouTubePlaylistId(feed as any);
+      let ytQueued = 0;
+      if (effectiveYtId) {
+        const ytResult = await refreshYouTubeFeedEpisodes(
+          { id: feed.id, title: feed.title, youtubePlaylistId: effectiveYtId },
+          feed,
+          { full: fullRefresh },
+        );
+        ytQueued = ytResult.queued;
+      }
+
+      // RSS refresh (skip for TAT-only, OU-only, KH-only, TD-only, YT-only feeds)
       const isOUFeedUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
-      if (!isTatFeedUrl && !isOUFeedUrl && !isKhFeedUrl && !isTdFeedUrl) {
+      if (!isTatFeedUrl && !isOUFeedUrl && !isKhFeedUrl && !isTdFeedUrl && !isYtFeedUrl) {
         // For ?full=true: bypass both etag and incremental — pull the entire
         // archive. Otherwise pass etag/lastModified so unchanged feeds short-
         // circuit at HTTP 304 without parsing, and pass the incremental
@@ -686,7 +713,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      res.json({ newEpisodes: totalNew });
+      res.json({ newEpisodes: totalNew, youtubeQueued: ytQueued });
     } catch (e: any) {
       publicError(res, e);
     }
@@ -697,6 +724,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const fullBulk = req.query.full === "true";
       const allFeeds = await storage.getActiveFeeds();
       let totalNew = 0;
+      let totalYtQueued = 0;
       for (const feed of allFeeds) {
         try {
           // TAT feed refresh
@@ -726,9 +754,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const tdResult = await refreshTorahDownloadsFeedEpisodes({ id: feed.id, title: feed.title, torahdownloadsSpeakerId: bulkTdId }, feed, { full: fullBulk });
             totalNew += tdResult.newEpisodes;
           }
-          // RSS refresh (skip for TAT-only, OU-only, KH-only, and TD-only feeds)
+          // YouTube feed refresh — queues for review, adds no episodes.
+          const isYtRssUrl = feed.rssUrl.startsWith("yt://");
+          const bulkYtId = extractYouTubePlaylistId(feed as any);
+          if (bulkYtId) {
+            const ytResult = await refreshYouTubeFeedEpisodes(
+              { id: feed.id, title: feed.title, youtubePlaylistId: bulkYtId },
+              feed,
+              { full: fullBulk },
+            );
+            totalYtQueued += ytResult.queued;
+          }
+          // RSS refresh (skip for TAT-only, OU-only, KH-only, TD-only, YT-only feeds)
           const isOURssUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
-          if (!feed.rssUrl.startsWith("tat://") && !isOURssUrl && !isKhRssUrl && !isTdRssUrl) {
+          if (!feed.rssUrl.startsWith("tat://") && !isOURssUrl && !isKhRssUrl && !isTdRssUrl && !isYtRssUrl) {
             const conditionalHeadersBulk = fullBulk
               ? undefined
               : { etag: feed.etag, lastModified: feed.lastModifiedHeader };
@@ -755,7 +794,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log(`Failed to refresh feed ${feed.title}: ${msg.slice(0, 120)}`);
         }
       }
-      res.json({ refreshed: allFeeds.length, newEpisodes: totalNew });
+      res.json({ refreshed: allFeeds.length, newEpisodes: totalNew, youtubeQueued: totalYtQueued });
     } catch (e: any) {
       publicError(res, e);
     }
@@ -1192,9 +1231,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const safeTitle = (episode.title || "episode").replace(/[^a-zA-Z0-9 _-]/g, "").replace(/\s+/g, "_").substring(0, 100);
       const filename = safeAuthor ? `${safeAuthor}_-_${safeTitle}.mp3` : `${safeTitle}.mp3`;
 
-      const resolved = resolveKHAudioUrl(episode.audioUrl);
-      const audioResp = await fetch(resolved.url, {
-        headers: resolved.headers,
+      // YouTube episodes carry the yt://audio/{videoId} placeholder rather than
+      // a fetchable URL — mint a fresh stream URL before downloading, or fetch()
+      // would throw on the unsupported protocol.
+      let fetchUrl: string;
+      let fetchHeaders: Record<string, string>;
+      const ytMatch = episode.audioUrl.match(/^yt:\/\/audio\/([A-Za-z0-9_-]{11})$/);
+      if (ytMatch) {
+        try {
+          const ytAudio = await resolveAudioStream(ytMatch[1]);
+          fetchUrl = ytAudio.url;
+          fetchHeaders = { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1" };
+        } catch (e: any) {
+          return res.status(502).json({ error: "Could not resolve YouTube audio" });
+        }
+      } else {
+        const resolved = resolveKHAudioUrl(episode.audioUrl);
+        fetchUrl = resolved.url;
+        fetchHeaders = resolved.headers;
+      }
+
+      const audioResp = await fetch(fetchUrl, {
+        headers: fetchHeaders,
         redirect: "follow",
       });
 
@@ -1284,6 +1342,109 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // YouTube audio proxy — resolves an audio-only stream for the video and pipes
+  // it back to the client.
+  //
+  // Episodes store yt://audio/{videoId} rather than a real URL: googlevideo
+  // links are signed and expire in ~6h, so they have to be minted per playback.
+  // The bytes are proxied (not 302'd) because the signed URL is tied to the
+  // requesting client, and because the app must never be pointed at a
+  // youtube.com-family host directly.
+  app.get("/api/audio/yt/:videoId", async (req: Request, res: Response) => {
+    const videoId = String(req.params.videoId || "");
+    if (!YT_VIDEO_ID_RE.test(videoId)) {
+      return res.status(400).json({ error: "Invalid video ID" });
+    }
+
+    const rangeHeader = req.headers.range;
+
+    // One retry: a signed URL can go stale before its advertised expiry, which
+    // shows up as a 403 from googlevideo. Drop the cache entry and re-resolve.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let resolved;
+      try {
+        resolved = await resolveAudioStream(videoId);
+      } catch (e: any) {
+        console.error(`YouTube audio: resolve failed for ${videoId} — ${e.message?.slice(0, 200)}`);
+        if (!res.headersSent) res.status(502).json({ error: "Could not resolve YouTube audio" });
+        return;
+      }
+
+      try {
+        const reqHeaders: Record<string, string> = {
+          // googlevideo is content-negotiation sensitive; a browser-ish UA is
+          // the most reliably served combination.
+          "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+          Accept: "*/*",
+        };
+        if (rangeHeader) reqHeaders["Range"] = rangeHeader;
+
+        const upstream = await fetch(resolved.url, {
+          headers: reqHeaders,
+          redirect: "follow",
+          signal: AbortSignal.timeout(30000),
+        });
+
+        if (upstream.status === 403 || upstream.status === 410) {
+          invalidateAudioCache(videoId);
+          if (attempt === 0) {
+            console.log(`YouTube audio: ${videoId} got ${upstream.status}, re-resolving`);
+            continue;
+          }
+          if (!res.headersSent) res.status(502).json({ error: "YouTube stream expired" });
+          return;
+        }
+
+        if (!upstream.ok && upstream.status !== 206) {
+          if (!res.headersSent) res.status(502).json({ error: `Upstream ${upstream.status}` });
+          return;
+        }
+
+        res.status(upstream.status);
+        // Strip codec parameters — some Android players reject the full
+        // 'audio/mp4; codecs="mp4a.40.2"' form.
+        const upstreamType = upstream.headers.get("content-type") || resolved.mimeType;
+        res.setHeader("Content-Type", (upstreamType.split(";")[0] || "audio/mp4").trim());
+        const cl = upstream.headers.get("content-length");
+        if (cl) res.setHeader("Content-Length", cl);
+        const cr = upstream.headers.get("content-range");
+        if (cr) res.setHeader("Content-Range", cr);
+        res.setHeader("Accept-Ranges", "bytes");
+        // Short TTL: the proxy path is stable but the audio behind it is not,
+        // and these responses are large enough that long caching hurts.
+        res.setHeader("Cache-Control", "public, max-age=3600");
+
+        const reader = upstream.body?.getReader();
+        if (!reader) {
+          if (!res.headersSent) res.status(502).json({ error: "No stream" });
+          return;
+        }
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (res.writableEnded) break;
+          res.write(Buffer.from(value));
+        }
+        res.end();
+        return;
+      } catch (e: any) {
+        console.error(`YouTube audio: stream failed for ${videoId} — ${e.message?.slice(0, 160)}`);
+        invalidateAudioCache(videoId);
+        // Once bytes are on the wire we can't start over — a second attempt
+        // would append a duplicate copy of the audio to a half-sent response.
+        // Kill the connection and let the client re-request instead.
+        if (res.headersSent) {
+          if (!res.writableEnded) res.end();
+          return;
+        }
+        if (attempt === 1) {
+          res.status(502).json({ error: "Failed to stream YouTube audio" });
+          return;
+        }
+      }
+    }
+  });
+
   // General audio proxy — fallback for clients that can't connect directly (e.g. SSL cert issues on Android)
   app.get("/api/audio/proxy", async (req: Request, res: Response) => {
     try {
@@ -1348,6 +1509,243 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (e: any) {
       publicError(res, e);
     }
+  });
+
+  // ---- Admin: YouTube ----
+  //
+  // YouTube is the only source with a human gate. Ingest fills a review queue
+  // and nothing becomes an episode (or reaches the app) until it's approved
+  // here. New YouTube feeds are created with showInBrowse=false and only
+  // surface once their first video is approved.
+
+  const adminUsername = (req: Request): string | undefined => {
+    try {
+      const header = req.headers.authorization || "";
+      if (!header.startsWith("Basic ")) return undefined;
+      return Buffer.from(header.slice(6), "base64").toString().split(":")[0] || undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  // Add a YouTube playlist as a feed. Accepts a playlist URL/ID, a channel
+  // URL/ID, or an @handle (a channel resolves to its uploads playlist).
+  app.post("/api/admin/youtube/feeds", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { url, categoryId, categoryIds, title: titleOverride } = req.body;
+      if (!url) return res.status(400).json({ error: "url is required" });
+
+      let playlistId: string | null;
+      try {
+        playlistId = await resolvePlaylistInput(String(url));
+      } catch (e: any) {
+        return res.status(400).json({ error: e.message });
+      }
+      if (!playlistId) {
+        return res.status(400).json({ error: "Could not find a YouTube playlist or channel in that URL" });
+      }
+
+      const rssUrl = `yt://playlist/${playlistId}`;
+      const existing = await storage.getFeedByRssUrl(rssUrl);
+      if (existing) {
+        return res.status(409).json({ error: "That playlist is already added", feed: existing });
+      }
+
+      let meta;
+      try {
+        meta = await fetchPlaylistMeta(playlistId);
+      } catch (e: any) {
+        return res.status(400).json({ error: e.message });
+      }
+      if (!meta) return res.status(404).json({ error: "Playlist not found or is private" });
+
+      const effectiveCategoryId = categoryId || (categoryIds && categoryIds.length > 0 ? categoryIds[0] : null);
+      const feed = await storage.createFeed({
+        title: titleOverride || meta.title,
+        rssUrl,
+        imageUrl: meta.imageUrl || null,
+        description: meta.description || null,
+        author: meta.channelTitle || null,
+        categoryId: effectiveCategoryId,
+        sourceNetwork: "YouTube",
+        youtubePlaylistId: playlistId,
+        // Stays hidden until something is approved — otherwise an empty feed
+        // shows up in Browse the moment it's added.
+        showInBrowse: false,
+      } as any);
+
+      if (!(feed as any).youtubePlaylistId) {
+        await storage.setYouTubePlaylistId(feed.id, playlistId);
+      }
+
+      const effectiveCategoryIds = (Array.isArray(categoryIds) && categoryIds.length > 0)
+        ? categoryIds
+        : (categoryId ? [categoryId] : []);
+      if (effectiveCategoryIds.length > 0) {
+        await storage.setFeedCategories(feed.id, effectiveCategoryIds);
+      }
+
+      // First crawl pulls the whole archive into the review queue.
+      let ingest = { queued: 0, skippedKnown: 0, skippedLive: 0, totalInPlaylist: meta.itemCount, shortCircuited: false };
+      try {
+        ingest = await ingestYouTubePlaylist(
+          { id: feed.id, title: feed.title, youtubePlaylistId: playlistId },
+          { full: true },
+        );
+      } catch (e: any) {
+        return res.json({ feed, ingest, warning: `Feed created but ingest failed: ${e.message}` });
+      }
+
+      res.json({ feed, ingest });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // List YouTube feeds with their queue counts.
+  app.get("/api/admin/youtube/feeds", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const feedList = await storage.getYouTubeFeeds();
+      const counts = await storage.getYouTubePendingCountsByFeed();
+      res.json(feedList.map(f => ({
+        ...f,
+        pendingCount: counts.get(f.id)?.pending || 0,
+        approvedCount: counts.get(f.id)?.approved || 0,
+        rejectedCount: counts.get(f.id)?.rejected || 0,
+      })));
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
+  // The review queue itself.
+  app.get("/api/admin/youtube/pending", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const result = await storage.listYouTubePending({
+        status: (req.query.status as string) || "pending",
+        feedId: (req.query.feedId as string) || undefined,
+        search: (req.query.search as string) || undefined,
+        page: parseInt(req.query.page as string) || 1,
+        limit: parseInt(req.query.limit as string) || 50,
+        sort: (req.query.sort as "newest" | "oldest") || "newest",
+      });
+      res.json(result);
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
+  app.get("/api/admin/youtube/counts", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      res.json(await storage.getYouTubePendingCounts());
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
+  // Approve — this is the only path that creates YouTube episodes.
+  app.post("/api/admin/youtube/pending/approve", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { ids, all, feedId } = req.body;
+      let targetIds: string[] = Array.isArray(ids) ? ids : [];
+      if (all) targetIds = await storage.getAllPendingYouTubeIds(feedId || undefined);
+      if (targetIds.length === 0) return res.json({ approved: 0, episodes: 0 });
+
+      const result = await storage.approveYouTubePending(targetIds, adminUsername(req));
+
+      // Reveal any feed that just got its first approved episode.
+      const touchedFeedIds = new Set(result.episodes.map(ep => ep.feedId));
+      for (const fid of touchedFeedIds) {
+        try {
+          const feed = await storage.getFeedById(fid);
+          if (feed && !feed.showInBrowse) {
+            await storage.updateFeed(fid, { showInBrowse: true } as any);
+          }
+          // Push only for small batches — a 500-video bulk approval must not
+          // fan out 500 notifications.
+          if (feed && result.episodes.length <= PUSH_BACKFILL_THRESHOLD) {
+            for (const ep of result.episodes.filter(e => e.feedId === fid).slice(0, 3)) {
+              sendNewEpisodePushes(fid, { title: ep.title, id: ep.id, publishedAt: (ep as any).publishedAt }, feed.title).catch(() => {});
+            }
+          }
+        } catch {}
+      }
+
+      res.json({ approved: result.approved, episodes: result.episodes.length });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/admin/youtube/pending/reject", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { ids, all, feedId, note } = req.body;
+      let targetIds: string[] = Array.isArray(ids) ? ids : [];
+      if (all) targetIds = await storage.getAllPendingYouTubeIds(feedId || undefined);
+      if (targetIds.length === 0) return res.json({ rejected: 0 });
+      const rejected = await storage.rejectYouTubePending(targetIds, adminUsername(req), note);
+      res.json({ rejected });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Put a rejected video back in the queue.
+  app.post("/api/admin/youtube/pending/unreject", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) return res.json({ restored: 0 });
+      res.json({ restored: await storage.unrejectYouTubePending(ids) });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Re-crawl a playlist for new uploads. ?full=true ignores the itemCount
+  // short-circuit and walks every page.
+  app.post("/api/admin/youtube/feeds/:id/sync", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const feed = await storage.getFeedById(String(req.params.id));
+      if (!feed) return res.status(404).json({ error: "Feed not found" });
+      const playlistId = extractYouTubePlaylistId(feed as any);
+      if (!playlistId) return res.status(400).json({ error: "Not a YouTube feed" });
+
+      const ingest = await ingestYouTubePlaylist(
+        { id: feed.id, title: feed.title, youtubePlaylistId: playlistId },
+        { full: req.query.full === "true" },
+      );
+      res.json(ingest);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Resolver health. YouTube periodically breaks stream extraction from
+  // datacenter IPs, and this is the fastest way to tell "our code is broken"
+  // apart from "YouTube is blocking this host".
+  app.get("/api/admin/youtube/diagnostics", adminAuth as any, async (req: Request, res: Response) => {
+    const videoId = (req.query.videoId as string) || "";
+    const out: any = {
+      apiKeyConfigured: !!process.env.YOUTUBE_API_KEY,
+      cache: audioCacheStats(),
+    };
+    if (videoId && YT_VIDEO_ID_RE.test(videoId)) {
+      const start = Date.now();
+      try {
+        const resolved = await resolveAudioStream(videoId);
+        out.resolve = {
+          ok: true,
+          client: resolved.client,
+          mimeType: resolved.mimeType,
+          contentLength: resolved.contentLength,
+          durationMs: resolved.durationMs,
+          ms: Date.now() - start,
+        };
+      } catch (e: any) {
+        out.resolve = { ok: false, error: e.message?.slice(0, 400), ms: Date.now() - start };
+      }
+    }
+    res.json(out);
   });
 
   // Admin: Maggid Shiur (speaker) management
@@ -1779,7 +2177,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const merged = allFeeds
         .map(f => {
           const platforms: string[] = [];
-          if (f.rssUrl && !f.rssUrl.startsWith("tat://") && !f.rssUrl.startsWith("kh://") && !f.rssUrl.startsWith("td://") && !Object.values(OU_PLATFORMS).some(c => f.rssUrl.startsWith(c.urlScheme))) {
+          if (f.rssUrl && !f.rssUrl.startsWith("tat://") && !f.rssUrl.startsWith("kh://") && !f.rssUrl.startsWith("td://") && !f.rssUrl.startsWith("yt://") && !Object.values(OU_PLATFORMS).some(c => f.rssUrl.startsWith(c.urlScheme))) {
             platforms.push("RSS");
           }
           if (f.tatSpeakerId) platforms.push("Torah Anytime");
@@ -1789,6 +2187,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (f.allhalachaAuthorId) platforms.push("AllHalacha");
           if ((f as any).kolhalashonRavId) platforms.push("Kol Halashon");
           if ((f as any).torahdownloadsSpeakerId) platforms.push("TorahDownloads");
+          if ((f as any).youtubePlaylistId) platforms.push("YouTube");
           if (platforms.length < 2) return null;
           return {
             id: f.id,
@@ -2542,6 +2941,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!feed) return res.status(404).json({ error: "Feed not found" });
       // Skip non-RSS sources where we have no useful publish date.
       const isRss = !feed.rssUrl.startsWith("tat://") && !feed.rssUrl.startsWith("kh://")
+        && !feed.rssUrl.startsWith("yt://")
         && !Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
       if (!isRss) return res.json({ updated: 0, reason: "non-RSS source" });
 
@@ -3332,6 +3732,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return;
         }
 
+        // Handle YouTube feeds — queues for review, never adds episodes here.
+        const forceYtId = extractYouTubePlaylistId(feed as any);
+        if (forceYtId) {
+          const ytResult = await refreshYouTubeFeedEpisodes({ id: feed.id, title: feed.title, youtubePlaylistId: forceYtId }, feed);
+          res.json({ status: "ok", method: "yt", newEpisodes: 0, queuedForReview: ytResult.queued, durationMs: Date.now() - start });
+          return;
+        }
+
         const parsed = await parseFeed(feed.id, feed.rssUrl, {
           etag: feed.etag,
           lastModified: feed.lastModifiedHeader,
@@ -3493,8 +3901,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // keyed `ytc_unlock_code`. An empty/missing value means the feature
       // is disabled (kill switch).
       const ytcCode = typeof config.ytc_unlock_code === "string" ? config.ytc_unlock_code : null;
-      const exposed = { ...config, ytcUnlockCode: ytcCode || null };
+      const exposed: Record<string, any> = { ...config, ytcUnlockCode: ytcCode || null };
       delete (exposed as any).ytc_unlock_code;
+
+      // A stored audioProxyRules row REPLACES the app's baked-in defaults
+      // wholesale (see setAudioProxyRules in lib/audio-url.ts). If an admin
+      // saved that key before YouTube existed, it won't carry the yt:// rule
+      // and every YouTube episode would fail to play on any device that has
+      // fetched remote config. Guarantee the rule is always present.
+      if (Array.isArray(exposed.audioProxyRules)) {
+        const hasYtRule = exposed.audioProxyRules.some(
+          (r: any) => typeof r?.match === "string" && r.match.includes("yt://audio"),
+        );
+        if (!hasYtRule) {
+          exposed.audioProxyRules = [
+            ...exposed.audioProxyRules,
+            { match: "^yt://audio/([A-Za-z0-9_-]{11})$", replace: "/api/audio/yt/$1" },
+          ];
+        }
+      }
       res.setHeader("Cache-Control", "public, max-age=300");
       res.json(exposed);
     } catch (e: any) {

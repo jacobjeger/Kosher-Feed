@@ -52,6 +52,11 @@ const DEFAULT_CONFIG: RemoteConfig = {
   minAppVersion: "1.0.0",
   audioProxyRules: [
     { match: "https?://srv\\.kolhalashon\\.com/api/files/(?:GetMp3FileToPlay|getLocationOfFileToVideo)/(\\d+)", replace: "/api/audio/kh/$1" },
+    // Keep in sync with DEFAULT_RULES in lib/audio-url.ts — a server-sent
+    // audioProxyRules array REPLACES the baked-in defaults wholesale, so
+    // omitting this here would break YouTube playback on any device that has
+    // fetched remote config.
+    { match: "^yt://audio/([A-Za-z0-9_-]{11})$", replace: "/api/audio/yt/$1" },
   ],
   maxConcurrentDownloads: 1,
   maxDownloadRetries: 2,

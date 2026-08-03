@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { isApiOnlyUrl } from "./alldaf";
-import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals, queueItems, notificationTaps, feedMergeHistory, appConfig, deviceProfiles, conversations, conversationMessages, pageViews, ytcUnlocks } from "@shared/schema";
-import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor, NotificationPreference, Announcement, AnnouncementDismissal, NotificationTap, AppConfig, DeviceProfile, Conversation, ConversationMessage, PageView } from "@shared/schema";
+import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals, queueItems, notificationTaps, feedMergeHistory, appConfig, deviceProfiles, conversations, conversationMessages, pageViews, ytcUnlocks, youtubePending } from "@shared/schema";
+import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor, NotificationPreference, Announcement, AnnouncementDismissal, NotificationTap, AppConfig, DeviceProfile, Conversation, ConversationMessage, PageView, YoutubePending } from "@shared/schema";
 import { eq, and, or, desc, asc, inArray, sql, count, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
@@ -538,7 +538,7 @@ export async function mergeFeedsKeepFirst(keepFeedId: string, removeFeedId: stri
 // import cycle. A feed is "multi-source" if it has either real-RSS plus a
 // platform id, or two or more platform ids.
 function isFeedMultiSource(feed: any): boolean {
-  const apiSchemes = ["tat://", "kh://", "td://", "alldaf://", "allmishnah://", "allparsha://", "allhalacha://"];
+  const apiSchemes = ["tat://", "kh://", "td://", "yt://", "alldaf://", "allmishnah://", "allparsha://", "allhalacha://"];
   const url = feed.rssUrl || "";
   const hasRealRss = !!url && !apiSchemes.some(s => url.startsWith(s));
   const platformIds = [
@@ -549,6 +549,7 @@ function isFeedMultiSource(feed: any): boolean {
     feed.allhalachaAuthorId,
     feed.kolhalashonRavId,
     feed.torahdownloadsSpeakerId,
+    feed.youtubePlaylistId,
   ].filter(id => id != null).length;
   return (hasRealRss && platformIds > 0) || platformIds > 1;
 }
@@ -1149,6 +1150,263 @@ export async function upsertTorahDownloadsEpisodes(feedId: string, episodeData: 
 export async function setTorahDownloadsSpeakerId(feedId: string, speakerId: number | null): Promise<void> {
   await db.update(feeds).set({ torahdownloadsSpeakerId: speakerId } as any).where(eq(feeds.id, feedId));
   await clearSourceNetworkIfMultiSource(feedId);
+}
+
+// --- YouTube ---
+//
+// YouTube videos never go straight into `episodes`. Ingest queues them in
+// youtube_pending; only approveYouTubePending() creates episode rows.
+
+export async function setYouTubePlaylistId(feedId: string, playlistId: string | null): Promise<void> {
+  await db.update(feeds).set({ youtubePlaylistId: playlistId } as any).where(eq(feeds.id, feedId));
+  await clearSourceNetworkIfMultiSource(feedId);
+}
+
+export async function getYouTubeFeeds(): Promise<Feed[]> {
+  return db.select().from(feeds)
+    .where(sql`${feeds.youtubePlaylistId} IS NOT NULL`)
+    .orderBy(feeds.title);
+}
+
+export async function getFeedByRssUrl(rssUrl: string): Promise<Feed | undefined> {
+  const [feed] = await db.select().from(feeds).where(eq(feeds.rssUrl, rssUrl)).limit(1);
+  return feed;
+}
+
+export async function getYouTubePendingCountsByFeed(): Promise<
+  Map<string, { pending: number; approved: number; rejected: number }>
+> {
+  const rows = await db
+    .select({ feedId: youtubePending.feedId, status: youtubePending.status, n: count() })
+    .from(youtubePending)
+    .groupBy(youtubePending.feedId, youtubePending.status);
+  const out = new Map<string, { pending: number; approved: number; rejected: number }>();
+  for (const r of rows) {
+    const entry = out.get(r.feedId) || { pending: 0, approved: 0, rejected: 0 };
+    (entry as any)[r.status] = Number(r.n);
+    out.set(r.feedId, entry);
+  }
+  return out;
+}
+
+// Every video id we've already seen for this feed, in ANY state: already an
+// episode, awaiting review, or rejected. Ingest diffs against this so a
+// rejected video is never re-queued and an approved one is never duplicated.
+export async function getKnownYouTubeVideoIds(feedId: string): Promise<Set<string>> {
+  const [epRows, pendRows] = await Promise.all([
+    db.select({ id: episodes.youtubeVideoId }).from(episodes)
+      .where(and(eq(episodes.feedId, feedId), sql`${episodes.youtubeVideoId} IS NOT NULL`)),
+    db.select({ id: youtubePending.videoId }).from(youtubePending)
+      .where(eq(youtubePending.feedId, feedId)),
+  ]);
+  const out = new Set<string>();
+  for (const r of epRows) if (r.id) out.add(r.id);
+  for (const r of pendRows) if (r.id) out.add(r.id);
+  return out;
+}
+
+export interface YouTubePendingInsert {
+  feedId: string;
+  videoId: string;
+  title: string;
+  description: string | null;
+  duration: string | null;
+  durationSeconds: number | null;
+  publishedAt: Date | null;
+  imageUrl: string | null;
+  channelTitle: string | null;
+}
+
+export async function queueYouTubePending(rows: YouTubePendingInsert[]): Promise<number> {
+  if (rows.length === 0) return 0;
+  let queued = 0;
+  const CHUNK = 100;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const chunk = rows.slice(i, i + CHUNK);
+    try {
+      const inserted = await db.insert(youtubePending).values(
+        chunk.map(r => ({
+          feedId: r.feedId,
+          videoId: r.videoId,
+          title: r.title,
+          description: r.description,
+          duration: r.duration,
+          durationSeconds: r.durationSeconds,
+          publishedAt: r.publishedAt as any,
+          imageUrl: r.imageUrl,
+          channelTitle: r.channelTitle,
+        }))
+      ).onConflictDoNothing().returning({ id: youtubePending.id });
+      queued += inserted.length;
+    } catch {
+      for (const r of chunk) {
+        try {
+          const [ins] = await db.insert(youtubePending).values({
+            feedId: r.feedId,
+            videoId: r.videoId,
+            title: r.title,
+            description: r.description,
+            duration: r.duration,
+            durationSeconds: r.durationSeconds,
+            publishedAt: r.publishedAt as any,
+            imageUrl: r.imageUrl,
+            channelTitle: r.channelTitle,
+          }).onConflictDoNothing().returning({ id: youtubePending.id });
+          if (ins) queued++;
+        } catch {}
+      }
+    }
+  }
+  return queued;
+}
+
+export async function listYouTubePending(opts: {
+  status?: string;
+  feedId?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+  sort?: "newest" | "oldest";
+}): Promise<{ items: (YoutubePending & { feedTitle: string | null })[]; total: number }> {
+  const page = Math.max(1, opts.page || 1);
+  const limit = Math.min(200, Math.max(1, opts.limit || 50));
+  const offset = (page - 1) * limit;
+
+  const clauses: any[] = [];
+  if (opts.status) clauses.push(eq(youtubePending.status, opts.status));
+  if (opts.feedId) clauses.push(eq(youtubePending.feedId, opts.feedId));
+  if (opts.search) clauses.push(ilike(youtubePending.title, `%${opts.search}%`));
+  const where = clauses.length > 0 ? and(...clauses) : undefined;
+
+  const order = opts.sort === "oldest"
+    ? [asc(youtubePending.publishedAt), asc(youtubePending.createdAt)]
+    : [desc(youtubePending.publishedAt), desc(youtubePending.createdAt)];
+
+  const rowsQuery = db
+    .select({ p: youtubePending, feedTitle: feeds.title })
+    .from(youtubePending)
+    .leftJoin(feeds, eq(youtubePending.feedId, feeds.id));
+
+  const rows = where
+    ? await rowsQuery.where(where).orderBy(...order).limit(limit).offset(offset)
+    : await rowsQuery.orderBy(...order).limit(limit).offset(offset);
+
+  const countQuery = db.select({ n: count() }).from(youtubePending);
+  const [{ n }] = where ? await countQuery.where(where) : await countQuery;
+
+  return {
+    items: rows.map(r => ({ ...(r.p as YoutubePending), feedTitle: r.feedTitle })),
+    total: Number(n),
+  };
+}
+
+export async function getYouTubePendingCounts(): Promise<Record<string, number>> {
+  const rows = await db
+    .select({ status: youtubePending.status, n: count() })
+    .from(youtubePending)
+    .groupBy(youtubePending.status);
+  const out: Record<string, number> = { pending: 0, approved: 0, rejected: 0 };
+  for (const r of rows) out[r.status] = Number(r.n);
+  return out;
+}
+
+// Promote reviewed videos into real episodes.
+//
+// audioUrl is the yt://audio/{videoId} placeholder — the client rewrites it to
+// /api/audio/yt/{videoId} via the audio-proxy rules, and the server resolves a
+// fresh googlevideo URL per playback. Storing a real stream URL here would be
+// wrong: they expire in ~6 hours.
+export async function approveYouTubePending(
+  ids: string[],
+  reviewedBy?: string,
+): Promise<{ approved: number; episodes: Episode[] }> {
+  if (ids.length === 0) return { approved: 0, episodes: [] };
+
+  const rows = await db.select().from(youtubePending)
+    .where(and(inArray(youtubePending.id, ids), eq(youtubePending.status, "pending")));
+  if (rows.length === 0) return { approved: 0, episodes: [] };
+
+  const created: Episode[] = [];
+  for (const row of rows) {
+    try {
+      const [episode] = await db.insert(episodes).values({
+        feedId: row.feedId,
+        title: row.title,
+        description: row.description,
+        audioUrl: `yt://audio/${row.videoId}`,
+        duration: row.duration,
+        publishedAt: row.publishedAt as any,
+        guid: `yt-${row.videoId}`,
+        imageUrl: row.imageUrl,
+        youtubeVideoId: row.videoId,
+      } as any).onConflictDoNothing().returning();
+
+      // onConflictDoNothing returns nothing when the guid already exists (e.g.
+      // the same video approved twice via concurrent requests). Look up the
+      // existing row so the queue entry still links to a real episode.
+      let linked: Episode | undefined = episode;
+      if (!linked) {
+        const [existing] = await db.select().from(episodes)
+          .where(and(eq(episodes.feedId, row.feedId), eq(episodes.guid, `yt-${row.videoId}`)))
+          .limit(1);
+        linked = existing;
+      } else {
+        created.push(linked);
+      }
+
+      await db.update(youtubePending).set({
+        status: "approved",
+        reviewedAt: new Date(),
+        reviewedBy: reviewedBy || null,
+        episodeId: linked?.id || null,
+      } as any).where(eq(youtubePending.id, row.id));
+    } catch (e: any) {
+      console.error(`YouTube approve failed for ${row.videoId}: ${e.message?.slice(0, 120)}`);
+    }
+  }
+
+  return { approved: rows.length, episodes: created };
+}
+
+export async function rejectYouTubePending(
+  ids: string[],
+  reviewedBy?: string,
+  note?: string,
+): Promise<number> {
+  if (ids.length === 0) return 0;
+  const updated = await db.update(youtubePending).set({
+    status: "rejected",
+    reviewedAt: new Date(),
+    reviewedBy: reviewedBy || null,
+    reviewNote: note || null,
+  } as any)
+    .where(and(inArray(youtubePending.id, ids), eq(youtubePending.status, "pending")))
+    .returning({ id: youtubePending.id });
+  return updated.length;
+}
+
+// Undo a rejection so the video returns to the review queue.
+export async function unrejectYouTubePending(ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const updated = await db.update(youtubePending).set({
+    status: "pending",
+    reviewedAt: null,
+    reviewedBy: null,
+    reviewNote: null,
+  } as any)
+    .where(and(inArray(youtubePending.id, ids), eq(youtubePending.status, "rejected")))
+    .returning({ id: youtubePending.id });
+  return updated.length;
+}
+
+// Bulk action over a whole feed's pending queue (or the entire queue when no
+// feedId is given) without the caller having to page through every id.
+export async function getAllPendingYouTubeIds(feedId?: string): Promise<string[]> {
+  const where = feedId
+    ? and(eq(youtubePending.status, "pending"), eq(youtubePending.feedId, feedId))
+    : eq(youtubePending.status, "pending");
+  const rows = await db.select({ id: youtubePending.id }).from(youtubePending).where(where);
+  return rows.map(r => r.id);
 }
 
 export async function getTATFeeds(): Promise<Feed[]> {

@@ -33,6 +33,11 @@ export const feeds = pgTable("feeds", {
   allhalachaAuthorId: integer("allhalacha_author_id"),
   kolhalashonRavId: integer("kolhalashon_rav_id"),
   torahdownloadsSpeakerId: integer("torahdownloads_speaker_id"),
+  // YouTube source. Feeds are playlist-scoped: one ShiurPod feed per YouTube
+  // playlist (a channel's uploads playlist — the UU... id — counts as one).
+  // rssUrl is yt://playlist/{id}; this column mirrors it like the other
+  // source-id columns so a feed can carry YouTube alongside TAT/KH/TD.
+  youtubePlaylistId: text("youtube_playlist_id"),
   showInBrowse: boolean("show_in_browse").default(true).notNull(),
 }, (table) => [
   index("feeds_active_browse_idx").on(table.isActive, table.showInBrowse),
@@ -54,6 +59,10 @@ export const episodes = pgTable("episodes", {
   tatLectureId: integer("tat_lecture_id"),
   kolhalashonFileId: integer("kolhalashon_file_id"),
   torahdownloadsShiurId: integer("torahdownloads_shiur_id"),
+  // Set only on episodes promoted from the YouTube review queue. audioUrl for
+  // these is the yt://audio/{videoId} placeholder — googlevideo stream URLs
+  // expire in ~6h, so the real URL is resolved per playback, never stored.
+  youtubeVideoId: text("youtube_video_id"),
   noDownload: boolean("no_download").default(false),
 }, (table) => [
   uniqueIndex("episodes_guid_feed_idx").on(table.guid, table.feedId),
@@ -213,6 +222,37 @@ export const sponsors = pgTable("sponsors", {
 
 export type Sponsor = typeof sponsors.$inferSelect;
 
+// YouTube review queue. Ingest NEVER writes straight to `episodes` — every
+// video lands here as `pending` and only becomes an episode once an admin
+// approves it. Rejected rows are kept forever (not deleted) so the next
+// playlist crawl doesn't re-queue something that was already turned down.
+export const youtubePending = pgTable("youtube_pending", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  feedId: varchar("feed_id").references(() => feeds.id, { onDelete: "cascade" }).notNull(),
+  videoId: text("video_id").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  duration: text("duration"),
+  durationSeconds: integer("duration_seconds"),
+  publishedAt: timestamp("published_at"),
+  imageUrl: text("image_url"),
+  channelTitle: text("channel_title"),
+  // pending | approved | rejected
+  status: text("status").default("pending").notNull(),
+  reviewedAt: timestamp("reviewed_at"),
+  reviewedBy: text("reviewed_by"),
+  reviewNote: text("review_note"),
+  // Set when approved — links back to the episode row this became.
+  episodeId: varchar("episode_id").references(() => episodes.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("youtube_pending_feed_video_idx").on(table.feedId, table.videoId),
+  index("youtube_pending_status_idx").on(table.status, table.publishedAt),
+  index("youtube_pending_feed_status_idx").on(table.feedId, table.status),
+]);
+
+export type YoutubePending = typeof youtubePending.$inferSelect;
+
 export const insertFeedSchema = createInsertSchema(feeds).pick({
   title: true,
   rssUrl: true,
@@ -224,6 +264,7 @@ export const insertFeedSchema = createInsertSchema(feeds).pick({
   tatSpeakerId: true,
   kolhalashonRavId: true,
   torahdownloadsSpeakerId: true,
+  youtubePlaylistId: true,
   showInBrowse: true,
 });
 
