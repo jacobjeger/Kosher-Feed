@@ -7,7 +7,7 @@ import { getVitals, recordFeedResult } from "./feed-vitals";
 import { insertFeedSchema, insertCategorySchema, feedMergeHistory } from "@shared/schema";
 import type { Feed } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, sql, inArray } from "drizzle-orm";
 import { syncTATSpeakers, refreshTATFeedEpisodes, fetchAllSpeakers } from "./torahanytime";
 import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, OU_PLATFORMS, fetchPostDetailsBatch, type OUPlatformKey } from "./alldaf";
 import { syncKHSpeakers, refreshKHFeedEpisodes, reloadKHClient, getHeaders as getKHHeaders } from "./kolhalashon";
@@ -24,6 +24,13 @@ import { resolveAudioStream, invalidateAudioCache, audioCacheStats, YT_VIDEO_ID_
 import { mediaPathFor, mediaUsage, mediaToolingStatus, deleteYouTubeAudio } from "./youtube-media";
 import { nudgeYouTubeMediaWorker } from "./youtube-worker";
 import { evaluateRules, rulesForFeed, describeRule, isValidRulePattern } from "./youtube-rules";
+import {
+  search as runSearch,
+  buildQuery as buildSearchQuery,
+  searchEpisodesRanked,
+  searchFeedsRanked,
+  type SearchType,
+} from "./search";
 import fsp from "node:fs/promises";
 import { trackErrorForAlert, sendFeedbackNotification } from "./error-alerts";
 import { registerV1Routes } from "./routes-v1";
@@ -95,6 +102,72 @@ function slimFeedForList(feed: any): any {
 }
 
 // Resolve KH audio URLs through the proxy worker
+// --- Search: FTS with a safe fallback to the old ILIKE path ---------------
+//
+// The new implementation is only used once the corpus is actually folded and
+// indexed. Until then (and if anything goes wrong) these fall back to the
+// original storage functions, so search degrades to "as it was" rather than
+// breaking. Readiness is cached because it's checked on every search.
+let _ftsReady: boolean | null = null;
+let _ftsCheckedAt = 0;
+const FTS_CHECK_TTL = 60_000;
+
+async function ftsReady(): Promise<boolean> {
+  if (_ftsReady !== null && Date.now() - _ftsCheckedAt < FTS_CHECK_TTL) return _ftsReady;
+  try {
+    const r: any = await db.execute(sql`
+      SELECT (SELECT count(*) FROM pg_class c JOIN pg_index i ON i.indexrelid = c.oid
+               WHERE c.relname = 'episodes_search_gin' AND i.indisvalid) AS idx,
+             (SELECT count(*) FROM episodes WHERE search_tsv IS NULL LIMIT 1) AS unfolded
+    `);
+    const row = r.rows?.[0];
+    _ftsReady = Number(row?.idx || 0) > 0 && Number(row?.unfolded || 0) === 0;
+  } catch {
+    _ftsReady = false;
+  }
+  _ftsCheckedAt = Date.now();
+  return _ftsReady;
+}
+
+async function searchEpisodesCompat(q: string, limit: number): Promise<any[]> {
+  if (await ftsReady()) {
+    try {
+      const built = await buildSearchQuery(q, true);
+      const r = await searchEpisodesRanked(built, limit);
+      // Old shape: a bare array of episode rows. Extra keys are additive and
+      // safe for existing clients, which read by property name.
+      return r.items.map(e => ({
+        id: e.id, feedId: e.feedId, title: e.title, description: e.description,
+        audioUrl: e.audioUrl, duration: e.duration, publishedAt: e.publishedAt,
+        imageUrl: e.imageUrl, feedTitle: e.feedTitle, feedAuthor: e.feedAuthor,
+        feedImageUrl: e.feedImageUrl,
+      }));
+    } catch (e: any) {
+      console.error(`FTS episode search failed, falling back: ${e.message?.slice(0, 120)}`);
+    }
+  }
+  return storage.searchEpisodes(q, limit);
+}
+
+async function searchFeedsCompat(q: string, limit: number): Promise<any[]> {
+  if (await ftsReady()) {
+    try {
+      const built = await buildSearchQuery(q, true);
+      const r = await searchFeedsRanked(built, limit);
+      if (r.items.length > 0) {
+        const ids = r.items.map(i => i.id);
+        const full = await storage.getFeedsByIds(ids);
+        const order = new Map(ids.map((id, i) => [id, i]));
+        return full.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+      }
+      return [];
+    } catch (e: any) {
+      console.error(`FTS feed search failed, falling back: ${e.message?.slice(0, 120)}`);
+    }
+  }
+  return storage.searchFeeds(q, limit);
+}
+
 function resolveKHAudioUrl(audioUrl: string): { url: string; headers: Record<string, string> } {
   const khMatch = audioUrl.match(/https?:\/\/srv\.kolhalashon\.com\/api\/files\/(?:GetMp3FileToPlay|getLocationOfFileToVideo)\/(\d+)/);
   if (khMatch) {
@@ -436,7 +509,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const q = (req.query.q as string || "").trim();
       if (q.length < 2) return res.json([]);
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-      const results = await storage.searchFeeds(q, limit);
+      // Response shape is unchanged (a bare array) — installed app builds
+      // consume it directly, so this must never become an object.
+      const results = await searchFeedsCompat(q, limit);
       const mappings = await storage.getAllFeedCategoryMappings();
       const enriched = results.map(f => {
         const catIds = mappings.filter(m => m.feedId === f.id).map(m => m.categoryId);
@@ -1216,10 +1291,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/episodes/search", async (req: Request, res: Response) => {
     try {
       const q = req.query.q as string;
-      const limit = parseInt(req.query.limit as string) || 30;
+      // limit was previously uncapped here — an unbounded parseInt straight
+      // into a LIMIT is a trivial way to make the server do arbitrary work.
+      const limit = Math.min(parseInt(req.query.limit as string) || 30, 100);
       if (!q || q.trim().length < 2) return res.json([]);
-      const eps = await storage.searchEpisodes(q, limit);
+      const eps = await searchEpisodesCompat(q.trim(), limit);
       res.json(eps);
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
+  // Unified typed search: episodes, feeds, speakers and categories in one
+  // round trip, each ranked. Replaces the app making two calls plus filtering
+  // the full in-memory feed list client-side.
+  app.get("/api/search", async (req: Request, res: Response) => {
+    try {
+      const q = String(req.query.q || "").trim();
+      if (q.length < 2) {
+        return res.json({
+          query: q, queryFold: "",
+          episodes: { items: [], hasMore: false },
+          feeds: { items: [], hasMore: false },
+          speakers: { items: [], hasMore: false },
+          categories: [], tookMs: 0, impl: "fts",
+        });
+      }
+      if (!(await ftsReady())) {
+        return res.status(503).json({ error: "Search index not ready", impl: "ilike" });
+      }
+      const types = String(req.query.types || "")
+        .split(",").map(s => s.trim()).filter(Boolean) as SearchType[];
+      // allowPrefix=false for a submitted query; true for as-you-type, where a
+      // trailing prefix wildcard makes partial words match.
+      const allowPrefix = req.query.prefix !== "false";
+      const result = await runSearch({
+        q,
+        types: types.length ? types : undefined,
+        limit: Math.min(parseInt(req.query.limit as string) || 20, 100),
+        feedId: (req.query.feedId as string) || undefined,
+        allowPrefix,
+      });
+      res.setHeader("Cache-Control", "public, max-age=30");
+      res.setHeader("X-Search-Impl", result.impl);
+      res.setHeader("X-Search-Fold", encodeURIComponent(result.queryFold));
+      res.json(result);
     } catch (e: any) {
       publicError(res, e);
     }

@@ -1168,6 +1168,11 @@ export async function getYouTubeFeeds(): Promise<Feed[]> {
     .orderBy(feeds.title);
 }
 
+export async function getFeedsByIds(ids: string[]): Promise<Feed[]> {
+  if (ids.length === 0) return [];
+  return db.select().from(feeds).where(inArray(feeds.id, ids));
+}
+
 export async function getFeedByRssUrl(rssUrl: string): Promise<Feed | undefined> {
   const [feed] = await db.select().from(feeds).where(eq(feeds.rssUrl, rssUrl)).limit(1);
   return feed;
