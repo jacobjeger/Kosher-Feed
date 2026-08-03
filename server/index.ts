@@ -20,6 +20,7 @@ import { refreshTorahDownloadsFeedEpisodes, syncTorahDownloadsSpeakers } from ".
 import { refreshYouTubeFeedEpisodes, extractYouTubePlaylistId } from "./youtube";
 import { startYouTubeMediaWorker } from "./youtube-worker";
 import { bootstrapSearch } from "./search/bootstrap";
+import { bootstrapContributorSchema } from "./contributor/bootstrap";
 import { startPopularityRefresh } from "./search/popularity";
 import { autoCategorizeFeeds } from "./auto-categorize";
 import { extractKhRavId, extractTatSpeakerId, extractTorahDownloadsSpeakerId } from "./feed-utils";
@@ -1510,6 +1511,11 @@ function startAutoRefresh() {
   // deploy never blocks on them; this only verifies and reports.
   await bootstrapSearch().catch((e) =>
     console.error(`Search bootstrap error: ${e?.message?.slice(0, 160)}`),
+  );
+  // Contributor program tables. Same contract: idempotent, cheap, and
+  // independent of how drizzle-kit push behaves in a non-TTY build.
+  await bootstrapContributorSchema().catch((e) =>
+    console.error(`Contributor bootstrap error: ${e?.message?.slice(0, 160)}`),
   );
 
   setupCors(app);

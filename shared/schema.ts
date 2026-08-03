@@ -617,3 +617,210 @@ export const appMetrics = pgTable("app_metrics", {
 export type Issue = typeof issues.$inferSelect;
 export type IssueEvent = typeof issueEvents.$inferSelect;
 export type AppMetric = typeof appMetrics.$inferSelect;
+
+// ─── Contributor program ──────────────────────────────────────────────────
+// Rabbanim publish THROUGH us: apply -> approved -> upload -> we generate a
+// spec-compliant podcast feed at /feed/{slug}.xml, submitted once to Apple and
+// Spotify. Audio lives in Cloudflare R2. The catalog mirror lives in
+// feeds/episodes like any other show, so the app needs no special case.
+//
+// Two rules hold across every table here:
+//   1. NO new columns on `episodes` or `feeds`. The search triggers own
+//      title_fold/search_tsv/popularity there, and the tsvector was backfilled
+//      over 1.65M rows — it must not be disturbed. The only link into the
+//      catalog is contributorEpisodes.catalogEpisodeId.
+//   2. No array columns. Binding a JS array to a Postgres text[] through
+//      drizzle fails with "cannot cast type record to text[]"; topics live in
+//      a join table instead, which also gives an indexed browse-by-topic.
+
+export const contributorApplications = pgTable("contributor_applications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  phone: text("phone"),
+  organization: text("organization"),
+  proposedTitle: text("proposed_title").notNull(),
+  proposedDescription: text("proposed_description").notNull(),
+  language: text("language").default("en").notNull(),        // en | he | yi
+  bio: text("bio"),
+  sampleAudioKey: text("sample_audio_key"),                  // R2 key if uploaded
+  sampleAudioUrl: text("sample_audio_url"),                  // if a link was pasted
+  status: text("status").default("pending").notNull(),       // pending | approved | rejected
+  reviewNotes: text("review_notes"),
+  reviewedAt: timestamp("reviewed_at"),
+  reviewedBy: text("reviewed_by"),
+  contributorId: varchar("contributor_id"),                  // set on approval
+  // Kept for abuse triage — this is the first public write endpoint with no
+  // deviceId to correlate on.
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("contributor_applications_status_idx").on(table.status, table.createdAt),
+  index("contributor_applications_email_idx").on(table.email),
+]);
+
+export const contributors = pgTable("contributors", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  displayName: text("display_name").notNull(),
+  contactEmail: text("contact_email").notNull().unique(),    // the rav's REAL address
+  passwordHash: text("password_hash"),                       // null until the setup link is used
+  status: text("status").default("active").notNull(),        // active | suspended
+  applicationId: varchar("application_id")
+    .references(() => contributorApplications.id, { onDelete: "set null" }),
+  lastLoginAt: timestamp("last_login_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Opaque bearer tokens. Only the SHA-256 is stored, so a database leak does not
+// hand out live sessions — deliberately unlike admin auth, where the token IS
+// base64(user:pass) and is kept in localStorage indefinitely.
+// `purpose` folds login, first-time setup and password reset into one table.
+export const contributorSessions = pgTable("contributor_sessions", {
+  tokenHash: text("token_hash").primaryKey(),
+  contributorId: varchar("contributor_id")
+    .references(() => contributors.id, { onDelete: "cascade" }).notNull(),
+  purpose: text("purpose").default("session").notNull(),     // session | setup | reset
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),                              // single-use for setup/reset
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("contributor_sessions_contributor_idx").on(table.contributorId),
+  index("contributor_sessions_expires_idx").on(table.expiresAt),
+]);
+
+export const contributorShows = pgTable("contributor_shows", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contributorId: varchar("contributor_id")
+    .references(() => contributors.id, { onDelete: "cascade" }).notNull(),
+  // Catalog mirror, set when the show goes live. rssUrl there is cp://show/{id}.
+  feedId: varchar("feed_id").references(() => feeds.id, { onDelete: "set null" }),
+  // IMMUTABLE once live — it's baked into every published enclosure and into
+  // the feed URL submitted to Apple and Spotify.
+  slug: text("slug").notNull().unique(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  language: text("language").default("en").notNull(),        // en | he | yi
+  author: text("author").notNull(),                          // itunes:author; mirrors feeds.author
+  ownerName: text("owner_name").notNull(),                   // itunes:owner name
+  // ALWAYS show-{slug}@shiurpod.com on our catch-all, never the rav's address:
+  // this is where Apple and Spotify send the directory claim code, and the
+  // operator has to be able to complete the claim without bothering him.
+  ownerEmail: text("owner_email").notNull(),
+  copyright: text("copyright"),
+  link: text("link"),                                        // channel <link>
+  artworkKey: text("artwork_key"),
+  artworkWidth: integer("artwork_width"),
+  artworkHeight: integer("artwork_height"),
+  categoryId: varchar("category_id").references(() => categories.id),
+  itunesCategory: text("itunes_category").default("Religion & Spirituality").notNull(),
+  itunesSubcategory: text("itunes_subcategory").default("Judaism").notNull(),
+  itunesType: text("itunes_type").default("episodic").notNull(),  // episodic | serial
+  explicit: boolean("explicit").default(false).notNull(),
+  // Moderation. ON by default for new contributors, per spec — can be turned
+  // off once a rav is established.
+  reviewRequired: boolean("review_required").default(true).notNull(),
+  status: text("status").default("draft").notNull(),         // draft | live | suspended
+  // Rendered-feed cache. In the row rather than an in-process Map so it
+  // survives restarts and stays correct if this is ever scaled past one replica.
+  feedXml: text("feed_xml"),
+  feedEtag: text("feed_etag"),
+  feedBuiltAt: timestamp("feed_built_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("contributor_shows_contributor_idx").on(table.contributorId),
+  index("contributor_shows_status_idx").on(table.status),
+]);
+
+export const contributorEpisodes = pgTable("contributor_episodes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  showId: varchar("show_id")
+    .references(() => contributorShows.id, { onDelete: "cascade" }).notNull(),
+  // The RSS <guid>. Minted by the column default at row creation and NEVER
+  // rewritten — if it changes, every subscriber re-downloads the shiur as new.
+  // Enforced by the schema rather than by discipline.
+  guid: varchar("guid").notNull().unique().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  description: text("description"),                          // HTML allowed
+  audioKey: text("audio_key"),                               // R2 key; null until ready
+  // EXACT byte count, taken from an R2 HEAD after upload — never estimated.
+  // Apple rejects feeds whose enclosure length is wrong.
+  byteSize: integer("byte_size"),
+  durationSeconds: integer("duration_seconds"),
+  pubDate: timestamp("pub_date"),
+  episodeNumber: integer("episode_number"),
+  seasonNumber: integer("season_number"),
+  artworkKey: text("artwork_key"),
+  explicit: boolean("explicit").default(false).notNull(),
+  // draft | processing | failed | pending_review | scheduled | published | unpublished
+  status: text("status").default("draft").notNull(),
+  publishedAt: timestamp("published_at"),
+
+  // Torah metadata — optional and additive, NOT emitted in the RSS. Surfaced in
+  // our own UI so contributor shows are browsable by it. Free-form tags live in
+  // contributorEpisodeTopics.
+  seriesName: text("series_name"),
+  masechta: text("masechta"),
+  daf: text("daf"),
+  parsha: text("parsha"),
+
+  // Transcode job. Same column shape as youtube_pending.media_* so the worker
+  // reuses the FOR UPDATE SKIP LOCKED claim pattern verbatim.
+  uploadKey: text("upload_key"),                             // raw upload; deleted after transcode
+  uploadBytes: integer("upload_bytes"),
+  mediaStatus: text("media_status"),                         // queued | processing | ready | failed
+  mediaError: text("media_error"),
+  mediaAttempts: integer("media_attempts").default(0).notNull(),
+  mediaUpdatedAt: timestamp("media_updated_at"),
+
+  // The catalog mirror row, so unpublish can remove it directly — the thing
+  // RSS self-ingestion structurally cannot do.
+  catalogEpisodeId: varchar("catalog_episode_id")
+    .references(() => episodes.id, { onDelete: "set null" }),
+
+  reviewedAt: timestamp("reviewed_at"),
+  reviewedBy: text("reviewed_by"),
+  reviewNote: text("review_note"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("contributor_episodes_show_status_idx").on(table.showId, table.status, table.pubDate),
+  index("contributor_episodes_media_status_idx").on(table.mediaStatus),
+  index("contributor_episodes_scheduled_idx").on(table.status, table.pubDate),
+]);
+
+// A join table rather than text[]: drizzle cannot bind a JS array to a text[]
+// parameter, and this gives a plain btree for browse-by-topic.
+export const contributorEpisodeTopics = pgTable("contributor_episode_topics", {
+  episodeId: varchar("episode_id")
+    .references(() => contributorEpisodes.id, { onDelete: "cascade" }).notNull(),
+  topic: text("topic").notNull(),
+}, (table) => [
+  uniqueIndex("contributor_episode_topics_ep_topic_idx").on(table.episodeId, table.topic),
+  index("contributor_episode_topics_topic_idx").on(table.topic),
+]);
+
+// Directory submission is manual per show (Spotify has no publishing API), so
+// this is a tracked checklist rather than an automated pipeline.
+export const contributorDirectorySubmissions = pgTable("contributor_directory_submissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  showId: varchar("show_id")
+    .references(() => contributorShows.id, { onDelete: "cascade" }).notNull(),
+  platform: text("platform").notNull(),                      // apple | spotify | amazon | podcastindex
+  status: text("status").default("not_submitted").notNull(), // not_submitted | submitted | live | rejected
+  submittedAt: timestamp("submitted_at"),
+  showUrl: text("show_url"),
+  note: text("note"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("contributor_directory_show_platform_idx").on(table.showId, table.platform),
+]);
+
+export type ContributorApplication = typeof contributorApplications.$inferSelect;
+export type Contributor = typeof contributors.$inferSelect;
+export type ContributorSession = typeof contributorSessions.$inferSelect;
+export type ContributorShow = typeof contributorShows.$inferSelect;
+export type ContributorEpisode = typeof contributorEpisodes.$inferSelect;
+export type ContributorEpisodeTopic = typeof contributorEpisodeTopics.$inferSelect;
+export type ContributorDirectorySubmission = typeof contributorDirectorySubmissions.$inferSelect;

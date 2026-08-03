@@ -18,12 +18,47 @@ import { seedLexicon } from "./seed-lexicon";
 // (ensureColumns() in server/index.ts is the existing precedent for hand-rolled
 // idempotent DDL for the same reason.)
 
-const REQUIRED_INDEXES = [
-  "episodes_search_gin",
-  "episodes_title_fold_prefix",
-  "feeds_search_gin",
-  "feeds_name_trgm",
-];
+// Index DDL kept here, not only in scripts/search-bootstrap.ts, because these
+// have been dropped in production once already: drizzle-kit push runs at build
+// time on every deploy and removes indexes it doesn't know about. Drizzle can't
+// express GIN with operator classes, so declaring them in shared/schema.ts is
+// not an option — self-repair is.
+//
+// The failure is silent: ftsReady() sees the missing index, search falls back
+// to ILIKE, and the only symptom is that queries get slow again. Worth
+// repairing automatically rather than waiting to notice.
+const REQUIRED_INDEXES: Record<string, string> = {
+  episodes_search_gin: `CREATE INDEX CONCURRENTLY IF NOT EXISTS episodes_search_gin
+                          ON episodes USING gin (feed_id, search_tsv)`,
+  episodes_title_fold_prefix: `CREATE INDEX CONCURRENTLY IF NOT EXISTS episodes_title_fold_prefix
+                          ON episodes (title_fold text_pattern_ops)`,
+  feeds_search_gin: `CREATE INDEX CONCURRENTLY IF NOT EXISTS feeds_search_gin
+                          ON feeds USING gin (search_tsv)`,
+  feeds_name_trgm: `CREATE INDEX CONCURRENTLY IF NOT EXISTS feeds_name_trgm
+                          ON feeds USING gin (title_fold gin_trgm_ops, author_fold gin_trgm_ops)`,
+};
+
+const REQUIRED_INDEX_NAMES = Object.keys(REQUIRED_INDEXES);
+
+// Rebuilds missing/invalid indexes AFTER boot, never during it — a deploy must
+// not block on an index build. CONCURRENTLY so reads and writes continue; it
+// cannot run inside a transaction, which db.execute satisfies (autocommit).
+async function repairIndexes(names: string[]): Promise<void> {
+  for (const name of names) {
+    const ddl = REQUIRED_INDEXES[name];
+    if (!ddl) continue;
+    try {
+      const t0 = Date.now();
+      // A previous CONCURRENTLY failure can leave an INVALID index behind that
+      // is never used; drop it first or the create is a no-op.
+      await db.execute(sql.raw(`DROP INDEX CONCURRENTLY IF EXISTS ${name}`)).catch(() => {});
+      await db.execute(sql.raw(ddl));
+      console.log(`Search: rebuilt ${name} in ${Math.round((Date.now() - t0) / 1000)}s`);
+    } catch (e: any) {
+      console.error(`Search: failed to rebuild ${name} — ${e?.message?.slice(0, 160)}`);
+    }
+  }
+}
 
 export interface SearchBootstrapResult {
   ok: boolean;
@@ -56,11 +91,11 @@ export async function bootstrapSearch(): Promise<SearchBootstrapResult> {
       SELECT c.relname, i.indisvalid
       FROM pg_class c JOIN pg_index i ON i.indexrelid = c.oid
       WHERE c.relname IN (
-        SELECT json_array_elements_text(${JSON.stringify(REQUIRED_INDEXES)}::json)
+        SELECT json_array_elements_text(${JSON.stringify(REQUIRED_INDEX_NAMES)}::json)
       )
     `);
     const present = (res.rows || []) as { relname: string; indisvalid: boolean }[];
-    const missing = REQUIRED_INDEXES.filter((n) => !present.some((r) => r.relname === n));
+    const missing = REQUIRED_INDEX_NAMES.filter((n) => !present.some((r) => r.relname === n));
     const invalid = present.filter((r) => !r.indisvalid).map((r) => r.relname);
 
     const u: any = await db.execute(sql`SELECT count(*)::int AS n FROM episodes WHERE search_tsv IS NULL`);
@@ -72,9 +107,24 @@ export async function bootstrapSearch(): Promise<SearchBootstrapResult> {
     } else {
       console.warn(
         `Search: DEGRADED to ILIKE fallback — missing=[${missing.join(",")}] ` +
-        `invalid=[${invalid.join(",")}] unfolded=${unfolded}. ` +
-        `Run: DATABASE_URL=... npx tsx scripts/search-bootstrap.ts --step=all`,
+        `invalid=[${invalid.join(",")}] unfolded=${unfolded}`,
       );
+      // Self-repair the indexes in the background. Deliberately not awaited:
+      // boot continues and search serves via the ILIKE fallback until the
+      // rebuild lands (~25s for the full set at 1.65M rows).
+      const broken = [...missing, ...invalid];
+      if (broken.length > 0) {
+        console.warn(`Search: rebuilding ${broken.length} index(es) in the background`);
+        void repairIndexes(broken);
+      }
+      // A NULL search_tsv means the corpus itself needs re-folding, which is a
+      // ~19-minute job and deliberately NOT automatic — that stays a decision.
+      if (unfolded > 0) {
+        console.warn(
+          `Search: ${unfolded} unfolded row(s) — run ` +
+          `DATABASE_URL=... npx tsx scripts/search-bootstrap.ts --step=backfill`,
+        );
+      }
     }
     return { ok, missing, invalid, unfolded };
   } catch (e: any) {
