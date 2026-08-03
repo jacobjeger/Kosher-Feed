@@ -1194,6 +1194,58 @@
         </div>
       </div>
 
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <h2>Auto-Approve / Auto-Reject Rules</h2>
+          <span id="ytRuleCount" style="font-size:12px;color:#64748b;"></span>
+        </div>
+        <div id="ytRuleAlert"></div>
+        <p style="color:#94a3b8;font-size:13px;margin-bottom:14px;line-height:1.5;">
+          Rules run automatically as new videos are found. Anything no rule matches
+          still waits for you in the queue below. <strong>Reject beats approve</strong>
+          when both match — a wrongly-rejected shiur can be restored, a wrongly-approved
+          one has already reached listeners. Auto-decided items are tagged
+          <code>auto</code> so you can audit them.
+        </p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">
+          <select id="ytRuleAction" style="width:auto;padding:8px 10px;font-size:13px;">
+            <option value="approve">Auto-approve</option>
+            <option value="reject">Auto-reject</option>
+          </select>
+          <span style="color:#64748b;font-size:13px;">when</span>
+          <select id="ytRuleField" style="width:auto;padding:8px 10px;font-size:13px;">
+            <option value="title">title</option>
+            <option value="description">description</option>
+            <option value="both">title or description</option>
+          </select>
+          <select id="ytRuleMatchType" style="width:auto;padding:8px 10px;font-size:13px;">
+            <option value="contains">contains</option>
+            <option value="regex">matches regex</option>
+          </select>
+          <input type="text" id="ytRulePattern" placeholder="e.g. Daf Yomi" style="flex:1;min-width:180px;padding:8px 10px;font-size:13px;">
+          <select id="ytRuleFeed" style="width:auto;padding:8px 10px;font-size:13px;min-width:150px;">
+            <option value="">All YouTube feeds</option>
+          </select>
+          <button class="btn btn-primary btn-sm" onclick="withLoading(this, addYtRule)">Add rule</button>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+          <button class="btn btn-secondary btn-sm" onclick="withLoading(this, previewYtRules)">Preview against queue</button>
+          <button class="btn btn-secondary btn-sm" onclick="withLoading(this, applyYtRules)">Apply to existing queue</button>
+        </div>
+        <div id="ytRulePreview" style="font-size:12px;color:#94a3b8;margin-bottom:12px;"></div>
+        <div style="overflow-x:auto;">
+          <table class="feed-table">
+            <thead>
+              <tr>
+                <th>Rule</th><th>Scope</th><th style="text-align:right;">Matches</th>
+                <th style="text-align:center;">On</th><th style="text-align:right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="ytRuleBody"></tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
           <h2>Review Queue</h2>
@@ -2664,7 +2716,7 @@ function switchTab(tab, btn) {
   if (tab === 'vitals') loadVitals();
   if (tab === 'announcements') loadAnnouncements();
   if (tab === 'kolhalashon') { loadKHStatus(); loadKHSpeakers(); setTimeout(loadKHVitals, 300); }
-  if (tab === 'youtube') { loadYtFeeds(); loadYtQueue(1); loadYtDiagnostics(); }
+  if (tab === 'youtube') { loadYtFeeds().then(loadYtRules); loadYtQueue(1); loadYtDiagnostics(); }
   if (tab === 'ytc') loadYtcCode();
   if (tab === 'settings') { loadTATStatus(); setTimeout(() => { loadAllOUStatuses(); loadTDStatus(); loadMergers(); loadGlobalMergeHistory(); }, 300); }
 }
@@ -2678,6 +2730,8 @@ function switchTab(tab, btn) {
 let _ytQueuePage = 1;
 let _ytQueueTotal = 0;
 const _ytSelected = new Set();
+// feedId -> title, so the rules table can name a feed-scoped rule's target.
+let _ytFeedNames = {};
 
 function ytAlert(msg, type = 'success') {
   const area = document.getElementById('ytAddAlert');
@@ -2796,12 +2850,22 @@ async function loadYtFeeds() {
     const feeds = await api('/api/admin/youtube/feeds');
     if (countEl) countEl.textContent = `${feeds.length} source(s)`;
 
+    _ytFeedNames = {};
+    for (const f of feeds) _ytFeedNames[f.id] = f.title;
+
     const feedSel = document.getElementById('ytQueueFeed');
     if (feedSel) {
       const current = feedSel.value;
       feedSel.innerHTML = '<option value="">All feeds</option>'
         + feeds.map(f => `<option value="${esc(f.id)}">${esc(f.title)}</option>`).join('');
       feedSel.value = current;
+    }
+    const ruleFeedSel = document.getElementById('ytRuleFeed');
+    if (ruleFeedSel) {
+      const current = ruleFeedSel.value;
+      ruleFeedSel.innerHTML = '<option value="">All YouTube feeds</option>'
+        + feeds.map(f => `<option value="${esc(f.id)}">${esc(f.title)}</option>`).join('');
+      ruleFeedSel.value = current;
     }
 
     if (feeds.length === 0) {
@@ -2991,6 +3055,136 @@ async function ytReview(action, all) {
     await Promise.all([loadYtQueue(1), loadYtFeeds(), loadYtDiagnostics()]);
   } catch (e) {
     ytAlert(e.message, 'error');
+  }
+}
+
+// ---- Keyword rules ----
+
+function ytRuleAlert(msg, type = 'success') {
+  const area = document.getElementById('ytRuleAlert');
+  if (!area) return showAlert(msg, type);
+  const div = document.createElement('div');
+  div.className = `alert alert-${type}`;
+  div.textContent = msg;
+  area.innerHTML = '';
+  area.appendChild(div);
+  setTimeout(() => { if (area.firstChild === div) area.innerHTML = ''; }, 6000);
+}
+
+function describeYtRule(r) {
+  const verb = r.action === 'reject' ? 'Reject' : 'Approve';
+  const how = r.matchType === 'regex' ? `matches /${r.pattern}/i` : `contains "${r.pattern}"`;
+  const field = r.field === 'both' ? 'title or description' : r.field;
+  return `${verb} when ${field} ${how}`;
+}
+
+async function loadYtRules() {
+  const body = document.getElementById('ytRuleBody');
+  const countEl = document.getElementById('ytRuleCount');
+  if (!body) return;
+  try {
+    const rules = await api('/api/admin/youtube/rules');
+    if (countEl) countEl.textContent = `${rules.length} rule(s)`;
+    if (rules.length === 0) {
+      body.innerHTML = '<tr><td colspan="5" style="color:#64748b;padding:16px;text-align:center;">No rules — every video waits for review.</td></tr>';
+      return;
+    }
+    body.innerHTML = rules.map(r => `
+      <tr style="${r.enabled ? '' : 'opacity:0.5;'}">
+        <td>
+          <div style="color:${r.action === 'reject' ? '#fca5a5' : '#86efac'};font-weight:600;">${esc(describeYtRule(r))}</div>
+          ${r.note ? `<div style="font-size:11px;color:#64748b;">${esc(r.note)}</div>` : ''}
+        </td>
+        <td style="font-size:12px;color:#94a3b8;">${r.feedId ? esc(_ytFeedNames[r.feedId] || 'one feed') : 'All feeds'}</td>
+        <td style="text-align:right;color:#94a3b8;">${r.matchCount || 0}</td>
+        <td style="text-align:center;">
+          <input type="checkbox" ${r.enabled ? 'checked' : ''} onchange="toggleYtRule('${esc(r.id)}', this.checked)" style="width:auto;margin:0;">
+        </td>
+        <td style="text-align:right;">
+          <button class="btn btn-secondary btn-sm" onclick="withLoading(this, () => deleteYtRule('${esc(r.id)}'))">Delete</button>
+        </td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    body.innerHTML = `<tr><td colspan="5" style="color:#f87171;padding:16px;">${esc(e.message)}</td></tr>`;
+  }
+}
+
+async function addYtRule() {
+  const pattern = (document.getElementById('ytRulePattern').value || '').trim();
+  if (!pattern) return ytRuleAlert('Enter a keyword or pattern', 'error');
+  try {
+    await api('/api/admin/youtube/rules', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: document.getElementById('ytRuleAction').value,
+        field: document.getElementById('ytRuleField').value,
+        matchType: document.getElementById('ytRuleMatchType').value,
+        pattern,
+        feedId: document.getElementById('ytRuleFeed').value || null,
+      }),
+    });
+    document.getElementById('ytRulePattern').value = '';
+    ytRuleAlert('Rule added — it applies to newly found videos from now on');
+    await loadYtRules();
+  } catch (e) {
+    ytRuleAlert(e.message, 'error');
+  }
+}
+
+async function toggleYtRule(id, enabled) {
+  try {
+    await api(`/api/admin/youtube/rules/${id}`, { method: 'PUT', body: JSON.stringify({ enabled }) });
+    await loadYtRules();
+  } catch (e) {
+    ytRuleAlert(e.message, 'error');
+  }
+}
+
+async function deleteYtRule(id) {
+  if (!confirm('Delete this rule? Videos it already decided are not affected.')) return;
+  try {
+    await api(`/api/admin/youtube/rules/${id}`, { method: 'DELETE' });
+    await loadYtRules();
+  } catch (e) {
+    ytRuleAlert(e.message, 'error');
+  }
+}
+
+async function previewYtRules() {
+  const out = document.getElementById('ytRulePreview');
+  const feedId = document.getElementById('ytQueueFeed')?.value || '';
+  try {
+    const d = await api('/api/admin/youtube/rules/preview', {
+      method: 'POST', body: JSON.stringify({ feedId: feedId || undefined }),
+    });
+    if (!d.approve.length && !d.reject.length) {
+      out.innerHTML = `<span style="color:#64748b;">No pending videos match any rule (scanned ${d.scanned}).</span>`;
+      return;
+    }
+    const list = (items, color) => items.slice(0, 8).map(i =>
+      `<div style="color:${color};">• ${esc(i.title)} <span style="color:#64748b;">— ${esc(i.reason)}</span></div>`).join('')
+      + (items.length > 8 ? `<div style="color:#64748b;">…and ${items.length - 8} more</div>` : '');
+    out.innerHTML =
+      `<div style="margin-bottom:6px;">Scanned ${d.scanned} of ${d.totalPending} pending${d.truncated ? ' (first page only)' : ''}:</div>`
+      + (d.approve.length ? `<div style="margin-bottom:6px;"><strong style="color:#86efac;">Would approve ${d.approve.length}</strong>${list(d.approve, '#86efac')}</div>` : '')
+      + (d.reject.length ? `<div><strong style="color:#fca5a5;">Would reject ${d.reject.length}</strong>${list(d.reject, '#fca5a5')}</div>` : '');
+  } catch (e) {
+    out.innerHTML = `<span style="color:#f87171;">${esc(e.message)}</span>`;
+  }
+}
+
+async function applyYtRules() {
+  const feedId = document.getElementById('ytQueueFeed')?.value || '';
+  if (!confirm('Apply the rules to everything already in the review queue?')) return;
+  try {
+    const d = await api('/api/admin/youtube/rules/apply', {
+      method: 'POST', body: JSON.stringify({ feedId: feedId || undefined }),
+    });
+    ytRuleAlert(`Applied — ${d.approved} approved, ${d.rejected} rejected`);
+    await Promise.all([loadYtQueue(1), loadYtRules(), loadYtFeeds(), loadYtDiagnostics()]);
+  } catch (e) {
+    ytRuleAlert(e.message, 'error');
   }
 }
 

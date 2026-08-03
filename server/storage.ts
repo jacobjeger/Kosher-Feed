@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { isApiOnlyUrl } from "./alldaf";
-import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals, queueItems, notificationTaps, feedMergeHistory, appConfig, deviceProfiles, conversations, conversationMessages, pageViews, ytcUnlocks, youtubePending } from "@shared/schema";
-import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor, NotificationPreference, Announcement, AnnouncementDismissal, NotificationTap, AppConfig, DeviceProfile, Conversation, ConversationMessage, PageView, YoutubePending } from "@shared/schema";
+import { feeds, categories, episodes, subscriptions, adminUsers, episodeListens, favorites, playbackPositions, adminNotifications, errorReports, feedback, pushTokens, contactMessages, apkUploads, feedCategories, maggidShiurim, sponsors, notificationPreferences, announcements, announcementDismissals, queueItems, notificationTaps, feedMergeHistory, appConfig, deviceProfiles, conversations, conversationMessages, pageViews, ytcUnlocks, youtubePending, youtubeRules } from "@shared/schema";
+import type { Feed, InsertFeed, Category, InsertCategory, Episode, Subscription, Favorite, PlaybackPosition, AdminNotification, ErrorReport, Feedback, PushToken, ContactMessage, ApkUpload, FeedCategory, MaggidShiur, InsertMaggidShiur, Sponsor, NotificationPreference, Announcement, AnnouncementDismissal, NotificationTap, AppConfig, DeviceProfile, Conversation, ConversationMessage, PageView, YoutubePending, YoutubeRule } from "@shared/schema";
 import { eq, and, or, desc, asc, inArray, sql, count, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
@@ -1215,6 +1215,58 @@ export interface YouTubePendingInsert {
   publishedAt: Date | null;
   imageUrl: string | null;
   channelTitle: string | null;
+  // Set when a keyword rule decided this video's fate at ingest. Absent means
+  // it lands in the queue for a human, which stays the default.
+  status?: string;
+  mediaStatus?: string | null;
+  reviewedAt?: Date | null;
+  reviewedBy?: string | null;
+  reviewNote?: string | null;
+}
+
+// --- YouTube keyword rules ---
+
+export async function getYouTubeRules(): Promise<YoutubeRule[]> {
+  return db.select().from(youtubeRules).orderBy(desc(youtubeRules.createdAt));
+}
+
+export async function createYouTubeRule(data: {
+  feedId: string | null;
+  action: string;
+  matchType: string;
+  field: string;
+  pattern: string;
+  note?: string | null;
+}): Promise<YoutubeRule> {
+  const [rule] = await db.insert(youtubeRules).values({
+    feedId: data.feedId,
+    action: data.action,
+    matchType: data.matchType,
+    field: data.field,
+    pattern: data.pattern,
+    note: data.note || null,
+  } as any).returning();
+  return rule;
+}
+
+export async function updateYouTubeRule(id: string, data: Partial<{
+  action: string; matchType: string; field: string; pattern: string; enabled: boolean; note: string | null;
+}>): Promise<void> {
+  await db.update(youtubeRules).set(data as any).where(eq(youtubeRules.id, id));
+}
+
+export async function deleteYouTubeRule(id: string): Promise<void> {
+  await db.delete(youtubeRules).where(eq(youtubeRules.id, id));
+}
+
+export async function recordYouTubeRuleHits(counts: Map<string, number>): Promise<void> {
+  for (const [id, n] of counts) {
+    if (n <= 0) continue;
+    await db.update(youtubeRules).set({
+      matchCount: sql`${youtubeRules.matchCount} + ${n}`,
+      lastMatchedAt: new Date(),
+    } as any).where(eq(youtubeRules.id, id));
+  }
 }
 
 export async function queueYouTubePending(rows: YouTubePendingInsert[]): Promise<number> {
@@ -1235,6 +1287,11 @@ export async function queueYouTubePending(rows: YouTubePendingInsert[]): Promise
           publishedAt: r.publishedAt as any,
           imageUrl: r.imageUrl,
           channelTitle: r.channelTitle,
+          status: r.status || "pending",
+          mediaStatus: r.mediaStatus ?? null,
+          reviewedAt: (r.reviewedAt ?? null) as any,
+          reviewedBy: r.reviewedBy ?? null,
+          reviewNote: r.reviewNote ?? null,
         }))
       ).onConflictDoNothing().returning({ id: youtubePending.id });
       queued += inserted.length;
@@ -1251,6 +1308,11 @@ export async function queueYouTubePending(rows: YouTubePendingInsert[]): Promise
             publishedAt: r.publishedAt as any,
             imageUrl: r.imageUrl,
             channelTitle: r.channelTitle,
+            status: r.status || "pending",
+            mediaStatus: r.mediaStatus ?? null,
+            reviewedAt: (r.reviewedAt ?? null) as any,
+            reviewedBy: r.reviewedBy ?? null,
+            reviewNote: r.reviewNote ?? null,
           }).onConflictDoNothing().returning({ id: youtubePending.id });
           if (ins) queued++;
         } catch {}

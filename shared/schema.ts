@@ -266,6 +266,33 @@ export const youtubePending = pgTable("youtube_pending", {
 
 export type YoutubePending = typeof youtubePending.$inferSelect;
 
+// Keyword rules that decide a video's fate at ingest without a human.
+//
+// A rule with feedId = null applies to every YouTube feed; otherwise it's
+// scoped to that one. Reject always beats approve when both match — the safe
+// direction, since a wrongly-rejected shiur is recoverable from the Rejected
+// tab but a wrongly-approved one has already reached listeners.
+export const youtubeRules = pgTable("youtube_rules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  feedId: varchar("feed_id").references(() => feeds.id, { onDelete: "cascade" }),
+  // approve | reject
+  action: text("action").default("approve").notNull(),
+  // contains | regex
+  matchType: text("match_type").default("contains").notNull(),
+  // title | description | both
+  field: text("field").default("title").notNull(),
+  pattern: text("pattern").notNull(),
+  enabled: boolean("enabled").default(true).notNull(),
+  note: text("note"),
+  matchCount: integer("match_count").default(0).notNull(),
+  lastMatchedAt: timestamp("last_matched_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("youtube_rules_feed_idx").on(table.feedId, table.enabled),
+]);
+
+export type YoutubeRule = typeof youtubeRules.$inferSelect;
+
 export const insertFeedSchema = createInsertSchema(feeds).pick({
   title: true,
   rssUrl: true,

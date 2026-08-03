@@ -23,6 +23,7 @@ import {
 import { resolveAudioStream, invalidateAudioCache, audioCacheStats, YT_VIDEO_ID_RE } from "./youtube-audio";
 import { mediaPathFor, mediaUsage, mediaToolingStatus, deleteYouTubeAudio } from "./youtube-media";
 import { nudgeYouTubeMediaWorker } from "./youtube-worker";
+import { evaluateRules, rulesForFeed, describeRule, isValidRulePattern } from "./youtube-rules";
 import fsp from "node:fs/promises";
 import { trackErrorForAlert, sendFeedbackNotification } from "./error-alerts";
 import { registerV1Routes } from "./routes-v1";
@@ -1767,6 +1768,141 @@ export async function registerRoutes(app: Express): Promise<Server> {
         { full: req.query.full === "true" },
       );
       res.json(ingest);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // --- Keyword rules ---
+  //
+  // Rules run at ingest so matching videos never sit in the queue. Reject beats
+  // approve; anything unmatched still needs a human.
+
+  app.get("/api/admin/youtube/rules", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      res.json(await storage.getYouTubeRules());
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
+  app.post("/api/admin/youtube/rules", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { feedId, action, matchType, field, pattern, note } = req.body;
+      const a = action === "reject" ? "reject" : "approve";
+      const mt = matchType === "regex" ? "regex" : "contains";
+      const f = ["title", "description", "both"].includes(field) ? field : "title";
+
+      const invalid = isValidRulePattern(mt, String(pattern || ""));
+      if (invalid) return res.status(400).json({ error: invalid });
+
+      const rule = await storage.createYouTubeRule({
+        feedId: feedId || null, action: a, matchType: mt, field: f,
+        pattern: String(pattern).trim(), note: note || null,
+      });
+      res.json(rule);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.put("/api/admin/youtube/rules/:id", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { action, matchType, field, pattern, enabled, note } = req.body;
+      if (pattern != null || matchType != null) {
+        const invalid = isValidRulePattern(String(matchType || "contains"), String(pattern || ""));
+        if (invalid) return res.status(400).json({ error: invalid });
+      }
+      await storage.updateYouTubeRule(String(req.params.id), {
+        ...(action != null ? { action: action === "reject" ? "reject" : "approve" } : {}),
+        ...(matchType != null ? { matchType: matchType === "regex" ? "regex" : "contains" } : {}),
+        ...(field != null ? { field } : {}),
+        ...(pattern != null ? { pattern: String(pattern).trim() } : {}),
+        ...(enabled != null ? { enabled: !!enabled } : {}),
+        ...(note !== undefined ? { note: note || null } : {}),
+      });
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/admin/youtube/rules/:id", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteYouTubeRule(String(req.params.id));
+      res.json({ ok: true });
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
+  // Dry run: what would the current rules do to the pending queue right now?
+  // Auto-approve publishes without a human, so it should be possible to see the
+  // blast radius before committing to it.
+  app.post("/api/admin/youtube/rules/preview", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const feedId = (req.body?.feedId as string) || undefined;
+      const [rules, queue] = await Promise.all([
+        storage.getYouTubeRules(),
+        storage.listYouTubePending({ status: "pending", feedId, limit: 200, page: 1 }),
+      ]);
+
+      const approve: any[] = [];
+      const reject: any[] = [];
+      for (const item of queue.items) {
+        const decision = evaluateRules(rulesForFeed(rules, item.feedId), {
+          title: item.title, description: item.description,
+        });
+        if (!decision) continue;
+        const entry = { id: item.id, title: item.title, reason: describeRule(decision.rule) };
+        (decision.action === "reject" ? reject : approve).push(entry);
+      }
+
+      res.json({
+        scanned: queue.items.length,
+        totalPending: queue.total,
+        approve,
+        reject,
+        truncated: queue.total > queue.items.length,
+      });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Apply the rules to videos already sitting in the queue.
+  app.post("/api/admin/youtube/rules/apply", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const feedId = (req.body?.feedId as string) || undefined;
+      const rules = await storage.getYouTubeRules();
+      if (rules.length === 0) return res.json({ approved: 0, rejected: 0 });
+
+      const approveIds: string[] = [];
+      const rejectIds: string[] = [];
+
+      // Page through the whole queue, not just the first screen.
+      for (let page = 1; page <= 50; page++) {
+        const batch = await storage.listYouTubePending({ status: "pending", feedId, limit: 200, page });
+        if (batch.items.length === 0) break;
+        for (const item of batch.items) {
+          const decision = evaluateRules(rulesForFeed(rules, item.feedId), {
+            title: item.title, description: item.description,
+          });
+          if (!decision) continue;
+          (decision.action === "reject" ? rejectIds : approveIds).push(item.id);
+        }
+        if (batch.items.length < 200) break;
+      }
+
+      const rejected = rejectIds.length
+        ? await storage.rejectYouTubePending(rejectIds, "auto", "Matched a keyword rule")
+        : 0;
+      const approvedResult = approveIds.length
+        ? await storage.approveYouTubePending(approveIds, "auto")
+        : { approved: 0, queued: 0 };
+      if (approvedResult.approved > 0) nudgeYouTubeMediaWorker();
+
+      res.json({ approved: approvedResult.approved, rejected });
     } catch (e: any) {
       res.status(400).json({ error: e.message });
     }

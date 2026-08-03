@@ -1,5 +1,7 @@
 import axios from "axios";
 import * as storage from "./storage";
+import { evaluateRules, rulesForFeed, describeRule } from "./youtube-rules";
+import { nudgeYouTubeMediaWorker } from "./youtube-worker";
 
 // YouTube adapter.
 //
@@ -295,6 +297,8 @@ export interface YTIngestResult {
   skippedLive: number;
   totalInPlaylist: number;
   shortCircuited: boolean;
+  autoApproved?: number;
+  autoRejected?: number;
 }
 
 // Pull a playlist and queue anything unseen for review.
@@ -352,26 +356,76 @@ export async function ingestYouTubePlaylist(
   const ready = details.filter((v) => !v.isLive);
   const skippedLive = details.length - ready.length;
 
-  const rows = ready.map((v) => ({
-    feedId: feed.id,
-    videoId: v.videoId,
-    title: v.title,
-    description: v.description,
-    duration: v.duration,
-    durationSeconds: v.durationSeconds,
-    publishedAt: v.publishedAt,
-    imageUrl: v.imageUrl,
-    channelTitle: v.channelTitle,
-  }));
+  // Keyword rules can settle a video's fate without a human. Anything no rule
+  // matches still lands in the review queue — that stays the default.
+  const allRules = await storage.getYouTubeRules().catch(() => []);
+  const feedRules = rulesForFeed(allRules, feed.id);
+  const ruleHits = new Map<string, number>();
+  let autoApproved = 0;
+  let autoRejected = 0;
+
+  const rows = ready.map((v) => {
+    const base = {
+      feedId: feed.id,
+      videoId: v.videoId,
+      title: v.title,
+      description: v.description,
+      duration: v.duration,
+      durationSeconds: v.durationSeconds,
+      publishedAt: v.publishedAt,
+      imageUrl: v.imageUrl,
+      channelTitle: v.channelTitle,
+    };
+
+    const decision = feedRules.length
+      ? evaluateRules(feedRules, { title: v.title, description: v.description })
+      : null;
+    if (!decision) return base;
+
+    ruleHits.set(decision.rule.id, (ruleHits.get(decision.rule.id) || 0) + 1);
+    if (decision.action === "reject") {
+      autoRejected++;
+      return {
+        ...base,
+        status: "rejected",
+        reviewedAt: new Date(),
+        reviewedBy: "auto",
+        reviewNote: describeRule(decision.rule),
+      };
+    }
+    autoApproved++;
+    return {
+      ...base,
+      status: "approved",
+      // Straight into the download queue, same as a human approval.
+      mediaStatus: "queued",
+      reviewedAt: new Date(),
+      reviewedBy: "auto",
+      reviewNote: describeRule(decision.rule),
+    };
+  });
 
   const queued = await storage.queueYouTubePending(rows);
+  await storage.recordYouTubeRuleHits(ruleHits).catch(() => {});
   await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
 
   if (queued > 0) {
-    console.log(`YouTube ingest: ${feed.title} — ${queued} video(s) queued for review`);
+    const parts = [`${queued} new`];
+    if (autoApproved) parts.push(`${autoApproved} auto-approved`);
+    if (autoRejected) parts.push(`${autoRejected} auto-rejected`);
+    console.log(`YouTube ingest: ${feed.title} — ${parts.join(", ")}`);
   }
+  if (autoApproved > 0) nudgeYouTubeMediaWorker();
 
-  return { queued, skippedKnown, skippedLive, totalInPlaylist, shortCircuited: false };
+  return {
+    queued,
+    skippedKnown,
+    skippedLive,
+    totalInPlaylist,
+    shortCircuited: false,
+    autoApproved,
+    autoRejected,
+  };
 }
 
 // Called by the refresh scheduler. Returns 0 "new episodes" by design — nothing
