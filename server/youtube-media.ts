@@ -48,6 +48,97 @@ function ffmpegDir(): string | null {
   return path.dirname(bin);
 }
 
+// --- Cookies ---
+//
+// YouTube refuses anonymous downloads from datacenter IPs ("Sign in to confirm
+// you're not a bot"). A cookie jar from a logged-in (throwaway) account gets
+// past that.
+//
+// The jar lives on the persistent volume rather than being rewritten from the
+// env var every boot, because yt-dlp REFRESHES the cookies it's given as
+// Google rotates session tokens. Persisting those refreshes is what makes an
+// export last months instead of days. The env var only seeds the file — on
+// first run, or when the admin pastes in a new export (detected by hashing the
+// env value into a sidecar).
+
+const COOKIE_FILE = ".yt-cookies.txt";
+const COOKIE_SEED_MARKER = ".yt-cookies.seed";
+
+let cookiePathCache: string | null | undefined;
+
+function seedHash(value: string): string {
+  // Cheap non-cryptographic fingerprint — we only need "did this env var
+  // change", not integrity.
+  let h = 0;
+  for (let i = 0; i < value.length; i++) {
+    h = (Math.imul(31, h) + value.charCodeAt(i)) | 0;
+  }
+  return String(h >>> 0);
+}
+
+export function cookieFilePath(): string {
+  return path.join(mediaDir(), COOKIE_FILE);
+}
+
+// Returns a path to a usable cookie jar, or null when none is configured.
+export function ensureCookieFile(): string | null {
+  if (cookiePathCache !== undefined) return cookiePathCache;
+
+  // An explicit file path wins — handy for local dev.
+  const direct = process.env.YT_COOKIES_FILE;
+  if (direct && fs.existsSync(direct)) {
+    cookiePathCache = direct;
+    return cookiePathCache;
+  }
+
+  const b64 = process.env.YT_COOKIES_B64;
+  const target = cookieFilePath();
+  const marker = path.join(mediaDir(), COOKIE_SEED_MARKER);
+
+  try {
+    fs.mkdirSync(mediaDir(), { recursive: true });
+
+    if (!b64) {
+      // No env var, but a previously seeded (and since refreshed) jar may
+      // still be on the volume.
+      cookiePathCache = fs.existsSync(target) ? target : null;
+      return cookiePathCache;
+    }
+
+    const hash = seedHash(b64);
+    const seeded = fs.existsSync(marker) ? fs.readFileSync(marker, "utf8").trim() : "";
+    if (!fs.existsSync(target) || seeded !== hash) {
+      fs.writeFileSync(target, Buffer.from(b64, "base64"), { mode: 0o600 });
+      fs.writeFileSync(marker, hash, { mode: 0o600 });
+      console.log("YouTube media: seeded cookie jar from YT_COOKIES_B64");
+    }
+    cookiePathCache = target;
+  } catch (e: any) {
+    console.error(`YouTube media: cookie setup failed — ${e?.message?.slice(0, 160)}`);
+    cookiePathCache = null;
+  }
+  return cookiePathCache;
+}
+
+export function resetCookieCache(): void {
+  cookiePathCache = undefined;
+}
+
+export function cookieStatus(): { configured: boolean; path: string | null; cookies: number; hasAuth: boolean } {
+  const p = ensureCookieFile();
+  if (!p) return { configured: false, path: null, cookies: 0, hasAuth: false };
+  try {
+    const text = fs.readFileSync(p, "utf8");
+    const lines = text.split("\n").filter(l => l.trim() && !l.startsWith("#"));
+    // Presence of a session cookie is what separates "logged in" from a jar of
+    // harmless preference cookies.
+    const hasAuth = /\b(__Secure-1PSID|__Secure-3PSID|\bSID)\b/.test(text);
+    return { configured: true, path: p, cookies: lines.length, hasAuth };
+  } catch {
+    return { configured: true, path: p, cookies: 0, hasAuth: false };
+  }
+}
+
 export async function ensureMediaDir(): Promise<void> {
   await fsp.mkdir(mediaDir(), { recursive: true });
 }
@@ -135,6 +226,10 @@ export async function downloadYouTubeAudio(
   const ffDir = ffmpegDir();
   if (ffDir) args.splice(0, 0, "--ffmpeg-location", ffDir);
 
+  // Without this, datacenter IPs get "Sign in to confirm you're not a bot".
+  const cookies = ensureCookieFile();
+  if (cookies) args.splice(0, 0, "--cookies", cookies);
+
   const { code, stderr } = await runYtdlp(args, onLog);
   const tmpMp3 = `${tmpBase}.mp3`;
 
@@ -201,6 +296,7 @@ export async function mediaToolingStatus(): Promise<{
   ffmpeg: boolean;
   dirWritable: boolean;
   dir: string;
+  cookies: ReturnType<typeof cookieStatus>;
 }> {
   const ff = !!(ffmpegStatic as unknown as string | null);
   let version: string | null = null;
@@ -228,5 +324,8 @@ export async function mediaToolingStatus(): Promise<{
     dirWritable = true;
   } catch {}
 
-  return { ytdlp: version, ytdlpPath: ytdlpPath(), ffmpeg: ff, dirWritable, dir: mediaDir() };
+  return {
+    ytdlp: version, ytdlpPath: ytdlpPath(), ffmpeg: ff, dirWritable, dir: mediaDir(),
+    cookies: cookieStatus(),
+  };
 }

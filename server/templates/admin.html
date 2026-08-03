@@ -2781,11 +2781,17 @@ async function loadYtDiagnostics() {
       if (!m.tooling.ytdlp) problems.push('yt-dlp missing (' + esc(m.tooling.ytdlpPath) + ')');
       if (!m.tooling.ffmpeg) problems.push('ffmpeg missing');
       if (!m.tooling.dirWritable) problems.push('media dir not writable (' + esc(m.tooling.dir) + ') — attach a volume');
+      const ck = m.tooling.cookies || {};
+      if (!ck.configured) problems.push('no YouTube cookies — downloads will hit the bot check');
+      else if (!ck.hasAuth) problems.push('cookie jar has no login session — re-export from a logged-in window');
       const c = m.counts || {};
       const queue = `queued ${c.queued||0} · downloading ${c.downloading||0} · ready ${c.ready||0} · failed ${c.failed||0}`;
+      const cookieLine = ck.configured && ck.hasAuth
+        ? ` · cookies OK (${ck.cookies})`
+        : '';
       sum.innerHTML = problems.length
         ? `<span style="color:#f87171;">⚠ ${problems.map(esc).join(' · ')}</span><br>${queue}`
-        : `Stored: ${m.usage.files} file(s), ${fmtBytes(m.usage.bytes)} in ${esc(m.usage.dir)} · ${queue}`;
+        : `Stored: ${m.usage.files} file(s), ${fmtBytes(m.usage.bytes)} in ${esc(m.usage.dir)}${cookieLine} · ${queue}`;
     }
   } catch (e) {
     if (tb) { tb.textContent = 'Media status unknown'; tb.className = 'status-badge status-inactive'; }
