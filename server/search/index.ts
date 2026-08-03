@@ -212,44 +212,73 @@ export async function searchFeedsRanked(
   };
 }
 
-// Speakers are derived from feeds.author rather than the maggid_shiurim table,
-// which is empty in production (0 rows) — the authors live on 6,728 of 6,729
-// feeds, across 6,577 distinct names.
+// Reads the derived search.speakers table (one row per person), falling back to
+// grouping feeds.author on the fly if the table hasn't been built yet.
+//
+// The table matters for correctness, not just speed: the same rav appears under
+// several author strings, so grouping raw authors shows him as several separate
+// speakers and each one looks complete while holding a fraction of his shiurim.
+// It also replaces /api/feeds/maggid-shiur loading 5,624 feed rows and grouping
+// them in JS on every request.
 export async function searchSpeakersRanked(
   q: BuiltQuery,
   limit: number,
 ): Promise<{ items: SpeakerHit[]; hasMore: boolean }> {
   if (!q.rankTsq) return { items: [], hasMore: false };
   const fetch = limit + 1;
-  const res: any = await db.execute(sql`
-    SELECT f.author,
-           count(*)::int AS feed_count,
-           (array_agg(f.image_url ORDER BY f.popularity DESC NULLS LAST))[1] AS image_url,
-           max(
-               4.0 * ts_rank_cd('{0.05,0.25,0.6,1.0}'::float4[], f.search_tsv, ${q.rankTsq}::tsquery, 32)
-             + CASE WHEN f.author_fold = ${q.qFold} THEN 6.0
-                    WHEN f.author_fold LIKE ${q.qFold + "%"} THEN 3.0
-                    ELSE 0.0 END
-             + 0.8 * ln(1 + greatest(f.popularity, 0))
-           ) AS score
-    FROM feeds f
-    WHERE f.author IS NOT NULL
-      AND f.search_tsv @@ ${q.rankTsq}::tsquery
-      AND (f.is_active OR f.rss_url LIKE 'kh://%')
-    GROUP BY f.author
-    ORDER BY score DESC, feed_count DESC
-    LIMIT ${fetch}
-  `);
-  const rows = (res.rows || []) as any[];
-  return {
-    items: rows.slice(0, limit).map((r) => ({
-      author: r.author,
-      feedCount: Number(r.feed_count),
-      imageUrl: r.image_url,
-      score: Number(r.score),
-    })),
-    hasMore: rows.length > limit,
-  };
+
+  try {
+    const res: any = await db.execute(sql`
+      SELECT s.display_name AS author, s.feed_count, s.image_url, s.episode_count,
+             (
+                 4.0 * ts_rank_cd('{0.05,0.25,0.6,1.0}'::float4[], s.search_tsv, ${q.rankTsq}::tsquery, 32)
+               + CASE WHEN s.name_fold = ${q.qFold} THEN 6.0
+                      WHEN s.name_fold LIKE ${q.qFold + "%"} THEN 3.0
+                      ELSE 0.0 END
+               + 0.8 * ln(1 + greatest(s.popularity, 0))
+               + 0.3 * ln(1 + greatest(s.episode_count, 0))
+             ) AS score
+      FROM search.speakers s
+      WHERE s.search_tsv @@ ${q.rankTsq}::tsquery
+      ORDER BY score DESC, s.episode_count DESC
+      LIMIT ${fetch}
+    `);
+    const rows = (res.rows || []) as any[];
+    return {
+      items: rows.slice(0, limit).map((r) => ({
+        author: r.author,
+        feedCount: Number(r.feed_count),
+        imageUrl: r.image_url,
+        score: Number(r.score),
+      })),
+      hasMore: rows.length > limit,
+    };
+  } catch {
+    // Table not built yet — group on the fly so speaker search still works.
+    const res: any = await db.execute(sql`
+      SELECT f.author, count(*)::int AS feed_count,
+             (array_agg(f.image_url ORDER BY f.popularity DESC NULLS LAST))[1] AS image_url,
+             max(4.0 * ts_rank_cd('{0.05,0.25,0.6,1.0}'::float4[], f.search_tsv, ${q.rankTsq}::tsquery, 32)
+                 + 0.8 * ln(1 + greatest(f.popularity, 0))) AS score
+      FROM feeds f
+      WHERE f.author IS NOT NULL
+        AND f.search_tsv @@ ${q.rankTsq}::tsquery
+        AND (f.is_active OR f.rss_url LIKE 'kh://%')
+      GROUP BY f.author
+      ORDER BY score DESC, feed_count DESC
+      LIMIT ${fetch}
+    `);
+    const rows = (res.rows || []) as any[];
+    return {
+      items: rows.slice(0, limit).map((r) => ({
+        author: r.author,
+        feedCount: Number(r.feed_count),
+        imageUrl: r.image_url,
+        score: Number(r.score),
+      })),
+      hasMore: rows.length > limit,
+    };
+  }
 }
 
 // Only 13 categories, so a plain ILIKE on the folded name is fine and needs no

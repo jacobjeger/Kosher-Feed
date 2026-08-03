@@ -68,6 +68,17 @@ export function startPopularityRefresh(): void {
     } catch (e: any) {
       console.error(`Search popularity refresh failed: ${e?.message?.slice(0, 160)}`);
     }
+    try {
+      // Speakers depend on feeds.popularity/episode_count, so rebuild after.
+      const { rebuildSpeakers } = await import("./speakers");
+      const s = await rebuildSpeakers();
+      console.log(
+        `Search speakers: ${s.authors} author string(s) -> ${s.speakers} speaker(s), ` +
+        `${s.merged} merged, ${s.suggestions.length} review suggestion(s)`,
+      );
+    } catch (e: any) {
+      console.error(`Speaker rebuild failed: ${e?.message?.slice(0, 160)}`);
+    }
   };
   timer = setInterval(run, 30 * 60 * 1000);
   // Delay the first run so it doesn't compete with boot-time work.
