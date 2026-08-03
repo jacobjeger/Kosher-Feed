@@ -351,6 +351,7 @@
       <button class="tab" onclick="switchTab('announcements', this)">Announcements</button>
       <button class="tab" onclick="switchTab('kolhalashon', this)">Kol Halashon</button>
       <button class="tab" onclick="switchTab('youtube', this)">YouTube <span id="ytPendingBadge" class="status-badge status-inactive" style="margin-left:4px;display:none;">0</span></button>
+      <button class="tab" onclick="switchTab('speakerid', this)">Speaker IDs <span id="spkSuggBadge" class="status-badge status-inactive" style="margin-left:4px;display:none;">0</span></button>
       <button class="tab" onclick="switchTab('ytc', this)">YTC Alumni</button>
       <button class="tab" onclick="switchTab('settings', this)">Settings</button>
     </div>
@@ -1139,6 +1140,52 @@
           </div>
         </div>
         <div id="khVitalsTable" style="color:#94a3b8;font-size:13px;">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Speaker IDs: merge a rav's several spellings into one person.
+         Exact normal-form matches merge automatically; these are the
+         near-misses, which need a human because edit distance can't tell a
+         typo from a real surname. Decisions persist in
+         search.speaker_decisions and survive the 30-minute rebuild. -->
+    <div id="speakeridTab" class="hidden">
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <h2>Speaker Identity</h2>
+          <span id="spkStats" style="font-size:12px;color:#64748b;"></span>
+        </div>
+        <div id="spkAlert"></div>
+        <p style="color:#94a3b8;font-size:13px;line-height:1.5;margin-bottom:14px;">
+          The same rav often appears under several spellings, which splits his shiurim
+          across entries that each look complete. Spellings that differ only by
+          honorific, punctuation or word order are merged automatically. The pairs below
+          differ by an actual <strong>spelling</strong>, which can't be judged safely by
+          machine — <code>Aharoni, Harav David</code> and <code>David, Harav Aharon</code>
+          are one character apart and are <strong>different people</strong>.
+        </p>
+        <p style="color:#94a3b8;font-size:13px;line-height:1.5;margin-bottom:14px;">
+          <strong>Merge</strong> combines them into one speaker. <strong>Not the same</strong>
+          keeps them separate and stops the pair being suggested again. Both decisions
+          are permanent until undone, and survive rebuilds.
+        </p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-secondary btn-sm" onclick="withLoading(this, loadSpeakerSuggestions)">Refresh</button>
+          <button class="btn btn-secondary btn-sm" onclick="withLoading(this, rebuildSpeakers)">Rebuild speakers now</button>
+          <button class="btn btn-secondary btn-sm" onclick="withLoading(this, loadSpeakerDecisions)">View past decisions</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>Suggested Merges</h2>
+          <span id="spkSuggCount" style="font-size:12px;color:#64748b;"></span>
+        </div>
+        <div id="spkSuggList" style="color:#94a3b8;font-size:13px;">Loading…</div>
+      </div>
+
+      <div class="card hidden" id="spkDecisionsCard" style="margin-top:20px;">
+        <div class="card-header"><h2>Past Decisions</h2></div>
+        <div id="spkDecisions" style="color:#94a3b8;font-size:13px;"></div>
       </div>
     </div>
 
@@ -2717,6 +2764,7 @@ function switchTab(tab, btn) {
   if (tab === 'announcements') loadAnnouncements();
   if (tab === 'kolhalashon') { loadKHStatus(); loadKHSpeakers(); setTimeout(loadKHVitals, 300); }
   if (tab === 'youtube') { loadYtFeeds().then(loadYtRules); loadYtQueue(1); loadYtDiagnostics(); }
+  if (tab === 'speakerid') loadSpeakerSuggestions();
   if (tab === 'ytc') loadYtcCode();
   if (tab === 'settings') { loadTATStatus(); setTimeout(() => { loadAllOUStatuses(); loadTDStatus(); loadMergers(); loadGlobalMergeHistory(); }, 300); }
 }
@@ -3064,6 +3112,134 @@ async function ytReview(action, all) {
     await Promise.all([loadYtQueue(1), loadYtFeeds(), loadYtDiagnostics()]);
   } catch (e) {
     ytAlert(e.message, 'error');
+  }
+}
+
+// ---- Speaker identity ----
+
+function spkAlert(msg, type = 'success') {
+  const area = document.getElementById('spkAlert');
+  if (!area) return showAlert(msg, type);
+  const div = document.createElement('div');
+  div.className = `alert alert-${type}`;
+  div.textContent = msg;
+  area.innerHTML = '';
+  area.appendChild(div);
+  setTimeout(() => { if (area.firstChild === div) area.innerHTML = ''; }, 6000);
+}
+
+async function loadSpeakerSuggestions() {
+  const list = document.getElementById('spkSuggList');
+  if (!list) return;
+  try {
+    const d = await api('/api/admin/speakers/suggestions');
+    const s = d.stats || {};
+    const statsEl = document.getElementById('spkStats');
+    if (statsEl) statsEl.textContent =
+      `${Number(s.speakers || 0).toLocaleString()} speakers · ${s.merged || 0} auto-merged · ${s.confirmed || 0} confirmed · ${s.rejected || 0} rejected`;
+
+    const badge = document.getElementById('spkSuggBadge');
+    const n = d.suggestions.length;
+    if (badge) {
+      badge.textContent = String(n);
+      badge.style.display = n > 0 ? '' : 'none';
+      badge.className = n > 0 ? 'status-badge status-active' : 'status-badge status-inactive';
+    }
+    const cnt = document.getElementById('spkSuggCount');
+    if (cnt) cnt.textContent = `${n} pending`;
+
+    if (n === 0) {
+      list.innerHTML = '<div style="padding:24px;text-align:center;color:#64748b;">Nothing to review.</div>';
+      return;
+    }
+
+    list.innerHTML = d.suggestions.map(x => {
+      const total = (x.a_episodes || 0) + (x.b_episodes || 0);
+      const aid = encodeURIComponent(x.a_norm), bid = encodeURIComponent(x.b_norm);
+      return `
+      <div style="padding:14px 0;border-bottom:1px solid #1e293b;">
+        <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+          <div style="flex:1;min-width:240px;">
+            <div style="color:#e2e8f0;font-weight:600;">${esc(x.a_name)}</div>
+            <div style="font-size:12px;color:#64748b;">${Number(x.a_episodes).toLocaleString()} episodes</div>
+          </div>
+          <div style="color:#64748b;font-size:20px;">↔</div>
+          <div style="flex:1;min-width:240px;">
+            <div style="color:#e2e8f0;font-weight:600;">${esc(x.b_name)}</div>
+            <div style="font-size:12px;color:#64748b;">${Number(x.b_episodes).toLocaleString()} episodes</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-shrink:0;">
+            <button class="btn btn-primary btn-sm" onclick="withLoading(this, () => decideSpeaker('${aid}','${bid}','merge'))">Merge</button>
+            <button class="btn btn-secondary btn-sm" onclick="withLoading(this, () => decideSpeaker('${aid}','${bid}','reject'))">Not the same</button>
+          </div>
+        </div>
+        <div style="font-size:11px;color:#475569;margin-top:4px;">combined ${total.toLocaleString()} episodes</div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    list.innerHTML = `<div style="color:#f87171;padding:16px;">${esc(e.message)}</div>`;
+  }
+}
+
+async function decideSpeaker(aNorm, bNorm, decision) {
+  try {
+    await api('/api/admin/speakers/decide', {
+      method: 'POST',
+      body: JSON.stringify({
+        aNorm: decodeURIComponent(aNorm),
+        bNorm: decodeURIComponent(bNorm),
+        decision,
+      }),
+    });
+    spkAlert(decision === 'merge'
+      ? 'Merged — takes effect on the next rebuild'
+      : 'Marked as different people; it will not be suggested again');
+    await loadSpeakerSuggestions();
+  } catch (e) {
+    spkAlert(e.message, 'error');
+  }
+}
+
+async function rebuildSpeakers() {
+  try {
+    const d = await api('/api/admin/speakers/rebuild', { method: 'POST' });
+    spkAlert(`Rebuilt: ${d.authors} author strings -> ${d.speakers} speakers (${d.merged} merged, ${d.suggestions} to review)`);
+    await loadSpeakerSuggestions();
+  } catch (e) {
+    spkAlert(e.message, 'error');
+  }
+}
+
+async function loadSpeakerDecisions() {
+  const card = document.getElementById('spkDecisionsCard');
+  const el = document.getElementById('spkDecisions');
+  if (!card || !el) return;
+  card.classList.remove('hidden');
+  try {
+    const rows = await api('/api/admin/speakers/decisions');
+    if (!rows.length) { el.innerHTML = '<div style="padding:12px;color:#64748b;">No decisions yet.</div>'; return; }
+    el.innerHTML = rows.map(r => `
+      <div style="display:flex;gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid #1e293b;">
+        <span style="color:${r.decision === 'merge' ? '#86efac' : '#fca5a5'};font-weight:600;width:70px;">${esc(r.decision)}</span>
+        <span style="flex:1;color:#94a3b8;font-size:12px;font-family:'SF Mono',Menlo,monospace;">${esc(r.a_norm)} ↔ ${esc(r.b_norm)}</span>
+        <span style="color:#64748b;font-size:11px;">${esc(r.decided_by || '')}</span>
+        <button class="btn btn-secondary btn-sm" onclick="withLoading(this, () => undoSpeakerDecision('${encodeURIComponent(r.a_norm)}','${encodeURIComponent(r.b_norm)}'))">Undo</button>
+      </div>`).join('');
+  } catch (e) {
+    el.innerHTML = `<div style="color:#f87171;padding:12px;">${esc(e.message)}</div>`;
+  }
+}
+
+async function undoSpeakerDecision(aNorm, bNorm) {
+  try {
+    await api('/api/admin/speakers/undo', {
+      method: 'POST',
+      body: JSON.stringify({ aNorm: decodeURIComponent(aNorm), bNorm: decodeURIComponent(bNorm) }),
+    });
+    spkAlert('Undone — rebuild to apply');
+    await Promise.all([loadSpeakerDecisions(), loadSpeakerSuggestions()]);
+  } catch (e) {
+    spkAlert(e.message, 'error');
   }
 }
 

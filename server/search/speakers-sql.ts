@@ -174,4 +174,44 @@ DELETE FROM search.speakers s
 WHERE s.updated_at < now() - interval '5 minutes';
 `;
 
-export const ALL_SPEAKER_SQL = [SQL_SPEAKER_KEY, SQL_SPEAKER_NORM, SQL_SPEAKERS_TABLE];
+// Human decisions about near-miss pairs.
+//
+// These MUST persist independently of search.speakers, which is truncated and
+// rebuilt from feeds.author on every refresh. Without a separate record, every
+// confirmed merge would be silently undone within 30 minutes.
+//
+// Keyed on speaker_norm rather than the raw author string so a decision
+// survives cosmetic edits to a feed's author field.
+//
+// Rejections are stored too, not just merges — otherwise a pair a human has
+// already looked at and declined would reappear in the queue on every rebuild.
+export const SQL_SPEAKER_DECISIONS = `
+CREATE TABLE IF NOT EXISTS search.speaker_decisions (
+  id         serial PRIMARY KEY,
+  a_norm     text NOT NULL,
+  b_norm     text NOT NULL,
+  decision   text NOT NULL CHECK (decision IN ('merge','reject')),
+  decided_by text,
+  decided_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (a_norm, b_norm)
+);
+
+-- Suggestions are recomputed on every rebuild and read by the admin UI, so
+-- they live in a table rather than being recalculated per request.
+CREATE TABLE IF NOT EXISTS search.speaker_suggestions (
+  a_norm     text NOT NULL,
+  b_norm     text NOT NULL,
+  a_name     text NOT NULL,
+  b_name     text NOT NULL,
+  a_episodes integer NOT NULL DEFAULT 0,
+  b_episodes integer NOT NULL DEFAULT 0,
+  PRIMARY KEY (a_norm, b_norm)
+);
+`;
+
+export const ALL_SPEAKER_SQL = [
+  SQL_SPEAKER_KEY,
+  SQL_SPEAKER_NORM,
+  SQL_SPEAKERS_TABLE,
+  SQL_SPEAKER_DECISIONS,
+];

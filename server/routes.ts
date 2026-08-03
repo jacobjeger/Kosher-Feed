@@ -2098,6 +2098,102 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(out);
   });
 
+  // ---- Admin: speaker identity ----
+  //
+  // The same rav appears under several author spellings, so his shiurim are
+  // split across "speakers" that each look complete. Exact-normal-form matches
+  // merge automatically; everything else needs a human, because edit distance
+  // cannot tell a typo from a real surname — "Aharoni, Harav David" and
+  // "David, Harav Aharon" are one edit apart and are different people.
+
+  app.get("/api/admin/speakers/suggestions", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const r: any = await db.execute(sql`
+        SELECT a_norm, b_norm, a_name, b_name, a_episodes, b_episodes
+        FROM search.speaker_suggestions
+        ORDER BY (a_episodes + b_episodes) DESC
+      `);
+      const counts: any = await db.execute(sql`
+        SELECT
+          (SELECT count(*) FROM search.speakers) AS speakers,
+          (SELECT count(*) FROM search.speakers WHERE array_length(aliases,1) > 1) AS merged,
+          (SELECT count(*) FROM search.speaker_decisions WHERE decision='merge') AS confirmed,
+          (SELECT count(*) FROM search.speaker_decisions WHERE decision='reject') AS rejected
+      `);
+      res.json({ suggestions: r.rows || [], stats: counts.rows?.[0] || {} });
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
+  app.post("/api/admin/speakers/decide", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { aNorm, bNorm, decision } = req.body || {};
+      if (!aNorm || !bNorm) return res.status(400).json({ error: "aNorm and bNorm are required" });
+      if (decision !== "merge" && decision !== "reject") {
+        return res.status(400).json({ error: "decision must be 'merge' or 'reject'" });
+      }
+      // Canonical ordering so (a,b) and (b,a) are one decision.
+      const [a, b] = aNorm <= bNorm ? [aNorm, bNorm] : [bNorm, aNorm];
+      await db.execute(sql`
+        INSERT INTO search.speaker_decisions (a_norm, b_norm, decision, decided_by)
+        VALUES (${a}, ${b}, ${decision}, ${adminUsername(req) || null})
+        ON CONFLICT (a_norm, b_norm) DO UPDATE
+          SET decision = EXCLUDED.decision,
+              decided_by = EXCLUDED.decided_by,
+              decided_at = now()
+      `);
+      // Drop it from the queue immediately; the next rebuild applies the merge.
+      await db.execute(sql`
+        DELETE FROM search.speaker_suggestions WHERE a_norm = ${a} AND b_norm = ${b}
+      `);
+      res.json({ ok: true, decision });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Undo — decisions are permanent until explicitly removed, so there has to be
+  // a way back from a wrong merge.
+  app.post("/api/admin/speakers/undo", adminAuth as any, async (req: Request, res: Response) => {
+    try {
+      const { aNorm, bNorm } = req.body || {};
+      if (!aNorm || !bNorm) return res.status(400).json({ error: "aNorm and bNorm are required" });
+      const [a, b] = aNorm <= bNorm ? [aNorm, bNorm] : [bNorm, aNorm];
+      const r: any = await db.execute(sql`
+        DELETE FROM search.speaker_decisions WHERE a_norm = ${a} AND b_norm = ${b}
+      `);
+      res.json({ ok: true, removed: r.rowCount || 0 });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/admin/speakers/decisions", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const r: any = await db.execute(sql`
+        SELECT a_norm, b_norm, decision, decided_by, decided_at
+        FROM search.speaker_decisions ORDER BY decided_at DESC LIMIT 200
+      `);
+      res.json(r.rows || []);
+    } catch (e: any) {
+      publicError(res, e);
+    }
+  });
+
+  app.post("/api/admin/speakers/rebuild", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      const { rebuildSpeakers } = await import("./search/speakers");
+      const r = await rebuildSpeakers();
+      res.json({
+        authors: r.authors, speakers: r.speakers,
+        merged: r.merged, suggestions: r.suggestions.length,
+      });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
   // Admin: Maggid Shiur (speaker) management
   app.get("/api/admin/maggid-shiurim", adminAuth as any, async (_req: Request, res: Response) => {
     try {

@@ -49,10 +49,15 @@ export async function bootstrapSearch(): Promise<SearchBootstrapResult> {
     for (const stmt of ALL_LEXICON_SQL) await db.execute(sql.raw(stmt));
     await seedLexicon();
 
+    // JSON rather than binding a JS array to text[] — drizzle serialises the
+    // array as a record, and Postgres rejects it with "cannot cast type record
+    // to text[]", which silently failed the whole bootstrap.
     const res: any = await db.execute(sql`
       SELECT c.relname, i.indisvalid
       FROM pg_class c JOIN pg_index i ON i.indexrelid = c.oid
-      WHERE c.relname = ANY(${REQUIRED_INDEXES}::text[])
+      WHERE c.relname IN (
+        SELECT json_array_elements_text(${JSON.stringify(REQUIRED_INDEXES)}::json)
+      )
     `);
     const present = (res.rows || []) as { relname: string; indisvalid: boolean }[];
     const missing = REQUIRED_INDEXES.filter((n) => !present.some((r) => r.relname === n));
