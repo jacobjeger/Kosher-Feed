@@ -1,5 +1,14 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, boolean, uniqueIndex, index, jsonb, doublePrecision } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, boolean, uniqueIndex, index, jsonb, doublePrecision, customType } from "drizzle-orm/pg-core";
+
+// Postgres tsvector. Drizzle has no native type for it, and it must be declared
+// here rather than left undeclared: `drizzle-kit push` runs on every deploy and
+// treats a column it doesn't know about as a DROP candidate. Losing search_tsv
+// would take the GIN index with it and silently degrade every search to the
+// ILIKE fallback until a multi-hour backfill re-ran over 1.65M rows.
+const tsvector = customType<{ data: string; driverData: string }>({
+  dataType: () => "tsvector",
+});
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -39,6 +48,16 @@ export const feeds = pgTable("feeds", {
   // source-id columns so a feed can carry YouTube alongside TAT/KH/TD.
   youtubePlaylistId: text("youtube_playlist_id"),
   showInBrowse: boolean("show_in_browse").default(true).notNull(),
+  // Search columns. Values are owned by the BEFORE INSERT OR UPDATE trigger in
+  // server/search/sql.ts — never write title_fold/author_fold/search_tsv
+  // directly. Declared here only so drizzle-kit push knows they exist.
+  titleFold: text("title_fold"),
+  authorFold: text("author_fold"),
+  searchTsv: tsvector("search_tsv"),
+  // Denormalised from subscriptions/listens by the refresh job in
+  // server/search/popularity.ts, so ranking never joins an aggregate.
+  popularity: integer("popularity").default(0).notNull(),
+  episodeCount: integer("episode_count").default(0).notNull(),
 }, (table) => [
   index("feeds_active_browse_idx").on(table.isActive, table.showInBrowse),
 ]);
@@ -64,6 +83,10 @@ export const episodes = pgTable("episodes", {
   // expire in ~6h, so the real URL is resolved per playback, never stored.
   youtubeVideoId: text("youtube_video_id"),
   noDownload: boolean("no_download").default(false),
+  // Search columns — owned by the trigger, see the note on feeds above.
+  titleFold: text("title_fold"),
+  searchTsv: tsvector("search_tsv"),
+  popularity: integer("popularity").default(0).notNull(),
 }, (table) => [
   uniqueIndex("episodes_guid_feed_idx").on(table.guid, table.feedId),
   index("episodes_feed_id_idx").on(table.feedId),

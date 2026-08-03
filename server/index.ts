@@ -1544,11 +1544,29 @@ function startAutoRefresh() {
     keyGenerator: (req) => ipKeyGenerator(clientIp(req)),
     message: { error: "Too many requests, please try again later" },
   });
+  // Login gets its own, much stricter bucket rather than sharing writeLimiter
+  // with feedback/contact. A human typing a password wrong needs a handful of
+  // tries; nothing legitimate needs 30 a minute. Measured on the deployed fix:
+  // at 30/min a 150-request burst still let 146 through before 429s appeared,
+  // because concurrent requests race the counter. A 15-minute window shrinks
+  // that leak by an order of magnitude and makes sustained guessing useless.
+  //
+  // Caveat worth knowing: this is an in-memory store, so it resets on every
+  // deploy and is per-instance. It raises the cost of online guessing; it is
+  // not a lockout. A persistent store or an account-level lockout would be the
+  // stronger fix if this endpoint ever gets seriously targeted.
+  const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => ipKeyGenerator(clientIp(req)),
+    skipSuccessfulRequests: true, // only failed attempts count against you
+    message: { error: "Too many login attempts, please try again later" },
+  });
+
   app.use("/api/", generalLimiter);
-  // Brute-force protection for the admin password. 30/min per IP still allows
-  // a person fat-fingering their password while making an online guessing
-  // attack useless.
-  app.use("/api/admin/login", writeLimiter);
+  app.use("/api/admin/login", loginLimiter);
   app.use("/api/feedback", writeLimiter);
   app.use("/api/contact", writeLimiter);
   app.use("/api/error-reports", writeLimiter);
