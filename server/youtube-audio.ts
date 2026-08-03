@@ -18,7 +18,26 @@ import { Innertube, type Types } from "youtubei.js";
 // failing across the board, set YOUTUBE_HTTP_PROXY to route through a
 // residential proxy.
 
-const CLIENT_CHAIN: Types.InnerTubeClient[] = ["IOS", "ANDROID_VR", "TV_EMBEDDED", "MWEB"];
+// Ordered by how well each client survives a datacenter IP. The TV clients
+// lead because they're what still works when YouTube's bot check flags the
+// host; the mobile clients follow; WEB is deliberately absent (it always
+// demands a Proof-of-Origin token now).
+//
+// Railway IS flagged — plain IOS/MWEB resolution fails there while working
+// from a residential IP — so this order is load-bearing, not defensive
+// padding. Each miss costs a round trip, but a success is cached for hours
+// and failures are negative-cached for 5 minutes.
+const CLIENT_CHAIN: Types.InnerTubeClient[] = [
+  "TV",
+  "TV_SIMPLY",
+  "IOS",
+  "ANDROID",
+  "ANDROID_VR",
+  "YTMUSIC_ANDROID",
+  "WEB_EMBEDDED",
+  "TV_EMBEDDED",
+  "MWEB",
+];
 
 // googlevideo URLs carry an expiry in the `expire` query param (unix seconds).
 // Cache a little under that so we never hand the client a URL that dies
@@ -116,6 +135,9 @@ async function resolveUncached(videoId: string): Promise<ResolvedAudio> {
         errors.push(`${client}: no url on format`);
         continue;
       }
+      // Which client won matters operationally — when YouTube tightens things
+      // again, the logs show exactly which clients are still viable.
+      console.log(`YouTube audio: resolved ${videoId} via ${client}`);
       return {
         url,
         mimeType: format.mime_type || "audio/mp4",
