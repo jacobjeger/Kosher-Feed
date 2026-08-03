@@ -1551,11 +1551,17 @@ export async function getYouTubeMediaCounts(): Promise<Record<string, number>> {
 // Their audioUrl is yt://audio/{id}, which no longer plays — re-queue the
 // media fetch so the worker downloads the MP3 and repoints the episode.
 export async function requeueLegacyYouTubeEpisodes(): Promise<number> {
+  // Invariant: an approved video whose episode still points at the dead
+  // yt://audio proxy is broken, whatever its media_status says. That covers
+  // both the original live-proxy episodes and any row that downloaded its
+  // audio but then failed before relinking the episode. Retrying is cheap —
+  // the worker reuses an already-downloaded file rather than refetching — and
+  // the set is finite, shrinking to zero as each one succeeds.
   const rows = await db.execute(sql`
     UPDATE youtube_pending SET media_status = 'queued', media_error = NULL,
                                media_attempts = 0, media_updated_at = now()
     WHERE status = 'approved'
-      AND (media_status IS NULL OR media_status = 'ready')
+      AND (media_status IS NULL OR media_status IN ('ready', 'failed'))
       AND video_id IN (
         SELECT youtube_video_id FROM episodes
         WHERE youtube_video_id IS NOT NULL AND audio_url LIKE 'yt://audio/%'
