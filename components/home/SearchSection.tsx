@@ -53,7 +53,7 @@ const SearchResultItem = React.memo(function SearchResultItem({ feed, colors }: 
 });
 
 export default React.memo(function SearchSection({ searchQuery, searchResults, searchedEpisodes, speakerSearchResults, isSearchLoading, allFeeds, colors, isOnline }: SearchSectionProps) {
-  if (searchResults.length === 0 && searchedEpisodes.length === 0 && speakerSearchResults.length === 0 && searchQuery.trim().length >= 3 && !isSearchLoading) {
+  if (searchResults.length === 0 && searchedEpisodes.length === 0 && speakerSearchResults.length === 0 && searchQuery.trim().length >= 2 && !isSearchLoading) {
     return (
       <View style={styles.searchResultsSection}>
         <View style={styles.noResults}>
@@ -118,17 +118,34 @@ export default React.memo(function SearchSection({ searchQuery, searchResults, s
           <Text style={[styles.searchSectionLabel, { color: colors.textSecondary }]}>Episodes</Text>
           <View style={{ paddingHorizontal: 16 }}>
             {searchedEpisodes.map((ep) => {
-              const epFeed = allFeeds.find(f => f.id === ep.feedId);
+              // A matching episode whose feed isn't in the locally-loaded list
+              // used to render as nothing — so a search could return 20 rows
+              // and show an empty state. That happens routinely for hidden and
+              // KH feeds, which /api/feeds deliberately excludes.
+              //
+              // The server now sends the feed's title/author/image inline with
+              // each hit, so fall back to that instead of dropping the result.
+              const epAny = ep as any;
+              const epFeed =
+                allFeeds.find(f => f.id === ep.feedId) ||
+                (epAny.feedTitle
+                  ? ({
+                      id: ep.feedId,
+                      title: epAny.feedTitle,
+                      author: epAny.feedAuthor ?? null,
+                      imageUrl: epAny.feedImageUrl ?? null,
+                    } as Feed)
+                  : null);
               if (!epFeed) return null;
               return <EpisodeItem key={ep.id} episode={ep} feed={epFeed} showFeedTitle isOnline={isOnline} />;
             })}
           </View>
         </>
       )}
-      {searchQuery.trim().length < 3 && searchResults.length === 0 && speakerSearchResults.length === 0 && (
+      {searchQuery.trim().length < 2 && searchResults.length === 0 && speakerSearchResults.length === 0 && (
         <View style={styles.noResults}>
           <Text style={[styles.noResultsText, { color: colors.textSecondary }]}>
-            Type 3+ characters to search episodes
+            Type 2+ characters to search
           </Text>
         </View>
       )}

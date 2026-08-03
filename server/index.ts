@@ -19,6 +19,8 @@ import { isMergedFeed, filterCrossSourceDuplicates, dedupWithinBatch } from "./e
 import { refreshTorahDownloadsFeedEpisodes, syncTorahDownloadsSpeakers } from "./torahdownloads";
 import { refreshYouTubeFeedEpisodes, extractYouTubePlaylistId } from "./youtube";
 import { startYouTubeMediaWorker } from "./youtube-worker";
+import { bootstrapSearch } from "./search/bootstrap";
+import { startPopularityRefresh } from "./search/popularity";
 import { autoCategorizeFeeds } from "./auto-categorize";
 import { extractKhRavId, extractTatSpeakerId, extractTorahDownloadsSpeakerId } from "./feed-utils";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
@@ -1448,6 +1450,9 @@ function startAutoRefresh() {
   startKeepAlive();
   // Turns approved YouTube videos into stored MP3s, then into episodes.
   startYouTubeMediaWorker();
+  // Keeps feeds.popularity / episodes.popularity current so search ranking
+  // never has to join an aggregate at query time.
+  startPopularityRefresh();
 
   // Daily error digest — send at 8am EST (13:00 UTC)
   function scheduleDailyDigest() {
@@ -1500,6 +1505,12 @@ function startAutoRefresh() {
 (async () => {
   // Run column migrations FIRST, before any routes or queries touch the DB
   await ensureColumns();
+  // Search schema: cheap objects only (functions, columns, triggers, lexicon).
+  // Index builds and the backfill stay in scripts/search-bootstrap.ts so a
+  // deploy never blocks on them; this only verifies and reports.
+  await bootstrapSearch().catch((e) =>
+    console.error(`Search bootstrap error: ${e?.message?.slice(0, 160)}`),
+  );
 
   setupCors(app);
   app.use(compression());

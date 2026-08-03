@@ -538,35 +538,45 @@ function HomeScreenInner() {
     return maggidShiurim.filter(s => s.author.toLowerCase().includes(q));
   }, [searchQuery, maggidShiurim]);
 
+  // Debounced copy of the query for SERVER calls only. The local filters above
+  // stay on the raw value so typing still feels instant. Without this, every
+  // keystroke created a new react-query key and fired two HTTP requests — the
+  // in-podcast search already debounced 300ms; home never did.
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery), 280);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
   const episodeSearchQuery = useQuery<Episode[]>({
-    queryKey: ["/api/episodes/search", searchQuery],
+    queryKey: ["/api/episodes/search", debouncedQuery],
     queryFn: async () => {
       const baseUrl = getApiUrl();
       const url = new URL("/api/episodes/search", baseUrl);
-      url.searchParams.set("q", searchQuery.trim());
+      url.searchParams.set("q", debouncedQuery.trim());
       url.searchParams.set("limit", "20");
       const res = await fetch(url.toString());
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: searchQuery.trim().length >= 3,
+    enabled: debouncedQuery.trim().length >= 2,
   });
 
   const searchedEpisodes = episodeSearchQuery.data || [];
 
   // Server-side feed search to find feeds hidden from browse (e.g. KH feeds)
   const feedSearchQuery = useQuery<Feed[]>({
-    queryKey: ["/api/feeds/search", searchQuery],
+    queryKey: ["/api/feeds/search", debouncedQuery],
     queryFn: async () => {
       const baseUrl = getApiUrl();
       const url = new URL("/api/feeds/search", baseUrl);
-      url.searchParams.set("q", searchQuery.trim());
+      url.searchParams.set("q", debouncedQuery.trim());
       url.searchParams.set("limit", "30");
       const res = await fetch(url.toString());
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: searchQuery.trim().length >= 2,
+    enabled: debouncedQuery.trim().length >= 2,
   });
 
   // Merge local + server feed search results (dedup by id)
