@@ -189,7 +189,7 @@ export function isMergedFeed(feed: {
   torahdownloadsSpeakerId?: number | null;
   youtubePlaylistId?: string | null;
 }): boolean {
-  const apiSchemes = ["tat://", "kh://", "td://", "yt://", "alldaf://", "allmishnah://", "allparsha://", "allhalacha://"];
+  const apiSchemes = ["tat://", "kh://", "td://", "yt://", "cp://", "alldaf://", "allmishnah://", "allparsha://", "allhalacha://"];
   const hasRealRss = feed.rssUrl && !apiSchemes.some(s => feed.rssUrl.startsWith(s));
 
   const platformCount = [

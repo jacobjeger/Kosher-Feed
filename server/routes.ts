@@ -35,6 +35,7 @@ import fsp from "node:fs/promises";
 import { trackErrorForAlert, sendFeedbackNotification } from "./error-alerts";
 import { registerV1Routes } from "./routes-v1";
 import { registerContributorRoutes } from "./contributor-routes";
+import { isCustomSchemeUrl, contributorFeedUrl, CONTRIBUTOR_SCHEME } from "./feed-schemes";
 import * as iss from "./issues-storage";
 import { imageResizeHandler } from "./image-resize";
 import multer from "multer";
@@ -282,7 +283,7 @@ async function onDemandRefreshFeed(feedId: string): Promise<void> {
 
     // Regular RSS feed (skip TAT/OU/KH/TD/YT-only URLs)
     const isOUUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
-    if (!feed.rssUrl || isOnDemandTatUrl || isOUUrl || isKhUrl || isTdUrl || isYtUrl) return;
+    if (!feed.rssUrl || isOnDemandTatUrl || isOUUrl || isKhUrl || isTdUrl || isYtUrl || isCustomSchemeUrl(feed.rssUrl)) return;
     const parsed = await parseFeed(feed.id, feed.rssUrl);
     if (!parsed) {
       await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
@@ -756,7 +757,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // RSS refresh (skip for TAT-only, OU-only, KH-only, TD-only, YT-only feeds)
       const isOUFeedUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
-      if (!isTatFeedUrl && !isOUFeedUrl && !isKhFeedUrl && !isTdFeedUrl && !isYtFeedUrl) {
+      if (!isTatFeedUrl && !isOUFeedUrl && !isKhFeedUrl && !isTdFeedUrl && !isYtFeedUrl && !isCustomSchemeUrl(feed.rssUrl)) {
         // For ?full=true: bypass both etag and incremental — pull the entire
         // archive. Otherwise pass etag/lastModified so unchanged feeds short-
         // circuit at HTTP 304 without parsing, and pass the incremental
@@ -849,7 +850,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           // RSS refresh (skip for TAT-only, OU-only, KH-only, TD-only, YT-only feeds)
           const isOURssUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
-          if (!feed.rssUrl.startsWith("tat://") && !isOURssUrl && !isKhRssUrl && !isTdRssUrl && !isYtRssUrl) {
+          if (!feed.rssUrl.startsWith("tat://") && !isOURssUrl && !isKhRssUrl && !isTdRssUrl && !isYtRssUrl && !isCustomSchemeUrl(feed.rssUrl)) {
             const conditionalHeadersBulk = fullBulk
               ? undefined
               : { etag: feed.etag, lastModified: feed.lastModifiedHeader };
@@ -2624,7 +2625,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const merged = allFeeds
         .map(f => {
           const platforms: string[] = [];
-          if (f.rssUrl && !f.rssUrl.startsWith("tat://") && !f.rssUrl.startsWith("kh://") && !f.rssUrl.startsWith("td://") && !f.rssUrl.startsWith("yt://") && !Object.values(OU_PLATFORMS).some(c => f.rssUrl.startsWith(c.urlScheme))) {
+          if (f.rssUrl && !isCustomSchemeUrl(f.rssUrl) && !Object.values(OU_PLATFORMS).some(c => f.rssUrl.startsWith(c.urlScheme))) {
             platforms.push("RSS");
           }
           if (f.tatSpeakerId) platforms.push("Torah Anytime");
@@ -3387,8 +3388,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const feed = await storage.getFeedById(req.params.id);
       if (!feed) return res.status(404).json({ error: "Feed not found" });
       // Skip non-RSS sources where we have no useful publish date.
-      const isRss = !feed.rssUrl.startsWith("tat://") && !feed.rssUrl.startsWith("kh://")
-        && !feed.rssUrl.startsWith("yt://")
+      const isRss = !isCustomSchemeUrl(feed.rssUrl)
         && !Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
       if (!isRss) return res.json({ updated: 0, reason: "non-RSS source" });
 

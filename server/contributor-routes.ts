@@ -26,6 +26,7 @@ import { buildAndCacheFeed } from "./contributor/feed-route";
 import { nudgeContributorMediaWorker } from "./contributor-worker";
 import { validateFeed } from "./contributor-feed";
 import { MAX_UPLOAD_BYTES } from "./contributor-media";
+import { reconcileShowCatalog } from "./contributor/catalog";
 
 // HTTP surface for the contributor program: public application, creator
 // dashboard, admin moderation.
@@ -577,7 +578,9 @@ export function registerContributorRoutes(app: Express, adminAuth: any): void {
       .where(eq(contributorShows.id, String(req.params.id)))
       .returning();
     if (!show) return bad(res, "Not found.", 404);
-    if (status === "live") await rebuild(show.id, req);
+    // Always reconcile, not only on going live: suspending must REMOVE the
+    // show from the catalog, which is the case a "live only" guard misses.
+    await rebuild(show.id, req);
     res.json({ ok: true, show: { ...show, feedXml: undefined } });
   });
 
@@ -616,9 +619,15 @@ export function registerContributorRoutes(app: Express, adminAuth: any): void {
     res.json({ ok: true, episode: ep });
   });
 
+  // Single choke point: the podcast feed and the in-app catalog are rebuilt
+  // together. Splitting them is how they drift — an episode disappears from
+  // the feed but lingers in the app, or vice versa.
   async function rebuild(showId: string, req: Request): Promise<void> {
     await buildAndCacheFeed(showId, baseUrlOf(req)).catch((e) =>
       console.error(`feed rebuild ${showId}: ${e?.message?.slice(0, 160)}`),
+    );
+    await reconcileShowCatalog(showId).catch((e) =>
+      console.error(`catalog reconcile ${showId}: ${e?.message?.slice(0, 160)}`),
     );
   }
 }

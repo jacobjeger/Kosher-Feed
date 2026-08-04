@@ -10,6 +10,7 @@ import {
 } from "./contributor/store";
 import { processEpisodeUpload, mediaToolingStatus } from "./contributor-media";
 import { buildAndCacheFeed } from "./contributor/feed-route";
+import { reconcileShowCatalog } from "./contributor/catalog";
 import type { ContributorEpisode } from "@shared/schema";
 
 // Drains the contributor upload queue: raw file -> validated MP3 -> feed.
@@ -56,6 +57,9 @@ async function processOne(ep: ContributorEpisode): Promise<void> {
     await buildAndCacheFeed(ep.showId, publicBase()).catch((e) =>
       console.error(`Contributor feed rebuild failed for ${ep.showId}: ${e?.message?.slice(0, 160)}`),
     );
+    await reconcileShowCatalog(ep.showId).catch((e) =>
+      console.error(`Contributor catalog reconcile failed for ${ep.showId}: ${e?.message?.slice(0, 160)}`),
+    );
   } catch (e: any) {
     const msg = e?.message || String(e);
     const terminal = attempts >= MAX_MEDIA_ATTEMPTS;
@@ -85,6 +89,7 @@ async function tick(): Promise<void> {
       console.log(`Contributor: published ${promoted.length} scheduled episode(s)`);
       for (const showId of promoted) {
         await buildAndCacheFeed(showId, publicBase()).catch(() => {});
+        await reconcileShowCatalog(showId).catch(() => {});
       }
     }
 

@@ -23,6 +23,7 @@ import { bootstrapSearch } from "./search/bootstrap";
 import { bootstrapContributorSchema } from "./contributor/bootstrap";
 import { registerContributorFeedRoute } from "./contributor/feed-route";
 import { startContributorMediaWorker } from "./contributor-worker";
+import { isContributorFeedUrl, contributorFeedUrl } from "./feed-schemes";
 import { startPopularityRefresh } from "./search/popularity";
 import { autoCategorizeFeeds } from "./auto-categorize";
 import { extractKhRavId, extractTatSpeakerId, extractTorahDownloadsSpeakerId } from "./feed-utils";
@@ -901,6 +902,9 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
   const isKhUrl = feed.rssUrl.startsWith("kh://");
   const isTdUrl = feed.rssUrl.startsWith("td://");
   const isYtUrl = feed.rssUrl.startsWith("yt://");
+  // Contributor shows are written directly by the creator dashboard, never
+  // pulled. There is nothing to refresh and the URL is not fetchable.
+  const isCpUrl = isContributorFeedUrl(feed.rssUrl);
   const isOUUrl = Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme));
   const effectiveTatSpeakerId = extractTatSpeakerId(feed);
   const effectiveKhRavId = extractKhRavId(feed);
@@ -974,7 +978,7 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
   // Skip RSS parsing when the URL is an API-only scheme — it'd just 404 or
   // worse, drop into axios with a non-HTTP URL and throw. RSS-base feeds
   // still parse their RSS even if a non-RSS source already ran above.
-  if (isTatUrl || isOUUrl || isKhUrl || isTdUrl || isYtUrl) {
+  if (isTatUrl || isOUUrl || isKhUrl || isTdUrl || isYtUrl || isCpUrl) {
     return {
       newEpisodes: totalNew,
       method: 'stream',
@@ -1051,11 +1055,12 @@ export async function refreshOneFeed(feed: { id: string; title: string; rssUrl: 
 let isAutoRefreshing = false;
 
 // Feed type classification for concurrency and stale intervals
-function getFeedType(feed: { rssUrl: string }): 'rss' | 'tat' | 'ou' | 'kh' | 'td' | 'yt' {
+function getFeedType(feed: { rssUrl: string }): 'rss' | 'tat' | 'ou' | 'kh' | 'td' | 'yt' | 'cp' {
   if (feed.rssUrl.startsWith("kh://")) return 'kh';
   if (feed.rssUrl.startsWith("tat://")) return 'tat';
   if (feed.rssUrl.startsWith("td://")) return 'td';
   if (feed.rssUrl.startsWith("yt://")) return 'yt';
+  if (isContributorFeedUrl(feed.rssUrl)) return 'cp';
   if (Object.values(OU_PLATFORMS).some(c => feed.rssUrl.startsWith(c.urlScheme))) return 'ou';
   return 'rss';
 }

@@ -538,7 +538,7 @@ export async function mergeFeedsKeepFirst(keepFeedId: string, removeFeedId: stri
 // import cycle. A feed is "multi-source" if it has either real-RSS plus a
 // platform id, or two or more platform ids.
 function isFeedMultiSource(feed: any): boolean {
-  const apiSchemes = ["tat://", "kh://", "td://", "yt://", "alldaf://", "allmishnah://", "allparsha://", "allhalacha://"];
+  const apiSchemes = ["tat://", "kh://", "td://", "yt://", "cp://", "alldaf://", "allmishnah://", "allparsha://", "allhalacha://"];
   const url = feed.rssUrl || "";
   const hasRealRss = !!url && !apiSchemes.some(s => url.startsWith(s));
   const platformIds = [
