@@ -4,7 +4,7 @@ import { db } from "../db";
 import { contributorShows, contributorEpisodes } from "@shared/schema";
 import type { ContributorShow } from "@shared/schema";
 import { renderShowFeed } from "../contributor-feed";
-import { canonicalBaseUrl } from "../public-url";
+import { canonicalBaseUrl, isVendorHost } from "../public-url";
 
 // The public podcast feed: GET /feed/{slug}.xml
 //
@@ -98,9 +98,18 @@ export function registerContributorFeedRoute(app: Application): void {
       let etag = show.feedEtag;
       let built = show.feedBuiltAt;
 
-      // Cache miss — first request after a deploy that cleared it, or a show
-      // published before this route existed.
-      if (!xml || !etag) {
+      // Rebuild when the cache is empty, OR when what is cached contains a
+      // vendor hostname.
+      //
+      // The second case is not hypothetical: a feed rendered before the
+      // canonical-URL fix cached railway.app URLs, and a cached document never
+      // expires on its own. Serving it once to Apple is enough to bake a
+      // hostname we do not own into every subscription that follows.
+      const poisoned = !!xml && isVendorHost(xml);
+      if (!xml || !etag || poisoned) {
+        if (poisoned) {
+          console.warn(`Contributor feed ${show.slug}: cached XML contained a vendor host — rebuilding`);
+        }
         const rendered = await buildAndCacheFeed(show.id, baseUrlOf(req));
         if (!rendered) return next();
         xml = rendered.xml;
