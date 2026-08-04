@@ -82,6 +82,30 @@ test("escapes XML metacharacters and neutralises a CDATA break-out", () => {
   assert.match(out, /\]\]\]\]><!\[CDATA\[>/);
 });
 
+test("item <link> is a webpage, never the feed XML", () => {
+  const { xml } = renderShowFeed(show(), [ep()], BASE);
+
+  // Regression: this pointed at {base}/feed/{slug}.xml, which Cast Feed
+  // Validator rejects as FATAL — "sends a content type of application/rss+xml,
+  // which is not a webpage". Apple reads the same field as the episode website.
+  const itemBlock = xml.slice(xml.indexOf("<item>"), xml.indexOf("</item>"));
+  const link = itemBlock.match(/<link>([^<]*)<\/link>/)?.[1];
+
+  assert.ok(link, "item should have a link");
+  assert.ok(!link!.endsWith(".xml"), `item link must not be an XML document, got ${link}`);
+  assert.ok(!link!.includes("/feed/"), `item link must not point at the feed, got ${link}`);
+  assert.equal(link, BASE);
+
+  // The channel-level self reference is still the feed — that one is correct.
+  assert.match(xml, /<atom:link href="https:\/\/shiurpod\.com\/feed\/rav-example\.xml" rel="self"/);
+});
+
+test("a show with its own site uses it for item links", () => {
+  const { xml } = renderShowFeed(show({ link: "https://example.org/shiurim" }), [ep()], BASE);
+  const itemBlock = xml.slice(xml.indexOf("<item>"), xml.indexOf("</item>"));
+  assert.match(itemBlock, /<link>https:\/\/example\.org\/shiurim<\/link>/);
+});
+
 // ── 2. Exact enclosure byte length ────────────────────────────────────────
 test("enclosure length is the exact byte count, never rounded or zero", () => {
   const { xml } = renderShowFeed(show(), [ep({ byteSize: 16123456 })], BASE);
