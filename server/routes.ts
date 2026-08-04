@@ -34,6 +34,7 @@ import {
 import fsp from "node:fs/promises";
 import { trackErrorForAlert, sendFeedbackNotification } from "./error-alerts";
 import { registerV1Routes } from "./routes-v1";
+import { registerContributorRoutes } from "./contributor-routes";
 import * as iss from "./issues-storage";
 import { imageResizeHandler } from "./image-resize";
 import multer from "multer";
@@ -4410,6 +4411,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   registerV1Routes(app);
+
+  // Contributor program. Registered here rather than in index.ts because it
+  // needs adminAuth, which is defined in this scope. Creator routes use their
+  // own Bearer middleware — a creator token can never reach an admin route.
+  registerContributorRoutes(app, adminAuth as any);
 
   const httpServer = createServer(app);
   return httpServer;

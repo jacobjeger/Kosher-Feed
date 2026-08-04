@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>ShiurPod — Creator</title>
+<style>
+  :root {
+    --bg:#0f1117; --card:#171a23; --line:#262a36; --text:#e7e9ee; --muted:#9aa1b1;
+    --accent:#6f8cff; --err:#ff6b6b; --ok:#4ade80; --warn:#fbbf24;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f6f7fb; --card:#fff; --line:#e3e6ef; --text:#14161c; --muted:#5c6478; --accent:#3457d5; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:900px; margin:0 auto; padding:32px 18px 90px; }
+  h1 { font-size:24px; margin:0 0 4px; letter-spacing:-.02em; }
+  h2 { font-size:18px; margin:30px 0 12px; }
+  .muted { color:var(--muted); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:13px; padding:20px; margin-bottom:16px; }
+  label { display:block; margin:14px 0 6px; font-weight:600; font-size:14px; }
+  input, textarea, select { width:100%; padding:10px 12px; border-radius:9px; border:1px solid var(--line);
+    background:var(--bg); color:var(--text); font:inherit; font-size:15px; }
+  textarea { min-height:90px; resize:vertical; }
+  button { padding:11px 16px; border:0; border-radius:9px; background:var(--accent); color:#fff;
+    font:inherit; font-weight:640; cursor:pointer; }
+  button.ghost { background:transparent; border:1px solid var(--line); color:var(--text); }
+  button.danger { background:transparent; border:1px solid rgba(255,107,107,.4); color:var(--err); }
+  button:disabled { opacity:.5; cursor:default; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .between { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+  .msg { margin:14px 0; padding:12px; border-radius:9px; display:none; font-size:15px; }
+  .msg.err { display:block; background:rgba(255,107,107,.12); color:var(--err); }
+  .msg.ok  { display:block; background:rgba(74,222,128,.12); color:var(--ok); }
+  .pill { font-size:12px; padding:3px 9px; border-radius:99px; border:1px solid var(--line); color:var(--muted); }
+  .pill.ok { color:var(--ok); border-color:rgba(74,222,128,.4); }
+  .pill.warn { color:var(--warn); border-color:rgba(251,191,36,.4); }
+  .pill.err { color:var(--err); border-color:rgba(255,107,107,.4); }
+  .ep { border-top:1px solid var(--line); padding:14px 0; }
+  .ep:first-child { border-top:0; }
+  .ep h3 { margin:0 0 4px; font-size:16px; font-weight:620; }
+  .drop { border:2px dashed var(--line); border-radius:12px; padding:26px; text-align:center; color:var(--muted); cursor:pointer; }
+  .drop.over { border-color:var(--accent); color:var(--accent); }
+  .bar { height:6px; background:var(--line); border-radius:99px; overflow:hidden; margin-top:10px; display:none; }
+  .bar > i { display:block; height:100%; width:0; background:var(--accent); transition:width .2s; }
+  code { background:var(--bg); border:1px solid var(--line); padding:2px 6px; border-radius:6px; font-size:13px; word-break:break-all; }
+  .hide { display:none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Login -->
+  <section id="loginView" class="hide">
+    <h1>Creator sign in</h1>
+    <p class="muted">Upload and manage your shiurim.</p>
+    <div class="card" style="max-width:420px">
+      <label for="email">Email</label>
+      <input id="email" type="email" autocomplete="username">
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password">
+      <div class="msg" id="loginMsg"></div>
+      <button id="loginBtn" style="width:100%;margin-top:16px">Sign in</button>
+    </div>
+  </section>
+
+  <!-- First-time password setup -->
+  <section id="setupView" class="hide">
+    <h1>Choose a password</h1>
+    <p class="muted">This is a one-time link. Set a password to finish setting up your account.</p>
+    <div class="card" style="max-width:420px">
+      <label for="newPassword">New password <span class="muted" style="font-weight:400">at least 10 characters</span></label>
+      <input id="newPassword" type="password" autocomplete="new-password">
+      <label for="newPassword2">Repeat password</label>
+      <input id="newPassword2" type="password" autocomplete="new-password">
+      <div class="msg" id="setupMsg"></div>
+      <button id="setupBtn" style="width:100%;margin-top:16px">Set password</button>
+    </div>
+  </section>
+
+  <!-- Dashboard -->
+  <section id="dashView" class="hide">
+    <div class="between">
+      <div>
+        <h1 id="showTitle">…</h1>
+        <p class="muted" id="whoami"></p>
+      </div>
+      <button class="ghost" id="logoutBtn">Sign out</button>
+    </div>
+
+    <div class="card">
+      <div class="between">
+        <div>
+          <strong>Your podcast feed</strong>
+          <div class="muted" style="font-size:14px;margin-top:4px">Give this to Apple Podcasts or Spotify.</div>
+        </div>
+        <span class="pill" id="showStatus">—</span>
+      </div>
+      <p style="margin:12px 0 0"><code id="feedUrl">—</code></p>
+      <div class="row" style="margin-top:12px">
+        <button class="ghost" id="copyFeed">Copy link</button>
+        <button class="ghost" id="checkFeed">Check for problems</button>
+      </div>
+      <div class="msg" id="validateMsg"></div>
+    </div>
+
+    <h2>Add a shiur</h2>
+    <div class="card">
+      <label for="epTitle">Title</label>
+      <input id="epTitle" type="text" maxlength="300" placeholder="e.g. Bava Metzia 21b">
+      <label for="epDesc">Description <span class="muted" style="font-weight:400">optional</span></label>
+      <textarea id="epDesc" maxlength="5000"></textarea>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label for="epDate">Publish date</label>
+          <input id="epDate" type="datetime-local">
+        </div>
+        <div>
+          <label for="epNum">Episode number <span class="muted" style="font-weight:400">optional</span></label>
+          <input id="epNum" type="number" min="1">
+        </div>
+      </div>
+
+      <label>Audio file</label>
+      <div class="drop" id="drop">
+        <div><strong>Drop an audio file here</strong> or click to choose</div>
+        <div style="font-size:13px;margin-top:6px">MP3, M4A, WAV, AAC — up to 500&nbsp;MB</div>
+        <input id="file" type="file" accept="audio/*,video/mp4" class="hide">
+      </div>
+      <div class="bar" id="bar"><i></i></div>
+      <div class="muted" id="fileInfo" style="font-size:14px;margin-top:8px"></div>
+
+      <div class="msg" id="createMsg"></div>
+      <button id="createBtn" style="margin-top:16px">Upload shiur</button>
+    </div>
+
+    <h2>Your shiurim <span class="muted" id="epCount"></span></h2>
+    <div class="card" id="episodes"><p class="muted">Loading…</p></div>
+  </section>
+</div>
+
+<script>
+(function () {
+  var TOKEN_KEY = 'shiurpod.creator.token';
+  var token = null;
+  try { token = localStorage.getItem(TOKEN_KEY); } catch (e) {}
+  var state = { show: null, contributor: null, pendingFile: null };
+
+  var $ = function (id) { return document.getElementById(id); };
+  function show(el) { el.classList.remove('hide'); }
+  function hide(el) { el.classList.add('hide'); }
+  function msg(el, kind, text) { el.className = 'msg ' + kind; el.textContent = text; }
+  function clearMsg(el) { el.className = 'msg'; el.textContent = ''; }
+
+  // Text only — never innerHTML with server data. Episode titles are creator
+  // input and would otherwise be an injection route into this page.
+  function text(tag, cls, str) {
+    var el = document.createElement(tag);
+    if (cls) el.className = cls;
+    if (str != null) el.textContent = str;
+    return el;
+  }
+
+  async function api(path, opts) {
+    opts = opts || {};
+    var headers = opts.headers || {};
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    if (opts.body && typeof opts.body === 'object') {
+      headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(opts.body);
+    }
+    var r = await fetch(path, { method: opts.method || 'GET', headers: headers, body: opts.body });
+    var j = await r.json().catch(function () { return {}; });
+    if (r.status === 401) { signOut(); throw new Error('Your session expired. Please sign in again.'); }
+    if (!r.ok || j.ok === false) throw new Error(j.error || 'Request failed');
+    return j;
+  }
+
+  function signOut() {
+    token = null;
+    try { localStorage.removeItem(TOKEN_KEY); } catch (e) {}
+    hide($('dashView')); hide($('setupView')); show($('loginView'));
+  }
+
+  function saveToken(t) {
+    token = t;
+    try { localStorage.setItem(TOKEN_KEY, t); } catch (e) {}
+  }
+
+  // ── Login ──────────────────────────────────────────────────────────
+  $('loginBtn').addEventListener('click', async function () {
+    clearMsg($('loginMsg'));
+    $('loginBtn').disabled = true;
+    try {
+      var j = await api('/api/contrib/login', {
+        method: 'POST',
+        body: { email: $('email').value.trim(), password: $('password').value }
+      });
+      saveToken(j.token);
+      await boot();
+    } catch (e) {
+      msg($('loginMsg'), 'err', e.message);
+    } finally {
+      $('loginBtn').disabled = false;
+    }
+  });
+  $('password').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('loginBtn').click(); });
+
+  // ── First-time setup ───────────────────────────────────────────────
+  $('setupBtn').addEventListener('click', async function () {
+    clearMsg($('setupMsg'));
+    var p1 = $('newPassword').value, p2 = $('newPassword2').value;
+    if (p1.length < 10) return msg($('setupMsg'), 'err', 'Password must be at least 10 characters.');
+    if (p1 !== p2) return msg($('setupMsg'), 'err', 'The two passwords do not match.');
+
+    $('setupBtn').disabled = true;
+    try {
+      var setupToken = new URLSearchParams(location.search).get('setup');
+      var j = await api('/api/contrib/set-password', { method: 'POST', body: { token: setupToken, password: p1 } });
+      saveToken(j.token);
+      history.replaceState({}, '', '/creator');
+      await boot();
+    } catch (e) {
+      msg($('setupMsg'), 'err', e.message);
+    } finally {
+      $('setupBtn').disabled = false;
+    }
+  });
+
+  $('logoutBtn').addEventListener('click', async function () {
+    try { await api('/api/contrib/logout', { method: 'POST' }); } catch (e) {}
+    signOut();
+  });
+
+  // ── File picking ───────────────────────────────────────────────────
+  var drop = $('drop'), fileInput = $('file');
+  drop.addEventListener('click', function () { fileInput.click(); });
+  drop.addEventListener('dragover', function (e) { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', function () { drop.classList.remove('over'); });
+  drop.addEventListener('drop', function (e) {
+    e.preventDefault(); drop.classList.remove('over');
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', function () { if (fileInput.files[0]) setFile(fileInput.files[0]); });
+
+  var MAX_BYTES = 500 * 1024 * 1024;
+  function setFile(f) {
+    // Advisory only. A presigned PUT cannot carry a size limit, so the server
+    // HEADs the object and rejects oversize uploads regardless of this check.
+    if (f.size > MAX_BYTES) {
+      state.pendingFile = null;
+      return msg($('createMsg'), 'err', 'That file is ' + Math.round(f.size / 1048576) + 'MB. The limit is 500MB.');
+    }
+    state.pendingFile = f;
+    clearMsg($('createMsg'));
+    $('fileInfo').textContent = f.name + ' — ' + (f.size / 1048576).toFixed(1) + ' MB';
+    if (!$('epTitle').value.trim()) {
+      $('epTitle').value = f.name.replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ').trim();
+    }
+  }
+
+  /** XHR, not fetch: we need upload progress, which fetch cannot report. */
+  function putWithProgress(url, file, contentType, onProgress) {
+    return new Promise(function (resolve, reject) {
+      var xhr = new XMLHttpRequest();
+      xhr.open('PUT', url, true);
+      xhr.setRequestHeader('Content-Type', contentType);
+      xhr.upload.onprogress = function (e) {
+        if (e.lengthComputable) onProgress(e.loaded / e.total);
+      };
+      xhr.onload = function () {
+        (xhr.status >= 200 && xhr.status < 300) ? resolve() : reject(new Error('Upload failed (' + xhr.status + ')'));
+      };
+      xhr.onerror = function () { reject(new Error('Upload failed — check your connection.')); };
+      xhr.send(file);
+    });
+  }
+
+  // ── Create + upload ────────────────────────────────────────────────
+  $('createBtn').addEventListener('click', async function () {
+    clearMsg($('createMsg'));
+    var title = $('epTitle').value.trim();
+    if (!title) return msg($('createMsg'), 'err', 'Please give the shiur a title.');
+    if (!state.pendingFile) return msg($('createMsg'), 'err', 'Please choose an audio file.');
+
+    $('createBtn').disabled = true;
+    $('bar').style.display = 'block';
+    var fill = $('bar').firstElementChild;
+
+    try {
+      var pubDate = $('epDate').value ? new Date($('epDate').value).toISOString() : new Date().toISOString();
+      var created = await api('/api/contrib/shows/' + state.show.id + '/episodes', {
+        method: 'POST',
+        body: {
+          title: title,
+          description: $('epDesc').value.trim(),
+          pubDate: pubDate,
+          episodeNumber: $('epNum').value ? Number($('epNum').value) : null
+        }
+      });
+
+      var f = state.pendingFile;
+      var ext = (f.name.match(/\.([a-z0-9]+)$/i) || [, 'mp3'])[1].toLowerCase();
+      var signed = await api('/api/contrib/episodes/' + created.episode.id + '/upload-url', {
+        method: 'POST',
+        body: { extension: ext, contentType: f.type || 'application/octet-stream' }
+      });
+
+      await putWithProgress(signed.uploadUrl, f, f.type || 'application/octet-stream', function (p) {
+        fill.style.width = Math.round(p * 100) + '%';
+      });
+
+      await api('/api/contrib/episodes/' + created.episode.id + '/uploaded', {
+        method: 'POST',
+        body: { key: signed.key }
+      });
+
+      msg($('createMsg'), 'ok', 'Uploaded. We are converting the audio — it will be ready shortly.');
+      $('epTitle').value = ''; $('epDesc').value = ''; $('epNum').value = '';
+      $('fileInfo').textContent = ''; state.pendingFile = null; fileInput.value = '';
+      await loadEpisodes();
+    } catch (e) {
+      msg($('createMsg'), 'err', e.message);
+    } finally {
+      $('createBtn').disabled = false;
+      $('bar').style.display = 'none';
+      fill.style.width = '0';
+    }
+  });
+
+  // ── Episode list ───────────────────────────────────────────────────
+  var MEDIA_LABEL = { queued:'Waiting', processing:'Converting', ready:'Ready', failed:'Failed' };
+
+  async function loadEpisodes() {
+    var box = $('episodes');
+    box.textContent = '';
+    var j;
+    try {
+      j = await api('/api/contrib/shows/' + state.show.id + '/episodes');
+    } catch (e) {
+      box.appendChild(text('p', 'muted', e.message));
+      return;
+    }
+
+    $('epCount').textContent = j.episodes.length ? '(' + j.episodes.length + ')' : '';
+    if (!j.episodes.length) {
+      box.appendChild(text('p', 'muted', 'Nothing uploaded yet.'));
+      return;
+    }
+
+    var stillWorking = false;
+
+    j.episodes.forEach(function (e) {
+      var row = text('div', 'ep');
+      var head = text('div', 'between');
+      var left = text('div');
+      left.appendChild(text('h3', null, e.title));
+
+      var when = e.pubDate ? new Date(e.pubDate).toLocaleDateString() : '';
+      var dur = e.durationSeconds ? Math.round(e.durationSeconds / 60) + ' min' : '';
+      var size = e.byteSize ? (e.byteSize / 1048576).toFixed(1) + ' MB' : '';
+      left.appendChild(text('div', 'muted', [when, dur, size].filter(Boolean).join(' · ')));
+
+      if (e.mediaStatus === 'failed' && e.mediaError) {
+        left.appendChild(text('div', 'muted', 'Problem: ' + e.mediaError));
+      }
+      head.appendChild(left);
+
+      var pills = text('div', 'row');
+      if (e.mediaStatus && e.mediaStatus !== 'ready') {
+        var cls = e.mediaStatus === 'failed' ? 'pill err' : 'pill warn';
+        pills.appendChild(text('span', cls, MEDIA_LABEL[e.mediaStatus] || e.mediaStatus));
+        if (e.mediaStatus === 'queued' || e.mediaStatus === 'processing') stillWorking = true;
+      }
+      pills.appendChild(text('span', e.status === 'published' ? 'pill ok' : 'pill', e.status));
+      head.appendChild(pills);
+      row.appendChild(head);
+
+      var actions = text('div', 'row');
+      actions.style.marginTop = '10px';
+
+      if (e.mediaStatus === 'ready' && e.status !== 'published') {
+        var pub = text('button', null, 'Publish');
+        pub.addEventListener('click', async function () {
+          pub.disabled = true;
+          try {
+            var r = await api('/api/contrib/episodes/' + e.id + '/publish', { method: 'POST' });
+            if (r.status === 'pending_review') alert('Sent for review. It will go live once approved.');
+            await loadEpisodes();
+          } catch (err) { alert(err.message); pub.disabled = false; }
+        });
+        actions.appendChild(pub);
+      }
+
+      if (e.status === 'published') {
+        var un = text('button', 'danger', 'Unpublish');
+        un.addEventListener('click', async function () {
+          if (!confirm('Remove this shiur from your feed? Anyone subscribed will no longer see it.')) return;
+          un.disabled = true;
+          try { await api('/api/contrib/episodes/' + e.id + '/unpublish', { method: 'POST' }); await loadEpisodes(); }
+          catch (err) { alert(err.message); un.disabled = false; }
+        });
+        actions.appendChild(un);
+      }
+
+      if (actions.children.length) row.appendChild(actions);
+      box.appendChild(row);
+    });
+
+    // Poll while the worker is transcoding so "Converting" resolves on its own.
+    if (stillWorking) setTimeout(loadEpisodes, 12000);
+  }
+
+  // ── Feed helpers ───────────────────────────────────────────────────
+  $('copyFeed').addEventListener('click', function () {
+    var url = $('feedUrl').textContent;
+    navigator.clipboard.writeText(url).then(
+      function () { msg($('validateMsg'), 'ok', 'Link copied.'); },
+      function () { msg($('validateMsg'), 'err', 'Could not copy — select the link and copy it manually.'); }
+    );
+  });
+
+  $('checkFeed').addEventListener('click', async function () {
+    clearMsg($('validateMsg'));
+    try {
+      var j = await api('/api/contrib/shows/' + state.show.id + '/validate');
+      var errs = j.issues.filter(function (i) { return i.level === 'error'; });
+      if (!j.issues.length) return msg($('validateMsg'), 'ok', 'No problems found — the feed is ready to submit.');
+      var lines = j.issues.map(function (i) { return (i.level === 'error' ? '• ' : '· ') + i.message; }).join('\n');
+      msg($('validateMsg'), errs.length ? 'err' : 'ok', lines);
+    } catch (e) {
+      msg($('validateMsg'), 'err', e.message);
+    }
+  });
+
+  // ── Boot ───────────────────────────────────────────────────────────
+  async function boot() {
+    var setup = new URLSearchParams(location.search).get('setup');
+    if (setup && !token) {
+      hide($('loginView')); hide($('dashView')); show($('setupView'));
+      return;
+    }
+    if (!token) {
+      hide($('setupView')); hide($('dashView')); show($('loginView'));
+      return;
+    }
+
+    try {
+      var me = await api('/api/contrib/me');
+      state.contributor = me.contributor;
+      state.show = me.shows[0] || null;
+
+      hide($('loginView')); hide($('setupView')); show($('dashView'));
+      $('whoami').textContent = me.contributor.name + ' · ' + me.contributor.email;
+
+      if (!state.show) {
+        $('showTitle').textContent = 'No show yet';
+        $('feedUrl').textContent = 'Your show is being set up.';
+        return;
+      }
+
+      $('showTitle').textContent = state.show.title;
+      $('feedUrl').textContent = state.show.feedUrl;
+      var st = $('showStatus');
+      st.textContent = state.show.status === 'live' ? 'Live' : state.show.status === 'suspended' ? 'Suspended' : 'Not yet live';
+      st.className = 'pill ' + (state.show.status === 'live' ? 'ok' : state.show.status === 'suspended' ? 'err' : 'warn');
+
+      var now = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
+      $('epDate').value = now.toISOString().slice(0, 16);
+
+      await loadEpisodes();
+    } catch (e) {
+      signOut();
+      if (e.message && !/session expired/i.test(e.message)) msg($('loginMsg'), 'err', e.message);
+    }
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>

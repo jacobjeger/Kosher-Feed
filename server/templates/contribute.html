@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Publish your shiurim on ShiurPod</title>
+<meta name="description" content="Apply to publish your shiurim through ShiurPod. We host the audio, generate a podcast feed, and submit it to Apple Podcasts and Spotify.">
+<meta property="og:title" content="Publish your shiurim on ShiurPod">
+<meta property="og:description" content="We host the audio and handle the podcast feed. You upload the shiur.">
+<style>
+  :root {
+    --bg: #0f1117; --card: #171a23; --line: #262a36;
+    --text: #e7e9ee; --muted: #9aa1b1; --accent: #6f8cff; --accent-ink: #fff;
+    --err: #ff6b6b; --ok: #4ade80;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f6f7fb; --card: #fff; --line: #e3e6ef;
+      --text: #14161c; --muted: #5c6478; --accent: #3457d5;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 40px 20px 80px; }
+  header { margin-bottom: 32px; }
+  h1 { font-size: 30px; line-height: 1.2; margin: 0 0 12px; letter-spacing: -0.02em; }
+  .lede { color: var(--muted); font-size: 17px; margin: 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 24px; }
+  .points { display: grid; gap: 14px; margin: 0 0 28px; padding: 0; list-style: none; }
+  .points li { display: flex; gap: 10px; align-items: flex-start; color: var(--muted); }
+  .points b { color: var(--text); font-weight: 600; }
+  .tick { color: var(--accent); flex: 0 0 auto; }
+  label { display: block; margin: 18px 0 6px; font-weight: 600; font-size: 14px; }
+  .hint { font-weight: 400; color: var(--muted); font-size: 13px; }
+  input[type=text], input[type=email], input[type=tel], input[type=url], textarea, select {
+    width: 100%; padding: 11px 13px; border-radius: 9px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text);
+    font: inherit; font-size: 15px;
+  }
+  input:focus, textarea:focus, select:focus {
+    outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent;
+  }
+  textarea { min-height: 110px; resize: vertical; }
+  .row { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; } }
+  button {
+    margin-top: 26px; width: 100%; padding: 14px; border: 0; border-radius: 10px;
+    background: var(--accent); color: var(--accent-ink); font: inherit; font-weight: 650;
+    font-size: 16px; cursor: pointer;
+  }
+  button:disabled { opacity: .55; cursor: default; }
+  /* Honeypot: never visible to a person, no "hidden" attribute a bot would skip. */
+  .hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+  .msg { margin-top: 18px; padding: 14px; border-radius: 10px; display: none; font-size: 15px; }
+  .msg.err { display: block; background: rgba(255,107,107,.12); color: var(--err); border: 1px solid rgba(255,107,107,.3); }
+  .msg.ok  { display: block; background: rgba(74,222,128,.12); color: var(--ok);  border: 1px solid rgba(74,222,128,.3); }
+  .done { display: none; text-align: center; padding: 20px 0; }
+  .done h2 { margin: 0 0 10px; }
+  .done p { color: var(--muted); margin: 0; }
+  footer { margin-top: 34px; text-align: center; color: var(--muted); font-size: 14px; }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Publish your shiurim on ShiurPod</h1>
+    <p class="lede">We host the audio, build the podcast feed, and submit it to the directories. You upload the shiur.</p>
+  </header>
+
+  <ul class="points">
+    <li><span class="tick">✓</span><span><b>Your own podcast feed.</b> Submitted once to Apple Podcasts and Spotify, so your shiurim reach every podcast app.</span></li>
+    <li><span class="tick">✓</span><span><b>Audio hosted for you.</b> Upload a recording in any common format — we convert it and serve it.</span></li>
+    <li><span class="tick">✓</span><span><b>Listed in ShiurPod.</b> Your shiurim appear in the app's catalog and in search.</span></li>
+    <li><span class="tick">✓</span><span><b>No cost.</b> There is no fee to publish.</span></li>
+  </ul>
+
+  <div class="card">
+    <form id="form" novalidate>
+      <div id="fields">
+        <div class="row">
+          <div>
+            <label for="name">Your name</label>
+            <input id="name" name="name" type="text" autocomplete="name" required maxlength="120">
+          </div>
+          <div>
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" autocomplete="email" required maxlength="200">
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="phone">Phone <span class="hint">optional</span></label>
+            <input id="phone" name="phone" type="tel" autocomplete="tel" maxlength="60">
+          </div>
+          <div>
+            <label for="organization">Yeshiva or organization <span class="hint">optional</span></label>
+            <input id="organization" name="organization" type="text" maxlength="200">
+          </div>
+        </div>
+
+        <label for="proposedTitle">What should the series be called?</label>
+        <input id="proposedTitle" name="proposedTitle" type="text" required maxlength="200" placeholder="e.g. Daf Yomi with Rabbi …">
+
+        <label for="proposedDescription">What are the shiurim about?
+          <span class="hint">A short paragraph — this becomes your podcast description.</span>
+        </label>
+        <textarea id="proposedDescription" name="proposedDescription" required maxlength="5000"></textarea>
+
+        <div class="row">
+          <div>
+            <label for="language">Primary language</label>
+            <select id="language" name="language">
+              <option value="en">English</option>
+              <option value="he">Hebrew</option>
+              <option value="yi">Yiddish</option>
+            </select>
+          </div>
+          <div>
+            <label for="sampleAudioUrl">Link to a sample shiur <span class="hint">optional</span></label>
+            <input id="sampleAudioUrl" name="sampleAudioUrl" type="url" maxlength="500" placeholder="https://…">
+          </div>
+        </div>
+
+        <label for="bio">A little about you <span class="hint">optional</span></label>
+        <textarea id="bio" name="bio" maxlength="5000"></textarea>
+
+        <div class="hp" aria-hidden="true">
+          <label for="website">Leave this field empty</label>
+          <input id="website" name="website" type="text" tabindex="-1" autocomplete="off">
+        </div>
+
+        <button id="submit" type="submit">Send application</button>
+      </div>
+
+      <div class="msg" id="msg"></div>
+
+      <div class="done" id="done">
+        <h2>Application received</h2>
+        <p>We'll review it and email you. If it's approved you'll get a link to set a password and start uploading.</p>
+      </div>
+    </form>
+  </div>
+
+  <footer>
+    Questions? <a href="/support">Get in touch</a> · <a href="/">ShiurPod</a>
+  </footer>
+</div>
+
+<script>
+(function () {
+  var form = document.getElementById('form');
+  var msg = document.getElementById('msg');
+  var btn = document.getElementById('submit');
+  var fields = document.getElementById('fields');
+  var done = document.getElementById('done');
+
+  function show(kind, text) {
+    msg.className = 'msg ' + kind;
+    msg.textContent = text;
+  }
+
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    msg.className = 'msg';
+
+    var body = {};
+    ['name','email','phone','organization','proposedTitle','proposedDescription','language','sampleAudioUrl','bio','website']
+      .forEach(function (k) {
+        var el = document.getElementById(k);
+        if (el) body[k] = el.value.trim();
+      });
+
+    if (!body.name || !body.email || !body.proposedTitle || !body.proposedDescription) {
+      return show('err', 'Please fill in your name, email, the series title and a description.');
+    }
+    if (body.proposedDescription.length < 40) {
+      return show('err', 'Please describe the shiurim in a bit more detail.');
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+
+    try {
+      var r = await fetch('/api/contrib/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      var j = await r.json().catch(function () { return {}; });
+
+      if (!r.ok || j.ok === false) {
+        show('err', j.error || 'Something went wrong. Please try again.');
+        btn.disabled = false;
+        btn.textContent = 'Send application';
+        return;
+      }
+
+      fields.style.display = 'none';
+      done.style.display = 'block';
+      if (j.duplicate) {
+        show('ok', j.message || 'You already have an application under review.');
+      }
+    } catch (err) {
+      show('err', 'Could not reach the server. Please check your connection and try again.');
+      btn.disabled = false;
+      btn.textContent = 'Send application';
+    }
+  });
+})();
+</script>
+</body>
+</html>

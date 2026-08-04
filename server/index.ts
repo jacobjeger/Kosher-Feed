@@ -411,7 +411,14 @@ function configureExpoAndLanding(app: express.Application) {
       return next();
     }
 
-    if (req.path === "/admin" || req.path === "/privacy" || req.path === "/terms" || req.path === "/support") {
+    // Server-rendered pages. /contribute and /creator are deliberately NOT
+    // routes in the Expo app: the mobile app has no browser and no WebView, so
+    // keeping the creator surface here makes it structurally unreachable from
+    // the app rather than relying on nobody adding a link.
+    if (
+      req.path === "/admin" || req.path === "/privacy" || req.path === "/terms" ||
+      req.path === "/support" || req.path === "/contribute" || req.path === "/creator"
+    ) {
       return next();
     }
 
@@ -449,6 +456,17 @@ function configureExpoAndLanding(app: express.Application) {
 
   app.get("/support", (_req: Request, res: Response) => {
     res.sendFile(path.resolve(process.cwd(), "server", "templates", "support.html"));
+  });
+
+  // Public application form for ravvonim who want to publish through ShiurPod.
+  app.get("/contribute", (_req: Request, res: Response) => {
+    res.sendFile(path.resolve(process.cwd(), "server", "templates", "contribute.html"));
+  });
+
+  // Creator dashboard. Auth happens client-side against /api/contrib/*; this
+  // only serves the shell.
+  app.get("/creator", (_req: Request, res: Response) => {
+    res.sendFile(path.resolve(process.cwd(), "server", "templates", "creator.html"));
   });
 
   // SEO: Category landing pages
