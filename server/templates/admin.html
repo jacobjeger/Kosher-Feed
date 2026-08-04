@@ -353,6 +353,7 @@
       <button class="tab" onclick="switchTab('youtube', this)">YouTube <span id="ytPendingBadge" class="status-badge status-inactive" style="margin-left:4px;display:none;">0</span></button>
       <button class="tab" onclick="switchTab('speakerid', this)">Speaker IDs <span id="spkSuggBadge" class="status-badge status-inactive" style="margin-left:4px;display:none;">0</span></button>
       <button class="tab" onclick="switchTab('ytc', this)">YTC Alumni</button>
+      <button class="tab" onclick="switchTab('contributors', this)">Contributors <span id="contribBadge" class="status-badge status-inactive" style="margin-left:4px;display:none;">0</span></button>
       <button class="tab" onclick="switchTab('settings', this)">Settings</button>
     </div>
 
@@ -1335,6 +1336,20 @@
     <!-- YTC: ytc-tab content. Manages the admin-set unlock code for the
          YTC Alumni section in the app. Empty value = feature kill switch.
          Ties to /api/admin/config/ytc-unlock-code (GET, PUT). -->
+    <div id="contributorsTab" class="hidden">
+      <h2>Contributor Program</h2>
+      <p class="muted" style="margin-top:-6px">Ravvonim publishing through ShiurPod. Applications, live shows, and episodes awaiting review.</p>
+
+      <h3 style="margin-top:22px">Applications <span id="contribAppCount" class="muted"></span></h3>
+      <div id="contribApps"><p class="muted">Loading…</p></div>
+
+      <h3 style="margin-top:28px">Episodes awaiting review <span id="contribReviewCount" class="muted"></span></h3>
+      <div id="contribReview"><p class="muted">Loading…</p></div>
+
+      <h3 style="margin-top:28px">Shows <span id="contribShowCount" class="muted"></span></h3>
+      <div id="contribShows"><p class="muted">Loading…</p></div>
+    </div>
+
     <div id="ytcTab" class="hidden">
       <div class="card">
         <div class="card-header">
@@ -2758,6 +2773,7 @@ function switchTab(tab, btn) {
   if (tab === 'feedback') loadFeedback();
   if (tab === 'messages') { loadConversationsInbox(); loadMessages(); }
   if (tab === 'apk') loadApks();
+  if (tab === 'contributors') loadContributors();
   if (tab === 'sponsors') loadSponsors();
   if (tab === 'pushtracker') { loadPushHealth(); loadPushErrors(); loadPushTokens(); loadNotificationHistory(); }
   if (tab === 'vitals') loadVitals();
@@ -3450,6 +3466,137 @@ function formatDate(dateStr) {
 }
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+// ── Contributor program ────────────────────────────────────────────────
+// Every interpolation below goes through esc(): applications are a PUBLIC
+// write endpoint, so name/title/description are attacker-controlled text.
+async function loadContributors() {
+  await Promise.all([loadContribApps(), loadContribReview(), loadContribShows(), refreshContribBadge()]);
+}
+
+async function refreshContribBadge() {
+  try {
+    const c = await api('/api/admin/contrib/counts');
+    const n = (c.applications?.pending || 0) + (c.pendingReview || 0);
+    const badge = document.getElementById('contribBadge');
+    if (badge) { badge.textContent = n; badge.style.display = n > 0 ? '' : 'none'; }
+  } catch (e) {}
+}
+
+async function loadContribApps() {
+  const box = document.getElementById('contribApps');
+  try {
+    const j = await api('/api/admin/contrib/applications?status=pending');
+    document.getElementById('contribAppCount').textContent = j.applications.length ? '(' + j.applications.length + ')' : '';
+    if (!j.applications.length) { box.innerHTML = '<p class="muted">No applications waiting.</p>'; return; }
+    box.innerHTML = j.applications.map(a => `
+      <div class="card" style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <div>
+            <strong>${esc(a.proposedTitle)}</strong>
+            <div class="muted">${esc(a.name)} · ${esc(a.email)}${a.organization ? ' · ' + esc(a.organization) : ''}</div>
+          </div>
+          <div class="muted">${new Date(a.createdAt).toLocaleDateString()}</div>
+        </div>
+        <p style="margin:10px 0 0;white-space:pre-wrap">${esc(a.proposedDescription)}</p>
+        ${a.bio ? `<p class="muted" style="margin:8px 0 0;white-space:pre-wrap">${esc(a.bio)}</p>` : ''}
+        ${a.sampleAudioPlayUrl ? `<audio controls preload="none" src="${esc(a.sampleAudioPlayUrl)}" style="width:100%;margin-top:10px"></audio>` : '<p class="muted" style="margin-top:8px">No sample provided.</p>'}
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn" onclick="approveContrib('${a.id}')">Approve &amp; create show</button>
+          <button class="btn btn-secondary" onclick="rejectContrib('${a.id}')">Reject</button>
+        </div>
+      </div>`).join('');
+  } catch (e) {
+    box.innerHTML = '<p class="muted">' + esc(e.message) + '</p>';
+  }
+}
+
+async function approveContrib(id) {
+  if (!confirm('Approve this application and create the show?')) return;
+  try {
+    const r = await api('/api/admin/contrib/applications/' + id + '/approve', { method: 'POST', body: JSON.stringify({}) });
+    // The setup link is shown once. There is no outbound mail to contributors
+    // yet, so it has to be copied and sent by hand.
+    prompt('Send this one-time setup link to the rav (expires in 7 days):', r.setupUrl);
+    await loadContributors();
+  } catch (e) { alert(e.message); }
+}
+
+async function rejectContrib(id) {
+  const notes = prompt('Reason for rejecting (optional, internal only):');
+  if (notes === null) return;
+  try {
+    await api('/api/admin/contrib/applications/' + id + '/reject', { method: 'POST', body: JSON.stringify({ notes }) });
+    await loadContributors();
+  } catch (e) { alert(e.message); }
+}
+
+async function loadContribReview() {
+  const box = document.getElementById('contribReview');
+  try {
+    const j = await api('/api/admin/contrib/review-queue');
+    document.getElementById('contribReviewCount').textContent = j.episodes.length ? '(' + j.episodes.length + ')' : '';
+    if (!j.episodes.length) { box.innerHTML = '<p class="muted">Nothing waiting for review.</p>'; return; }
+    box.innerHTML = j.episodes.map(e => `
+      <div class="card" style="margin-bottom:10px">
+        <strong>${esc(e.title)}</strong>
+        <div class="muted">${e.durationSeconds ? Math.round(e.durationSeconds / 60) + ' min · ' : ''}${e.pubDate ? new Date(e.pubDate).toLocaleDateString() : ''}</div>
+        ${e.description ? `<p class="muted" style="margin:8px 0 0">${esc(String(e.description).replace(/<[^>]+>/g, ' ').slice(0, 300))}</p>` : ''}
+        ${e.audioUrl ? `<audio controls preload="none" src="${esc(e.audioUrl)}" style="width:100%;margin-top:10px"></audio>` : ''}
+        <div style="margin-top:12px;display:flex;gap:8px">
+          <button class="btn" onclick="reviewContribEp('${e.id}','approve')">Approve &amp; publish</button>
+          <button class="btn btn-secondary" onclick="reviewContribEp('${e.id}','reject')">Reject</button>
+        </div>
+      </div>`).join('');
+  } catch (e) {
+    box.innerHTML = '<p class="muted">' + esc(e.message) + '</p>';
+  }
+}
+
+async function reviewContribEp(id, decision) {
+  const note = decision === 'reject' ? prompt('Reason (shown to the contributor):') : null;
+  if (decision === 'reject' && note === null) return;
+  try {
+    await api('/api/admin/contrib/episodes/' + id + '/review', { method: 'POST', body: JSON.stringify({ decision, note }) });
+    await loadContributors();
+  } catch (e) { alert(e.message); }
+}
+
+async function loadContribShows() {
+  const box = document.getElementById('contribShows');
+  try {
+    const j = await api('/api/admin/contrib/shows');
+    document.getElementById('contribShowCount').textContent = j.shows.length ? '(' + j.shows.length + ')' : '';
+    if (!j.shows.length) { box.innerHTML = '<p class="muted">No shows yet.</p>'; return; }
+    box.innerHTML = j.shows.map(s => `
+      <div class="card" style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center">
+          <div>
+            <strong>${esc(s.title)}</strong>
+            <div class="muted">${esc(s.author)} · ${esc(s.slug)}</div>
+            <div class="muted" style="font-size:12px;margin-top:4px">${esc(s.feedUrl)}</div>
+          </div>
+          <span class="status-badge ${s.status === 'live' ? 'status-active' : 'status-inactive'}">${esc(s.status)}</span>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+          ${s.status !== 'live' ? `<button class="btn" onclick="setContribShowStatus('${s.id}','live')">Take live</button>` : ''}
+          ${s.status === 'live' ? `<button class="btn btn-secondary" onclick="setContribShowStatus('${s.id}','suspended')">Suspend</button>` : ''}
+          ${s.status === 'suspended' ? `<button class="btn btn-secondary" onclick="setContribShowStatus('${s.id}','draft')">Back to draft</button>` : ''}
+          <span class="muted" style="align-self:center">Review required: ${s.reviewRequired ? 'yes' : 'no'}</span>
+        </div>
+      </div>`).join('');
+  } catch (e) {
+    box.innerHTML = '<p class="muted">' + esc(e.message) + '</p>';
+  }
+}
+
+async function setContribShowStatus(id, status) {
+  if (status === 'suspended' && !confirm('Suspend this show? It will be removed from the app catalog and its feed will stop serving.')) return;
+  try {
+    await api('/api/admin/contrib/shows/' + id + '/status', { method: 'POST', body: JSON.stringify({ status }) });
+    await loadContributors();
+  } catch (e) { alert(e.message); }
+}
 // Escape for use inside JS string literals in onclick attributes
 function escJs(s) { return (s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029').replace(/</g, '\\x3c'); }
 
