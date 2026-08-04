@@ -177,7 +177,9 @@ async function main() {
     const up = await fetch(signed.url, {
       method: "PUT",
       headers: { "Content-Type": "audio/mpeg", Origin: ORIGIN },
-      body: upBody,
+      // Buffer -> Uint8Array: Node's Buffer isn't assignable to BodyInit under
+      // the DOM fetch types, though it works fine at runtime.
+      body: new Uint8Array(upBody),
     });
     const upOk = check("presigned PUT upload", up.ok, `http ${up.status}`);
     if (upOk) {

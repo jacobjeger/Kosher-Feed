@@ -21,6 +21,7 @@ import { refreshYouTubeFeedEpisodes, extractYouTubePlaylistId } from "./youtube"
 import { startYouTubeMediaWorker } from "./youtube-worker";
 import { bootstrapSearch } from "./search/bootstrap";
 import { bootstrapContributorSchema } from "./contributor/bootstrap";
+import { registerContributorFeedRoute } from "./contributor/feed-route";
 import { startPopularityRefresh } from "./search/popularity";
 import { autoCategorizeFeeds } from "./auto-categorize";
 import { extractKhRavId, extractTatSpeakerId, extractTorahDownloadsSpeakerId } from "./feed-utils";
@@ -662,13 +663,22 @@ function configureExpoAndLanding(app: express.Application) {
   });
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
 
+  // Contributor podcast feeds: GET /feed/{slug}.xml
+  // Registered BEFORE the SEO catch-alls below — those match any single
+  // top-level segment and would otherwise swallow /feed/*.
+  registerContributorFeedRoute(app);
+
   // ── SEO: rich top-level speaker + episode pages ──────────────────────
   //   /{slug}                       → speaker page
   //   /{slug}/{title-slug}-{uuid}   → episode page
   // Registered after static-file serving + all explicit routes, before the
   // SPA fallback: real files win, reserved paths + unknown slugs fall
   // through (next()). The ".includes('.')" guard rejects asset requests.
-  const SEO_RESERVED = new Set(["app", "api", "webapp", "admin", "privacy", "terms", "support", "category", "speaker", "speakers", "sitemap.xml", "robots.txt", "favicon.ico", "favicon.png", "apple-touch-icon.png", "apple-touch-icon-precomposed.png", "assets", "_expo", "node_modules", "share", "manifest", "podcast", "maggid-shiur", "player", "queue", "storage", "stats", "debug-logs", "legal", "onboarding", "settings", "(tabs)"]);
+  // "contribute", "feed" and "creator" MUST stay in this set. It guards BOTH
+  // catch-alls below (GET /:speakerSlug and GET /:slug/:episodeSlug); without
+  // them /feed/rav-x.xml is swallowed by the speaker route and 404s, which
+  // looks exactly like "the route was never wired".
+  const SEO_RESERVED = new Set(["app", "api", "webapp", "admin", "privacy", "terms", "support", "category", "speaker", "speakers", "sitemap.xml", "robots.txt", "favicon.ico", "favicon.png", "apple-touch-icon.png", "apple-touch-icon-precomposed.png", "assets", "_expo", "node_modules", "share", "manifest", "podcast", "maggid-shiur", "player", "queue", "storage", "stats", "debug-logs", "legal", "onboarding", "settings", "(tabs)", "contribute", "feed", "creator"]);
   const UUID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
   const seoBaseUrl = (req: Request) => {
     const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
