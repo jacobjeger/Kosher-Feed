@@ -144,3 +144,42 @@ validation gate before submission.
 
 - **Cloudflare cache rule** for `audio.shiurpod.com` (Cache Everything, 30d edge TTL) — my token has `zone (read)` only
 - **Email routing** catch-all `show-*@shiurpod.com` → operator inbox. Apple/Spotify send the directory claim code there; without it, submission cannot complete.
+
+---
+
+## Status — all phases complete
+
+| Phase | State | Proof |
+|---|---|---|
+| 1. Schema | ✅ live | 7 tables in production |
+| 2. R2 | ✅ live | `verify-r2.ts` — 22/22 |
+| 3. Feed generation | ✅ live | `test-contributor-feed.ts` — 12/12 |
+| Step 0. Feed URL | ✅ live | `/feed/{slug}.xml` serving, 304 on If-None-Match |
+| 4. Upload + transcode | ✅ live | `verify-contributor-media.ts` — 17/17 |
+| 5. Three surfaces | ✅ live | `/contribute`, `/creator`, admin tab all 200 |
+| 6. `cp://` catalog | ✅ live | `verify-contributor-e2e.ts` — 30/30 |
+
+### What the audit found that the plan did not predict
+
+1. **Three additional `parseFeed` gates**, not one. `routes.ts:286`, `:760` and
+   `:853` each gated a real fetch and would have pulled `cp://show/{id}` over
+   HTTP as RSS. Fixed by replacing the inlined scheme lists with
+   `isCustomSchemeUrl()` from the new `server/feed-schemes.ts`.
+2. **`episodes.duration` is TEXT `"HH:MM:SS"`, not seconds.** Verified against
+   production rows. Writing an integer would have shown a wrong duration on
+   every contributor episode in the app.
+3. **A double-wrapped ETag** shipped in the first feed-route commit
+   (`W/"W/"..."" `). No client could match it, so every conditional GET fell
+   through to a full 200. Caught by testing the header rather than the status
+   code.
+
+### Still outstanding (operator only)
+
+- **Cloudflare cache rule** for `audio.shiurpod.com` — Cache Everything, 30-day
+  edge TTL. Performance only.
+- **Email routing** catch-all `show-*@shiurpod.com` → operator inbox. Apple and
+  Spotify send the directory claim code there; submission cannot complete
+  without it.
+- **No outbound mail to contributors.** Approval returns a one-time setup link
+  that the admin must send by hand. Wiring Resend (already a dependency) would
+  close this.
