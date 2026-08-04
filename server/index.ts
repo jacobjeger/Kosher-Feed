@@ -22,6 +22,7 @@ import { startYouTubeMediaWorker } from "./youtube-worker";
 import { bootstrapSearch } from "./search/bootstrap";
 import { bootstrapContributorSchema } from "./contributor/bootstrap";
 import { registerContributorFeedRoute } from "./contributor/feed-route";
+import { startContributorMediaWorker } from "./contributor-worker";
 import { startPopularityRefresh } from "./search/popularity";
 import { autoCategorizeFeeds } from "./auto-categorize";
 import { extractKhRavId, extractTatSpeakerId, extractTorahDownloadsSpeakerId } from "./feed-utils";
@@ -1461,6 +1462,9 @@ function startAutoRefresh() {
   startKeepAlive();
   // Turns approved YouTube videos into stored MP3s, then into episodes.
   startYouTubeMediaWorker();
+  // Turns contributor uploads into normalised MP3s on R2, then rebuilds the
+  // affected podcast feed. Also promotes scheduled episodes when due.
+  startContributorMediaWorker();
   // Keeps feeds.popularity / episodes.popularity current so search ranking
   // never has to join an aggregate at query time.
   startPopularityRefresh();

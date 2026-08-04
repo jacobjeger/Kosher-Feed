@@ -105,8 +105,12 @@ export function registerContributorFeedRoute(app: Application): void {
         built = rendered.lastBuildDate;
       }
 
-      const quoted = `"${etag}"`;
-      res.setHeader("ETag", quoted);
+      // renderShowFeed already returns a fully-formed weak validator
+      // (W/"<hash>-<len>"). Wrapping it in quotes again produced
+      // W/"W/"..."", which is not a valid entity-tag — clients could never
+      // match it, so every conditional GET fell through to a full 200.
+      const tag = etag.startsWith("W/") || etag.startsWith('"') ? etag : `"${etag}"`;
+      res.setHeader("ETag", tag);
       res.setHeader("Content-Type", "application/rss+xml; charset=utf-8");
       // Apple and Spotify poll aggressively; an hour of edge caching is well
       // inside their tolerance and keeps the DB out of the hot path.
@@ -116,9 +120,15 @@ export function registerContributorFeedRoute(app: Application): void {
       // Conditional GET. Every serious podcast client sends If-None-Match, and
       // honouring it is the difference between serving a 300 KB body and 0 bytes
       // on the overwhelming majority of polls.
+      // A cache may echo the tag with or without the weak prefix, and may send
+      // several comma-separated candidates.
       const inm = req.header("if-none-match");
-      if (inm && (inm === quoted || inm === etag || inm.split(/,\s*/).includes(quoted))) {
-        return res.status(304).end();
+      if (inm) {
+        const bare = (t: string) => t.replace(/^W\//, "").trim();
+        const candidates = inm.split(/,\s*/).map(bare);
+        if (inm === "*" || candidates.includes(bare(tag))) {
+          return res.status(304).end();
+        }
       }
 
       res.status(200).send(xml);
