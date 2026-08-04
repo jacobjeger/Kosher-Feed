@@ -11,6 +11,7 @@ import {
 import { processEpisodeUpload, mediaToolingStatus } from "./contributor-media";
 import { buildAndCacheFeed } from "./contributor/feed-route";
 import { reconcileShowCatalog } from "./contributor/catalog";
+import { canonicalBaseUrl } from "./public-url";
 import type { ContributorEpisode } from "@shared/schema";
 
 // Drains the contributor upload queue: raw file -> validated MP3 -> feed.
@@ -30,8 +31,11 @@ const STALL_MS = 30 * 60 * 1000;
 let running = false;
 let timer: ReturnType<typeof setInterval> | null = null;
 
+// EXPO_PUBLIC_API_URL is NOT usable here — on Railway it is set to the vendor
+// host (kosher-feed-production.up.railway.app), and this value gets written
+// into feeds that subscribers keep for years.
 function publicBase(): string {
-  return (process.env.PUBLIC_BASE_URL || process.env.EXPO_PUBLIC_API_URL || "https://shiurpod.com").replace(/\/$/, "");
+  return canonicalBaseUrl();
 }
 
 async function processOne(ep: ContributorEpisode): Promise<void> {

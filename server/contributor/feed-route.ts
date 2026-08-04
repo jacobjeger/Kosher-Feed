@@ -4,6 +4,7 @@ import { db } from "../db";
 import { contributorShows, contributorEpisodes } from "@shared/schema";
 import type { ContributorShow } from "@shared/schema";
 import { renderShowFeed } from "../contributor-feed";
+import { canonicalBaseUrl } from "../public-url";
 
 // The public podcast feed: GET /feed/{slug}.xml
 //
@@ -64,13 +65,15 @@ export async function buildAndCacheFeed(
   return rendered;
 }
 
-/** Public base URL, honouring the proxy headers Railway sets. */
-function baseUrlOf(req: Request): string {
-  const envBase = process.env.PUBLIC_BASE_URL || process.env.EXPO_PUBLIC_API_URL;
-  if (envBase) return envBase.replace(/\/$/, "");
-  const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
-  const host = req.header("x-forwarded-host") || req.get("host");
-  return `${protocol}://${host}`;
+/**
+ * Canonical origin — deliberately NOT derived from the request.
+ *
+ * The rendered feed is cached in the database, so resolving this from the Host
+ * header would let a single fetch through the Railway domain poison the XML
+ * every other subscriber is then served.
+ */
+function baseUrlOf(_req: Request): string {
+  return canonicalBaseUrl();
 }
 
 export function registerContributorFeedRoute(app: Application): void {

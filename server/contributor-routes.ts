@@ -27,6 +27,7 @@ import { nudgeContributorMediaWorker } from "./contributor-worker";
 import { validateFeed } from "./contributor-feed";
 import { MAX_UPLOAD_BYTES } from "./contributor-media";
 import { reconcileShowCatalog } from "./contributor/catalog";
+import { canonicalBaseUrl } from "./public-url";
 
 // HTTP surface for the contributor program: public application, creator
 // dashboard, admin moderation.
@@ -64,11 +65,10 @@ async function uniqueSlug(base: string): Promise<string> {
   return `${slug}-${Date.now().toString(36)}`;
 }
 
-function baseUrlOf(req: Request): string {
-  const env = process.env.PUBLIC_BASE_URL || process.env.EXPO_PUBLIC_API_URL;
-  if (env) return env.replace(/\/$/, "");
-  const protocol = req.header("x-forwarded-proto") || req.protocol || "https";
-  return `${protocol}://${req.header("x-forwarded-host") || req.get("host")}`;
+// Canonical, never request-derived: these URLs are shown to creators as the
+// feed to submit to Apple and Spotify, and are written into cached feed XML.
+function baseUrlOf(_req: Request): string {
+  return canonicalBaseUrl();
 }
 
 export function registerContributorRoutes(app: Express, adminAuth: any): void {
