@@ -752,6 +752,10 @@
             <span id="apkProgressText" style="font-size:11px;color:#94a3b8;margin-top:4px;display:block;"></span>
           </div>
         </div>
+        <div style="background:#0f172a;border-radius:10px;padding:16px;margin-bottom:14px;">
+          <div style="font-weight:600;font-size:14px;color:#f8fafc;margin-bottom:12px;">Downloads</div>
+          <div id="apkStats"><span style="font-size:12px;color:#64748b;">Loading…</span></div>
+        </div>
         <div id="apkList"></div>
       </div>
     </div>
@@ -4443,7 +4447,47 @@ async function uploadApk() {
   }
 }
 
+// Download analytics. Counts come from a running total plus a daily rollup —
+// there is deliberately no row-per-download table.
+async function loadApkStats() {
+  const box = document.getElementById('apkStats');
+  if (!box) return;
+  try {
+    const j = await api('/api/admin/apk/stats');
+    const total = (j.totals || []).reduce((n, t) => n + (t.downloadCount || 0), 0);
+    const active = (j.totals || []).find(t => t.isActive);
+    const days = j.daily || [];
+    const last7 = days.slice(0, 7).reduce((n, d) => n + d.count, 0);
+    const last30 = days.reduce((n, d) => n + d.count, 0);
+    const max = Math.max(1, ...days.map(d => d.count));
+
+    const bars = days.slice(0, 30).reverse().map(d =>
+      `<div title="${esc(d.day)}: ${d.count}" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:60px;">
+         <div style="background:#3b82f6;border-radius:2px 2px 0 0;height:${Math.round((d.count / max) * 100)}%;min-height:2px;"></div>
+       </div>`).join('');
+
+    box.innerHTML = `
+      <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:14px;">
+        <div><div style="font-size:22px;font-weight:700;color:#f8fafc;">${total}</div>
+             <div style="font-size:12px;color:#94a3b8;">total downloads</div></div>
+        <div><div style="font-size:22px;font-weight:700;color:#f8fafc;">${last7}</div>
+             <div style="font-size:12px;color:#94a3b8;">last 7 days</div></div>
+        <div><div style="font-size:22px;font-weight:700;color:#f8fafc;">${last30}</div>
+             <div style="font-size:12px;color:#94a3b8;">last 30 days</div></div>
+        <div><div style="font-size:22px;font-weight:700;color:#f8fafc;">${active ? (active.downloadCount || 0) : 0}</div>
+             <div style="font-size:12px;color:#94a3b8;">current build${active && active.version ? ' (' + esc(active.version) + ')' : ''}</div></div>
+      </div>
+      ${days.length
+        ? `<div style="display:flex;gap:2px;align-items:flex-end;">${bars}</div>
+           <div style="font-size:11px;color:#64748b;margin-top:4px;">last ${Math.min(days.length,30)} day(s) with downloads</div>`
+        : '<p style="font-size:12px;color:#64748b;margin:0;">No downloads recorded yet.</p>'}`;
+  } catch (e) {
+    box.innerHTML = '<p style="font-size:12px;color:#64748b;margin:0;">Stats unavailable: ' + esc(e.message) + '</p>';
+  }
+}
+
 async function loadApks() {
+  loadApkStats();
   try {
     const apks = await api('/api/admin/apk');
     const list = document.getElementById('apkList');
