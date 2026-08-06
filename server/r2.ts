@@ -117,16 +117,37 @@ export async function presignUpload(
   };
 }
 
-/** Server-side write. Used for transcoded audio and validated artwork. */
+export interface PutOptions {
+  /** Sets Content-Disposition, so a browser downloads with a sensible filename. */
+  downloadFilename?: string;
+  /** Cache-Control on the object. Immutable content should say so. */
+  cacheControl?: string;
+}
+
+/** Server-side write. Used for transcoded audio, artwork and APK builds. */
 export async function putObject(
   key: string,
   body: Buffer | Uint8Array,
   contentType: string,
+  opts: PutOptions = {},
 ): Promise<void> {
   // Content-Type matters beyond correctness here: podcast clients and Apple's
-  // feed validator both check it on the enclosure.
+  // feed validator both check it on the enclosure, and Android refuses to
+  // install an APK served as octet-stream from some browsers.
   await client().send(
-    new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: body, ContentType: contentType }),
+    new PutObjectCommand({
+      Bucket: BUCKET,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+      // Stored ON THE OBJECT rather than set per response: downloads are served
+      // straight from the R2 edge, so our server is not in the path to add
+      // headers later.
+      ContentDisposition: opts.downloadFilename
+        ? `attachment; filename="${opts.downloadFilename.replace(/["\\]/g, "")}"`
+        : undefined,
+      CacheControl: opts.cacheControl,
+    }),
   );
 }
 

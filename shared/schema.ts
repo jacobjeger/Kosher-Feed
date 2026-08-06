@@ -226,10 +226,32 @@ export const apkUploads = pgTable("apk_uploads", {
   originalName: text("original_name").notNull(),
   version: text("version"),
   fileSize: integer("file_size").notNull(),
+  // LEGACY: base64 of the whole APK. A 51MB build became ~67MB of base64 in
+  // Postgres AND was loaded entirely into app memory on every download. New
+  // uploads go to R2 (r2Key) and leave this null; it is kept only so an APK
+  // uploaded before the migration still serves.
   fileData: text("file_data"),
+  // R2 object key. When set, downloads redirect to the CDN and the bytes never
+  // pass through our server.
+  r2Key: text("r2_key"),
+  // Running total. A counter rather than a row per download on purpose — an
+  // unbounded event table is exactly what made app_metrics 108MB.
+  downloadCount: integer("download_count").default(0).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// Daily rollup so download trends are visible without storing one row per
+// download. Bounded at ~365 rows per APK per year.
+export const apkDownloadStats = pgTable("apk_download_stats", {
+  day: text("day").notNull(),                                // YYYY-MM-DD (UTC)
+  apkId: varchar("apk_id").notNull(),
+  count: integer("count").default(0).notNull(),
+}, (table) => [
+  uniqueIndex("apk_download_stats_day_apk_idx").on(table.day, table.apkId),
+]);
+
+export type ApkDownloadStat = typeof apkDownloadStats.$inferSelect;
 
 export type ApkUpload = typeof apkUploads.$inferSelect;
 

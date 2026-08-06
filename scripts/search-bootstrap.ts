@@ -158,12 +158,13 @@ async function stepIndexes(c: pg.Client) {
       `CREATE INDEX CONCURRENTLY IF NOT EXISTS episodes_search_gin
          ON episodes USING gin (feed_id, search_tsv)`,
     ],
-    [
-      "episodes_title_fold_prefix",
-      // text_pattern_ops so LIKE 'x%' is index-usable for the prefix boost.
-      `CREATE INDEX CONCURRENTLY IF NOT EXISTS episodes_title_fold_prefix
-         ON episodes (title_fold text_pattern_ops)`,
-    ],
+    // episodes_title_fold_prefix was here. The comment claimed text_pattern_ops
+    // made `LIKE 'x%'` index-usable "for the prefix boost" — that reasoning was
+    // wrong. The prefix boost is a CASE in the SELECT list of the ranking
+    // expression, evaluated per row over rows already chosen by the GIN index.
+    // There is no lookup for a btree to satisfy, and production confirmed it:
+    // 86 MB on 1.65M rows, scanned zero times while episodes_search_gin served
+    // every query.
     [
       "feeds_search_gin",
       `CREATE INDEX CONCURRENTLY IF NOT EXISTS feeds_search_gin

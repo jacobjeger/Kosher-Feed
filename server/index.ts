@@ -138,6 +138,10 @@ async function ensureColumns() {
     { column: "torahdownloads_shiur_id", type: "INTEGER", table: "episodes" },
     { column: "show_in_browse", type: "BOOLEAN DEFAULT true NOT NULL" },
     { column: "auto_assigned", type: "BOOLEAN DEFAULT false NOT NULL", table: "feed_categories" },
+    // APKs moved from base64-in-Postgres to R2; downloads are counted rather
+    // than logged per event.
+    { column: "r2_key", type: "TEXT", table: "apk_uploads" },
+    { column: "download_count", type: "INTEGER DEFAULT 0 NOT NULL", table: "apk_uploads" },
   ];
   for (const col of columnsToAdd) {
     const table = (col as any).table || "feeds";
@@ -149,6 +153,22 @@ async function ensureColumns() {
         console.error(`Migration: failed to add ${col.column} to ${table}:`, e.message);
       }
     }
+  }
+
+  // Daily download rollup. Created here rather than left to drizzle-kit push,
+  // which has dropped objects it did not know about before.
+  try {
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS apk_download_stats (
+        day     TEXT NOT NULL,
+        apk_id  VARCHAR NOT NULL,
+        count   INTEGER DEFAULT 0 NOT NULL
+      )`));
+    await db.execute(sql.raw(`
+      CREATE UNIQUE INDEX IF NOT EXISTS apk_download_stats_day_apk_idx
+        ON apk_download_stats (day, apk_id)`));
+  } catch (e: any) {
+    console.error("Migration: apk_download_stats failed:", e.message);
   }
 }
 

@@ -2899,7 +2899,7 @@ export async function changeAdminPassword(username: string, oldPassword: string,
   return true;
 }
 
-export async function createApkUpload(data: { filename: string; originalName: string; version?: string; fileSize: number; fileData?: string }): Promise<ApkUpload> {
+export async function createApkUpload(data: { filename: string; originalName: string; version?: string; fileSize: number; fileData?: string | null; r2Key?: string | null }): Promise<ApkUpload> {
   await db.update(apkUploads).set({ isActive: false }).where(eq(apkUploads.isActive, true));
   const [upload] = await db.insert(apkUploads).values(data).returning();
   return upload;
@@ -2919,7 +2919,51 @@ export async function getAllApkUploads() {
     fileSize: apkUploads.fileSize,
     isActive: apkUploads.isActive,
     createdAt: apkUploads.createdAt,
+    // Never select file_data here — it is up to ~67MB of base64 per row and
+    // this powers a list view.
+    r2Key: apkUploads.r2Key,
+    downloadCount: apkUploads.downloadCount,
   }).from(apkUploads).orderBy(desc(apkUploads.createdAt));
+}
+
+/**
+ * Count one download: a running total plus a daily rollup.
+ *
+ * Deliberately NOT a row per download. app_metrics reached 108MB doing exactly
+ * that, and download counts only ever need to answer "how many" and "when".
+ */
+export async function recordApkDownload(apkId: string): Promise<void> {
+  const day = new Date().toISOString().slice(0, 10);
+  await db.execute(sql`
+    UPDATE apk_uploads SET download_count = download_count + 1 WHERE id = ${apkId}
+  `);
+  await db.execute(sql`
+    INSERT INTO apk_download_stats (day, apk_id, count) VALUES (${day}, ${apkId}, 1)
+    ON CONFLICT (day, apk_id) DO UPDATE SET count = apk_download_stats.count + 1
+  `);
+}
+
+/** Download totals plus the last 30 days, for the admin APK tab. */
+export async function getApkDownloadStats(): Promise<{
+  totals: { id: string; version: string | null; downloadCount: number; isActive: boolean }[];
+  daily: { day: string; count: number }[];
+}> {
+  const totals: any = await db.execute(sql`
+    SELECT id, version, download_count, is_active FROM apk_uploads ORDER BY created_at DESC
+  `);
+  const daily: any = await db.execute(sql`
+    SELECT day, sum(count)::int AS count FROM apk_download_stats
+     WHERE day >= to_char(now() - interval '30 days', 'YYYY-MM-DD')
+     GROUP BY day ORDER BY day DESC
+  `);
+  return {
+    totals: (totals.rows || []).map((r: any) => ({
+      id: r.id, version: r.version,
+      downloadCount: Number(r.download_count || 0),
+      isActive: !!r.is_active,
+    })),
+    daily: (daily.rows || []).map((r: any) => ({ day: r.day, count: Number(r.count || 0) })),
+  };
 }
 
 export async function setActiveApk(id: string): Promise<void> {

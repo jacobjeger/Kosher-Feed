@@ -36,6 +36,7 @@ import { trackErrorForAlert, sendFeedbackNotification } from "./error-alerts";
 import { registerV1Routes } from "./routes-v1";
 import { registerContributorRoutes } from "./contributor-routes";
 import { isCustomSchemeUrl, contributorFeedUrl, CONTRIBUTOR_SCHEME } from "./feed-schemes";
+import { putObject, headObject, publicUrl, isR2Configured } from "./r2";
 import * as iss from "./issues-storage";
 import { imageResizeHandler } from "./image-resize";
 import multer from "multer";
@@ -3922,11 +3923,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Public: download the active APK
-  app.get("/api/apk/download", async (_req: Request, res: Response) => {
+  //
+  // Preferred path is a 302 to R2. The redirect still reaches us, so the
+  // download is counted, but the 51MB body is served from the CDN edge and
+  // never enters this process's memory — the old base64 path allocated the
+  // entire APK per concurrent download.
+  app.get("/api/apk/download", async (req: Request, res: Response) => {
     try {
       const apk = await storage.getActiveApk();
       if (!apk) return res.status(404).json({ error: "No APK available" });
 
+      // Count before serving, and never let a stats failure block a download.
+      void storage.recordApkDownload(apk.id).catch(() => {});
+
+      if (apk.r2Key) {
+        // Content-Type and Content-Disposition are stored on the object, so the
+        // filename and install behaviour survive the redirect.
+        return res.redirect(302, publicUrl(apk.r2Key));
+      }
+
+      // LEGACY fallbacks, for an APK uploaded before the R2 migration.
       if (apk.fileData) {
         const buffer = Buffer.from(apk.fileData, "base64");
         res.setHeader("Content-Disposition", `attachment; filename="${apk.originalName}"`);
@@ -3954,7 +3970,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const filePath = path.join(uploadDir, file.filename);
       const fileBuffer = fs.readFileSync(filePath);
-      const fileData = fileBuffer.toString("base64");
+
+      // Straight to R2. Storing base64 in Postgres cost ~1.3x the binary size
+      // in the database and loaded the whole build into memory on every
+      // download; R2 does neither.
+      let r2Key: string | null = null;
+      let fileData: string | null = null;
+      if (isR2Configured()) {
+        const safeName = String(file.originalname || "shiurpod.apk").replace(/[^A-Za-z0-9._-]/g, "-");
+        r2Key = `apk/${Date.now()}-${safeName}`;
+        await putObject(r2Key, fileBuffer, "application/vnd.android.package-archive", {
+          downloadFilename: safeName,
+          // A given build never changes, so it can be cached hard.
+          cacheControl: "public, max-age=31536000, immutable",
+        });
+        const head = await headObject(r2Key);
+        if (!head.exists) throw new Error("APK upload to R2 could not be verified");
+      } else {
+        // No R2 configured — fall back to the legacy column rather than losing
+        // the upload entirely.
+        fileData = fileBuffer.toString("base64");
+      }
 
       const apk = await storage.createApkUpload({
         filename: file.filename,
@@ -3962,17 +3998,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         version,
         fileSize: file.size,
         fileData,
-      });
+        r2Key,
+      } as any);
 
       try { fs.unlinkSync(filePath); } catch (_) {}
 
-      res.json({ ok: true, apk });
+      res.json({ ok: true, apk: { ...apk, fileData: undefined } });
     } catch (e: any) {
       publicError(res, e);
     }
   });
 
   // Admin: list all APKs
+  app.get("/api/admin/apk/stats", adminAuth as any, async (_req: Request, res: Response) => {
+    try {
+      res.json(await storage.getApkDownloadStats());
+    } catch (e: any) { publicError(res, e); }
+  });
+
   app.get("/api/admin/apk", adminAuth as any, async (_req: Request, res: Response) => {
     try {
       const apks = await storage.getAllApkUploads();

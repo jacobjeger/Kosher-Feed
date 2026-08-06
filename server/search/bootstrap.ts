@@ -30,8 +30,16 @@ import { seedLexicon } from "./seed-lexicon";
 const REQUIRED_INDEXES: Record<string, string> = {
   episodes_search_gin: `CREATE INDEX CONCURRENTLY IF NOT EXISTS episodes_search_gin
                           ON episodes USING gin (feed_id, search_tsv)`,
-  episodes_title_fold_prefix: `CREATE INDEX CONCURRENTLY IF NOT EXISTS episodes_title_fold_prefix
-                          ON episodes (title_fold text_pattern_ops)`,
+  // episodes_title_fold_prefix was here and has been deliberately removed.
+  //
+  // It cost 86 MB on 1.65M rows and was scanned ZERO times in production. The
+  // only `title_fold LIKE 'x%'` in the codebase is a CASE inside the SELECT
+  // list of the ranking expression (server/search/index.ts:135) — it scores
+  // rows that have already been selected, so there is no lookup for an index to
+  // satisfy and Postgres can never use one there.
+  //
+  // If a WHERE clause ever does a genuine prefix match on title_fold, add it
+  // back. Do not add it back for the ranking CASE.
   feeds_search_gin: `CREATE INDEX CONCURRENTLY IF NOT EXISTS feeds_search_gin
                           ON feeds USING gin (search_tsv)`,
   feeds_name_trgm: `CREATE INDEX CONCURRENTLY IF NOT EXISTS feeds_name_trgm
