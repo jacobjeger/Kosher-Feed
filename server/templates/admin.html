@@ -6183,7 +6183,7 @@ async function loadDeviceAnalytics() {
     const data = await api('/api/admin/analytics/devices');
     const cards = document.getElementById('deviceAnalytics');
     cards.innerHTML = `
-      <div class="stat-card"><div class="stat-value">${data.totalDevices}</div><div class="stat-label">Total Devices</div></div>
+      <div class="stat-card"><div class="stat-value">${data.totalDevices}</div><div class="stat-label">Total Devices</div><div class="stat-sub">app installs + web visitors who came back</div></div>
       <div class="stat-card"><div class="stat-value">${data.activeDevices7d}</div><div class="stat-label">Active (7d)</div></div>
       <div class="stat-card"><div class="stat-value">${data.activeDevices30d}</div><div class="stat-label">Active (30d)</div></div>
       <div class="stat-card"><div class="stat-value">${data.newUsersThisWeek}</div><div class="stat-label">New This Week</div></div>

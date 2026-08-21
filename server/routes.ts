@@ -23,6 +23,7 @@ import {
 import { resolveAudioStream, invalidateAudioCache, audioCacheStats, YT_VIDEO_ID_RE } from "./youtube-audio";
 import { mediaPathFor, mediaUsage, mediaToolingStatus, deleteYouTubeAudio } from "./youtube-media";
 import { nudgeYouTubeMediaWorker } from "./youtube-worker";
+import { getClientIp } from "./client-ip";
 import { evaluateRules, rulesForFeed, describeRule, isValidRulePattern } from "./youtube-rules";
 import {
   search as runSearch,
@@ -2994,18 +2995,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!deviceId) return res.status(400).json({ error: "deviceId required" });
 
       // Resolve IP to country/city
-      const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || null;
-      let country: string | null = null;
-      let city: string | null = null;
+      const clientIp = getClientIp(req);
+      const existing = await storage.getDeviceProfile(deviceId);
+      let country: string | null = existing?.country ?? null;
+      let city: string | null = existing?.city ?? null;
 
-      // Use ip-api.com free tier for geo lookup (no API key needed, 45 req/min limit)
-      if (clientIp && clientIp !== "127.0.0.1" && clientIp !== "::1") {
+      // Use ip-api.com free tier for geo lookup (no API key needed, 45 req/min
+      // limit). This fires on every app launch, so only pay for it when the
+      // answer can actually change: a device we have never geolocated, or one
+      // whose IP moved. Without that guard a burst of registrations (see the
+      // Aug 2026 web flood — ~380/hour) blows through the free tier and every
+      // real launch during it gets no location at all.
+      const needsGeo = !existing || !country || existing.ipAddress !== clientIp;
+      if (needsGeo && clientIp && clientIp !== "127.0.0.1" && clientIp !== "::1") {
         try {
           const geoRes = await fetch(`http://ip-api.com/json/${clientIp}?fields=country,city`, { signal: AbortSignal.timeout(3000) });
           if (geoRes.ok) {
             const geo = await geoRes.json() as any;
-            country = geo.country || null;
-            city = geo.city || null;
+            country = geo.country || country;
+            city = geo.city || city;
           }
         } catch {}
       }
@@ -3045,7 +3053,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const _pvRateLimit = new Map<string, number>();
   app.post("/api/analytics/pageview", async (req: Request, res: Response) => {
     try {
-      const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
+      const clientIp = getClientIp(req) || "unknown";
       // Rate limit: max 10 page views per IP per minute
       const now = Date.now();
       const lastHit = _pvRateLimit.get(clientIp) || 0;
@@ -3103,7 +3111,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const _ytcUnlockRateLimit = new Map<string, number>();
   app.post("/api/track/ytc-unlock", async (req: Request, res: Response) => {
     try {
-      const clientIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
+      const clientIp = getClientIp(req) || "unknown";
       const now = Date.now();
       const lastHit = _ytcUnlockRateLimit.get(clientIp) || 0;
       // Same device shouldn't unlock more than once per ~10s. Anything

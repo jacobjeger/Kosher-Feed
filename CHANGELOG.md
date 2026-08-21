@@ -1,0 +1,28 @@
+# Changelog
+
+All notable changes to ShiurPod are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/); this project has never been
+git-tagged, so history before this file starts is in `git log` rather than
+reconstructed into version sections here. The app version lives in
+`app.json` (currently 2.0.0).
+
+## [Unreleased]
+
+### Fixed
+
+- Admin analytics no longer counts drive-by web visitors as users. The web
+  build mints a fresh device id per browser and registers it on load, so
+  crawlers and proxy traffic were arriving as "users" — about 1,600 of them
+  on 12–13 Aug 2026 in twelve hours, which is what made the device-model
+  chart read ~1,600 "Unknown". A device now counts once it is an app install
+  (Android/iOS) or a web device that came back at least a day later. Applied
+  to every device- and listen-derived number so the dashboard stays
+  consistent: total devices 2,329 → 681, 30-day actives 1,737 → 231,
+  listens 15,597 → 14,056. The app's trending shelf uses the same rule, so a
+  flood of one-shot visitors can't vote an episode onto it.
+- Visitor IP addresses are read from Cloudflare's `CF-Connecting-IP` header
+  instead of `X-Forwarded-For`. Railway's edge rewrites XFF to the peer it
+  sees, so every request was recorded with a Cloudflare edge address: the
+  geo lookup returned whichever Cloudflare colo the visitor reached rather
+  than their location, and the 200-req/min rate limiter put every visitor
+  behind a colo in a single bucket.

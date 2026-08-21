@@ -32,6 +32,7 @@ import { sendDailyErrorDigest } from "./error-alerts";
 import * as fs from "fs";
 import * as path from "path";
 import pLimit from "p-limit";
+import { getClientIp } from "./client-ip";
 
 const app = express();
 const log = console.log;
@@ -1585,8 +1586,7 @@ function startAutoRefresh() {
   // a client can't bypass the limit by walking through the low 64 bits.
   // Without it, the library logs ERR_ERL_KEY_GEN_IPV6 on every startup and
   // (more importantly) IPv6 clients can effectively bypass the cap.
-  const clientIp = (req: any): string =>
-    (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || "unknown";
+  const clientIp = (req: any): string => getClientIp(req) || "unknown";
   const generalLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 200,

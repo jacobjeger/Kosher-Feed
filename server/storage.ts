@@ -1732,6 +1732,37 @@ export async function recordListen(episodeId: string, deviceId: string): Promise
   }
 }
 
+// Anything counted per-device — the admin dashboard and the app's own
+// trending list — only counts devices that plausibly belong to a real person.
+//
+// The Expo web build mints a fresh device id per browser and POSTs
+// /api/device-profile on load, so every crawler, link preview and proxy-pool
+// visit to shiurpod.com became a "user". On 2026-08-12/13 about 1,576 of them
+// landed in twelve hours — all platform=web, osVersion 0.0.0, one request
+// each, never seen again — and swamped every user number on the dashboard
+// (total devices, DAU/WAU/MAU, new users, the device-model breakdown, which
+// showed them as ~1,600 "Unknown").
+//
+// Installed apps count from their first launch: installing is itself the
+// signal. A web device only counts once it comes back at least a day later,
+// which is the cheapest proxy available for "someone actually uses this" —
+// device_profiles has no visit counter, only createdAt/lastSeenAt. It is a
+// strict rule and it is meant to be: of 1,659 web profiles ever recorded,
+// 11 ever came back.
+//
+// Everything derived from a device — listens included — goes through this,
+// so the dashboard tells one consistent story rather than mixing filtered
+// user counts with unfiltered listen counts, and so a flood of one-shot
+// visitors can't vote an episode onto the trending shelf.
+const COUNTABLE_DEVICES = sql`(
+  SELECT device_id FROM device_profiles
+  WHERE platform IN ('android', 'ios')
+     OR last_seen_at - created_at >= INTERVAL '24 hours'
+)`;
+
+// device_id column of a device-scoped table, restricted to countable devices.
+const countable = (column: any) => sql`${column} IN ${COUNTABLE_DEVICES}`;
+
 export async function getTrendingEpisodes(limit: number = 20): Promise<(Episode & { listenCount: number })[]> {
   const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
   const result = await db
@@ -1756,6 +1787,7 @@ export async function getTrendingEpisodes(limit: number = 20): Promise<(Episode 
     .where(and(
       sql`${episodeListens.listenedAt} > ${fortyEightHoursAgo}`,
       eq(feeds.isActive, true),
+      countable(episodeListens.deviceId),
     ))
     .groupBy(episodes.id)
     .orderBy(desc(count(episodeListens.id)), desc(episodes.publishedAt))
@@ -1773,19 +1805,20 @@ export async function getAnalytics() {
   const [episodeCount] = await db.select({ count: count() }).from(episodes)
     .where(sql`${episodes.feedId} IN (SELECT id FROM ${feeds} WHERE NOT (${feeds.rssUrl} LIKE 'tat://%' AND ${feeds.isActive} = false))`);
   const [categoryCount] = await db.select({ count: count() }).from(categories);
-  const [listenCount] = await db.select({ count: count() }).from(episodeListens);
+  const [listenCount] = await db.select({ count: count() }).from(episodeListens).where(countable(episodeListens.deviceId));
 
   const uniqueSubscribers = await db
     .selectDistinct({ deviceId: subscriptions.deviceId })
-    .from(subscriptions);
+    .from(subscriptions)
+    .where(countable(subscriptions.deviceId));
 
-  const [subscriptionCount] = await db.select({ count: count() }).from(subscriptions);
+  const [subscriptionCount] = await db.select({ count: count() }).from(subscriptions).where(countable(subscriptions.deviceId));
 
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const [recentListens] = await db
     .select({ count: count() })
     .from(episodeListens)
-    .where(sql`${episodeListens.listenedAt} > ${sevenDaysAgo}`);
+    .where(and(sql`${episodeListens.listenedAt} > ${sevenDaysAgo}`, countable(episodeListens.deviceId)));
 
   const feedStats = await db
     .select({
@@ -1809,6 +1842,7 @@ export async function getAnalytics() {
     })
     .from(episodeListens)
     .innerJoin(episodes, eq(episodeListens.episodeId, episodes.id))
+    .where(countable(episodeListens.deviceId))
     .groupBy(episodes.feedId);
 
   const listenMap = new Map(feedListenStats.map(s => [s.feedId, Number(s.listenCount)]));
@@ -1819,6 +1853,7 @@ export async function getAnalytics() {
       subscriberCount: count(subscriptions.id),
     })
     .from(subscriptions)
+    .where(countable(subscriptions.deviceId))
     .groupBy(subscriptions.feedId);
 
   const subMap = new Map(feedSubscriptionStats.map(s => [s.feedId, Number(s.subscriberCount)]));
@@ -1839,7 +1874,7 @@ export async function getAnalytics() {
       count: count(),
     })
     .from(episodeListens)
-    .where(sql`${episodeListens.listenedAt} > ${thirtyDaysAgo}`)
+    .where(and(sql`${episodeListens.listenedAt} > ${thirtyDaysAgo}`, countable(episodeListens.deviceId)))
     .groupBy(sql`DATE(${episodeListens.listenedAt})`)
     .orderBy(sql`DATE(${episodeListens.listenedAt})`);
 
@@ -1850,7 +1885,7 @@ export async function getAnalytics() {
       count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})`,
     })
     .from(episodeListens)
-    .where(sql`${episodeListens.listenedAt} > ${thirtyDaysAgo}`)
+    .where(and(sql`${episodeListens.listenedAt} > ${thirtyDaysAgo}`, countable(episodeListens.deviceId)))
     .groupBy(sql`DATE(${episodeListens.listenedAt})`)
     .orderBy(sql`DATE(${episodeListens.listenedAt})`);
 
@@ -1862,20 +1897,20 @@ export async function getAnalytics() {
     [listenTime7Row], [listenTime30Row], [listenTimeAllRow],
     [completedAllRow], [completedRecentRow],
   ] = await Promise.all([
-    db.select({ count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})` }).from(episodeListens).where(sql`${episodeListens.listenedAt} > ${oneDayAgo}`),
-    db.select({ count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})` }).from(episodeListens).where(sql`${episodeListens.listenedAt} > ${sevenDaysAgo}`),
-    db.select({ count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})` }).from(episodeListens).where(sql`${episodeListens.listenedAt} > ${thirtyDaysAgo}`),
-    db.select({ count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.lastSeenAt} > ${oneDayAgo}`),
-    db.select({ count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.lastSeenAt} > ${sevenDaysAgo}`),
-    db.select({ count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.lastSeenAt} > ${thirtyDaysAgo}`),
-    db.select({ count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.createdAt} > ${oneDayAgo}`),
-    db.select({ count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.createdAt} > ${sevenDaysAgo}`),
-    db.select({ count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.createdAt} > ${thirtyDaysAgo}`),
-    db.select({ total: sql<number>`COALESCE(SUM(${episodeListens.durationListenedMs}), 0)` }).from(episodeListens).where(sql`${episodeListens.listenedAt} > ${sevenDaysAgo}`),
-    db.select({ total: sql<number>`COALESCE(SUM(${episodeListens.durationListenedMs}), 0)` }).from(episodeListens).where(sql`${episodeListens.listenedAt} > ${thirtyDaysAgo}`),
-    db.select({ total: sql<number>`COALESCE(SUM(${episodeListens.durationListenedMs}), 0)` }).from(episodeListens),
-    db.select({ count: count() }).from(playbackPositions).where(eq(playbackPositions.completed, true)),
-    db.select({ count: count() }).from(playbackPositions).where(and(eq(playbackPositions.completed, true), sql`${playbackPositions.updatedAt} > ${sevenDaysAgo}`)),
+    db.select({ count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})` }).from(episodeListens).where(and(sql`${episodeListens.listenedAt} > ${oneDayAgo}`, countable(episodeListens.deviceId))),
+    db.select({ count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})` }).from(episodeListens).where(and(sql`${episodeListens.listenedAt} > ${sevenDaysAgo}`, countable(episodeListens.deviceId))),
+    db.select({ count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})` }).from(episodeListens).where(and(sql`${episodeListens.listenedAt} > ${thirtyDaysAgo}`, countable(episodeListens.deviceId))),
+    db.select({ count: count() }).from(deviceProfiles).where(and(sql`${deviceProfiles.lastSeenAt} > ${oneDayAgo}`, countable(deviceProfiles.deviceId))),
+    db.select({ count: count() }).from(deviceProfiles).where(and(sql`${deviceProfiles.lastSeenAt} > ${sevenDaysAgo}`, countable(deviceProfiles.deviceId))),
+    db.select({ count: count() }).from(deviceProfiles).where(and(sql`${deviceProfiles.lastSeenAt} > ${thirtyDaysAgo}`, countable(deviceProfiles.deviceId))),
+    db.select({ count: count() }).from(deviceProfiles).where(and(sql`${deviceProfiles.createdAt} > ${oneDayAgo}`, countable(deviceProfiles.deviceId))),
+    db.select({ count: count() }).from(deviceProfiles).where(and(sql`${deviceProfiles.createdAt} > ${sevenDaysAgo}`, countable(deviceProfiles.deviceId))),
+    db.select({ count: count() }).from(deviceProfiles).where(and(sql`${deviceProfiles.createdAt} > ${thirtyDaysAgo}`, countable(deviceProfiles.deviceId))),
+    db.select({ total: sql<number>`COALESCE(SUM(${episodeListens.durationListenedMs}), 0)` }).from(episodeListens).where(and(sql`${episodeListens.listenedAt} > ${sevenDaysAgo}`, countable(episodeListens.deviceId))),
+    db.select({ total: sql<number>`COALESCE(SUM(${episodeListens.durationListenedMs}), 0)` }).from(episodeListens).where(and(sql`${episodeListens.listenedAt} > ${thirtyDaysAgo}`, countable(episodeListens.deviceId))),
+    db.select({ total: sql<number>`COALESCE(SUM(${episodeListens.durationListenedMs}), 0)` }).from(episodeListens).where(countable(episodeListens.deviceId)),
+    db.select({ count: count() }).from(playbackPositions).where(and(eq(playbackPositions.completed, true), countable(playbackPositions.deviceId))),
+    db.select({ count: count() }).from(playbackPositions).where(and(eq(playbackPositions.completed, true), sql`${playbackPositions.updatedAt} > ${sevenDaysAgo}`, countable(playbackPositions.deviceId))),
   ]);
 
   const topEpisodes = await db
@@ -1887,6 +1922,7 @@ export async function getAnalytics() {
     })
     .from(episodeListens)
     .innerJoin(episodes, eq(episodeListens.episodeId, episodes.id))
+    .where(countable(episodeListens.deviceId))
     .groupBy(episodeListens.episodeId, episodes.title, episodes.feedId)
     .orderBy(desc(count(episodeListens.id)))
     .limit(10);
@@ -2373,13 +2409,14 @@ export async function getEnhancedAnalytics() {
 
   const [listeningTimeResult] = await db
     .select({ total: sql<string>`COALESCE(SUM(${episodeListens.durationListenedMs}), 0)` })
-    .from(episodeListens);
+    .from(episodeListens)
+    .where(countable(episodeListens.deviceId));
   const totalListeningTimeMs = Number(listeningTimeResult.total);
 
   const [completedResult] = await db
     .select({ count: count() })
     .from(playbackPositions)
-    .where(eq(playbackPositions.completed, true));
+    .where(and(eq(playbackPositions.completed, true), countable(playbackPositions.deviceId)));
   const completedEpisodes = Number(completedResult.count);
 
   const topListeners = await db
@@ -2388,6 +2425,7 @@ export async function getEnhancedAnalytics() {
       listenCount: count(episodeListens.id),
     })
     .from(episodeListens)
+    .where(countable(episodeListens.deviceId))
     .groupBy(episodeListens.deviceId)
     .orderBy(desc(count(episodeListens.id)))
     .limit(10);
@@ -2407,6 +2445,7 @@ export async function getListenerAnalytics() {
       count: count(),
     })
     .from(episodeListens)
+    .where(countable(episodeListens.deviceId))
     .groupBy(sql`EXTRACT(HOUR FROM ${episodeListens.listenedAt})`)
     .orderBy(sql`EXTRACT(HOUR FROM ${episodeListens.listenedAt})`);
 
@@ -2416,28 +2455,30 @@ export async function getListenerAnalytics() {
   const [newListenersThisWeek] = await db
     .select({ count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})` })
     .from(episodeListens)
-    .where(sql`${episodeListens.listenedAt} > ${sevenDaysAgo} AND ${episodeListens.deviceId} NOT IN (SELECT DISTINCT ${episodeListens.deviceId} FROM ${episodeListens} WHERE ${episodeListens.listenedAt} <= ${sevenDaysAgo})`);
+    .where(and(sql`${episodeListens.listenedAt} > ${sevenDaysAgo} AND ${episodeListens.deviceId} NOT IN (SELECT DISTINCT ${episodeListens.deviceId} FROM ${episodeListens} WHERE ${episodeListens.listenedAt} <= ${sevenDaysAgo})`, countable(episodeListens.deviceId)));
 
   const [returningListenersThisWeek] = await db
     .select({ count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})` })
     .from(episodeListens)
-    .where(sql`${episodeListens.listenedAt} > ${sevenDaysAgo} AND ${episodeListens.deviceId} IN (SELECT DISTINCT ${episodeListens.deviceId} FROM ${episodeListens} WHERE ${episodeListens.listenedAt} <= ${sevenDaysAgo})`);
+    .where(and(sql`${episodeListens.listenedAt} > ${sevenDaysAgo} AND ${episodeListens.deviceId} IN (SELECT DISTINCT ${episodeListens.deviceId} FROM ${episodeListens} WHERE ${episodeListens.listenedAt} <= ${sevenDaysAgo})`, countable(episodeListens.deviceId)));
 
   const [totalDevicesEver] = await db
     .select({ count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})` })
-    .from(episodeListens);
+    .from(episodeListens)
+    .where(countable(episodeListens.deviceId));
 
   const [activeDevices30d] = await db
     .select({ count: sql<number>`COUNT(DISTINCT ${episodeListens.deviceId})` })
     .from(episodeListens)
-    .where(sql`${episodeListens.listenedAt} > ${thirtyDaysAgo}`);
+    .where(and(sql`${episodeListens.listenedAt} > ${thirtyDaysAgo}`, countable(episodeListens.deviceId)));
 
   const completionRate = await db
     .select({
       total: count(),
       completed: sql<number>`COUNT(CASE WHEN ${playbackPositions.completed} = true THEN 1 END)`,
     })
-    .from(playbackPositions);
+    .from(playbackPositions)
+    .where(countable(playbackPositions.deviceId));
 
   const topDevices = await db
     .select({
@@ -2446,6 +2487,7 @@ export async function getListenerAnalytics() {
       totalMs: sql<string>`COALESCE(SUM(${episodeListens.durationListenedMs}), 0)`,
     })
     .from(episodeListens)
+    .where(countable(episodeListens.deviceId))
     .groupBy(episodeListens.deviceId)
     .orderBy(desc(sql`COALESCE(SUM(${episodeListens.durationListenedMs}), 0)`))
     .limit(15);
@@ -3255,12 +3297,14 @@ export async function getAllFeedStats(): Promise<Map<string, { episodeCount: num
   const subCounts = await db
     .select({ feedId: subscriptions.feedId, cnt: count(subscriptions.id) })
     .from(subscriptions)
+    .where(countable(subscriptions.deviceId))
     .groupBy(subscriptions.feedId);
 
   const listenCounts = await db
     .select({ feedId: episodes.feedId, cnt: count(episodeListens.id) })
     .from(episodeListens)
     .innerJoin(episodes, eq(episodeListens.episodeId, episodes.id))
+    .where(countable(episodeListens.deviceId))
     .groupBy(episodes.feedId);
 
   const result = new Map<string, { episodeCount: number; subscriberCount: number; listenCount: number }>();
@@ -3602,35 +3646,37 @@ export async function getDeviceAnalytics(): Promise<{
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
+  const isCountable = countable(deviceProfiles.deviceId);
+
   const [[total], [active7], [active30], [newWeek], [newMonth]] = await Promise.all([
-    db.select({ count: count() }).from(deviceProfiles),
-    db.select({ count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.lastSeenAt} > ${sevenDaysAgo}`),
-    db.select({ count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.lastSeenAt} > ${thirtyDaysAgo}`),
-    db.select({ count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.createdAt} > ${sevenDaysAgo}`),
-    db.select({ count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.createdAt} > ${thirtyDaysAgo}`),
+    db.select({ count: count() }).from(deviceProfiles).where(isCountable),
+    db.select({ count: count() }).from(deviceProfiles).where(and(sql`${deviceProfiles.lastSeenAt} > ${sevenDaysAgo}`, isCountable)),
+    db.select({ count: count() }).from(deviceProfiles).where(and(sql`${deviceProfiles.lastSeenAt} > ${thirtyDaysAgo}`, isCountable)),
+    db.select({ count: count() }).from(deviceProfiles).where(and(sql`${deviceProfiles.createdAt} > ${sevenDaysAgo}`, isCountable)),
+    db.select({ count: count() }).from(deviceProfiles).where(and(sql`${deviceProfiles.createdAt} > ${thirtyDaysAgo}`, isCountable)),
   ]);
 
   const [byModel, byPlatform, byOsVersion, byCountry, byCity, byAppVersion] = await Promise.all([
-    db.select({ model: sql<string>`COALESCE(${deviceProfiles.deviceModel}, 'Unknown')`, count: count() }).from(deviceProfiles).groupBy(sql`COALESCE(${deviceProfiles.deviceModel}, 'Unknown')`).orderBy(desc(count())).limit(15),
-    db.select({ platform: sql<string>`COALESCE(${deviceProfiles.platform}, 'Unknown')`, count: count() }).from(deviceProfiles).groupBy(sql`COALESCE(${deviceProfiles.platform}, 'Unknown')`).orderBy(desc(count())),
-    db.select({ osVersion: sql<string>`COALESCE(${deviceProfiles.osVersion}, 'Unknown')`, count: count() }).from(deviceProfiles).groupBy(sql`COALESCE(${deviceProfiles.osVersion}, 'Unknown')`).orderBy(desc(count())).limit(10),
-    db.select({ country: sql<string>`COALESCE(${deviceProfiles.country}, 'Unknown')`, count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.country} IS NOT NULL`).groupBy(sql`COALESCE(${deviceProfiles.country}, 'Unknown')`).orderBy(desc(count())).limit(15),
-    db.select({ city: sql<string>`COALESCE(${deviceProfiles.city}, 'Unknown') || ', ' || COALESCE(${deviceProfiles.country}, '')`, count: count() }).from(deviceProfiles).where(sql`${deviceProfiles.city} IS NOT NULL`).groupBy(sql`COALESCE(${deviceProfiles.city}, 'Unknown') || ', ' || COALESCE(${deviceProfiles.country}, '')`).orderBy(desc(count())).limit(20),
-    db.select({ appVersion: sql<string>`COALESCE(${deviceProfiles.appVersion}, 'Unknown')`, count: count() }).from(deviceProfiles).groupBy(sql`COALESCE(${deviceProfiles.appVersion}, 'Unknown')`).orderBy(desc(count())).limit(10),
+    db.select({ model: sql<string>`COALESCE(${deviceProfiles.deviceModel}, 'Unknown')`, count: count() }).from(deviceProfiles).where(isCountable).groupBy(sql`COALESCE(${deviceProfiles.deviceModel}, 'Unknown')`).orderBy(desc(count())).limit(15),
+    db.select({ platform: sql<string>`COALESCE(${deviceProfiles.platform}, 'Unknown')`, count: count() }).from(deviceProfiles).where(isCountable).groupBy(sql`COALESCE(${deviceProfiles.platform}, 'Unknown')`).orderBy(desc(count())),
+    db.select({ osVersion: sql<string>`COALESCE(${deviceProfiles.osVersion}, 'Unknown')`, count: count() }).from(deviceProfiles).where(isCountable).groupBy(sql`COALESCE(${deviceProfiles.osVersion}, 'Unknown')`).orderBy(desc(count())).limit(10),
+    db.select({ country: sql<string>`COALESCE(${deviceProfiles.country}, 'Unknown')`, count: count() }).from(deviceProfiles).where(and(sql`${deviceProfiles.country} IS NOT NULL`, isCountable)).groupBy(sql`COALESCE(${deviceProfiles.country}, 'Unknown')`).orderBy(desc(count())).limit(15),
+    db.select({ city: sql<string>`COALESCE(${deviceProfiles.city}, 'Unknown') || ', ' || COALESCE(${deviceProfiles.country}, '')`, count: count() }).from(deviceProfiles).where(and(sql`${deviceProfiles.city} IS NOT NULL`, isCountable)).groupBy(sql`COALESCE(${deviceProfiles.city}, 'Unknown') || ', ' || COALESCE(${deviceProfiles.country}, '')`).orderBy(desc(count())).limit(20),
+    db.select({ appVersion: sql<string>`COALESCE(${deviceProfiles.appVersion}, 'Unknown')`, count: count() }).from(deviceProfiles).where(isCountable).groupBy(sql`COALESCE(${deviceProfiles.appVersion}, 'Unknown')`).orderBy(desc(count())).limit(10),
   ]);
 
   // Usage averages
   const [avgStats] = await db.select({
     avgMinutes: sql<number>`COALESCE(AVG(sub.total_ms) / 60000, 0)`,
     avgListens: sql<number>`COALESCE(AVG(sub.listen_count), 0)`,
-  }).from(sql`(SELECT ${episodeListens.deviceId}, SUM(${episodeListens.durationListenedMs}) as total_ms, COUNT(*) as listen_count FROM ${episodeListens} GROUP BY ${episodeListens.deviceId}) sub`);
+  }).from(sql`(SELECT ${episodeListens.deviceId}, SUM(${episodeListens.durationListenedMs}) as total_ms, COUNT(*) as listen_count FROM ${episodeListens} WHERE ${countable(episodeListens.deviceId)} GROUP BY ${episodeListens.deviceId}) sub`);
 
   // Power users
   const powerUsers = await db.select({
     deviceId: episodeListens.deviceId,
     totalMinutes: sql<number>`SUM(${episodeListens.durationListenedMs}) / 60000`,
     listens: count(),
-  }).from(episodeListens).groupBy(episodeListens.deviceId).orderBy(desc(sql`SUM(${episodeListens.durationListenedMs})`)).limit(20);
+  }).from(episodeListens).where(countable(episodeListens.deviceId)).groupBy(episodeListens.deviceId).orderBy(desc(sql`SUM(${episodeListens.durationListenedMs})`)).limit(20);
 
   // Join with device profiles for model names
   const deviceIds = powerUsers.map(p => p.deviceId);

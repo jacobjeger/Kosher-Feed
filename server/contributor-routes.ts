@@ -28,6 +28,7 @@ import { validateFeed } from "./contributor-feed";
 import { MAX_UPLOAD_BYTES } from "./contributor-media";
 import { reconcileShowCatalog } from "./contributor/catalog";
 import { canonicalBaseUrl } from "./public-url";
+import { getClientIp } from "./client-ip";
 
 // HTTP surface for the contributor program: public application, creator
 // dashboard, admin moderation.
@@ -141,7 +142,7 @@ export function registerContributorRoutes(app: Express, adminAuth: any): void {
           language: ["en", "he", "yi"].includes(clean(b.language, 4)) ? clean(b.language, 4) : "en",
           bio: clean(b.bio, MAX_TEXT) || null,
           sampleAudioUrl: clean(b.sampleAudioUrl, 500) || null,
-          ipAddress: (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.ip || null,
+          ipAddress: getClientIp(req),
           userAgent: clean(req.headers["user-agent"], 300) || null,
         })
         .returning();
