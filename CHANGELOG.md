@@ -10,6 +10,17 @@ reconstructed into version sections here. The app version lives in
 
 ### Fixed
 
+- Android Auto shows content again instead of "Error loading". Some episodes
+  carry `"imageUrl": null`, and Android's `org.json` hands back the literal
+  string `"null"` for an explicit JSON null, so the Auto service tried to
+  fetch `URL("null")`. The handler for that failure then wrote a null into a
+  `ConcurrentHashMap`, which forbids null values — throwing a second
+  exception out of the `catch` block, past the artwork code, and into the
+  list builder, which replaced the entire list with an error item. One
+  episode missing a thumbnail blanked a whole browse screen. Artwork is now
+  decoration that cannot fail a list, and the cache's documented 200-entry
+  bound is actually enforced.
+
 - Android Auto plays Kol Halashon shiurim instead of erroring on them. The
   Auto service handed ExoPlayer the stored `audioUrl` as-is, while every
   other player rewrites vendor URLs onto our own proxy first — and Kol

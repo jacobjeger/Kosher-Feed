@@ -52,8 +52,11 @@ class ShiurPodAutoService : MediaLibraryService() {
   private val feedMetadataCache: ConcurrentHashMap<String, JSONObject> = ConcurrentHashMap()
   // Cache positions keyed by episodeId for resume support
   private val positionCache: ConcurrentHashMap<String, Long> = ConcurrentHashMap()
-  // Cache downloaded artwork bytes keyed by URL (max ~200 entries to bound memory)
-  private val artworkCache: ConcurrentHashMap<String, ByteArray?> = ConcurrentHashMap()
+  // Cache downloaded artwork bytes keyed by URL (max ARTWORK_CACHE_MAX entries
+  // to bound memory). Values are never null: ConcurrentHashMap throws NPE on a
+  // null value, and a negative cache entry that throws turns one missing
+  // thumbnail into a failed browse tree. ARTWORK_FAILED is the tombstone.
+  private val artworkCache: ConcurrentHashMap<String, ByteArray> = ConcurrentHashMap()
   private var cacheTimestamp: Long = 0
   private val CACHE_TTL_MS = 5 * 60 * 1000L
   private val RECENTLY_PLAYED_TTL_MS = 60 * 1000L // 1 min for recently played
@@ -78,6 +81,9 @@ class ShiurPodAutoService : MediaLibraryService() {
     private const val DEFAULT_API_BASE_URL = "https://kosher-feed-production.up.railway.app"
 
     private const val CONTENT_STYLE_SUPPORTED = "android.media.browse.CONTENT_STYLE_SUPPORTED"
+    // Tombstone for "this artwork URL failed" — see artworkCache.
+    private val ARTWORK_FAILED = ByteArray(0)
+    private const val ARTWORK_CACHE_MAX = 200
     private const val CONTENT_STYLE_BROWSABLE_HINT = "android.media.browse.CONTENT_STYLE_BROWSABLE_HINT"
     private const val CONTENT_STYLE_PLAYABLE_HINT = "android.media.browse.CONTENT_STYLE_PLAYABLE_HINT"
     private const val CONTENT_STYLE_LIST_ITEM_HINT_VALUE = 1
@@ -361,9 +367,20 @@ class ShiurPodAutoService : MediaLibraryService() {
    * Download an image URL and return PNG bytes scaled to max 400x400.
    * Returns null on failure. Results are cached in-memory.
    */
+  /**
+   * optString() with a fallback does NOT return the fallback for an explicit
+   * JSON null — org.json stores JSONObject.NULL and stringifies it, so
+   * `"imageUrl": null` comes back as the four-character string "null" and
+   * everything downstream treats it as a URL. That is how the Auto browse
+   * tree ended up calling URL("null").
+   */
+  private fun JSONObject.stringOrEmpty(key: String): String {
+    val value = optString(key, "")
+    return if (value == "null") "" else value
+  }
+
   private fun downloadArtwork(urlString: String): ByteArray? {
-    artworkCache[urlString]?.let { return it }
-    if (artworkCache.containsKey(urlString)) return null
+    artworkCache[urlString]?.let { return if (it === ARTWORK_FAILED) null else it }
 
     return try {
       val url = URL(urlString)
@@ -375,7 +392,7 @@ class ShiurPodAutoService : MediaLibraryService() {
 
       if (conn.responseCode != 200) {
         Log.w(TAG, "Artwork HTTP ${conn.responseCode} for $urlString")
-        artworkCache[urlString] = null
+        rememberArtwork(urlString, ARTWORK_FAILED)
         return null
       }
 
@@ -395,7 +412,7 @@ class ShiurPodAutoService : MediaLibraryService() {
       val bitmap = BitmapFactory.decodeByteArray(raw, 0, raw.size, decodeOpts)
       if (bitmap == null) {
         Log.w(TAG, "Failed to decode artwork from $urlString")
-        artworkCache[urlString] = null
+        rememberArtwork(urlString, ARTWORK_FAILED)
         return null
       }
 
@@ -404,25 +421,47 @@ class ShiurPodAutoService : MediaLibraryService() {
       bitmap.recycle()
       val bytes = baos.toByteArray()
 
-      artworkCache[urlString] = bytes
+      rememberArtwork(urlString, bytes)
       Log.d(TAG, "Cached artwork ${bytes.size} bytes for $urlString")
       bytes
     } catch (e: Exception) {
       Log.w(TAG, "Failed to download artwork $urlString", e)
-      artworkCache[urlString] = null
+      rememberArtwork(urlString, ARTWORK_FAILED)
       null
     }
   }
 
-  /** Apply artwork to a MediaMetadata builder — downloads bytes for Android Auto compatibility */
+  /** Store artwork bytes, honouring the documented cache bound. */
+  private fun rememberArtwork(urlString: String, bytes: ByteArray) {
+    if (artworkCache.size >= ARTWORK_CACHE_MAX) {
+      // Cheap bound: a car session browsing thousands of episodes would
+      // otherwise hold every 400x400 PNG it ever decoded.
+      artworkCache.keys.take(artworkCache.size - ARTWORK_CACHE_MAX + 1)
+        .forEach { artworkCache.remove(it) }
+    }
+    artworkCache[urlString] = bytes
+  }
+
+  /**
+   * Apply artwork to a MediaMetadata builder — downloads bytes for Android
+   * Auto compatibility.
+   *
+   * This must never throw. Artwork is decoration; a browse list that fails
+   * because one episode has no thumbnail is what Android Auto renders as
+   * "Error loading ..." over the whole screen.
+   */
   private fun applyArtwork(builder: MediaMetadata.Builder, imageUrl: String) {
     val url = imageUrl.ifEmpty { defaultArtworkUri.toString() }
-    val bytes = downloadArtwork(url)
-    if (bytes != null) {
-      builder.setArtworkData(bytes, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+    try {
+      val bytes = downloadArtwork(url)
+      if (bytes != null) {
+        builder.setArtworkData(bytes, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+      }
+      // Always set URI as fallback for non-Android-Auto clients
+      builder.setArtworkUri(android.net.Uri.parse(url))
+    } catch (e: Exception) {
+      Log.w(TAG, "Artwork unavailable for $url — continuing without it", e)
     }
-    // Always set URI as fallback for non-Android-Auto clients
-    builder.setArtworkUri(android.net.Uri.parse(url))
   }
 
   private fun isCacheValid(key: String): Boolean {
@@ -520,7 +559,7 @@ class ShiurPodAutoService : MediaLibraryService() {
       val feed = feeds.getJSONObject(i)
       val feedId = feed.getString("id")
       val title = feed.optString("title", "Unknown Feed")
-      val imageUrl = feed.optString("imageUrl", "")
+      val imageUrl = feed.stringOrEmpty("imageUrl")
       val author = feed.optString("author", "")
 
       feedMetadataCache[feedId] = feed
@@ -637,9 +676,9 @@ class ShiurPodAutoService : MediaLibraryService() {
         val ep = episodes.getJSONObject(i)
         val epId = ep.optString("episodeId", ep.optString("id", ""))
         val title = ep.optString("title", "Episode")
-        val audioUrl = ep.optString("audioUrl", "")
+        val audioUrl = ep.stringOrEmpty("audioUrl")
         val feedId = ep.optString("feedId", "")
-        val imageUrl = ep.optString("imageUrl", "")
+        val imageUrl = ep.stringOrEmpty("imageUrl")
         val duration = ep.optString("duration", "")
         val description = ep.optString("description", "")
         val listenCount = ep.optInt("listenCount", 0)
@@ -702,7 +741,7 @@ class ShiurPodAutoService : MediaLibraryService() {
         val epId = entry.optString("episodeId", "")
         val feedId = entry.optString("feedId", "")
         val title = entry.optString("episodeTitle", "Episode")
-        val audioUrl = entry.optString("audioUrl", "")
+        val audioUrl = entry.stringOrEmpty("audioUrl")
         val feedTitle = entry.optString("feedTitle", "")
         val feedAuthor = entry.optString("feedAuthor", "")
         val positionMs = entry.optLong("positionMs", 0)
@@ -772,7 +811,7 @@ class ShiurPodAutoService : MediaLibraryService() {
 
     val feedMeta = feedMetadataCache[feedId]
     val feedTitle = feedMeta?.optString("title", "ShiurPod") ?: "ShiurPod"
-    val feedImageUrl = feedMeta?.optString("imageUrl", "") ?: ""
+    val feedImageUrl = feedMeta?.stringOrEmpty("imageUrl") ?: ""
     val feedAuthor = feedMeta?.optString("author", "") ?: ""
 
     return try {
@@ -783,10 +822,10 @@ class ShiurPodAutoService : MediaLibraryService() {
         val ep = episodes.getJSONObject(i)
         val epId = ep.getString("id")
         val title = ep.optString("title", "Episode")
-        val audioUrl = ep.optString("audioUrl", "")
+        val audioUrl = ep.stringOrEmpty("audioUrl")
         val duration = ep.optString("duration", "")
         val publishedAt = ep.optString("publishedAt", "")
-        val episodeImageUrl = ep.optString("imageUrl", "")
+        val episodeImageUrl = ep.stringOrEmpty("imageUrl")
 
         if (audioUrl.isEmpty()) continue
 
