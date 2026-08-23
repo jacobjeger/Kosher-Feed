@@ -10,6 +10,16 @@ reconstructed into version sections here. The app version lives in
 
 ### Fixed
 
+- Android Auto plays Kol Halashon shiurim instead of erroring on them. The
+  Auto service handed ExoPlayer the stored `audioUrl` as-is, while every
+  other player rewrites vendor URLs onto our own proxy first — and Kol
+  Halashon, 74% of the catalogue, answers 403 to anyone but that proxy. So
+  roughly three of every four shiurim failed to play in a car. Google Play
+  rejected version code 9 for this in August 2026 ("all the tracks returned
+  error") and version code 2 in April 2026. The service now applies the same
+  rewrite rules the app uses, read from `/api/config` so a future vendor
+  change won't need another store submission.
+
 - Admin analytics no longer counts drive-by web visitors as users. The web
   build mints a fresh device id per browser and registers it on load, so
   crawlers and proxy traffic were arriving as "users" — about 1,600 of them

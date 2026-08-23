@@ -113,6 +113,9 @@ class ShiurPodAutoService : MediaLibraryService() {
     // Default artwork: use hosted ShiurPod logo
     defaultArtworkUri = android.net.Uri.parse("$apiBaseUrl/api/images/icon.png")
 
+    // Warm the audio proxy rules so the first tap already rewrites correctly.
+    ioExecutor.execute { refreshAudioProxyRulesIfStale() }
+
     val player: Player = run {
       ExoPlayer.Builder(this)
         .setAudioAttributes(
@@ -267,6 +270,91 @@ class ShiurPodAutoService : MediaLibraryService() {
     } finally {
       conn?.disconnect()
     }
+  }
+
+  // ---- Audio URL rewriting ------------------------------------------------
+  //
+  // A stored audioUrl is not directly playable. The RN app runs every one of
+  // them through resolveAudioUrl() in lib/audio-url.ts, which rewrites vendor
+  // URLs onto our own proxy. Kol Halashon — 74% of the catalogue — answers
+  // 403 to anyone but that proxy, so handing ExoPlayer the raw URL fails on
+  // roughly three of every four shiurim. That is what Google Play rejected
+  // version code 9 for in August 2026 ("all the tracks returned error") and
+  // version code 2 in April 2026; this service is the only player that
+  // skipped the rewrite.
+  //
+  // The rules come from /api/config so they can change without shipping a new
+  // build, which matters here because every build costs a Play review. The
+  // defaults mirror DEFAULT_RULES in lib/audio-url.ts and stand in until the
+  // first successful fetch, and whenever a fetch fails.
+
+  private data class AudioProxyRule(val regex: Regex, val replace: String)
+
+  private val defaultAudioProxyRules: List<AudioProxyRule> = listOf(
+    AudioProxyRule(
+      Regex("https?://srv\\.kolhalashon\\.com/api/files/(?:GetMp3FileToPlay|getLocationOfFileToVideo)/(\\d+)"),
+      "/api/audio/kh/\$1"
+    ),
+    AudioProxyRule(
+      Regex("^yt://audio/([A-Za-z0-9_-]{11})$"),
+      "/api/audio/yt/\$1"
+    )
+  )
+
+  @Volatile private var audioProxyRules: List<AudioProxyRule> = defaultAudioProxyRules
+  @Volatile private var audioProxyRulesFetchedAt: Long = 0L
+
+  /**
+   * Refresh the proxy rules from /api/config, at most once per CACHE_TTL_MS.
+   * Call it from the IO pool only — it performs a network request.
+   */
+  private fun refreshAudioProxyRulesIfStale() {
+    val now = System.currentTimeMillis()
+    if (audioProxyRulesFetchedAt != 0L && now - audioProxyRulesFetchedAt < CACHE_TTL_MS) return
+    audioProxyRulesFetchedAt = now
+    val json = fetchJson("$apiBaseUrl/api/config") ?: return
+    try {
+      val arr = JSONObject(json).optJSONArray("audioProxyRules") ?: return
+      val parsed = ArrayList<AudioProxyRule>(arr.length())
+      for (i in 0 until arr.length()) {
+        val o = arr.optJSONObject(i) ?: continue
+        val match = o.optString("match", "")
+        val replace = o.optString("replace", "")
+        if (match.isEmpty() || replace.isEmpty()) continue
+        try {
+          parsed.add(AudioProxyRule(Regex(match), replace))
+        } catch (e: Exception) {
+          Log.w(TAG, "Ignoring unparseable audio proxy rule: $match", e)
+        }
+      }
+      // An empty or wholly unparseable list must not silently disable
+      // rewriting — that is exactly the state that got the app rejected.
+      if (parsed.isNotEmpty()) audioProxyRules = parsed
+    } catch (e: Exception) {
+      Log.w(TAG, "Failed to parse audioProxyRules from /api/config", e)
+      reportError("Android Auto config parse failed: ${e.message}", "warn")
+    }
+  }
+
+  /**
+   * Stored audioUrl -> a URI ExoPlayer can actually fetch. Mirrors
+   * resolveAudioUrl() in lib/audio-url.ts: first matching rule wins, $1..$n
+   * are substituted from its capture groups, and a relative result is
+   * absolutised against the API host (a bare path resolves against the page
+   * origin in a browser, but the native player needs a full URI).
+   */
+  private fun resolveAudioUri(audioUrl: String): android.net.Uri? {
+    if (audioUrl.isEmpty()) return null
+    for (rule in audioProxyRules) {
+      val match = rule.regex.find(audioUrl) ?: continue
+      var result = rule.replace
+      for (i in 1 until match.groupValues.size) {
+        result = result.replace("\$$i", match.groupValues[i])
+      }
+      return android.net.Uri.parse(if (result.startsWith("/")) "$apiBaseUrl$result" else result)
+    }
+    if (audioUrl.startsWith("/")) return android.net.Uri.parse("$apiBaseUrl$audioUrl")
+    return android.net.Uri.parse(audioUrl)
   }
 
   /**
@@ -537,6 +625,7 @@ class ShiurPodAutoService : MediaLibraryService() {
   }
 
   private fun fetchPopularEpisodes(): List<MediaItem> {
+    refreshAudioProxyRulesIfStale()
     val json = fetchJson("$apiBaseUrl/api/episodes/popular?limit=15")
       ?: return listOf(buildInfoItem("No connection"))
 
@@ -583,7 +672,7 @@ class ShiurPodAutoService : MediaLibraryService() {
             .setMediaMetadata(metadataBuilder.build())
             .setRequestMetadata(
               MediaItem.RequestMetadata.Builder()
-                .setMediaUri(android.net.Uri.parse(audioUrl))
+                .setMediaUri(resolveAudioUri(audioUrl))
                 .build()
             )
             .build()
@@ -598,6 +687,7 @@ class ShiurPodAutoService : MediaLibraryService() {
   }
 
   private fun fetchRecentlyPlayed(): List<MediaItem> {
+    refreshAudioProxyRulesIfStale()
     val deviceId = readDeviceId() ?: return listOf(buildInfoItem("Open ShiurPod to set up"))
     val json = fetchJson("$apiBaseUrl/api/playback-positions/$deviceId/recent?limit=15")
       ?: return listOf(buildInfoItem("No connection"))
@@ -661,7 +751,7 @@ class ShiurPodAutoService : MediaLibraryService() {
             .setMediaMetadata(metadataBuilder.build())
             .setRequestMetadata(
               MediaItem.RequestMetadata.Builder()
-                .setMediaUri(android.net.Uri.parse(audioUrl))
+                .setMediaUri(resolveAudioUri(audioUrl))
                 .build()
             )
             .build()
@@ -676,6 +766,7 @@ class ShiurPodAutoService : MediaLibraryService() {
   }
 
   private fun fetchEpisodes(feedId: String): List<MediaItem> {
+    refreshAudioProxyRulesIfStale()
     val json = fetchJson("$apiBaseUrl/api/feeds/$feedId/episodes?limit=15&slim=1")
       ?: return listOf(buildInfoItem("No connection"))
 
@@ -739,7 +830,7 @@ class ShiurPodAutoService : MediaLibraryService() {
             .setMediaMetadata(metadataBuilder.build())
             .setRequestMetadata(
               MediaItem.RequestMetadata.Builder()
-                .setMediaUri(android.net.Uri.parse(audioUrl))
+                .setMediaUri(resolveAudioUri(audioUrl))
                 .build()
             )
             .build()
