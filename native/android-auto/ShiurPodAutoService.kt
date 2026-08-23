@@ -39,7 +39,10 @@ import android.graphics.BitmapFactory
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 @OptIn(UnstableApi::class)
 class ShiurPodAutoService : MediaLibraryService() {
@@ -47,6 +50,10 @@ class ShiurPodAutoService : MediaLibraryService() {
   private var librarySession: MediaLibrarySession? = null
   private var placeholderPlayer: ExoPlayer? = null
   private val ioExecutor: ListeningExecutorService = MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(4))
+  // Artwork gets its own pool. onGetChildren runs on ioExecutor, so a browse
+  // callback waiting there for downloads would be waiting on threads it is
+  // itself occupying.
+  private val artworkExecutor: ExecutorService = Executors.newFixedThreadPool(6)
   private val cachedTree: ConcurrentHashMap<String, List<MediaItem>> = ConcurrentHashMap()
   private val cacheTimestamps: ConcurrentHashMap<String, Long> = ConcurrentHashMap()
   private val feedMetadataCache: ConcurrentHashMap<String, JSONObject> = ConcurrentHashMap()
@@ -60,7 +67,6 @@ class ShiurPodAutoService : MediaLibraryService() {
   private var cacheTimestamp: Long = 0
   private val CACHE_TTL_MS = 5 * 60 * 1000L
   private val RECENTLY_PLAYED_TTL_MS = 60 * 1000L // 1 min for recently played
-  private val PLACEHOLDER_TIMEOUT_MS = 30_000L
   private lateinit var apiBaseUrl: String
   // Resolved in onCreate — stamped onto every crash-dashboard report so
   // Android Auto errors are attributable by version/device.
@@ -84,6 +90,10 @@ class ShiurPodAutoService : MediaLibraryService() {
     // Tombstone for "this artwork URL failed" — see artworkCache.
     private val ARTWORK_FAILED = ByteArray(0)
     private const val ARTWORK_CACHE_MAX = 200
+    // How long a browse list may wait for artwork before being served without
+    // it. Android Auto abandons a slow onGetChildren and sits on "Getting your
+    // selection..." indefinitely, so this budget caps that risk.
+    private const val ARTWORK_BUDGET_MS = 2500L
     private const val CONTENT_STYLE_BROWSABLE_HINT = "android.media.browse.CONTENT_STYLE_BROWSABLE_HINT"
     private const val CONTENT_STYLE_PLAYABLE_HINT = "android.media.browse.CONTENT_STYLE_PLAYABLE_HINT"
     private const val CONTENT_STYLE_LIST_ITEM_HINT_VALUE = 1
@@ -121,6 +131,9 @@ class ShiurPodAutoService : MediaLibraryService() {
 
     // Warm the audio proxy rules so the first tap already rewrites correctly.
     ioExecutor.execute { refreshAudioProxyRulesIfStale() }
+    // ...and the logo, so an empty state always has artwork rather than the
+    // alert triangle Auto substitutes when an item has none.
+    artworkExecutor.execute { downloadArtwork(defaultArtworkUri.toString()) }
 
     val player: Player = run {
       ExoPlayer.Builder(this)
@@ -135,15 +148,21 @@ class ShiurPodAutoService : MediaLibraryService() {
         .setSeekBackIncrementMs(10_000L)
         .build()
         .also { placeholder ->
+          // This player IS the session's player until (and unless) the RN app
+          // hands over a real one via swapToRealPlayer().
+          //
+          // It used to be released on a 30s timer as an "unused placeholder",
+          // but swapToRealPlayer() already cancels that timer when it swaps —
+          // so the timer could only ever fire while the session was still
+          // using this player, releasing it mid-session. In a car the app's
+          // own player never starts, so 30 seconds after the service came up
+          // every tap hit a released player and Android Auto sat on "Getting
+          // your selection..." forever. Browsing for half a minute before
+          // picking a shiur is completely normal, which is why a reviewer
+          // would hit this every time.
+          //
+          // The player now lives as long as the service; onDestroy releases it.
           placeholderPlayer = placeholder
-          placeholderTimeoutRunnable = Runnable {
-            if (placeholderPlayer != null) {
-              Log.d(TAG, "Placeholder player timeout — releasing unused placeholder")
-              placeholderPlayer?.release()
-              placeholderPlayer = null
-            }
-          }
-          mainHandler.postDelayed(placeholderTimeoutRunnable!!, PLACEHOLDER_TIMEOUT_MS)
         }
     }
 
@@ -431,6 +450,49 @@ class ShiurPodAutoService : MediaLibraryService() {
     }
   }
 
+  /**
+   * Warm the artwork cache for a whole list at once, in parallel, giving up
+   * after ARTWORK_BUDGET_MS.
+   *
+   * Artwork used to be downloaded inline, one image at a time, inside the loop
+   * that builds the list: a nine-item category took 24 seconds and a fifteen-
+   * item feed never returned at all, leaving Android Auto on "Getting your
+   * selection..." Whatever misses the budget is served as a bare URI and lands
+   * in the cache for the next browse.
+   */
+  private fun prefetchArtwork(urls: List<String>) {
+    val missing = urls.filter { it.isNotEmpty() }.distinct().filterNot { artworkCache.containsKey(it) }
+    if (missing.isEmpty()) return
+
+    val latch = CountDownLatch(missing.size)
+    for (url in missing) {
+      artworkExecutor.execute {
+        try {
+          downloadArtwork(url)
+        } catch (e: Exception) {
+          Log.w(TAG, "Artwork prefetch failed for $url", e)
+        } finally {
+          latch.countDown()
+        }
+      }
+    }
+    if (!latch.await(ARTWORK_BUDGET_MS, TimeUnit.MILLISECONDS)) {
+      Log.i(TAG, "Artwork budget reached — serving list now, ${missing.size} image(s) still in flight")
+    }
+  }
+
+  /** Prefetch every image URL referenced by a JSON array of feeds or episodes. */
+  private fun prefetchArtworkFrom(array: JSONArray, extra: String = "") {
+    val urls = mutableListOf<String>()
+    if (extra.isNotEmpty()) urls.add(extra)
+    for (i in 0 until array.length()) {
+      val obj = array.optJSONObject(i) ?: continue
+      val url = obj.stringOrEmpty("imageUrl")
+      if (url.isNotEmpty()) urls.add(url)
+    }
+    prefetchArtwork(urls)
+  }
+
   /** Store artwork bytes, honouring the documented cache bound. */
   private fun rememberArtwork(urlString: String, bytes: ByteArray) {
     if (artworkCache.size >= ARTWORK_CACHE_MAX) {
@@ -453,9 +515,14 @@ class ShiurPodAutoService : MediaLibraryService() {
   private fun applyArtwork(builder: MediaMetadata.Builder, imageUrl: String) {
     val url = imageUrl.ifEmpty { defaultArtworkUri.toString() }
     try {
-      val bytes = downloadArtwork(url)
-      if (bytes != null) {
+      // Cache-only: prefetchArtwork() has already had its budget, and blocking
+      // here is what made lists take tens of seconds.
+      val bytes = artworkCache[url]
+      if (bytes != null && bytes !== ARTWORK_FAILED && bytes.isNotEmpty()) {
         builder.setArtworkData(bytes, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+      } else if (bytes == null) {
+        // Missed the budget — warm it for the next browse instead of waiting.
+        artworkExecutor.execute { try { downloadArtwork(url) } catch (e: Exception) { } }
       }
       // Always set URI as fallback for non-Android-Auto clients
       builder.setArtworkUri(android.net.Uri.parse(url))
@@ -554,6 +621,7 @@ class ShiurPodAutoService : MediaLibraryService() {
   }
 
   private fun parseFeedItems(feeds: JSONArray): List<MediaItem> {
+    prefetchArtworkFrom(feeds)
     val items = mutableListOf<MediaItem>()
     for (i in 0 until feeds.length()) {
       val feed = feeds.getJSONObject(i)
@@ -589,13 +657,13 @@ class ShiurPodAutoService : MediaLibraryService() {
   }
 
   private fun fetchSubscribedFeeds(): List<MediaItem> {
-    val deviceId = readDeviceId() ?: return listOf(buildInfoItem("Open ShiurPod to set up"))
+    val deviceId = readDeviceId() ?: return listOf(buildInfoItem("No saved shiurim", "Subscribe in the app and they appear here"))
     val json = fetchJson("$apiBaseUrl/api/subscriptions/$deviceId/feeds")
-      ?: return listOf(buildInfoItem("No connection"))
+      ?: return listOf(buildInfoItem("No connection", "Check the phone's data connection"))
 
     return try {
       val feeds = JSONArray(json)
-      if (feeds.length() == 0) return listOf(buildInfoItem("No subscriptions yet"))
+      if (feeds.length() == 0) return listOf(buildInfoItem("No saved shiurim", "Subscribe in the app and they appear here"))
       parseFeedItems(feeds)
     } catch (e: Exception) {
       Log.e(TAG, "Failed to parse subscribed feeds", e)
@@ -605,7 +673,7 @@ class ShiurPodAutoService : MediaLibraryService() {
 
   private fun fetchAllFeeds(): List<MediaItem> {
     val json = fetchJson("$apiBaseUrl/api/feeds")
-      ?: return listOf(buildInfoItem("No connection"))
+      ?: return listOf(buildInfoItem("No connection", "Check the phone's data connection"))
 
     return try {
       val feeds = JSONArray(json)
@@ -618,7 +686,7 @@ class ShiurPodAutoService : MediaLibraryService() {
 
   private fun fetchCategories(): List<MediaItem> {
     val json = fetchJson("$apiBaseUrl/api/categories")
-      ?: return listOf(buildInfoItem("No connection"))
+      ?: return listOf(buildInfoItem("No connection", "Check the phone's data connection"))
 
     return try {
       val cats = JSONArray(json)
@@ -651,11 +719,11 @@ class ShiurPodAutoService : MediaLibraryService() {
 
   private fun fetchFeedsByCategory(categoryId: String): List<MediaItem> {
     val json = fetchJson("$apiBaseUrl/api/feeds/category/$categoryId")
-      ?: return listOf(buildInfoItem("No connection"))
+      ?: return listOf(buildInfoItem("No connection", "Check the phone's data connection"))
 
     return try {
       val feeds = JSONArray(json)
-      if (feeds.length() == 0) return listOf(buildInfoItem("No feeds in this category"))
+      if (feeds.length() == 0) return listOf(buildInfoItem("No shows here yet"))
       parseFeedItems(feeds)
     } catch (e: Exception) {
       Log.e(TAG, "Failed to parse category feeds", e)
@@ -666,10 +734,11 @@ class ShiurPodAutoService : MediaLibraryService() {
   private fun fetchPopularEpisodes(): List<MediaItem> {
     refreshAudioProxyRulesIfStale()
     val json = fetchJson("$apiBaseUrl/api/episodes/popular?limit=15")
-      ?: return listOf(buildInfoItem("No connection"))
+      ?: return listOf(buildInfoItem("No connection", "Check the phone's data connection"))
 
     return try {
       val episodes = JSONArray(json)
+      prefetchArtworkFrom(episodes)
       val items = mutableListOf<MediaItem>()
 
       for (i in 0 until episodes.length()) {
@@ -727,13 +796,14 @@ class ShiurPodAutoService : MediaLibraryService() {
 
   private fun fetchRecentlyPlayed(): List<MediaItem> {
     refreshAudioProxyRulesIfStale()
-    val deviceId = readDeviceId() ?: return listOf(buildInfoItem("Open ShiurPod to set up"))
+    val deviceId = readDeviceId() ?: return listOf(buildInfoItem("Nothing played yet", "Shiurim you start show up here"))
     val json = fetchJson("$apiBaseUrl/api/playback-positions/$deviceId/recent?limit=15")
-      ?: return listOf(buildInfoItem("No connection"))
+      ?: return listOf(buildInfoItem("No connection", "Check the phone's data connection"))
 
     return try {
       val entries = JSONArray(json)
-      if (entries.length() == 0) return listOf(buildInfoItem("No recent shiurim"))
+      if (entries.length() == 0) return listOf(buildInfoItem("Nothing played yet", "Shiurim you start show up here"))
+      prefetchArtworkFrom(entries)
       val items = mutableListOf<MediaItem>()
 
       for (i in 0 until entries.length()) {
@@ -807,7 +877,7 @@ class ShiurPodAutoService : MediaLibraryService() {
   private fun fetchEpisodes(feedId: String): List<MediaItem> {
     refreshAudioProxyRulesIfStale()
     val json = fetchJson("$apiBaseUrl/api/feeds/$feedId/episodes?limit=15&slim=1")
-      ?: return listOf(buildInfoItem("No connection"))
+      ?: return listOf(buildInfoItem("No connection", "Check the phone's data connection"))
 
     val feedMeta = feedMetadataCache[feedId]
     val feedTitle = feedMeta?.optString("title", "ShiurPod") ?: "ShiurPod"
@@ -816,6 +886,7 @@ class ShiurPodAutoService : MediaLibraryService() {
 
     return try {
       val episodes = JSONArray(json)
+      prefetchArtworkFrom(episodes, feedImageUrl)
       val items = mutableListOf<MediaItem>()
 
       for (i in 0 until episodes.length()) {
@@ -886,7 +957,7 @@ class ShiurPodAutoService : MediaLibraryService() {
   private fun searchFeeds(query: String): List<MediaItem> {
     val encoded = URLEncoder.encode(query, "UTF-8")
     val json = fetchJson("$apiBaseUrl/api/feeds/search?q=$encoded&limit=15")
-      ?: return listOf(buildInfoItem("No connection"))
+      ?: return listOf(buildInfoItem("No connection", "Check the phone's data connection"))
 
     return try {
       val feeds = JSONArray(json)
@@ -898,16 +969,29 @@ class ShiurPodAutoService : MediaLibraryService() {
     }
   }
 
-  private fun buildInfoItem(message: String): MediaItem {
+  /**
+   * A non-playable row standing in for an empty (or unreachable) list.
+   *
+   * Android Auto falls back to its generic alert triangle for any item with
+   * no artwork, so "nothing here yet" rendered as what looked like a failed
+   * screen. Giving the row the ShiurPod logo, plus a subtitle saying what to
+   * do about it, makes an empty state read as a state rather than an error.
+   *
+   * The media id is derived from the message rather than the clock: it used
+   * to be System.currentTimeMillis(), so the same empty state got a fresh id
+   * on every browse and Auto treated it as a different row each time.
+   */
+  private fun buildInfoItem(message: String, subtitle: String = ""): MediaItem {
+    val metadata = MediaMetadata.Builder()
+      .setTitle(message)
+      .setIsBrowsable(false)
+      .setIsPlayable(false)
+    if (subtitle.isNotEmpty()) metadata.setSubtitle(subtitle)
+    applyArtwork(metadata, "")   // empty -> the ShiurPod logo
+
     return MediaItem.Builder()
-      .setMediaId("info_${System.currentTimeMillis()}")
-      .setMediaMetadata(
-        MediaMetadata.Builder()
-          .setTitle(message)
-          .setIsBrowsable(false)
-          .setIsPlayable(false)
-          .build()
-      )
+      .setMediaId("info_${message.hashCode()}")
+      .setMediaMetadata(metadata.build())
       .build()
   }
 
@@ -1148,6 +1232,7 @@ class ShiurPodAutoService : MediaLibraryService() {
     placeholderPlayer?.let { it.release() }
     placeholderPlayer = null
     ioExecutor.shutdown()
+    artworkExecutor.shutdown()
     super<MediaLibraryService>.onDestroy()
   }
 }

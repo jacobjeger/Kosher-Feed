@@ -92,6 +92,7 @@
       "expo-localization",
       "expo-secure-store",
       "expo-document-picker",
+      "./plugins/withGradleMemory.js",
       "./plugins/withAndroidAuto.js",
       "./plugins/withAndroidAbiFilter.js",
       "./plugins/withAndroidMinification.js",

@@ -10,6 +10,31 @@ reconstructed into version sections here. The app version lives in
 
 ### Fixed
 
+- Android Auto browse lists return in seconds instead of stalling. Artwork was
+  downloaded and decoded inline, one image at a time, inside the loop that
+  built each list: a nine-item category took 24 seconds and a fifteen-item
+  feed never returned at all, leaving the car on "Getting your selection..."
+  Images are now fetched in parallel with a 2.5s budget, on their own thread
+  pool, and anything slower fills in on the next browse. Measured in a head
+  unit: 24.4s to 3.4s, and the feed list that never finished now takes 2.0s.
+- Android Auto plays shiurim chosen more than 30 seconds after opening the
+  app. The media session was built with a player the code treated as a
+  disposable placeholder and released on a 30-second timer — but nothing else
+  ever replaced it in a car, so the session was left holding a released
+  player and every later tap hung forever. Browsing for half a minute before
+  picking something is normal, so this failed for essentially every real use.
+- Empty lists in Android Auto no longer look like errors. Rows with no artwork
+  get Android Auto's alert-triangle icon, so "nothing here yet" rendered as a
+  failed screen. Empty states now carry the ShiurPod logo and say what they
+  mean — "No saved shiurim", "Nothing played yet" — with a line explaining
+  how to fill them.
+
+### Changed
+
+- Gradle builds get enough Metaspace to lint React Native. `lintVitalRelease`
+  runs on every release build and died with an OutOfMemoryError at Expo's
+  default 512m, taking the whole build with it.
+
 - Android Auto shows content again instead of "Error loading". Some episodes
   carry `"imageUrl": null`, and Android's `org.json` hands back the literal
   string `"null"` for an explicit JSON null, so the Auto service tried to
