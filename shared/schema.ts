@@ -636,9 +636,43 @@ export const appMetrics = pgTable("app_metrics", {
   index("app_metrics_created_idx").on(table.createdAt),
 ]);
 
+// Verdicts from the dead-episode sweep (server/dead-episodes.ts).
+//
+// A publisher can retire an episode: pull it from the RSS feed AND delete the
+// file. We keep listing it, so it sits in the show looking playable and every
+// listener who taps it gets an error — "R' Yoshe Ber Part 2 (Ep. 342)" of The
+// Rabbi Orlofsky Show failed 44 times across 17 devices in one month that way.
+// The sweep confirms the episode is gone and deletes the row.
+//
+// episodeId carries no foreign key ON PURPOSE. The row's whole job is to
+// outlive the episode it describes, so there is a record of what we removed
+// and on what evidence; a cascade would erase exactly that.
+export const episodeHealth = pgTable("episode_health", {
+  episodeId: varchar("episode_id").primaryKey(),
+  feedId: varchar("feed_id"),
+  episodeTitle: text("episode_title"),
+  audioUrl: text("audio_url").notNull(),
+  // ok        — served audio; nothing wrong with it
+  // transient — failed, but not in a way that proves it is gone (timeout,
+  //             403, 5xx). Never deleted; rechecked on a later sweep.
+  // orphaned  — hard 404/410 but STILL published in the feed, so the publisher
+  //             most likely broke a link rather than retired the episode.
+  //             Flagged for a human, not deleted.
+  // removed   — hard 404/410 and absent from a full re-parse of the feed. Both
+  //             signals agree the publisher retired it; the row was deleted.
+  status: text("status").notNull(),
+  httpStatus: integer("http_status"),
+  detail: text("detail"),
+  checkedAt: timestamp("checked_at").defaultNow().notNull(),
+  removedAt: timestamp("removed_at"),
+}, (table) => [
+  index("episode_health_status_checked_idx").on(table.status, table.checkedAt),
+]);
+
 export type Issue = typeof issues.$inferSelect;
 export type IssueEvent = typeof issueEvents.$inferSelect;
 export type AppMetric = typeof appMetrics.$inferSelect;
+export type EpisodeHealth = typeof episodeHealth.$inferSelect;
 
 // ─── Contributor program ──────────────────────────────────────────────────
 // Rabbanim publish THROUGH us: apply -> approved -> upload -> we generate a

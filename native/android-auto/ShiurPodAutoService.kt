@@ -323,6 +323,22 @@ class ShiurPodAutoService : MediaLibraryService() {
     AudioProxyRule(
       Regex("^yt://audio/([A-Za-z0-9_-]{11})$"),
       "/api/audio/yt/\$1"
+    ),
+    // A dotted bucket name breaks virtual-hosted S3 over TLS: the wildcard
+    // cert on *.s3.amazonaws.com does not cover a host with further dots to
+    // its left, so the handshake fails rather than 404s. Path-style serves the
+    // same object under a matching cert. Must precede the cleartext rule.
+    AudioProxyRule(
+      Regex("^https?://([^/]+\\.[^/]+)\\.(s3(?:[.-][a-z0-9-]+)*\\.amazonaws\\.com)/(.*)$"),
+      "https://\$2/\$1/\$3"
+    ),
+    // Cleartext -> TLS. Android has refused http:// since targetSdk 28 and the
+    // manifest does not opt back in, so a stored http:// episode never leaves
+    // the device. server/audio-url.ts does the same rewrite at ingest; this
+    // covers rows not yet backfilled. Keep last: it matches any http:// URL.
+    AudioProxyRule(
+      Regex("^http://(.*)$"),
+      "https://\$1"
     )
   )
 

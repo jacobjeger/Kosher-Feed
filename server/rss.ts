@@ -5,6 +5,7 @@ import dns_sync from "dns";
 import sax from "sax";
 import type { Episode } from "@shared/schema";
 import { Readable } from "stream";
+import { normalizeAudioUrl } from "./audio-url";
 
 dns_sync.setDefaultResultOrder('ipv4first');
 
@@ -298,7 +299,13 @@ async function fetchViaStreaming(
           inItem = false;
           itemDepth--;
 
-          const audioUrl = currentItem['enclosure_url'];
+          // Normalise for storage, but keep the raw value for the guid
+          // fallback below: an item with no <guid> and no <link> is keyed on
+          // its enclosure URL, so deriving the key from the rewritten URL
+          // would make every already-stored episode look new and duplicate
+          // the whole feed on the next refresh.
+          const rawAudioUrl = currentItem['enclosure_url'];
+          const audioUrl = rawAudioUrl ? normalizeAudioUrl(rawAudioUrl) : rawAudioUrl;
           if (audioUrl) {
             let duration: string | null = currentItem['itunes:duration'] || null;
 
@@ -312,7 +319,7 @@ async function fetchViaStreaming(
                 : `${m}:${String(s).padStart(2, '0')}`;
             }
 
-            const guid = currentItem['guid'] || currentItem['link'] || audioUrl;
+            const guid = currentItem['guid'] || currentItem['link'] || rawAudioUrl;
             episodes.push({
               feedId,
               title: currentItem['title'] || 'Untitled Episode',
@@ -469,8 +476,11 @@ export async function parseFeed(
     const feedEpisodes: Omit<Episode, "id" | "createdAt">[] = [];
 
     for (const item of proxyResult.items.slice(0, MAX_EPISODES)) {
-      const audioUrl = item.enclosure?.link || item.enclosure?.url;
-      if (!audioUrl) continue;
+      // Same split as the streaming path: normalise what we store, key the
+      // guid fallback off the raw URL so re-ingest still matches.
+      const rawAudioUrl = item.enclosure?.link || item.enclosure?.url;
+      if (!rawAudioUrl) continue;
+      const audioUrl = normalizeAudioUrl(rawAudioUrl);
 
       let duration: string | null = null;
       if (item.enclosure?.duration) {
@@ -492,7 +502,7 @@ export async function parseFeed(
         audioUrl,
         duration,
         publishedAt: item.pubDate ? new Date(item.pubDate) : null,
-        guid: item.guid || item.link || audioUrl,
+        guid: item.guid || item.link || rawAudioUrl,
         imageUrl: item.thumbnail || null,
         adminNotes: null,
         sourceSheetUrl: null,

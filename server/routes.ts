@@ -4416,6 +4416,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const DEFAULT_AUDIO_PROXY_RULES = [
         { match: "https?://srv\\.kolhalashon\\.com/api/files/(?:GetMp3FileToPlay|getLocationOfFileToVideo)/(\\d+)", replace: "/api/audio/kh/$1" },
         { match: "^yt://audio/([A-Za-z0-9_-]{11})$", replace: "/api/audio/yt/$1" },
+        // Dotted S3 bucket -> path-style; the wildcard cert on
+        // *.s3.amazonaws.com does not cover a host with more dots to its left,
+        // so virtual-hosted TLS fails the handshake.
+        {
+          match: "^https?://([^/]+\\.[^/]+)\\.(s3(?:[.-][a-z0-9-]+)*\\.amazonaws\\.com)/(.*)$",
+          replace: "https://$2/$1/$3",
+        },
+        // Cleartext -> TLS. Android has refused http:// since targetSdk 28 and
+        // our manifest does not opt back in, so these never leave the phone.
+        // server/audio-url.ts does the same rewrite at ingest; this retrofits
+        // it onto rows already stored and onto installed builds. Keep last —
+        // it matches every http:// URL.
+        { match: "^http://(.*)$", replace: "https://$1" },
       ];
       const storedRules = Array.isArray(exposed.audioProxyRules) ? exposed.audioProxyRules : [];
       const merged = [...storedRules];

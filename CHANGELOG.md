@@ -10,6 +10,26 @@ reconstructed into version sections here. The app version lives in
 
 ### Fixed
 
+- Episodes stored with an `http://` audio URL play instead of failing. Android
+  has refused cleartext HTTP since targetSdk 28 and our manifest does not opt
+  back in, so those episodes never left the phone — 1,600 of them across 11
+  feeds, including 157 of the 353 Rabbi Orlofsky Show episodes and 452 of
+  R' Aryeh Lebowitz's. Every one of those hosts serves the identical path over
+  TLS. URLs are now normalised at ingest, existing rows are fixed by
+  `scripts/fix-cleartext-audio-urls.ts`, and the same rewrite ships to
+  installed apps through `/api/config` so a device repairs a stale URL itself.
+  Also covers S3 buckets whose name contains a dot, which cannot be reached
+  over TLS at all in virtual-hosted form and now use the path-style URL.
+- Episodes the publisher has retired are removed instead of sitting in the show
+  failing for everyone who taps them. Ingest only ever adds, so an episode
+  deleted at the source kept its place forever: "R' Yoshe Ber: A Talmid's
+  Perspective - Part 2 (Ep. 342)" of The Rabbi Orlofsky Show was 404 at the
+  origin and gone from the publisher's feed, yet stayed second from the top of
+  the show and failed 44 times across 17 devices in a month. A daily sweep now
+  removes an episode only when playback telemetry flagged it, the origin
+  answers 404/410 twice, and it is absent from a fresh parse of the feed —
+  with per-feed and per-sweep caps, and every verdict recorded in
+  `episode_health`.
 - Android Auto browse lists return in seconds instead of stalling. Artwork was
   downloaded and decoded inline, one image at a time, inside the loop that
   built each list: a nine-item category took 24 seconds and a fifteen-item

@@ -25,6 +25,7 @@ import { registerContributorFeedRoute } from "./contributor/feed-route";
 import { startContributorMediaWorker } from "./contributor-worker";
 import { isContributorFeedUrl, contributorFeedUrl } from "./feed-schemes";
 import { startPopularityRefresh } from "./search/popularity";
+import { startDeadEpisodeSweep } from "./dead-episodes";
 import { autoCategorizeFeeds } from "./auto-categorize";
 import { extractKhRavId, extractTatSpeakerId, extractTorahDownloadsSpeakerId } from "./feed-utils";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
@@ -1512,6 +1513,12 @@ function startAutoRefresh() {
   // Keeps feeds.popularity / episodes.popularity current so search ranking
   // never has to join an aggregate at query time.
   startPopularityRefresh();
+  // Removes episodes the publisher has retired — confirmed 404 at the origin
+  // AND gone from the feed. Ingest only ever adds, so without this a deleted
+  // episode keeps its place in the show and fails for every listener who taps
+  // it. Candidates come from playback_error telemetry, so it only ever looks
+  // at episodes people actually hit.
+  startDeadEpisodeSweep();
 
   // Daily error digest — send at 8am EST (13:00 UTC)
   function scheduleDailyDigest() {

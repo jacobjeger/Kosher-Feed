@@ -57,6 +57,15 @@ const DEFAULT_CONFIG: RemoteConfig = {
     // omitting this here would break YouTube playback on any device that has
     // fetched remote config.
     { match: "^yt://audio/([A-Za-z0-9_-]{11})$", replace: "/api/audio/yt/$1" },
+    // Dotted S3 bucket -> path-style (the wildcard cert does not cover it), and
+    // cleartext -> TLS (Android refuses http:// outright, so the episode is
+    // unreachable rather than slow). Order matters: the catch-all http:// rule
+    // stays last. See DEFAULT_RULES in lib/audio-url.ts.
+    {
+      match: "^https?://([^/]+\\.[^/]+)\\.(s3(?:[.-][a-z0-9-]+)*\\.amazonaws\\.com)/(.*)$",
+      replace: "https://$2/$1/$3",
+    },
+    { match: "^http://(.*)$", replace: "https://$1" },
   ],
   maxConcurrentDownloads: 1,
   maxDownloadRetries: 2,
