@@ -10,7 +10,7 @@ import { db } from "./db";
 import { eq, desc, sql, inArray } from "drizzle-orm";
 import { syncTATSpeakers, refreshTATFeedEpisodes, fetchAllSpeakers } from "./torahanytime";
 import { detectOUPlatform, refreshOUFeedEpisodes, syncOUPlatformAuthors, OU_PLATFORMS, fetchPostDetailsBatch, type OUPlatformKey } from "./alldaf";
-import { syncKHSpeakers, refreshKHFeedEpisodes, reloadKHClient, getHeaders as getKHHeaders } from "./kolhalashon";
+import { syncKHSpeakers, refreshKHFeedEpisodes, reloadKHClient, getHeaders as getKHHeaders, getBaseUrl as getKHBaseUrl } from "./kolhalashon";
 import { syncTorahDownloadsSpeakers, refreshTorahDownloadsFeedEpisodes, fetchShiurUploadDate, fetchShiurUploadDateDebug } from "./torahdownloads";
 import { extractKhRavId, extractTatSpeakerId, extractTorahDownloadsSpeakerId } from "./feed-utils";
 import {
@@ -1430,15 +1430,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const fileId = req.params.fileId;
       if (!fileId || !/^\d+$/.test(fileId)) return res.status(400).json({ error: "Invalid file ID" });
 
-      // KH serves MP3 audio via: srv.kolhalashon.com/api/files/GetMp3FileToPlay/{fileId}
-      const khPath = `/api/files/GetMp3FileToPlay/${fileId}`;
+      // Kol Halashon's audio is behind a two-step, token-gated flow since their
+      // September 2026 platform rebuild. The old one-shot endpoint
+      // (GetMp3FileToPlay on srv.kolhalashon.com) is gone — it answers 404 for
+      // every id, which is what this route was turning into a 502 for 74% of
+      // the catalogue.
+      //
+      //   1. GET /api/files/GetPlayToken/{fileId}/{mediaType}
+      //        -> {"token":"<unixtime>.<signature>"}
+      //   2. GET /api/files/GetFileToPlay/{fileId}/{mediaType}/{token}
+      //        -> the media, honouring Range
+      //
+      // mediaType 1 is audio; 2 and 3 are video and HD video. Confirmed against
+      // production: for shiur 31644578 type 1 returns audio/mpeg while 2 and 3
+      // return video/mp4 at exactly the VideoSize and HdVideoSize the metadata
+      // declares. Asking for the wrong one quietly streams a 300MB video to a
+      // phone, so it is pinned here rather than inferred.
+      const KH_MEDIA_TYPE_AUDIO = 1;
+
+      const apiBase = getKHBaseUrl(); // proxy-aware, already ends in /api
+      const tokenUrl = `${apiBase}/files/GetPlayToken/${fileId}/${KH_MEDIA_TYPE_AUDIO}`;
+
+      const tokenHeaders = getKHHeaders();
+      tokenHeaders["accept"] = "application/json, text/plain, */*";
+      let playToken: string | null = null;
+      try {
+        const tokenResp = await fetch(tokenUrl, { headers: tokenHeaders, signal: AbortSignal.timeout(15000) });
+        if (tokenResp.ok) {
+          const raw = (await tokenResp.text()).trim();
+          // Documented as JSON, but it is served as text/plain, so accept both
+          // rather than depend on a content-type we do not control.
+          try { playToken = JSON.parse(raw)?.token ?? null; } catch { playToken = raw || null; }
+        } else {
+          console.log(`KH audio: play token for ${fileId} returned ${tokenResp.status}`);
+        }
+      } catch (e: any) {
+        console.log(`KH audio: play token for ${fileId} failed — ${e?.message?.slice(0, 100)}`);
+      }
+
+      if (!playToken) return res.status(502).json({ error: "Could not obtain a play token" });
+
+      const khPath = `/files/GetFileToPlay/${fileId}/${KH_MEDIA_TYPE_AUDIO}/${encodeURIComponent(playToken)}`;
       const headers = getKHHeaders();
       headers["accept"] = "*/*";
 
-      const proxyUrl = process.env.KH_PROXY_URL;
-      const urlsToTry = proxyUrl
-        ? [`${proxyUrl.replace(/\/$/, "")}${khPath}`, `https://srv.kolhalashon.com${khPath}`]
-        : [`https://srv.kolhalashon.com${khPath}`];
+      // The token is bound to the media, so there is no second host to fall
+      // back to — a direct call would need its own token anyway. One attempt.
+      const urlsToTry = [`${apiBase}${khPath}`];
 
       for (const url of urlsToTry) {
         try {

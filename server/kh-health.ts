@@ -19,7 +19,10 @@ import { and, isNotNull, sql } from "drizzle-orm";
 import { db } from "./db";
 import { episodes } from "@shared/schema";
 import { sendOutageAlert } from "./error-alerts";
-import { getHeaders as getKHHeaders } from "./kolhalashon";
+import { getHeaders as getKHHeaders, getBaseUrl as getKHBaseUrl } from "./kolhalashon";
+
+/** Audio. 2 and 3 are video and HD video — see the audio route in routes.ts. */
+const KH_MEDIA_TYPE_AUDIO = 1;
 
 const PROBE_INTERVAL_MS = 15 * 60 * 1000;
 const FIRST_PROBE_DELAY_MS = 2 * 60 * 1000;
@@ -70,11 +73,27 @@ export async function probeKolHalashon(): Promise<KhProbeResult> {
   const fileId = await pickFileId();
   if (!fileId) return { ok: false, status: null, detail: "no KH episode in the catalogue to probe", fileId: null, via: "none" };
 
-  const path = `/api/files/GetMp3FileToPlay/${fileId}`;
-  const proxyUrl = process.env.KH_PROXY_URL;
-  const attempts: { url: string; via: "proxy" | "direct" }[] = proxyUrl
-    ? [{ url: `${proxyUrl.replace(/\/$/, "")}${path}`, via: "proxy" }, { url: `https://srv.kolhalashon.com${path}`, via: "direct" }]
-    : [{ url: `https://srv.kolhalashon.com${path}`, via: "direct" }];
+  // Exercise the real two-step flow, not a shortcut. A probe that only checked
+  // the token endpoint would go green while playback stayed broken, which is
+  // the exact failure this monitor exists to catch.
+  const apiBase = getKHBaseUrl();
+  let token: string | null = null;
+  try {
+    const tr = await fetch(`${apiBase}/files/GetPlayToken/${fileId}/${KH_MEDIA_TYPE_AUDIO}`, {
+      headers: { ...getKHHeaders(), accept: "application/json, text/plain, */*" },
+      signal: AbortSignal.timeout(15000),
+    });
+    const raw = (await tr.text()).trim();
+    if (tr.ok) { try { token = JSON.parse(raw)?.token ?? null; } catch { token = raw || null; } }
+    if (!token) {
+      return { ok: false, status: tr.status, detail: `play token: HTTP ${tr.status}`, fileId, via: "proxy" };
+    }
+  } catch (e: any) {
+    return { ok: false, status: null, detail: `play token: ${e?.cause?.code || e?.message?.slice(0, 80) || "failed"}`, fileId, via: "proxy" };
+  }
+
+  const path = `/files/GetFileToPlay/${fileId}/${KH_MEDIA_TYPE_AUDIO}/${encodeURIComponent(token)}`;
+  const attempts: { url: string; via: "proxy" | "direct" }[] = [{ url: `${apiBase}${path}`, via: "proxy" }];
 
   // Record EVERY attempt, not just the last. Reporting only the final one says
   // "direct: HTTP 403" and hides that the worker was tried and failed first,

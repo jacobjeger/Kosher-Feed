@@ -5,13 +5,18 @@ import { normalizeName } from "./name-utils";
 import { filterCrossSourceDuplicates, isMergedFeed, dedupWithinBatch } from "./episode-dedup";
 import { extractKhRavId } from "./feed-utils";
 
-// KH API base URL
-const KH_API_BASE = "https://srv.kolhalashon.com/api";
+// KH API base URL.
+//
+// Kol Halashon moved off srv.kolhalashon.com in early September 2026; the old
+// host answers 404 for every path, which silently broke feed refresh, speaker
+// sync AND audio at once. Overridable so the next move is a config change.
+const KH_HOST = process.env.KH_BASE || "https://www.kolhalashon.com";
+const KH_API_BASE = `${KH_HOST}/api`;
 
 
 // When KH_PROXY_URL is set, route requests through the Cloudflare Worker proxy
 // This bypasses Cloudflare's IP-based blocking on cloud hosting providers
-function getBaseUrl(): string {
+export function getBaseUrl(): string {
   const proxyUrl = process.env.KH_PROXY_URL;
   if (proxyUrl) {
     // Proxy URL should point to the CF Worker, e.g. https://kh-proxy.yourname.workers.dev
@@ -19,6 +24,13 @@ function getBaseUrl(): string {
     return proxyUrl.replace(/\/$/, "") + "/api";
   }
   return KH_API_BASE;
+}
+
+/** Fresh 7-char base-36 nonce, matching what their web app generates per call. */
+function khSiteKeyNonce(): string {
+  let n = "";
+  while (n.length < 7) n += Math.random().toString(36).slice(2);
+  return `Bearer ${n.slice(0, 7)}`;
 }
 
 export function getHeaders(): Record<string, string> {
@@ -34,9 +46,12 @@ export function getHeaders(): Record<string, string> {
   if (!process.env.KH_PROXY_URL) {
     Object.assign(headers, {
       "accept-language": "he-IL,he;q=0.9,en-AU;q=0.8,en;q=0.7,en-US;q=0.6",
-      "authorization-site-key": process.env.KH_AUTH_TOKEN || "Bearer 8ea2pe8",
-      "origin": "https://www2.kolhalashon.com",
-      "referer": "https://www2.kolhalashon.com/",
+      // A per-request nonce, not a credential — see siteKey() in
+      // kh-proxy/worker.js. Sending one fixed value forever is what made us
+      // distinguishable from a browser.
+      "authorization-site-key": process.env.KH_AUTH_TOKEN || khSiteKeyNonce(),
+      "origin": KH_HOST,
+      "referer": `${KH_HOST}/`,
       "sec-ch-ua": '"Chromium";v="120", "Google Chrome";v="120", "Not=A?Brand";v="8"',
       "sec-ch-ua-mobile": "?0",
       "sec-ch-ua-platform": '"macOS"',

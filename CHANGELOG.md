@@ -10,6 +10,18 @@ reconstructed into version sections here. The app version lives in
 
 ### Fixed
 
+- Kol Halashon shiurim play again — 74% of the catalogue. Kol Halashon rebuilt
+  their platform in early September 2026: the API moved off
+  `srv.kolhalashon.com` (which now answers 404 for every path) to
+  `www.kolhalashon.com`, and audio moved behind a two-step token flow —
+  `GetPlayToken` then `GetFileToPlay`. Our integration still called the old
+  one-shot endpoint on the old host, so `/api/audio/kh/*` served 502 and
+  roughly three quarters of the catalogue would not play. The same host change
+  had also silently broken Kol Halashon feed refresh and speaker sync. The host
+  is now configurable via `KH_BASE`, and `authorization-site-key` is generated
+  per request as their web app does, rather than being one hardcoded value sent
+  forever.
+
 - Downloaded episodes play from the downloaded file no matter where you start
   them. Only the Downloads tab pointed playback at the local copy; the same
   episode started from a podcast page, search, the home screen, the queue or a
