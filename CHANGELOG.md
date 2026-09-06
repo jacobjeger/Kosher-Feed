@@ -10,6 +10,14 @@ reconstructed into version sections here. The app version lives in
 
 ### Fixed
 
+- Feed vitals reports a Kol Halashon outage instead of showing green. When the
+  KH API could not be reached, the refresh caught the error and returned "0 new
+  episodes", which the dashboard recorded as a successful refresh — so while
+  every one of the 1,222,503 KH episodes was unreachable, feed vitals showed
+  nothing wrong. A source we cannot reach is now a failure, not an empty
+  result; both callers already logged and recorded failures, they were just
+  never given anything to catch.
+
 - Kol Halashon shiurim play again — 74% of the catalogue. Kol Halashon rebuilt
   their platform in early September 2026: the API moved off
   `srv.kolhalashon.com` (which now answers 404 for every path) to

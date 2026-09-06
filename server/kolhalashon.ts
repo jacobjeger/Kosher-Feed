@@ -405,9 +405,14 @@ export async function refreshKHFeedEpisodes(
   try {
     firstPage = await getSpeakerShiurim(feed.kolhalashonRavId, 0, 24);
   } catch (e: any) {
+    // Rethrow. Returning 0 here reported "refreshed fine, nothing new" to
+    // feed-vitals, so when Kol Halashon moved hosts and every API call started
+    // 404ing, the dashboard stayed green across all 1,222,503 KH episodes and
+    // the outage was invisible for days. Both callers of this function already
+    // catch, log, update lastFetchedAt and record the failure — they were just
+    // never given anything to catch.
     console.error(`KH refresh: ${feed.title} — fetch failed: ${e.message}`);
-    await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
-    return { newEpisodes: 0 };
+    throw new Error(`KH API unreachable for ${feed.title}: ${e.message}`);
   }
   if (!Array.isArray(firstPage) || firstPage.length === 0) {
     await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
@@ -432,9 +437,10 @@ export async function refreshKHFeedEpisodes(
   try {
     shiurim = await getAllSpeakerShiurim(feed.kolhalashonRavId, 5000, incremental);
   } catch (e: any) {
+    // Same reasoning as the first-page fetch above: a source we cannot reach is
+    // a failure, not an empty result.
     console.error(`KH refresh: ${feed.title} — full fetch failed: ${e.message}`);
-    await storage.updateFeed(feed.id, { lastFetchedAt: new Date() });
-    return { newEpisodes: 0 };
+    throw new Error(`KH pagination failed for ${feed.title}: ${e.message}`);
   }
 
   if (!Array.isArray(shiurim) || shiurim.length === 0) {
