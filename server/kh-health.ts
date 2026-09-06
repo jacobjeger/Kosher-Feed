@@ -69,6 +69,11 @@ export async function probeKolHalashon(): Promise<KhProbeResult> {
     ? [{ url: `${proxyUrl.replace(/\/$/, "")}${path}`, via: "proxy" }, { url: `https://srv.kolhalashon.com${path}`, via: "direct" }]
     : [{ url: `https://srv.kolhalashon.com${path}`, via: "direct" }];
 
+  // Record EVERY attempt, not just the last. Reporting only the final one says
+  // "direct: HTTP 403" and hides that the worker was tried and failed first,
+  // which points the reader away from the proxy — the thing most likely to be
+  // at fault, and the thing they have to fix.
+  const tried: string[] = [];
   let last: KhProbeResult = { ok: false, status: null, detail: "no attempt made", fileId, via: "none" };
   for (const { url, via } of attempts) {
     try {
@@ -83,10 +88,12 @@ export async function probeKolHalashon(): Promise<KhProbeResult> {
       const type = res.headers.get("content-type") || "";
       // Audio, not a JSON error or an HTML block page rendered with a 200.
       const ok = (res.ok || res.status === 206) && !/json|html/i.test(type);
-      last = { ok, status: res.status, detail: ok ? `HTTP ${res.status} ${type}` : `HTTP ${res.status} ${type || "(no content-type)"}`, fileId, via };
+      tried.push(`${via}: HTTP ${res.status} ${type || "(no content-type)"}`);
+      last = { ok, status: res.status, detail: tried.join(" | "), fileId, via };
       if (ok) return last;
     } catch (e: any) {
-      last = { ok: false, status: null, detail: e?.cause?.code || e?.message?.slice(0, 120) || "fetch failed", fileId, via };
+      tried.push(`${via}: ${e?.cause?.code || e?.message?.slice(0, 80) || "fetch failed"}`);
+      last = { ok: false, status: null, detail: tried.join(" | "), fileId, via };
     }
   }
   return last;
