@@ -9,15 +9,30 @@
 const KH_BASE = "https://srv.kolhalashon.com";
 const TD_CDN_BASE = "https://torahcdn.net";
 
-const KH_HEADERS = {
-  "accept": "application/json, text/plain, */*",
-  "accept-language": "he-IL,he;q=0.9,en-AU;q=0.8,en;q=0.7,en-US;q=0.6",
-  "authorization-site-key": "Bearer 8ea2pe8", // TODO: move to env.KH_AUTH_TOKEN wrangler secret
-  "content-type": "application/json",
-  "origin": "https://www2.kolhalashon.com",
-  "referer": "https://www2.kolhalashon.com/",
-  "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-};
+// The site key KH's own web app sends. It is NOT permanent: when it was
+// rotated on 2026-09-05 every KH request started coming back 404 with an empty
+// body, /api/audio/kh/* served 502, and 74% of the catalogue stopped playing.
+// Recovering from that must not require editing and redeploying this file, so
+// the value now comes from a secret:
+//
+//   cd kh-proxy && npx wrangler secret put KH_AUTH_TOKEN
+//
+// Set the FULL header value, e.g. "Bearer abc123" — matching how the server
+// reads KH_AUTH_TOKEN in server/kolhalashon.ts. The literal below is only the
+// last-known-good fallback for when no secret is set.
+const KH_AUTH_FALLBACK = "Bearer 8ea2pe8";
+
+function khHeaders(env) {
+  return {
+    "accept": "application/json, text/plain, */*",
+    "accept-language": "he-IL,he;q=0.9,en-AU;q=0.8,en;q=0.7,en-US;q=0.6",
+    "authorization-site-key": (env && env.KH_AUTH_TOKEN) || KH_AUTH_FALLBACK,
+    "content-type": "application/json",
+    "origin": "https://www2.kolhalashon.com",
+    "referer": "https://www2.kolhalashon.com/",
+    "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  };
+}
 
 // torahcdn.net (Cloudflare-fronted S3) returns 1015 / silent drops for
 // requests bearing Railway IPs + non-browser UAs. From a worker on
@@ -65,7 +80,7 @@ export default {
     const khUrl = KH_BASE + url.pathname + url.search;
     const khRequest = new Request(khUrl, {
       method: request.method,
-      headers: KH_HEADERS,
+      headers: khHeaders(env),
       body: request.method !== "GET" ? await request.text() : undefined,
     });
     const response = await fetch(khRequest);

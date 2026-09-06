@@ -10,6 +10,7 @@ import { getDeviceId } from "@/lib/device-id";
 import { addLog } from "@/lib/error-logger";
 
 import { resolveAudioUrl } from "@/lib/audio-url";
+import { setLocalAudioLookup } from "@/lib/local-audio";
 
 const PROGRESS_THROTTLE_MS = 4000;
 const PROGRESS_UPDATE_MIN_CHANGE = 0.10;
@@ -150,6 +151,18 @@ export function DownloadsProvider({ children }: { children: ReactNode }) {
     downloadedIdsCache.clear();
     downloads.forEach(d => downloadedIdsCache.add(d.id));
   }, [downloads]);
+
+  // Let the player reach the downloaded file. AudioPlayerProvider wraps this
+  // provider, so it cannot useDownloads(); it reads through this registry
+  // instead. Reads downloadsRef, not `downloads`, so the lookup registered
+  // here stays correct without re-registering on every change.
+  useEffect(() => {
+    setLocalAudioLookup((episodeId) => {
+      const ep = downloadsRef.current.find(d => d.id === episodeId);
+      return ep?.localUri || null;
+    });
+    return () => setLocalAudioLookup(null);
+  }, []);
 
   useEffect(() => {
     loadDownloads();

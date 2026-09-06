@@ -19,6 +19,19 @@ let createAudioPlayerFn: any = null;
 let setAudioModeAsyncFn: any = null;
 
 import { resolveAudioUrl } from "@/lib/audio-url";
+import { getLocalAudioUri } from "@/lib/local-audio";
+
+/**
+ * Where to actually read this episode's audio from.
+ *
+ * A downloaded file wins over the network, every time and from every entry
+ * point. This used to be done by the Downloads screen alone, so a downloaded
+ * episode started from anywhere else streamed anyway — see lib/local-audio.ts.
+ * Everything that opens audio goes through here.
+ */
+function playbackSourceFor(episode: { id: string; audioUrl: string }): string {
+  return getLocalAudioUri(episode.id) ?? resolveAudioUrl(episode.audioUrl);
+}
 
 if (Platform.OS !== "web") {
   try {
@@ -789,7 +802,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           audioRef.current.pause();
           audioRef.current.src = "";
         }
-        const audio = new Audio(resolveAudioUrl(episode.audioUrl));
+        const audio = new Audio(playbackSourceFor(episode));
         audio.playbackRate = feedSpeed;
         audio.volume = boostEnabled ? BOOST_VOLUME : NORMAL_VOLUME;
         audio.preload = "auto";
@@ -845,7 +858,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           // Buzzsprout (and other hosts) 403 the default OkHttp UA; pass any
           // non-default UA so their CDN serves the file.
           const player = createAudioPlayerFn(
-            { uri: resolveAudioUrl(episode.audioUrl), headers: { "User-Agent": "ShiurPod/1.0" } },
+            { uri: playbackSourceFor(episode), headers: { "User-Agent": "ShiurPod/1.0" } },
             // updateInterval 500ms used to overlap with the JS 1000ms position
             // poll, doubling status-update work for no UX benefit (we render
             // the progress bar every 1s anyway). 2026-06-18 frame trace on
@@ -1394,7 +1407,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         if (Platform.OS === "web") {
           const audio = new Audio();
           audio.preload = "auto";
-          audio.src = resolveAudioUrl(result.episode.audioUrl);
+          audio.src = playbackSourceFor(result.episode);
           if (preBufferRef.current) {
             preBufferRef.current.src = "";
           }

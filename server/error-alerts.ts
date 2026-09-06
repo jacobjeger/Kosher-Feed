@@ -292,3 +292,45 @@ export async function sendDailyErrorDigest(stats: {
 function escHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
+
+/**
+ * Alert on a whole source going down, as opposed to a spike of app errors.
+ *
+ * trackErrorForAlert only fires on client-reported errors crossing a spike
+ * threshold, which is exactly the wrong shape for an upstream outage: when Kol
+ * Halashon cut us off on 2026-09-05 it took out 74% of the catalogue and the
+ * dashboards showed two events, because playback_error only fires after five
+ * retries exhaust and most people simply gave up. Nothing paged anyone; we
+ * found it from a single support ticket five days later.
+ *
+ * Callers own their own cooldown so a persistent outage does not mail every
+ * probe — see khOutageNotified in server/kh-health.ts.
+ */
+export async function sendOutageAlert(subject: string, lines: string[]): Promise<void> {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    console.log(`Outage alert (no RESEND_API_KEY, not sent): ${subject}`);
+    return;
+  }
+  try {
+    const resend = new Resend(apiKey);
+    await resend.emails.send({
+      from: "ShiurPod Alerts <alerts@shiurpod.com>",
+      to: ALERT_EMAIL,
+      subject,
+      html: `
+        <div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+          <h2 style="color:#ef4444;margin-bottom:16px;">${subject}</h2>
+          <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:16px;">
+            ${lines.map(l => `<p style="margin:0 0 8px;color:#7f1d1d;">${l}</p>`).join("")}
+          </div>
+          <p style="color:#6b7280;font-size:13px;margin-top:16px;">
+            Sent by the source health monitor. It only fires on a sustained failure, not a single bad probe.
+          </p>
+        </div>`,
+    });
+    console.log(`Outage alert sent: ${subject}`);
+  } catch (e: any) {
+    console.error(`Failed to send outage alert: ${e?.message?.slice(0, 160)}`);
+  }
+}

@@ -54,17 +54,17 @@ function DownloadItem({ item }: { item: DownloadedEpisode }) {
     sourceNetwork: null,
   };
 
-  const episodeToPlay = {
-    ...item,
-    audioUrl: item.localUri || item.audioUrl,
-  };
-
   const handlePlay = async () => {
     lightHaptic();
     if (isCurrentlyPlaying) {
       playback.isPlaying ? await pause() : await resume();
     } else {
-      await playEpisode(episodeToPlay, fakeFeed);
+      // No local-file swap here any more. This screen used to be the ONLY
+      // place that pointed playback at the downloaded file, which is why a
+      // downloaded episode started from anywhere else streamed instead. The
+      // player now resolves it for every entry point (lib/local-audio.ts), so
+      // doing it again here would just be a second source of truth.
+      await playEpisode(item, fakeFeed);
     }
   };
 

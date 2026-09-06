@@ -26,6 +26,7 @@ import { startContributorMediaWorker } from "./contributor-worker";
 import { isContributorFeedUrl, contributorFeedUrl } from "./feed-schemes";
 import { startPopularityRefresh } from "./search/popularity";
 import { startDeadEpisodeSweep } from "./dead-episodes";
+import { startKolHalashonHealthCheck } from "./kh-health";
 import { autoCategorizeFeeds } from "./auto-categorize";
 import { extractKhRavId, extractTatSpeakerId, extractTorahDownloadsSpeakerId } from "./feed-utils";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
@@ -1519,6 +1520,10 @@ function startAutoRefresh() {
   // it. Candidates come from playback_error telemetry, so it only ever looks
   // at episodes people actually hit.
   startDeadEpisodeSweep();
+  // Kol Halashon is 74% of the catalogue and reaches us through one worker
+  // against an upstream that can withdraw access silently — as it did on
+  // 2026-09-05, costing days before a support ticket surfaced it. Probe it.
+  startKolHalashonHealthCheck();
 
   // Daily error digest — send at 8am EST (13:00 UTC)
   function scheduleDailyDigest() {
