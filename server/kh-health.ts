@@ -25,8 +25,15 @@ const PROBE_INTERVAL_MS = 15 * 60 * 1000;
 const FIRST_PROBE_DELAY_MS = 2 * 60 * 1000;
 /** Consecutive failures before alerting — one bad probe is not an outage. */
 const FAILURES_BEFORE_ALERT = 2;
-/** Don't re-alert about an outage already reported within this window. */
-const RE_ALERT_MS = 6 * 60 * 60 * 1000;
+// Don't re-alert about an outage already reported within this window.
+//
+// Deliberately a full day rather than a few hours. The failure this was built
+// for is not a blip that clears itself: Kol Halashon moved their API to
+// www.kolhalashon.com and put audio behind signed, expiring play tokens, so
+// the outage persists until someone talks to them. Mailing every six hours
+// about a known, unfixable-by-us condition trains people to ignore the alert,
+// which costs us the NEXT outage.
+const RE_ALERT_MS = 24 * 60 * 60 * 1000;
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let consecutiveFailures = 0;
