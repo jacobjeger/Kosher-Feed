@@ -40,19 +40,6 @@ reconstructed into version sections here. The app version lives in
   looked like "nothing plays, even downloads". The player now resolves the
   local file for every entry point.
 
-### Added
-
-- An alert when a whole source stops serving audio. Kol Halashon is 74% of the
-  catalogue; when it went down, `playback_error` recorded two events across the
-  entire fleet — it only fires after five retries exhaust, so a total outage
-  was invisible and surfaced days later as a support ticket. A probe now checks
-  the Kol Halashon path every 15 minutes and emails after two consecutive
-  failures, and again on recovery.
-- The Kol Halashon site key can be rotated without a code change. It was
-  hardcoded in `kh-proxy/worker.js`, so recovering from a rotation meant
-  editing and redeploying the worker. It now reads the `KH_AUTH_TOKEN` secret,
-  falling back to the previous literal when unset.
-
 - Episodes stored with an `http://` audio URL play instead of failing. Android
   has refused cleartext HTTP since targetSdk 28 and our manifest does not opt
   back in, so those episodes never left the phone — 1,600 of them across 11
@@ -91,6 +78,19 @@ reconstructed into version sections here. The app version lives in
   failed screen. Empty states now carry the ShiurPod logo and say what they
   mean — "No saved shiurim", "Nothing played yet" — with a line explaining
   how to fill them.
+
+### Added
+
+- An alert when a whole source stops serving audio. Kol Halashon is 74% of the
+  catalogue; when it went down, `playback_error` recorded two events across the
+  entire fleet — it only fires after five retries exhaust, so a total outage
+  was invisible and surfaced days later as a support ticket. A probe now checks
+  the Kol Halashon path every 15 minutes and emails after two consecutive
+  failures, and again on recovery.
+- The Kol Halashon site key can be rotated without a code change. It was
+  hardcoded in `kh-proxy/worker.js`, so recovering from a rotation meant
+  editing and redeploying the worker. It now reads the `KH_AUTH_TOKEN` secret,
+  falling back to the previous literal when unset.
 
 ### Changed
 
