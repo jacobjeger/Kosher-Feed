@@ -284,12 +284,13 @@ function SettingsScreenInner() {
           // stored on the scheduled notification, which R8-minified builds cannot
           // serialize. See plugins/withProguardRules.js.
           sound: true,
-          ...(Platform.OS === "android" ? { channelId: "new-episodes" } : {}),
         } as any,
         trigger: Platform.OS === "web" ? null : {
           type: "timeInterval" as any,
           seconds: 60,
           repeats: false,
+          // channelId goes on the trigger — see lib/notifications.ts.
+          ...(Platform.OS === "android" ? { channelId: "new-episodes" } : {}),
         },
       });
       Alert.alert("Scheduled", "A test notification will arrive in 60 seconds. You can close the app to test background delivery.");

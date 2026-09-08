@@ -99,7 +99,7 @@ async function main() {
     }
     const { data } = await api('GET', '/api/v1/issues' + (q.toString() ? '?' + q : ''));
     if (opt.table) {
-      console.log(pad('FINGERPRINT', 18) + pad('N', 7) + pad('USERS', 7) + pad('SEV', 9) + pad('STATUS', 11) + pad('VERSION', 12) + pad('LAST', 7) + 'TITLE');
+      console.log(pad('FINGERPRINT', 18) + pad('N', 7) + pad('DEV30', 7) + pad('SEV', 9) + pad('STATUS', 11) + pad('VERSION', 12) + pad('LAST', 7) + 'TITLE');
       console.log('-'.repeat(120));
       for (const r of data) {
         const ver = (r.appVersions && r.appVersions[r.appVersions.length - 1]) || '-';
@@ -129,7 +129,7 @@ async function main() {
       const i = data.issue;
       console.log(`\n  ${i.fingerprint}  [${i.severity}]  status=${i.status}`);
       console.log(`  ${i.title}`);
-      console.log(`  ${i.count} events / ${i.uniqueDeviceCount} devices · first ${fmtAgo(i.firstSeen)} ago · last ${fmtAgo(i.lastSeen)} ago`);
+      console.log(`  ${i.count} events / ${i.uniqueDeviceCount} devices (30d) · first ${fmtAgo(i.firstSeen)} ago · last ${fmtAgo(i.lastSeen)} ago`);
       console.log(`  platforms: ${(i.platforms || []).join(', ') || '-'}`);
       console.log(`  versions:  ${(i.appVersions || []).join(', ') || '-'}`);
       if (i.resolvedAtVersion) console.log(`  resolved on v${i.resolvedAtVersion}${i.resolvedNote ? ' — ' + i.resolvedNote : ''}`);

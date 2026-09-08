@@ -92,6 +92,18 @@ export interface IngestEventInput {
   fingerprintOverride?: string;
 }
 
+// The JS-thread jank detector (lib/perf/jank-detector.ts) console.warns every
+// pause over 500ms, and the client's console.warn shim uploads warnings. On a
+// low-end kosher phone a 500ms pause is routine, so this alone was 104,110 of
+// 111,938 events in the feed — enough noise to hide a four-month-old
+// notification bug. The same data already arrives properly as the js_jank_ms
+// metric, so the event copy is pure cost. Dropped at the ingest boundary
+// rather than only in the client, because APKs running older bundles keep
+// sending it whatever we ship over OTA — same reasoning as isPushNoiseReport.
+export function isJankNoise(message: string | null | undefined): boolean {
+  return !!message && message.startsWith("[jank]");
+}
+
 export interface IngestEventResult {
   fingerprint: string;
   status: string;
@@ -184,8 +196,10 @@ export async function ingestEvent(input: IngestEventInput): Promise<IngestEventR
       await tx.update(issues).set({
         lastSeen: new Date(),
         count: cur.count + 1,
-        // Cheap approximation — UNIQUE COUNT(DISTINCT device_id) computed lazily by
-        // listIssues; this column is just a hint used for sorting.
+        // Deliberately an over-count: this is "events that carried a device id",
+        // not distinct devices, and it exists only as a cheap sort key. The
+        // honest number is computed from issue_events by attachDeviceCounts()
+        // on the read path — never read this column directly.
         uniqueDeviceCount: cur.uniqueDeviceCount + (input.deviceId ? 1 : 0),
         platforms: nextPlatforms,
         appVersions: nextVersions,
@@ -249,19 +263,47 @@ export async function listIssues(filters: ListIssuesFilters): Promise<Issue[]> {
 
   const sortCol =
     filters.sort === "count" ? desc(issues.count) :
-    filters.sort === "users" ? desc(issues.uniqueDeviceCount) :
+    filters.sort === "users" ? desc(DISTINCT_DEVICES) :
     filters.sort === "first_seen" ? desc(issues.firstSeen) :
     desc(issues.lastSeen);
 
-  return db.select().from(issues)
+  const rows = await db.select().from(issues)
     .where(conds.length ? and(...conds) : undefined)
     .orderBy(sortCol)
     .limit(Math.min(filters.limit || 50, 500));
+
+  return attachDeviceCounts(rows);
+}
+
+// How many distinct devices have reported a fingerprint. Correlated so it can
+// also drive ORDER BY for sort=users; issue_events_fp_created_idx covers it.
+const DISTINCT_DEVICES = sql<number>`(
+  SELECT count(DISTINCT ie.device_id) FROM issue_events ie
+  WHERE ie.fingerprint = ${issues.fingerprint}
+)`;
+
+// Replace the stored uniqueDeviceCount — an event counter, not a device count —
+// with the real thing, in one grouped query over the page we're returning.
+// Note this counts devices still inside the issue_events retention window, so
+// it is "devices seen in the last 30 days", not lifetime. Callers label it.
+async function attachDeviceCounts(rows: Issue[]): Promise<Issue[]> {
+  if (rows.length === 0) return rows;
+  const counts = await db
+    .select({
+      fingerprint: issueEvents.fingerprint,
+      devices: sql<number>`count(DISTINCT ${issueEvents.deviceId})::int`,
+    })
+    .from(issueEvents)
+    .where(inArray(issueEvents.fingerprint, rows.map(r => r.fingerprint)))
+    .groupBy(issueEvents.fingerprint);
+  const byFingerprint = new Map(counts.map(c => [c.fingerprint, Number(c.devices)]));
+  return rows.map(r => ({ ...r, uniqueDeviceCount: byFingerprint.get(r.fingerprint) ?? 0 }));
 }
 
 export async function getIssue(fingerprint: string, eventsLimit: number = 20): Promise<{ issue: Issue | null; events: IssueEvent[] }> {
-  const [issue] = await db.select().from(issues).where(eq(issues.fingerprint, fingerprint)).limit(1);
-  if (!issue) return { issue: null, events: [] };
+  const [row] = await db.select().from(issues).where(eq(issues.fingerprint, fingerprint)).limit(1);
+  if (!row) return { issue: null, events: [] };
+  const [issue] = await attachDeviceCounts([row]);
   const events = await db.select().from(issueEvents)
     .where(eq(issueEvents.fingerprint, fingerprint))
     .orderBy(desc(issueEvents.createdAt))
@@ -666,4 +708,35 @@ export async function listMetricKinds(windowMs: number = 7 * 24 * 60 * 60 * 1000
     .orderBy(desc(sql`COUNT(*)`))
     .limit(50);
   return rows.map(r => ({ kind: r.kind, count: Number(r.count) }));
+}
+
+// ─── retention ──────────────────────────────────────────────────────────────
+
+// issue_events and app_metrics are append-only firehoses — 113,788 and 168,498
+// rows, ~5,700/day between them, 433 MB growing ~150 MB/month. That growth is
+// most of what the Railway bill is made of, since Postgres is billed on the
+// memory it uses to hold this. Nothing reads a raw event more than a few days
+// old: the `issues` row carries the lifetime aggregate (count, firstSeen,
+// resolve/regression state), so pruning events loses no triage history.
+//
+// Deletes via db.execute rather than .returning() — the first run removes tens
+// of thousands of rows and there is no reason to materialise their ids.
+//
+// Note the knock-on: attachDeviceCounts() reads issue_events, so unique-device
+// counts become "devices seen within this window" rather than lifetime. That is
+// the more useful number for triage, but it has to be labelled as such.
+async function deleteOlderThan(table: string, olderThanDays: number): Promise<number> {
+  const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000);
+  const result = await db.execute(
+    sql`DELETE FROM ${sql.identifier(table)} WHERE created_at < ${cutoff}`
+  );
+  return Number((result as any).rowCount || 0);
+}
+
+export function deleteOldIssueEvents(olderThanDays: number = 30): Promise<number> {
+  return deleteOlderThan("issue_events", olderThanDays);
+}
+
+export function deleteOldAppMetrics(olderThanDays: number = 30): Promise<number> {
+  return deleteOlderThan("app_metrics", olderThanDays);
 }

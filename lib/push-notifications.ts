@@ -74,9 +74,11 @@ export function setupForegroundNotificationHandler() {
               // stored on the scheduled notification, which R8-minified builds cannot
               // serialize. See plugins/withProguardRules.js.
               sound: true,
-              ...(Platform.OS === "android" ? { channelId: "default" } : {}),
             } as any,
-            trigger: null,
+            // channelId goes on the trigger, not the content — a content-level
+            // one is ignored and the notification lands on expo's fallback
+            // channel at default importance. See lib/notifications.ts.
+            trigger: Platform.OS === "android" ? { channelId: "default" } : null,
           });
           addLog("info", `Local notification scheduled successfully for: "${title}"`, undefined, "push");
         } catch (e) {

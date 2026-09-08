@@ -2934,6 +2934,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   function isPushNoiseReport(r: { level?: string; source?: string; message?: string }): boolean {
     if ((r.level || "error") === "error") return false; // never drop real errors
     if (r.source === "push" || r.source === "notifications") return true;
+    if (iss.isJankNoise(r.message)) return true; // see issues-storage.isJankNoise
     return !!r.message && PUSH_NOISE_RE.test(r.message);
   }
 

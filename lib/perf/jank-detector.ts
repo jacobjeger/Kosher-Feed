@@ -97,8 +97,16 @@ export function installJankDetector(): void {
     if (blockedFor > MAX_PLAUSIBLE_JANK_MS) return;
     const mark = currentMark ?? (routeMark ? `route:${routeMark}` : "unknown");
     const markAge = currentMark ? now - markStartedAt : 0;
-    // eslint-disable-next-line no-console
-    console.warn(`[jank] +${blockedFor}ms while=${mark} (${markAge}ms in)`);
+    // Dev-only. The console.warn shim in lib/telemetry/errors.ts uploads every
+    // warning as an error event, and on a low-end phone a 500ms pause is
+    // routine — this line alone was 93% of the entire error feed, which is how
+    // a four-month-old notification bug stayed invisible. The metric below
+    // carries the same data (sampled, bucketed, queryable via shiurctl), and
+    // the breadcrumb keeps the context on real crashes.
+    if (__DEV__) {
+      // eslint-disable-next-line no-console
+      console.warn(`[jank] +${blockedFor}ms while=${mark} (${markAge}ms in)`);
+    }
     addBreadcrumb("system", `jank ${blockedFor}ms while=${mark}`);
     addMetric("js_jank_ms", {
       valueNum: blockedFor,

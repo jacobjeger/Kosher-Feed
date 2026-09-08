@@ -95,6 +95,9 @@ const NOISE_PATTERNS = [
   // Moshe's log (2026-06-16 session) — pure noise from a library default,
   // not anything we can fix in our code.
   "[RNScreens]:",
+  // Jank is a metric (js_jank_ms), not an error. The detector only warns in
+  // __DEV__ now, but a dev build's warnings shouldn't reach the feed either.
+  "[jank]",
 ];
 
 function isNoisyMsg(msg: string): boolean {

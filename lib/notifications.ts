@@ -151,9 +151,14 @@ export async function sendLocalNotification(episode: Episode, feed: Feed) {
         // stored on the scheduled notification, which R8-minified builds cannot
         // serialize. See plugins/withProguardRules.js.
         sound: true,
-        ...(Platform.OS === "android" ? { channelId: "new-episodes" } : {}),
       } as any,
-      trigger: null,
+      // channelId belongs on the TRIGGER, not the content. The native side
+      // reads it from the trigger params (NotificationScheduler.kt:154), so a
+      // content-level channelId was silently ignored and every notification
+      // landed on expo_notifications_fallback_notification_channel at default
+      // importance — no heads-up banner, none of the channel's sound or
+      // vibration settings. A bare { channelId } is the immediate trigger.
+      trigger: Platform.OS === "android" ? { channelId: "new-episodes" } : null,
     });
     addLog("info", `Native notification scheduled for "${episode.title}"`, undefined, "notifications");
   } catch (e) {
@@ -204,9 +209,9 @@ export async function notifyNewEpisodes(newEpisodes: Episode[], feeds: Feed[]) {
               // stored on the scheduled notification, which R8-minified builds cannot
               // serialize. See plugins/withProguardRules.js.
               sound: true,
-              ...(Platform.OS === "android" ? { channelId: "new-episodes" } : {}),
             } as any,
-            trigger: null,
+            // channelId goes on the trigger — see sendLocalNotification above.
+            trigger: Platform.OS === "android" ? { channelId: "new-episodes" } : null,
           });
         } catch (e) {
           addLog("error", `Grouped notification failed for "${feed.title}" (${episodes.length} eps): ${(e as any)?.message || e}`, (e as any)?.stack, "notifications");
@@ -286,12 +291,13 @@ export async function scheduleDailyReminder(hour: number) {
         // stored on the scheduled notification, which R8-minified builds cannot
         // serialize. See plugins/withProguardRules.js.
         sound: true,
-        ...(Platform.OS === "android" ? { channelId: "daily-reminders" } : {}),
       } as any,
       trigger: {
         type: "daily" as any,
         hour: hour,
         minute: 0,
+        // channelId goes on the trigger — see sendLocalNotification above.
+        ...(Platform.OS === "android" ? { channelId: "daily-reminders" } : {}),
       },
     });
 

@@ -10,6 +10,7 @@ import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { parseFeed, preResolveHostnames } from "./rss";
 import * as storage from "./storage";
+import * as iss from "./issues-storage";
 import { sendNewEpisodePushes, PUSH_BACKFILL_THRESHOLD } from "./push";
 import { startRefreshCycle, recordFeedResult, endRefreshCycle } from "./feed-vitals";
 import { refreshTATFeedEpisodes, syncTATSpeakers, fetchAllSpeakers } from "./torahanytime";
@@ -1546,7 +1547,23 @@ function startAutoRefresh() {
   }
   scheduleDailyDigest();
 
-  // Delete error reports older than 7 days — runs daily at 03:00 UTC
+  // Telemetry retention. error_reports keeps 7 days; issue_events and
+  // app_metrics keep 30 — long enough for triage and for the unique-device
+  // counts computed off issue_events, short enough that the two tables stop
+  // being the bulk of the database (they were 433 MB, +150 MB/month, which is
+  // most of what Railway bills us for). The `issues` aggregates are never
+  // pruned, so lifetime counts and resolve/regression state survive.
+  async function runTelemetryCleanup(label: string) {
+    const reports = await storage.deleteOldErrorReports(7);
+    const events = await iss.deleteOldIssueEvents(30);
+    const metrics = await iss.deleteOldAppMetrics(30);
+    if (reports || events || metrics) {
+      log(`Telemetry cleanup (${label}): ${reports} report(s), ${events} issue event(s), ${metrics} metric(s) deleted`);
+    }
+    return reports + events + metrics;
+  }
+
+  // Runs daily at 03:00 UTC
   function scheduleErrorCleanup() {
     const now = new Date();
     const next = new Date(now);
@@ -1555,21 +1572,17 @@ function startAutoRefresh() {
     const delay = next.getTime() - now.getTime();
     setTimeout(async () => {
       try {
-        const deleted = await storage.deleteOldErrorReports(7);
-        log(`Error report cleanup: deleted ${deleted} report(s) older than 7 days`);
-      } catch (e: any) { console.error("Error cleanup failed:", e.message); }
+        await runTelemetryCleanup("daily");
+      } catch (e: any) { console.error("Telemetry cleanup failed:", e.message); }
       scheduleErrorCleanup();
     }, delay);
-    log(`Error report cleanup scheduled in ${Math.round(delay / 3600000)}h`);
+    log(`Telemetry cleanup scheduled in ${Math.round(delay / 3600000)}h`);
   }
   scheduleErrorCleanup();
 
   // Run once on boot so deploys immediately prune stale backlogs
   setTimeout(async () => {
-    try {
-      const deleted = await storage.deleteOldErrorReports(7);
-      if (deleted > 0) log(`Error report cleanup (startup): deleted ${deleted} stale report(s)`);
-    } catch {}
+    try { await runTelemetryCleanup("startup"); } catch {}
   }, 10_000);
 }
 

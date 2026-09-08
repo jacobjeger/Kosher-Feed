@@ -8,7 +8,36 @@ reconstructed into version sections here. The app version lives in
 
 ## [Unreleased]
 
+### Changed
+
+- The admin error dashboard no longer counts jank as errors. The JS-thread jank
+  detector warned on every pause over 500ms, and warnings are uploaded — on a
+  low-end phone that is constant, and it made up 104,110 of the 111,938 events
+  in the feed. Real errors were effectively invisible underneath it, which is
+  how a four-month-old notification bug went unreported. The same data is still
+  collected as the `js_jank_ms` metric. Old builds are filtered server-side too.
+
+- The dashboard's device count is now the number of devices, not the number of
+  events. It was incremented once per event, so an issue affecting 122 phones
+  reported 1,984 "users". It is now counted from the events themselves, over the
+  retention window — the CLI column is labelled `DEV30` accordingly.
+
+- Raw telemetry is kept for 30 days. `issue_events` and `app_metrics` were
+  append-only and had reached 433 MB, growing about 150 MB a month, which is the
+  bulk of what the database costs to run. The daily 03:00 UTC cleanup now prunes
+  both alongside error reports. Issue aggregates are never pruned, so lifetime
+  counts and resolve/regression history are unaffected.
+
 ### Fixed
+
+- Notifications appear as heads-up banners with the sound and vibration you
+  configured, instead of arriving silently. `channelId` was being passed inside
+  the notification content, but expo-notifications reads it from the *trigger* —
+  so it was ignored and every local notification landed on
+  `expo_notifications_fallback_notification_channel` at default importance,
+  bypassing the MAX-importance "New Episodes" and "Daily Reminders" channels the
+  app creates on launch. Found while verifying the serialization fix above: the
+  test notification posted correctly and then showed up on the wrong channel.
 
 - Notifications work again on release builds. Since R8 minification was turned
   on (2026-05-14), every local notification failed with

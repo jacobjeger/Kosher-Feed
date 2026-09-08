@@ -77,6 +77,7 @@ export function registerV1Routes(app: Express) {
       let regressionFp: string | null = null;
       for (const ev of events.slice(0, 50)) {
         if (!ev?.message) continue;
+        if (iss.isJankNoise(String(ev.message))) continue;
         try {
           const severity = ev.severity === "fatal" ? "fatal" : ev.severity === "warn" ? "warn" : "nonfatal";
           const r = await iss.ingestEvent({
