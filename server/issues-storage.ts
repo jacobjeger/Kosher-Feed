@@ -240,6 +240,13 @@ export interface ListIssuesFilters {
   sort?: "last_seen" | "count" | "users" | "first_seen";
 }
 
+// How many distinct devices have reported a fingerprint. Correlated so it can
+// also drive ORDER BY for sort=users; issue_events_fp_created_idx covers it.
+const DISTINCT_DEVICES = sql<number>`(
+  SELECT count(DISTINCT ie.device_id) FROM issue_events ie
+  WHERE ie.fingerprint = ${issues.fingerprint}
+)`;
+
 export async function listIssues(filters: ListIssuesFilters): Promise<Issue[]> {
   const conds: any[] = [];
   const status = filters.status || "active";
@@ -274,13 +281,6 @@ export async function listIssues(filters: ListIssuesFilters): Promise<Issue[]> {
 
   return attachDeviceCounts(rows);
 }
-
-// How many distinct devices have reported a fingerprint. Correlated so it can
-// also drive ORDER BY for sort=users; issue_events_fp_created_idx covers it.
-const DISTINCT_DEVICES = sql<number>`(
-  SELECT count(DISTINCT ie.device_id) FROM issue_events ie
-  WHERE ie.fingerprint = ${issues.fingerprint}
-)`;
 
 // Replace the stored uniqueDeviceCount — an event counter, not a device count —
 // with the real thing, in one grouped query over the page we're returning.

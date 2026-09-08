@@ -6557,7 +6557,7 @@ async function loadIssues() {
         + '<div style="flex:1;min-width:0;">'
         + '<div style="font-size:13px;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(i.title) + '</div>'
         + '<div style="font-size:11px;color:#64748b;margin-top:2px;">'
-        + esc(i.source || 'unknown') + ' · ' + i.uniqueDeviceCount + ' device(s) · '
+        + esc(i.source || 'unknown') + ' · ' + i.uniqueDeviceCount + ' device(s)/30d · '
         + esc((i.platforms || []).join(', ') || '-') + ' · v' + esc(ver)
         + ' · ' + esc(i.fingerprint) + '</div></div>'
         + '<span style="background:' + statusColor + '20;color:' + statusColor + ';font-size:10px;font-weight:600;padding:3px 8px;border-radius:6px;text-transform:uppercase;flex-shrink:0;">' + esc(i.status) + '</span>'
@@ -6625,7 +6625,7 @@ async function openIssueDetail(fp) {
       + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;font-size:12px;">'
       + '<span style="background:' + sevColor + '20;color:' + sevColor + ';padding:4px 10px;border-radius:6px;font-weight:600;text-transform:uppercase;">' + esc(i.severity) + '</span>'
       + '<span style="background:#3b82f620;color:#3b82f6;padding:4px 10px;border-radius:6px;font-weight:600;text-transform:uppercase;">' + esc(i.status) + '</span>'
-      + '<span style="background:#1e293b;color:#cbd5e1;padding:4px 10px;border-radius:6px;">' + i.count + ' events · ' + i.uniqueDeviceCount + ' devices</span>'
+      + '<span style="background:#1e293b;color:#cbd5e1;padding:4px 10px;border-radius:6px;">' + i.count + ' events · ' + i.uniqueDeviceCount + ' devices (last 30d)</span>'
       + '<span style="background:#1e293b;color:#cbd5e1;padding:4px 10px;border-radius:6px;">first ' + new Date(i.firstSeen).toLocaleDateString() + '</span>'
       + '<span style="background:#1e293b;color:#cbd5e1;padding:4px 10px;border-radius:6px;">last ' + new Date(i.lastSeen).toLocaleString() + '</span>'
       + '</div>'
