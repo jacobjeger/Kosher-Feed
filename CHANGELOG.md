@@ -10,6 +10,25 @@ reconstructed into version sections here. The app version lives in
 
 ### Fixed
 
+- Notifications work again on release builds. Since R8 minification was turned
+  on (2026-05-14), every local notification failed with
+  `java.io.NotSerializableException: android.net.Uri$HierarchicalUri` — the
+  Settings "Test Notification" button, the daily reminder, new-episode alerts
+  raised by the app itself, and any push that arrived while the app was open
+  (Android re-schedules those locally). Pushes that landed with the app closed
+  still showed, which is why the failure looked intermittent. Cause: expo-
+  notifications persists a scheduled notification with Java serialization, and
+  its `NotificationContent` defines the private `writeObject` hook that turns
+  its `android.net.Uri` sound field into a string. R8 renames that hook —
+  serialization only finds it by name — so the class fell back to default
+  serialization and choked on the Uri. expo-notifications ships the necessary
+  keep rule in its own `proguard-rules.pro` but never declares it as
+  `consumerProguardFiles`, so it never reached our build; we now apply it, plus
+  the standard Serializable-hook rule, from `plugins/withProguardRules.js`. The
+  app also asks for the default sound as `true` rather than the string
+  `"default"`, which avoids putting a Uri on the content at all — that half
+  ships to already-installed builds over the air.
+
 - Feed vitals reports a Kol Halashon outage instead of showing green. When the
   KH API could not be reached, the refresh caught the error and returned "0 new
   episodes", which the dashboard recorded as a successful refresh — so while

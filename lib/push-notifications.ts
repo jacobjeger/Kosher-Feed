@@ -70,7 +70,10 @@ export function setupForegroundNotificationHandler() {
               title: notification.request.content.title || "ShiurPod",
               body: notification.request.content.body || "",
               data: notification.request.content.data || {},
-              sound: "default",
+              // `true`, not "default": a string sound is resolved to a content:// Uri and
+              // stored on the scheduled notification, which R8-minified builds cannot
+              // serialize. See plugins/withProguardRules.js.
+              sound: true,
               ...(Platform.OS === "android" ? { channelId: "default" } : {}),
             } as any,
             trigger: null,

@@ -147,7 +147,10 @@ export async function sendLocalNotification(episode: Episode, feed: Feed) {
         title: `New from ${feed.title}`,
         body: episode.title,
         data: { episodeId: episode.id, feedId: episode.feedId },
-        sound: "default",
+        // `true`, not "default": a string sound is resolved to a content:// Uri and
+        // stored on the scheduled notification, which R8-minified builds cannot
+        // serialize. See plugins/withProguardRules.js.
+        sound: true,
         ...(Platform.OS === "android" ? { channelId: "new-episodes" } : {}),
       } as any,
       trigger: null,
@@ -197,7 +200,10 @@ export async function notifyNewEpisodes(newEpisodes: Episode[], feeds: Feed[]) {
               title: feed.title,
               body: `${episodes.length} new episodes available`,
               data: { feedId: feed.id },
-              sound: "default",
+              // `true`, not "default": a string sound is resolved to a content:// Uri and
+              // stored on the scheduled notification, which R8-minified builds cannot
+              // serialize. See plugins/withProguardRules.js.
+              sound: true,
               ...(Platform.OS === "android" ? { channelId: "new-episodes" } : {}),
             } as any,
             trigger: null,
@@ -276,7 +282,10 @@ export async function scheduleDailyReminder(hour: number) {
       content: {
         title: "Time to Learn",
         body: "Start your daily shiur",
-        sound: "default",
+        // `true`, not "default": a string sound is resolved to a content:// Uri and
+        // stored on the scheduled notification, which R8-minified builds cannot
+        // serialize. See plugins/withProguardRules.js.
+        sound: true,
         ...(Platform.OS === "android" ? { channelId: "daily-reminders" } : {}),
       } as any,
       trigger: {

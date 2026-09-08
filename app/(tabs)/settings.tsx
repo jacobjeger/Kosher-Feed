@@ -280,7 +280,10 @@ function SettingsScreenInner() {
           title: "ShiurPod",
           body: "This is a test notification from ShiurPod",
           data: { episodeId: "test", feedId: "test" },
-          sound: "default",
+          // `true`, not "default": a string sound is resolved to a content:// Uri and
+          // stored on the scheduled notification, which R8-minified builds cannot
+          // serialize. See plugins/withProguardRules.js.
+          sound: true,
           ...(Platform.OS === "android" ? { channelId: "new-episodes" } : {}),
         } as any,
         trigger: Platform.OS === "web" ? null : {

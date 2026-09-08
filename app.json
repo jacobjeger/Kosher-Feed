@@ -96,6 +96,7 @@
       "./plugins/withAndroidAuto.js",
       "./plugins/withAndroidAbiFilter.js",
       "./plugins/withAndroidMinification.js",
+      "./plugins/withProguardRules.js",
       "./plugins/withNativeCrashCapture.js",
       "@react-native-firebase/app",
       "@react-native-firebase/messaging"
