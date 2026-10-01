@@ -30,6 +30,16 @@ reconstructed into version sections here. The app version lives in
 
 ### Fixed
 
+- Episodes that were slow to start no longer fail with "Playback failed after
+  5 attempts" because of a second tap. The player stopped blocking repeat taps
+  15 seconds into a start-up that can take up to two minutes. So a second tap,
+  or pressing play while it was still loading, started a second attempt
+  alongside the first. Each one then destroyed the other's player before it
+  could buffer, and the loser could also kill an episode that was already
+  playing. This showed up in more than half of recent playback-failure
+  reports, mostly on F1 phones. Stopping playback mid-load now also cancels the
+  load instead of starting the audio again a moment later.
+
 - Notifications appear as heads-up banners with the sound and vibration you
   configured, instead of arriving silently. `channelId` was being passed inside
   the notification content, but expo-notifications reads it from the *trigger* —

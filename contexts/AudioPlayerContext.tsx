@@ -255,6 +255,20 @@ async function fetchEpisodeAndFeed(episodeId: string, feedId: string): Promise<{
 let nativePlayerInstance: any = null;
 let nativePlayerReady = false;
 
+// Native start-up retry budget. Bumped 3→5 attempts and 15s→25s per attempt
+// after error-dashboard data showed Schok F1 phones on cellular consistently
+// take 16-22s for the audio HAL to flip status.playing=true — the previous 15s
+// ceiling gave up just before they would have succeeded. Total worst case is
+// 5 × 25s ≈ 2 min before "Playback failed" surfaces; in practice it confirms
+// via position-advancement much sooner.
+const MAX_START_ATTEMPTS = 5;
+const START_ATTEMPT_TIMEOUT_MS = 25000;
+// The loading guard's backstop must outlast the whole retry budget. It used
+// to fire at 15s, mid-attempt-1, which reopened the guard while the loop was
+// still running — the next tap then started a second loop, and the two tore
+// down each other's players until both gave up.
+const LOADING_GUARD_BACKSTOP_MS = MAX_START_ATTEMPTS * (START_ATTEMPT_TIMEOUT_MS + 500) + 10000;
+
 async function initNativeAudio() {
   if (!setAudioModeAsyncFn || nativePlayerReady) return;
   try {
@@ -297,6 +311,10 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   const intervalRef = useRef<any>(null);
   const isLoadingRef = useRef(false);
   const loadingGuardStartRef = useRef(0);
+  // Bumped by every playEpisodeInternal call and by stop(). An in-flight
+  // start-up loop whose generation is no longer current has been superseded
+  // and must stop touching the shared player, listener and loading state.
+  const playGenRef = useRef(0);
   const currentEpisodeRef = useRef<Episode | null>(null);
   const currentFeedRef = useRef<Feed | null>(null);
   const playbackRef = useRef<PlaybackState>(playback);
@@ -764,13 +782,16 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
     loadingGuardStartRef.current = Date.now();
     playStartedAtRef.current = Date.now();
     stallStartedAtRef.current = 0;
+    // Supersedes any start-up loop still running for an earlier tap.
+    const gen = ++playGenRef.current;
+    const isCurrent = () => playGenRef.current === gen;
     addBreadcrumb("playback", `playEpisode: ${episode.title?.substring(0, 80)}`, { feedId: feed.id, episodeId: episode.id });
     // New episode start — not resuming from pause, so no smart-rewind
     wasPausedRef.current = false;
 
     const safetyTimeout = setTimeout(() => {
-      if (isLoadingRef.current) {
-        addLog("warn", "Loading guard safety timeout — resetting after 15s", undefined, "audio");
+      if (isCurrent() && isLoadingRef.current) {
+        addLog("warn", `Loading guard safety timeout — resetting after ${Math.round(LOADING_GUARD_BACKSTOP_MS / 1000)}s`, undefined, "audio");
         isLoadingRef.current = false;
         // Reset the perf timer too — otherwise the NEXT episode's confirmPlaying
         // would emit playback_start_ms relative to this stuck attempt, polluting
@@ -779,7 +800,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         stallStartedAtRef.current = 0;
         setPlayback(prev => prev.isLoading ? { ...prev, isLoading: false } : prev);
       }
-    }, 15000);
+    }, LOADING_GUARD_BACKSTOP_MS);
 
     saveCurrentPosition();
 
@@ -796,6 +817,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           getFeedSpeed(feed.id),
           getAudioBoostEnabled(),
         ]);
+        if (!isCurrent()) return;
         setPlayback(prev => ({ ...prev, positionMs: savedPos, playbackRate: feedSpeed }));
 
         if (audioRef.current) {
@@ -834,6 +856,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
           getFeedSpeed(feed.id),
           getAudioBoostEnabled(),
         ]);
+        if (!isCurrent()) return;
         setPlayback(prev => ({ ...prev, positionMs: savedPos, playbackRate: feedSpeed, playbackError: null }));
 
         // Tear down any existing player before starting a new attempt.
@@ -854,6 +877,8 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         // player is torn down so the next attempt starts with a fresh audio
         // session — important on devices where the audio HAL is unstable.
         const tryAttempt = async (attempt: number, maxAttempts: number, confirmTimeoutMs: number): Promise<boolean> => {
+          // A newer play owns the player now; tearing down here would kill it.
+          if (!isCurrent()) return false;
           teardown();
           // Buzzsprout (and other hosts) 403 the default OkHttp UA; pass any
           // non-default UA so their CDN serves the file.
@@ -945,7 +970,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
               if (!resolved) { resolved = true; resolve(true); }
             };
 
-            statusSubRef.current = player.addListener("playbackStatusUpdate", (status: any) => {
+            const statusSub = player.addListener("playbackStatusUpdate", (status: any) => {
               if (nativePlayerRef.current !== player) return;
 
               // Startup diagnostics (see playback_stuck below).
@@ -1040,6 +1065,7 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
                 seekResumeUntilRef.current = 0;
               }
             });
+            statusSubRef.current = statusSub;
 
             try { player.setPlaybackRate(feedSpeed); } catch {}
             if (savedPos > 0) {
@@ -1051,7 +1077,13 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
             startPositionTracking();
 
             setTimeout(() => {
-              if (!resolved && !hasConfirmedPlaying) {
+              if (!resolved && !hasConfirmedPlaying && !isCurrent()) {
+                // Superseded by a newer play, which has already torn this
+                // player down — that's not a stall, so record nothing.
+                resolved = true;
+                try { statusSub.remove(); } catch {}
+                resolve(false);
+              } else if (!resolved && !hasConfirmedPlaying) {
                 resolved = true;
                 addLog("warn", `Playback not confirmed after ${confirmTimeoutMs}ms (attempt ${attempt}/${maxAttempts})`, undefined, "audio");
                 // Startup diagnostics: what was the player doing when it gave
@@ -1071,29 +1103,26 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
                 addBreadcrumb("playback", `stuck: updates=${statusUpdateCount} buffering=${sawBuffering} playing=${sawPlayingFlag} ct=${lastCurrentTime.toFixed(1)}s host=${audioHost}`);
                 // Remove the status listener now so it can't fire after the
                 // player is torn down and trick the next attempt's state.
-                try { statusSubRef.current?.remove?.(); } catch {}
-                statusSubRef.current = null;
+                // Remove this attempt's own subscription, not whatever
+                // statusSubRef holds — that may belong to a newer play.
+                try { statusSub.remove(); } catch {}
+                if (statusSubRef.current === statusSub) statusSubRef.current = null;
                 resolve(false);
               }
             }, confirmTimeoutMs);
           });
         };
 
-        // Up to 3 attempts. If all fail, surface a real error to the UI
-        // instead of pretending the audio is playing.
-        // Bumped 3→5 attempts and 15s→25s per attempt after error-dashboard
-        // data showed Schok F1 phones on cellular consistently take 16-22s for
-        // the audio HAL to flip status.playing=true — the previous 15s ceiling
-        // gave up just before they would have succeeded. Total worst case now
-        // 5 × 25s = 2 min before "Playback failed" surfaces; in practice it
-        // confirms via position-advancement (line ~919) much sooner.
-        const MAX_ATTEMPTS = 5;
-        const TIMEOUT_MS = 25000;
+        // Up to MAX_START_ATTEMPTS attempts. If all fail, surface a real error
+        // to the UI instead of pretending the audio is playing.
+        const MAX_ATTEMPTS = MAX_START_ATTEMPTS;
+        const TIMEOUT_MS = START_ATTEMPT_TIMEOUT_MS;
         let succeeded = false;
         try {
           for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             const ok = await tryAttempt(attempt, MAX_ATTEMPTS, TIMEOUT_MS);
             if (ok) { succeeded = true; break; }
+            if (!isCurrent()) break;
             if (attempt < MAX_ATTEMPTS) {
               addLog("info", `Retrying playback (attempt ${attempt + 1}/${MAX_ATTEMPTS}) with fresh player...`, undefined, "audio");
               playbackMetric("playback_retry", episode.id, feed.id, episode.audioUrl, attempt + 1);
@@ -1103,8 +1132,13 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         } catch (audioErr: any) {
           const msg = audioErr?.message || String(audioErr);
           addLog("error", `expo-audio play failed: ${msg}`, audioErr?.stack, "audio");
-          setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: false, playbackError: msg }));
+          if (isCurrent()) setPlayback(prev => ({ ...prev, isLoading: false, isPlaying: false, playbackError: msg }));
         }
+
+        // Superseded: the newer play owns the player, the UI state and the
+        // listen/history bookkeeping below. Tearing down or flagging an error
+        // here would kill the episode the user actually asked for.
+        if (!isCurrent()) return;
 
         if (!succeeded) {
           teardown();
@@ -1147,9 +1181,11 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
       }).catch(err => addLog("warn", `Failed to record listen: ${(err as any)?.message || err}`, undefined, "audio"));
     } catch (e) {
       addLog("error", `Playback failed: ${episode.title} - ${(e as any)?.message || e}`, (e as any)?.stack, "audio");
-      setPlayback(prev => ({ ...prev, isLoading: false }));
+      if (isCurrent()) setPlayback(prev => ({ ...prev, isLoading: false }));
     } finally {
-      isLoadingRef.current = false;
+      // Only the current play may reopen the guard — a superseded loop
+      // finishing late would otherwise unlock it under the newer one.
+      if (isCurrent()) isLoadingRef.current = false;
       clearTimeout(safetyTimeout);
     }
   }, [startPositionTracking, getSavedPosition, getFeedSpeed, saveCurrentPosition, addRecentlyPlayed, cancelSleepTimer, flushListenDuration]);
@@ -1295,6 +1331,14 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
         setPlayback(prev => ({ ...prev, isPlaying: false }));
         const ep = currentEpisodeRef.current;
         const feed = currentFeedRef.current;
+        if (isLoadingRef.current) {
+          // Between start-up attempts there is briefly no player. The loop
+          // already in flight will start this episode; reloading here used to
+          // spawn a second loop that fought the first for the player.
+          addBreadcrumb("playback", "resume ignored: episode still loading");
+          setPlayback(prev => ({ ...prev, isLoading: true }));
+          return;
+        }
         if (ep && feed) {
           addLog("warn", "Player not ready, reloading episode...", undefined, "audio");
           await playEpisodeInternal(ep, feed, true);
@@ -1352,6 +1396,10 @@ export function AudioPlayerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const stop = useCallback(async () => {
+    // Cancel any start-up loop in flight, or its next attempt would create a
+    // fresh player and start the audio the user just stopped.
+    playGenRef.current++;
+    isLoadingRef.current = false;
     saveCurrentPosition();
     cancelSleepTimer();
     // Reset perf timers so the next playEpisode's confirmPlaying doesn't
